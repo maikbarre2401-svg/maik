@@ -1,4 +1,19 @@
-# MAIK // CORE V7.0
+# MAIK — assistente AI personale
+
+Due modi di usare MAIK, scegli quello che preferisci:
+
+| | **`index.html`** (client) | **`maik_server.py`** (server) |
+|---|---|---|
+| Avvio | apri il file nel browser | `python maik_server.py` |
+| Dipendenze | nessuna | nessuna (solo stdlib Python) |
+| Memoria | nel browser (`localStorage`) | su disco in `dati_maik/*.json` |
+| Ideale per | uso veloce su un solo dispositivo | memoria persistente e robusta |
+
+Entrambi parlano con un modello locale tramite **Ollama** e rispondono in **streaming**.
+
+---
+
+## MAIK // CORE V7.0 — `index.html`
 
 Assistente AI personale in un **singolo file HTML**. Nessuna installazione, nessun build: apri `index.html` nel browser e funziona. Si connette a un modello locale tramite **Ollama** e ricorda tutto in `localStorage`.
 
@@ -32,6 +47,36 @@ Senza Ollama, MAIK funziona comunque in modalità offline (memoria, profilo, met
 ## Privacy
 
 Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di rete sono: Ollama (in locale) e `wttr.in` per il meteo.
+
+---
+
+## MAIK — Server V6.0 — `maik_server.py`
+
+Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
+
+```bash
+ollama pull llama3.1      # una volta
+python maik_server.py     # si apre da solo nel browser su :8137
+```
+
+Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata di riserva** (chat in streaming + stato + profilo), così funziona comunque out-of-the-box.
+
+### Novità V6.0 rispetto a v5.0
+
+- ⚡ **Risposte in streaming** token-per-token (`POST /chat/stream`, SSE) — niente più attese mute.
+- 🔒 **Memoria a prova di crash**: scritture atomiche (`.tmp` + `os.replace`) e **lock multi-thread**, niente JSON corrotti con richieste in parallelo.
+- 📁 Tutti i dati in una **cartella dedicata** `dati_maik/`, con **migrazione automatica** dai vecchi file di v5.0.
+- ⚙️ **Configurabile da variabili d'ambiente**: `MAIK_MODELLO`, `MAIK_PORTA`, `MAIK_OLLAMA`, `MAIK_DATA`, `MAIK_HOST`, `MAIK_NOME`.
+- 🐛 **Bug-fix estrattore nomi**: *"sono stanco"* non viene più salvato come nome "Stanco".
+- 🩺 Nuovi endpoint `GET /salute` e `GET /config`; chiamate a Ollama più robuste con errori chiari.
+
+Eredita da v5.0: profilo ricco, memoria episodica, timeline, umore tracker, ricerca, obiettivi/sogni, relazioni, reset selettivo, statistiche.
+
+### Esempio configurazione
+
+```bash
+MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maik_server.py
+```
 
 ## Frasi che MAIK impara da solo
 

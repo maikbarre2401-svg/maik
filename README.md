@@ -44,6 +44,20 @@ Senza Ollama, MAIK funziona comunque in modalità offline (memoria, profilo, met
 - **Riconoscimento vocale** con risultati intermedi e modalità ascolto continuo.
 - Layout **responsive** per mobile e migliorie di robustezza/errore.
 
+### Sfera 3D + Strumenti (ultimo aggiornamento)
+
+- 🔮 **Nuova sfera 3D**: nuvola di punti che **ruota di continuo** (animata anche da ferma), con nucleo pulsante e barre quando "parla". Cambia colore in base allo stato (idle / pensa / parla / volto rilevato). Ora **si ridimensiona da sola** in base allo spazio: niente più sfera bloccata in un angolo su mobile. La puoi trascinare, bloccare (📌) e ricentrare.
+- 🧰 **Pannello Strumenti** (pulsante in alto) con 12 utility:
+
+  | | | |
+  |---|---|---|
+  | 🧮 Calcolatrice | ⏱️ Timer/Pomodoro | ⏲️ Cronometro |
+  | 🎲 Random (dado/moneta/numero) | 🔄 Convertitore (lunghezza, peso, volume, temperatura) | 🌍 Orologi mondiali |
+  | 📝 Note rapide | 🔑 Generatore password | 🌐 Traduttore (AI) |
+  | 📋 Riassumi testo (AI) | 🔢 Conta parole/caratteri | 🎯 Scegli per me |
+
+  Le utility funzionano **offline**; *Traduttore* e *Riassumi* usano il modello Ollama.
+
 ## Privacy
 
 Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di rete sono: Ollama (in locale) e `wttr.in` per il meteo.

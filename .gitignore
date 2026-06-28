@@ -15,3 +15,6 @@ relazioni.json
 # Python
 __pycache__/
 *.pyc
+
+# Screenshot/artefatti temporanei
+scratch_*.png

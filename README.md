@@ -73,7 +73,7 @@ ollama pull llama3.1      # una volta
 python maik_server.py     # si apre da solo nel browser su :8137
 ```
 
-Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata di riserva** (chat in streaming + stato + profilo), così funziona comunque out-of-the-box.
+Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **stessa sfera 3D animata + chat in streaming + pannello 🧰 strumenti** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
 
 ### Novità V6.0 rispetto a v5.0
 

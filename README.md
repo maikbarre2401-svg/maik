@@ -58,6 +58,18 @@ Senza Ollama, MAIK funziona comunque in modalità offline (memoria, profilo, met
 
   Le utility funzionano **offline**; *Traduttore* e *Riassumi* usano il modello Ollama.
 
+### 🫂 Modalità Amico (compagnia)
+
+Pulsante **🫂 AMICO** in alto: trasforma MAIK in un compagno che **ti vede e ti parla** come un amico vero.
+
+- 📷 **Ti vede davvero**: accende la webcam e rileva la tua **presenza reale** — `FaceDetector` nativo dove c'è, altrimenti rilevamento del **movimento** (differenza tra fotogrammi). Niente più rilevamento finto a caso.
+- 👋 **Ti accoglie quando torni**: se sparisci e poi riappari, ti saluta ("Bentornato! Mi eri mancato 😊").
+- 🎙️ **Ascolto continuo a mani libere**: parli e MAIK risponde a voce; mentre parla mette in pausa il microfono per non sentirsi da solo, poi riapre le orecchie.
+- 💬 **Inizia lui la conversazione**: quando c'è silenzio (ogni ~1–2 min) MAIK ti scrive/parla spontaneamente, usando il contesto (nome, ora, promemoria, obiettivi, meteo). Se Ollama è online a volte genera lui la frase, altrimenti usa frasi calorose pronte.
+- 🔊 La voce (TTS) si attiva da sola in questa modalità.
+
+> La webcam e il microfono partono al **click** sul pulsante (richiesto dai browser) e funzionano su `localhost`/HTTPS. Tutto resta in locale.
+
 ## Privacy
 
 Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di rete sono: Ollama (in locale) e `wttr.in` per il meteo.

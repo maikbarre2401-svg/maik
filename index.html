@@ -270,6 +270,14 @@
       position: absolute; bottom: 0; left: 0; right: 0; background: rgba(5,10,20,0.8); padding: 3px 6px;
       font-size: 9px; font-family: 'Share Tech Mono', monospace; color: var(--accent); letter-spacing: 1px;
     }
+    #friend-badge {
+      display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      align-items: center; gap: 7px; background: rgba(5,10,20,0.85); border: 1px solid var(--green);
+      color: var(--green); padding: 4px 12px; border-radius: 14px; z-index: 30;
+      font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px;
+      box-shadow: 0 0 16px rgba(0,255,136,0.25);
+    }
+    .fb-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.5s infinite; }
 
     /* CHAT */
     #chat-area { display: flex; flex-direction: column; height: 56%; border-top: 1px solid var(--border); background: rgba(5,10,20,0.5); }
@@ -463,6 +471,7 @@
     <span class="hide-sm">scambi <strong id="exchange-count" style="color:var(--accent)">0</strong></span>
   </div>
   <div style="display:flex;gap:6px">
+    <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla">🫂 AMICO</button>
     <button class="topbar-btn" onclick="openTools()" title="Strumenti">🧰</button>
     <button class="topbar-btn" id="cam-toggle-btn" onclick="toggleCamera()">📷</button>
     <button class="topbar-btn" onclick="openSettings()" title="Impostazioni">⚙</button>
@@ -582,9 +591,10 @@
   <div id="center">
     <div id="sphere-area">
       <canvas id="particles-canvas"></canvas>
+      <div id="friend-badge"><span class="fb-dot"></span> MAIK · MODALITÀ AMICO</div>
       <div id="camera-big">
         <video id="camera-big-video" autoplay muted playsinline></video>
-        <div id="camera-big-label">📷 LIVE · RILEVAMENTO VOLTO</div>
+        <div id="camera-big-label">📷 LIVE · TI VEDO</div>
       </div>
       <div id="sphere-wrapper"><canvas id="sphere-canvas" width="200" height="200"></canvas></div>
       <div id="sphere-controls">
@@ -725,6 +735,9 @@ let spherePinned = false, sphereMoving = true;
 let recognizing = false, recognition = null, autoListenLoop = false;
 let faceDetectionInterval = null, faceDetector = null;
 let abortController = null, generating = false;
+// Modalità Amico (compagnia): MAIK ti vede e ti parla spontaneamente
+let friendMode = false, speaking = false, lastUserActivity = Date.now();
+let proactiveTimer = null, nextProactiveGap = 90000, micFatal = false;
 
 // ---------- PERSISTENCE ----------
 function loadState() {
@@ -995,7 +1008,7 @@ async function startCamera() {
     sphereState='detecting';
     startFaceDetection(bigVideo);
     toast('📷 Telecamera attivata','success');
-    setTimeout(()=>{ if(cameraActive){
+    setTimeout(()=>{ if(cameraActive && !friendMode){   // in Modalità Amico il saluto lo dà enterFriendMode
       const name = state.profile.nome || null;
       if (name){ addMessage('maik', `Ciao ${name}! Ti vedo 👋 Come stai oggi?`); maybeSpeak(`Ciao ${name}! Come stai oggi?`); }
       else addMessage('maik','Ti vedo! 👁️ Ciao! Come ti chiami?');
@@ -1016,28 +1029,75 @@ function stopCamera() {
 }
 function toggleCamera(){ if(cameraActive){ stopCamera(); toast('📷 Telecamera disattivata'); } else startCamera(); }
 
+// presenza reale: FaceDetector nativo se c'è, altrimenti rilevamento movimento
+// (differenza tra frame) — reagisce a te che ci sei davvero, non a caso.
+let facePresent=false, faceAwaySince=Date.now(), lastSeen=0;
 function startFaceDetection(video) {
-  // Use native FaceDetector API if available, else heuristic simulation.
+  faceDetector = null;
   if ('FaceDetector' in window) {
     try { faceDetector = new FaceDetector({ fastMode:true, maxDetectedFaces:1 }); } catch { faceDetector=null; }
   }
-  let detected=false;
+  const off = document.createElement('canvas'); off.width=64; off.height=48;
+  const octx = off.getContext('2d', { willReadFrequently:true });
+  let prev=null, lastMotion=0;
+  facePresent=false; faceAwaySince=Date.now();
+
   faceDetectionInterval = setInterval(async ()=>{
-    if (!cameraActive) return;
-    let now;
-    if (faceDetector && video.readyState>=2) {
-      try { const faces = await faceDetector.detect(video); now = faces.length>0; }
-      catch { now = Math.random()>0.25; }
-    } else {
-      now = Math.random()>0.25;   // simulation fallback
+    if (!cameraActive || video.readyState<2) return;
+    let present=false;
+    if (faceDetector) {
+      try { present = (await faceDetector.detect(video)).length>0; }
+      catch { faceDetector=null; }
     }
-    if (now!==detected){
-      detected=now;
-      const fs=document.getElementById('face-status');
-      if (detected){ fs.textContent='✓ volto rilevato'; fs.className='detected'; if(sphereState==='idle')sphereState='detecting'; }
-      else { fs.textContent='nessun volto'; fs.className=''; if(sphereState==='detecting')sphereState='idle'; }
+    if (!faceDetector) {
+      // niente FaceDetector: uso il movimento come segnale di "c'è qualcuno"
+      try {
+        octx.drawImage(video,0,0,64,48);
+        const cur = octx.getImageData(0,0,64,48).data;
+        if (prev) {
+          let diff=0; for (let i=0;i<cur.length;i+=4) diff += Math.abs(cur[i]-prev[i]);
+          diff /= (cur.length/4);
+          if (diff>7) lastMotion=Date.now();
+        }
+        prev=cur;
+        present = (Date.now()-lastMotion) < 9000;   // movimento negli ultimi 9s = presente
+      } catch { present=false; }
     }
-  }, 1500);
+    handlePresence(present);
+  }, 700);
+}
+
+function handlePresence(present){
+  const fs=document.getElementById('face-status');
+  if (present){
+    lastSeen=Date.now();
+    if (!facePresent){
+      facePresent=true;
+      const awayMs=Date.now()-faceAwaySince;
+      if (fs){ fs.textContent='✓ ti vedo'; fs.className='detected'; }
+      if (sphereState==='idle') sphereState='detecting';
+      if (friendMode && awayMs>20000) friendGreetBack(awayMs);
+    }
+  } else {
+    if (facePresent){
+      facePresent=false; faceAwaySince=Date.now();
+      if (fs){ fs.textContent='nessun volto'; fs.className=''; }
+      if (sphereState==='detecting') sphereState='idle';
+    }
+  }
+}
+
+function friendGreetBack(awayMs){
+  if (generating || speaking) return;
+  const name = state.profile.nome ? ' '+state.profile.nome : '';
+  const min = Math.round(awayMs/60000);
+  const lines = min>=10
+    ? [`Bentornato${name}! Mi eri mancato 😊 Dove sei stato?`, `Ehi${name}, eccoti! Iniziavo a sentire la tua mancanza.`, `Rieccoti${name}! Com'è andata? Raccontami.`]
+    : [`Ah, eccoti${name}! 👋`, `Bentornato${name}! Tutto ok?`, `Ehi${name}, ti rivedo 😊`];
+  const msg = lines[Math.floor(Math.random()*lines.length)];
+  addMessage('maik', msg);
+  state.conversation.push({ role:'maik', content:msg, ts:Date.now() }); save();
+  maybeSpeak(msg);
 }
 
 // ============================================================
@@ -1210,6 +1270,7 @@ async function sendMessage() {
   const text = input.value.trim();
   if (!text || generating) return;
   input.value='';
+  lastUserActivity = Date.now();             // l'utente è attivo: MAIK non interrompe
   document.getElementById('send-btn').disabled = true;
 
   state.meta.exchangeCount++;
@@ -1400,8 +1461,17 @@ function maybeSpeak(text){
   const voices = speechSynthesis.getVoices();
   const chosen = voices.find(v=>v.name===state.settings.voiceName) || voices.find(v=>v.lang.startsWith('it'));
   if (chosen) u.voice=chosen;
-  u.onstart=()=>sphereState='speaking';
-  u.onend=()=>{ if(sphereState==='speaking') sphereState='idle'; };
+  u.onstart=()=>{
+    speaking=true; sphereState='speaking';
+    // mentre MAIK parla, metti in pausa il microfono per non sentirsi da solo
+    if (recognizing){ try{ recognition.stop(); }catch{} }
+  };
+  u.onend=()=>{
+    speaking=false;
+    if (sphereState==='speaking') sphereState='idle';
+    // in Modalità Amico riapri le orecchie appena finisce di parlare
+    if (friendMode){ setTimeout(()=>{ if(friendMode && !generating && !speaking) startRecognition(); }, 450); }
+  };
   speechSynthesis.speak(u);
 }
 
@@ -1427,16 +1497,27 @@ function initSpeechRecognition(){
     document.getElementById('voice-btn').classList.remove('active');
     const ll=document.getElementById('listening-label'); ll.classList.remove('active'); ll.textContent='· IN ASCOLTO ·';
     const val=document.getElementById('chat-input').value.trim();
-    if (val) sendMessage(); finalT='';
+    if (val){ sendMessage(); }
+    else if (friendMode && !speaking && !generating && !micFatal){ setTimeout(()=>startRecognition(), 700); } // resta in ascolto
+    finalT='';
   };
   recognition.onerror = e=>{
-    recognizing=false; autoListenLoop=false;
+    recognizing=false;
     document.getElementById('voice-btn').classList.remove('active');
-    if (e.error!=='no-speech' && e.error!=='aborted') toast('Errore microfono: '+e.error,'error');
+    if (e.error==='no-speech'){ if(friendMode && !speaking && !generating && !micFatal) setTimeout(()=>startRecognition(), 500); return; }
+    if (e.error==='aborted') return;
+    // errori "duri" (microfono assente, permesso negato): ferma il loop, non spammare
+    if (['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){
+      micFatal = true; autoListenLoop = false;
+      toast('Microfono non disponibile — scrivi pure 😊','error');
+      return;
+    }
+    if (!friendMode) autoListenLoop=false;
+    toast('Errore microfono: '+e.error,'error');
   };
 }
 function startRecognition(){
-  if (!recognition || recognizing || generating) return;
+  if (!recognition || recognizing || generating || speaking || micFatal) return;
   try {
     recognizing=true; recognition.start();
     document.getElementById('voice-btn').classList.add('active');
@@ -1446,7 +1527,7 @@ function startRecognition(){
 function toggleVoice(){
   if (!recognition){ toast('Riconoscimento vocale non supportato dal browser','error'); return; }
   if (recognizing){ autoListenLoop=false; recognition.stop(); }
-  else { autoListenLoop = state.settings.autoListen; startRecognition(); }
+  else { micFatal=false; autoListenLoop = state.settings.autoListen; startRecognition(); }
 }
 
 // ============================================================
@@ -1701,6 +1782,112 @@ function greetUser(){
   let extra = active.length ? ` Hai ${active.length} promemoria attivo${active.length>1?'i':''}.` : '';
   if (name) addMessage('maik', `${g} ${name}! Bentornato 👋 Sono qui per te.${extra} Cosa facciamo oggi?`);
   else addMessage('maik', `Ciao! Sono **MAIK**, il tuo assistente personale. Non ci conosciamo ancora… come ti chiami?`);
+}
+
+// ============================================================
+// MODALITÀ AMICO — MAIK ti vede e ti parla come un amico vero
+// ============================================================
+function toggleFriendMode(){
+  if (friendMode) exitFriendMode();
+  else enterFriendMode();
+}
+
+async function enterFriendMode(){
+  friendMode = true;
+  state.settings.tts = true;                 // un amico parla, sempre
+  save();
+  const btn = document.getElementById('friend-btn');
+  if (btn){ btn.classList.add('active'); btn.textContent = '🫂 AMICO ON'; }
+  document.getElementById('friend-badge').style.display = 'flex';
+
+  // accendi la webcam (il click è il gesto richiesto dal browser)
+  if (!cameraActive){ try { await startCamera(); } catch(e){} }
+
+  // ascolto continuo a mani libere
+  micFatal = false;
+  if (recognition){ autoListenLoop = true; setTimeout(()=>{ if(friendMode && !speaking && !generating) startRecognition(); }, 1200); }
+  else { toast('Microfono non supportato: potrai scrivere lo stesso','error'); }
+
+  // saluto caloroso
+  const name = state.profile.nome ? ' '+state.profile.nome : '';
+  const hi = `Ehi${name}! Da ora ti tengo compagnia: ti vedo, ti ascolto e chiacchieriamo come amici. Dimmi pure, oppure aspetto io 😊`;
+  setTimeout(()=>{ addMessage('maik', hi); state.conversation.push({role:'maik',content:hi,ts:Date.now()}); save(); maybeSpeak(hi); }, 600);
+
+  lastUserActivity = Date.now();
+  nextProactiveGap = 80000;
+  startProactive();
+  toast('🫂 Modalità Amico attiva','success');
+}
+
+function exitFriendMode(){
+  friendMode = false;
+  autoListenLoop = false;
+  clearInterval(proactiveTimer);
+  if (recognizing){ try{ recognition.stop(); }catch{} }
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (cameraActive) stopCamera();
+  const btn = document.getElementById('friend-btn');
+  if (btn){ btn.classList.remove('active'); btn.textContent = '🫂 AMICO'; }
+  document.getElementById('friend-badge').style.display = 'none';
+  toast('Modalità Amico disattivata');
+}
+
+// MAIK inizia lui la conversazione ogni tanto, quando c'è silenzio
+function startProactive(){
+  clearInterval(proactiveTimer);
+  proactiveTimer = setInterval(()=>{
+    if (!friendMode || generating || speaking || recognizing) return;
+    if (document.getElementById('tools-modal').classList.contains('open')) return;
+    if (Date.now() - lastUserActivity >= nextProactiveGap){
+      sayProactive();
+      lastUserActivity = Date.now();
+      nextProactiveGap = 70000 + Math.random()*80000;   // 70–150s, così non è invadente
+    }
+  }, 5000);
+}
+
+function buildProactiveLine(){
+  const name = state.profile.nome ? ' '+state.profile.nome : '';
+  const h = new Date().getHours();
+  const pool = [
+    `Allora${name}, com'è andata la giornata finora?`,
+    `A cosa stai pensando${name}?`,
+    `Ti va di raccontarmi qualcosa di te?`,
+    `Sono qui${name}, se hai bisogno di parlare ci sono.`,
+    `Hai fatto qualcosa di bello oggi?`,
+    `Come ti senti in questo momento${name}?`,
+    `Se potessi fare una cosa qualsiasi adesso, cosa faresti?`,
+  ];
+  if (h<11) pool.push(`Buongiorno${name}! Come hai dormito?`, `Che programmi hai per oggi${name}?`);
+  else if (h>=21) pool.push(`Si è fatta sera${name}… com'è stata la tua giornata?`, `Stai per andare a riposare o resti un po' con me?`);
+  // contesto: promemoria
+  const rem = (state.reminders||[]).filter(r=>!r.done);
+  if (rem.length) pool.push(`A proposito${name}, ti ricordo: ${rem[0].text}${rem[0].due?` (${rem[0].due})`:''}.`);
+  // contesto: obiettivi
+  if (state.goals && state.goals.length) pool.push(`Stavo pensando al tuo obiettivo "${state.goals[state.goals.length-1]}". Come sta andando?`);
+  // contesto: meteo
+  const wt = document.getElementById('w-temp')?.textContent;
+  if (wt && wt!=='--°C') pool.push(`Fuori ci sono ${wt}. Tu come te la passi lì?`);
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+async function sayProactive(){
+  let line;
+  // se Ollama è online, ogni tanto faccio dire a MAIK qualcosa di spontaneo e personale
+  if (ollamaOnline && state.settings.model && Math.random()<0.5){
+    try {
+      const ctx = buildSystemPrompt();
+      line = (await ollamaOnce(`${ctx}\n\nDì UNA frase breve, spontanea e calorosa per iniziare tu la conversazione con la persona, come farebbe un amico. Solo la frase, in italiano.`)).trim();
+    } catch { line = buildProactiveLine(); }
+  } else {
+    line = buildProactiveLine();
+  }
+  if (!line) line = buildProactiveLine();
+  addMessage('maik', line);
+  state.conversation.push({ role:'maik', content:line, ts:Date.now() });
+  conversationHistory.push({ role:'assistant', content:line });
+  save();
+  maybeSpeak(line);
 }
 
 // ============================================================

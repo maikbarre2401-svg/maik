@@ -17,20 +17,25 @@ MAIK usa due modelli: uno per **chattare/ragionare** e uno **multimodale per la 
 
 | Il tuo PC | Chat / ragionamento | Visione (webcam) |
 |---|---|---|
-| 💪 Potente (≥16 GB RAM o GPU) | `qwen2.5:14b` (o `llama3.1:8b`) | `llama3.2-vision` |
+| 💪 Potente (≥16 GB RAM o GPU) | `qwen2.5:14b` (o `llama3.1:8b`) | `llava:13b` |
 | ⚖️ Medio (8–12 GB) | `llama3.1` | `llava` |
 | 🪶 Leggero (≤8 GB) | `llama3.2:3b` | `moondream` |
 
 ```bash
-ollama pull llama3.1           # chat
-ollama pull llama3.2-vision    # visione (per far "vedere" MAIK)
+ollama pull llama3.1     # chat
+ollama pull llava        # visione (per far "vedere" MAIK) — compatibile ovunque
 ```
 
-- Nel **client** (`index.html`): scegli il modello chat in **⚙ Impostazioni**; per la visione usa lo stesso campo o un modello multimodale installato.
-- Nel **server** (`maik_server.py`): imposta con le variabili d'ambiente
-  `MAIK_MODELLO` (chat) e `MAIK_MODELLO_VISIONE` (webcam). All'avvio il server stampa i modelli consigliati e avvisa se mancano.
+- Nel **client** (`index.html`): scegli il modello chat e quello visione in **⚙ Impostazioni**.
+- Nel **server** (`maik_server.py`): variabili d'ambiente `MAIK_MODELLO` (chat) e `MAIK_MODELLO_VISIONE` (webcam).
+- In ogni caso MAIK **prova più modelli visione in cascata** (quello scelto → `llava` → `moondream`), quindi se ne hai almeno uno installato funziona.
 
-> Suggerimento: `llama3.2-vision` è il miglior compromesso per la webcam; `moondream` è piccolo e veloce per PC deboli; modelli più grandi (es. `llama3.2-vision:90b`) solo con molta VRAM.
+> ⚠️ **Errore `unknown model architecture: 'mllama'`** con `llama3.2-vision`?
+> Vuol dire che il tuo **Ollama è troppo vecchio** (serve ≥ 0.4). Due soluzioni:
+> 1. **Più semplice:** usa `llava` →  `ollama pull llava`
+> 2. Aggiorna Ollama all'ultima versione da <https://ollama.com/download>
+>
+> `llava` e `moondream` funzionano su praticamente tutte le versioni di Ollama.
 
 ---
 

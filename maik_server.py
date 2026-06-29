@@ -35,6 +35,7 @@ import threading
 import webbrowser
 import urllib.request
 import urllib.parse
+import urllib.error
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -50,7 +51,7 @@ _OLLAMA_BASE = _env("MAIK_OLLAMA", "http://localhost:11434").rstrip("/")
 CONFIG = {
     "nome_ai":  _env("MAIK_NOME", "Maik"),
     "modello":  _env("MAIK_MODELLO", "llama3.1"),
-    "modello_visione": _env("MAIK_MODELLO_VISIONE", "llama3.2-vision"),  # multimodale per la webcam
+    "modello_visione": _env("MAIK_MODELLO_VISIONE", "llava"),  # multimodale per la webcam (llava: massima compatibilità)
     "ollama_base": _OLLAMA_BASE,
     "ollama_url":  _OLLAMA_BASE + "/api/chat",
     "ollama_tags": _OLLAMA_BASE + "/api/tags",
@@ -575,22 +576,43 @@ class Cervello:
             return f"__ERRORE__ {e}"
 
     def vedi(self, img_b64, prompt=""):
-        """Manda un fotogramma della webcam a un modello multimodale e ritorna la descrizione."""
+        """Manda un fotogramma della webcam a un modello multimodale e ritorna la descrizione.
+        Prova più modelli compatibili in cascata (utile se uno non è installato o
+        se Ollama è troppo vecchio per certe architetture, es. 'mllama')."""
         istr = prompt or ("Guardi attraverso una webcam la persona con cui chiacchieri. "
                           "Descrivi in modo amichevole e naturale cosa vedi (la persona, l'espressione, "
                           "l'ambiente), in italiano, in 1-2 frasi, come farebbe un amico. Niente elenchi.")
-        payload = json.dumps({
-            "model": CONFIG["modello_visione"],
-            "messages": [{"role": "user", "content": istr, "images": [img_b64]}],
-            "stream": False,
-        }).encode("utf-8")
-        req = urllib.request.Request(CONFIG["ollama_url"], data=payload,
-                                     headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=CONFIG["timeout_chat"]) as r:
-                return json.loads(r.read().decode("utf-8"))["message"]["content"].strip()
-        except Exception as e:
-            return f"__ERRORE__ {e}"
+        candidati = []
+        for mdl in (CONFIG["modello_visione"], "llava", "moondream", "llama3.2-vision"):
+            if mdl and mdl not in candidati:
+                candidati.append(mdl)
+        ultimo_err = ""
+        for mdl in candidati:
+            payload = json.dumps({
+                "model": mdl,
+                "messages": [{"role": "user", "content": istr, "images": [img_b64]}],
+                "stream": False,
+            }).encode("utf-8")
+            req = urllib.request.Request(CONFIG["ollama_url"], data=payload,
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=CONFIG["timeout_chat"]) as r:
+                    testo = json.loads(r.read().decode("utf-8"))["message"]["content"].strip()
+                    if mdl != CONFIG["modello_visione"]:
+                        CONFIG["modello_visione"] = mdl   # ricorda quello che ha funzionato
+                    return testo
+            except urllib.error.HTTPError as e:
+                try:    corpo = e.read().decode("utf-8", "ignore")
+                except Exception: corpo = str(e)
+                ultimo_err = corpo
+                low = corpo.lower()
+                # modello assente o architettura non supportata → prova il prossimo
+                if "not found" in low or "architecture" in low or "mllama" in low:
+                    continue
+                return f"__ERRORE__ {corpo}"
+            except Exception as e:
+                return f"__ERRORE__ {e}"     # errore di rete: inutile insistere
+        return f"__ERRORE_VIS__ {ultimo_err}"
 
 
 # ════════════════════════════════════════════════════════════
@@ -1036,8 +1058,16 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "errore": "nessuna immagine"}); return
                 testo = MOTORE.cervello.vedi(img, c.get("prompt", "").strip())
                 if testo.startswith("__ERRORE"):
-                    self._json({"ok": False, "errore": "Modello visione non raggiungibile. "
-                                "Installa un modello multimodale, es: ollama pull " + CONFIG["modello_visione"]})
+                    low = testo.lower()
+                    if "mllama" in low or "architecture" in low:
+                        msg = ("Il tuo Ollama è troppo vecchio per llama3.2-vision (errore 'mllama'). "
+                               "Soluzione veloce:  ollama pull llava   —  oppure aggiorna Ollama "
+                               "all'ultima versione da https://ollama.com/download")
+                    elif "not found" in low:
+                        msg = "Nessun modello visione installato. Esegui:  ollama pull llava"
+                    else:
+                        msg = "Modello visione non raggiungibile. Prova:  ollama pull llava"
+                    self._json({"ok": False, "errore": msg})
                 else:
                     self._json({"ok": True, "testo": testo})
 
@@ -1345,6 +1375,7 @@ function onPresence(pr){const s=$('#fstat');if(pr){if(!present){present=true;con
 
 // ---------- VISIONE (👁️ Guarda) ----------
 function snap(){const v=$('#cam');const c=document.createElement('canvas');c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.7);}
+let visionBroken=false;
 async function guarda(){
   if(busy)return;
   if(!camOn){const ok=await startCam();if(!ok)return;await new Promise(r=>setTimeout(r,900));}
@@ -1353,8 +1384,17 @@ async function guarda(){
   try{
     const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:img})})).json();
     if(r.ok){b.textContent='👁️ '+r.testo;say(r.testo);}
-    else{b.textContent='👁️ '+(r.errore||'Non riesco a vedere');}
+    else{b.textContent='👁️ '+(r.errore||'Non riesco a vedere');visionBroken=true;}
   }catch(e){b.textContent='Errore visione: '+e.message;}
+  SPH.state='idle';busy=false;
+}
+async function autoGlance(){
+  if(busy||speaking||!camOn||visionBroken)return;
+  const img=snap();if(!img)return;busy=true;SPH.state='thinking';
+  try{
+    const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:img})})).json();
+    if(r.ok){add('ai','👁️ '+r.testo);say(r.testo);}else{visionBroken=true;}
+  }catch(e){}
   SPH.state='idle';busy=false;
 }
 
@@ -1386,7 +1426,7 @@ async function enterFriend(){
   lastAct=Date.now();proGap=80000;startPro();toast('🫂 Modalità Amico attiva','ok');
 }
 function exitFriend(){friend=false;clearInterval(proTimer);if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').textContent='🫂 AMICO';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
-function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
+function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){if(camOn&&!visionBroken&&Math.random()<0.35)autoGlance();else sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
 function sayPro(){const nm=pName?' '+pName:'';const h=new Date().getHours();const pool=['Allora'+nm+', come va la giornata?','A cosa stai pensando'+nm+'?','Ti va di raccontarmi qualcosa?','Sono qui'+nm+', se vuoi parlare ci sono.','Hai fatto qualcosa di bello oggi?','Come ti senti'+nm+'?','Se potessi fare una cosa qualsiasi adesso, cosa faresti?'];if(h<11)pool.push('Buongiorno'+nm+'! Come hai dormito?');else if(h>=21)pool.push('Si è fatta sera'+nm+'… com\'è stata la giornata?');const line=pool[Math.floor(Math.random()*pool.length)];add('ai',line);say(line);}
 function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const line='Bentornato'+nm+'! Ti rivedo 😊';add('ai',line);say(line);}
 
@@ -1394,7 +1434,7 @@ function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const 
 const TOOLS=[
  {ic:'🧮',nm:'Calcolatrice',fn:tCalc},{ic:'⏱️',nm:'Timer',fn:tTimer},{ic:'⏲️',nm:'Cronometro',fn:tStop},
  {ic:'🎲',nm:'Random',fn:tRand},{ic:'🔄',nm:'Convertitore',fn:tConv},{ic:'🌍',nm:'Orologi',fn:tClock},
- {ic:'📝',nm:'Note',fn:tNotes},{ic:'🔑',nm:'Password',fn:tPass},{ic:'🔢',nm:'Conta testo',fn:tCount},{ic:'🎯',nm:'Scegli per me',fn:tDecide}
+ {ic:'📝',nm:'Note',fn:tNotes},{ic:'🔑',nm:'Password',fn:tPass},{ic:'🔢',nm:'Conta testo',fn:tCount},{ic:'🎯',nm:'Scegli per me',fn:tDecide},{ic:'✅',nm:'Lista/Spesa',fn:tCheck}
 ];
 let TICK=[];function tick(){TICK.forEach(f=>{try{f();}catch(e){}});}function clearTick(){TICK=[];}
 setInterval(()=>{if($('#tmodal').classList.contains('open'))tick();},1000);
@@ -1457,6 +1497,13 @@ function wGo(){const t=$('#wi').value,w=(t.trim().match(/\S+/g)||[]).length,l=t?
 function tDecide(p){p.innerHTML='<h4>Scegli per me</h4><textarea class="tfield" id="di" style="min-height:90px" placeholder="Una opzione per riga, o separate da virgola"></textarea><div class="trow"><button class="tbtn solid" onclick="dGo()">🎯 Scegli!</button></div><div class="tout" id="do" style="text-align:center;font-size:18px">—</div>';}
 function dGo(){const o=$('#di').value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);$('#do').textContent=o.length?'👉 '+o[Math.floor(Math.random()*o.length)]:'Aggiungi opzioni';}
 
+function tCheck(p){p.innerHTML='<h4>Lista / Spesa</h4><div style="display:flex;gap:6px"><input class="tfield" id="cki" style="margin-top:0" placeholder="Aggiungi voce..." onkeydown="if(event.key===\'Enter\')ckAdd()"><button class="tbtn solid" style="flex:0 0 auto;min-width:60px;margin-top:0" onclick="ckAdd()">+</button></div><div id="ckl" style="margin-top:8px"></div><div class="trow"><button class="tbtn" onclick="ckClr()">Rimuovi completati</button></div>';ckRen();}
+function ckGet(){try{return JSON.parse(localStorage.getItem('maik_srv_check')||'[]');}catch(e){return[];}}
+function ckSet(a){localStorage.setItem('maik_srv_check',JSON.stringify(a));}
+function ckRen(){const l=$('#ckl');if(!l)return;const a=ckGet();l.innerHTML=a.length?'':'<div class="note">Lista vuota</div>';a.forEach((it,i)=>{const d=elx('<div class="nitem"><label style="display:flex;gap:8px;align-items:center;flex:1;'+(it.done?'opacity:.5;text-decoration:line-through':'')+'"><input type="checkbox" '+(it.done?'checked':'')+' style="accent-color:var(--cyan)"><span>'+esc(it.text)+'</span></label><button class="nx">✕</button></div>');d.querySelector('input').onchange=()=>{const x=ckGet();x[i].done=!x[i].done;ckSet(x);ckRen();};d.querySelector('.nx').onclick=()=>{const x=ckGet();x.splice(i,1);ckSet(x);ckRen();};l.appendChild(d);});}
+function ckAdd(){const v=$('#cki').value.trim();if(!v)return;const a=ckGet();a.push({text:v,done:false});ckSet(a);$('#cki').value='';ckRen();}
+function ckClr(){ckSet(ckGet().filter(x=>!x.done));ckRen();}
+
 function beep(n){try{const c=new (window.AudioContext||window.webkitAudioContext)();for(let i=0;i<(n||1);i++){const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;o.type='sine';const t=c.currentTime+i*.25;g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.3,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2);}}catch(e){}}
 
 // ---------- INIT ----------
@@ -1505,10 +1552,14 @@ def main():
 
     print("""
   ── MODELLI CONSIGLIATI ──────────────────────────────────────
-   PC potente (>=16GB RAM / GPU):  chat  qwen2.5:14b  ·  visione  llama3.2-vision
+   PC potente (>=16GB RAM / GPU):  chat  qwen2.5:14b  ·  visione  llava:13b
    PC medio   (~8-12GB):           chat  llama3.1     ·  visione  llava
    PC leggero (<=8GB):             chat  llama3.2:3b  ·  visione  moondream
    Installa:  ollama pull <nome>   ·   imposta con MAIK_MODELLO / MAIK_MODELLO_VISIONE
+
+   ⚠  llama3.2-vision dà 'unknown model architecture: mllama' su Ollama vecchi.
+      Per la webcam usa  llava  (va ovunque):   ollama pull llava
+      Per llama3.2-vision serve Ollama >= 0.4 (aggiorna da ollama.com/download).
   ─────────────────────────────────────────────────────────────""")
 
     url = f"http://{CONFIG['host']}:{CONFIG['porta']}"

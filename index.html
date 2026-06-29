@@ -760,6 +760,7 @@ function loadState() {
       s.reminders = s.reminders || [];
       s.conversation = s.conversation || [];
       s.notes = s.notes || [];
+      s.checklist = s.checklist || [];
       s.meta = Object.assign({ startDay: Date.now(), exchangeCount: 0, totalTokens: 0 }, s.meta || {});
       return s;
     }
@@ -774,6 +775,7 @@ function loadState() {
     reminders: [],
     conversation: [],
     notes: [],
+    checklist: [],
     meta: { startDay: parseInt(localStorage.getItem('maik_startday')) || Date.now(), exchangeCount: 0, totalTokens: 0 }
   };
   return migrated;
@@ -1035,40 +1037,79 @@ function stopCamera() {
 }
 function toggleCamera(){ if(cameraActive){ stopCamera(); toast('📷 Telecamera disattivata'); } else startCamera(); }
 
-// 👁️ MAIK guarda davvero: cattura un frame e lo manda a un modello multimodale
+// Cattura un fotogramma dalla webcam (base64, senza prefisso data:)
+function snapFrame(){
+  const v = document.getElementById('camera-big-video');
+  if (!v || v.readyState<2) return null;
+  const c = document.createElement('canvas'); c.width = v.videoWidth||320; c.height = v.videoHeight||240;
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.7).split(',')[1];
+}
+
+// Chiede a Ollama di descrivere l'immagine, provando più modelli visione in cascata
+// (utile se uno non è installato o se Ollama è vecchio per 'mllama'/llama3.2-vision).
+async function visionDescribe(img, prompt){
+  const cands = [...new Set([state.settings.visionModel,'llava','moondream','llama3.2-vision'].filter(Boolean))];
+  let lastErr = '';
+  for (const mdl of cands){
+    let resp;
+    try {
+      resp = await fetch(`${state.settings.ollamaUrl}/api/chat`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ model: mdl, stream:false, messages:[{ role:'user', content: prompt, images:[img] }] })
+      });
+    } catch(e){ const err=new Error('offline'); err.offline=true; throw err; }   // rete giù: inutile insistere
+    if (resp.ok){
+      const data = await resp.json();
+      if (mdl !== state.settings.visionModel){ state.settings.visionModel = mdl; save(); }  // ricorda quello buono
+      return (data.message?.content || '').trim();
+    }
+    lastErr = await resp.text().catch(()=> 'HTTP '+resp.status);
+    if (/not found|architecture|mllama/i.test(lastErr)) continue;   // prova il prossimo modello
+    break;
+  }
+  const err = new Error(lastErr || 'errore visione');
+  err.arch = /mllama|architecture/i.test(lastErr);
+  throw err;
+}
+
+const VISION_PROMPT = 'Guardi attraverso una webcam la persona con cui chiacchieri. Descrivi in modo amichevole e naturale cosa vedi (la persona, l\'espressione, l\'ambiente), in italiano, in 1-2 frasi, come farebbe un amico. Niente elenchi.';
+let visionBroken = false;
+
+// 👁️ MAIK guarda davvero (azione manuale dal pulsante)
 async function guardaCam(){
   if (generating) return;
   if (!cameraActive){ try{ await startCamera(); }catch{ return; } await new Promise(r=>setTimeout(r,900)); }
-  const v = document.getElementById('camera-big-video');
-  if (!v || v.readyState<2){ toast('Webcam non pronta, riprova','error'); return; }
-  const c = document.createElement('canvas'); c.width = v.videoWidth||320; c.height = v.videoHeight||240;
-  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-  const img = c.toDataURL('image/jpeg', 0.7).split(',')[1];
-
+  const img = snapFrame();
+  if (!img){ toast('Webcam non pronta, riprova','error'); return; }
   if (!ollamaOnline){ await checkOllama(); if(!ollamaOnline){ toast('Ollama offline — avvia il servizio','error'); return; } }
 
   const typing = addMessage('maik','',{typing:true});
   typing.querySelector('.msg-bubble').innerHTML = '👁️ <span class="stream-cursor"></span>';
   generating = true; sphereState = 'thinking';
-  const vm = state.settings.visionModel || 'llama3.2-vision';
   try {
-    const resp = await fetch(`${state.settings.ollamaUrl}/api/chat`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model: vm, stream:false, messages:[{ role:'user',
-        content:'Guardi attraverso una webcam la persona con cui chiacchieri. Descrivi in modo amichevole e naturale cosa vedi (la persona, l\'espressione, l\'ambiente), in italiano, in 1-2 frasi, come farebbe un amico. Niente elenchi.',
-        images:[img] }] })
-    });
-    if (!resp.ok) throw new Error('HTTP '+resp.status);
-    const data = await resp.json();
-    const txt = (data.message?.content || '').trim();
+    const txt = await visionDescribe(img, VISION_PROMPT);
     typing.remove();
     finishReply('👁️ ' + (txt || 'non riesco a descrivere bene cosa vedo'));
   } catch(err) {
     typing.remove();
-    addMessage('maik', `👁️ Non riesco a vedere. Installa un modello visione con \`ollama pull ${vm}\` e impostalo in ⚙ Impostazioni.`);
+    if (err.offline){ addMessage('maik','👁️ Ollama non risponde, riprova quando è acceso.'); }
+    else if (err.arch){ addMessage('maik','👁️ Il tuo **Ollama è troppo vecchio** per `llama3.2-vision` (errore *mllama*).\n\nSoluzione veloce: nel terminale fai **`ollama pull llava`** — funziona ovunque. (Oppure aggiorna Ollama da ollama.com/download.)'); visionBroken=true; }
+    else { addMessage('maik','👁️ Non riesco a vedere: installa un modello visione con **`ollama pull llava`** e impostalo in ⚙ Impostazioni.'); visionBroken=true; }
     sphereState='idle';
-    toast('Modello visione non disponibile','error');
   }
+  generating = false;
+}
+
+// Occhiata automatica in Modalità Amico: ogni tanto MAIK guarda e commenta da solo
+async function autoGlance(){
+  if (generating || speaking || !cameraActive || visionBroken || !ollamaOnline) return;
+  const img = snapFrame(); if (!img) return;
+  generating = true; sphereState='thinking';
+  try {
+    const txt = await visionDescribe(img, VISION_PROMPT + ' Commenta con calore, come se notassi qualcosa di te.');
+    if (txt){ addMessage('maik','👁️ '+txt); state.conversation.push({role:'maik',content:'👁️ '+txt,ts:Date.now()}); save(); maybeSpeak(txt); }
+  } catch(err){ if(err.arch||!err.offline) visionBroken=true; }   // se rotto, non riprovare in automatico
   generating = false;
 }
 
@@ -1884,7 +1925,9 @@ function startProactive(){
     if (!friendMode || generating || speaking || recognizing) return;
     if (document.getElementById('tools-modal').classList.contains('open')) return;
     if (Date.now() - lastUserActivity >= nextProactiveGap){
-      sayProactive();
+      // ogni tanto MAIK ti guarda e commenta; altrimenti avvia lui una frase
+      if (cameraActive && !visionBroken && ollamaOnline && Math.random() < 0.35) autoGlance();
+      else sayProactive();
       lastUserActivity = Date.now();
       nextProactiveGap = 70000 + Math.random()*80000;   // 70–150s, così non è invadente
     }
@@ -1951,6 +1994,7 @@ const TOOLS = [
   { id:'summ',   ic:'📋', nm:'Riassumi',     fn:toolSummarize },
   { id:'count',  ic:'🔢', nm:'Conta testo',  fn:toolWordCount },
   { id:'dadi',   ic:'🎯', nm:'Scegli per me',fn:toolDecide },
+  { id:'check',  ic:'✅', nm:'Lista/Spesa',  fn:toolChecklist },
 ];
 
 let _toolTickers = [];   // funzioni da richiamare ogni secondo (orologi, timer)
@@ -2125,6 +2169,37 @@ function decGo(){
   const opts=raw.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);
   document.getElementById('dec-out').textContent = opts.length ? '👉 '+opts[Math.floor(Math.random()*opts.length)] : 'Aggiungi qualche opzione';
 }
+
+// ---- ✅ Lista / Spesa (persistente) ----
+function toolChecklist(panel){
+  panel.innerHTML = `
+    <h4>Lista / Spesa</h4>
+    <div class="search-row">
+      <input class="tool-field" id="chk-in" style="margin-top:0" placeholder="Aggiungi una voce..." onkeydown="if(event.key==='Enter')chkAdd()">
+      <button class="tool-btn solid" style="flex:0 0 auto;min-width:70px" onclick="chkAdd()">+ </button>
+    </div>
+    <div id="chk-list" style="margin-top:8px"></div>
+    <div class="tool-btn-row"><button class="tool-btn" onclick="chkClearDone()">Rimuovi completati</button></div>`;
+  renderChecklist();
+}
+function renderChecklist(){
+  const list=document.getElementById('chk-list'); if(!list) return;
+  const items=state.checklist||[];
+  if (!items.length){ list.innerHTML='<div class="empty-state">Lista vuota</div>'; return; }
+  list.innerHTML='';
+  items.forEach((it,i)=>{
+    const d=document.createElement('div'); d.className='reminder-card'+(it.done?' done':'');
+    d.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex:1">
+        <input type="checkbox" ${it.done?'checked':''} onchange="chkToggle(${i})" style="accent-color:var(--accent)">
+        <span class="reminder-text">${escapeHtml(it.text)}</span></div>
+      <button class="mini-x" onclick="chkDel(${i})">✕</button>`;
+    list.appendChild(d);
+  });
+}
+function chkAdd(){ const v=document.getElementById('chk-in').value.trim(); if(!v) return; state.checklist=state.checklist||[]; state.checklist.push({text:v,done:false}); document.getElementById('chk-in').value=''; save(); renderChecklist(); }
+function chkToggle(i){ state.checklist[i].done=!state.checklist[i].done; save(); renderChecklist(); }
+function chkDel(i){ state.checklist.splice(i,1); save(); renderChecklist(); }
+function chkClearDone(){ state.checklist=(state.checklist||[]).filter(x=>!x.done); save(); renderChecklist(); }
 
 // ---- 🔄 Convertitore ----
 const CONV = {

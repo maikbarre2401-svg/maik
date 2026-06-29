@@ -472,6 +472,7 @@
   </div>
   <div style="display:flex;gap:6px">
     <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla">🫂 AMICO</button>
+    <button class="topbar-btn" onclick="guardaCam()" title="MAIK guarda dalla webcam">👁️</button>
     <button class="topbar-btn" onclick="openTools()" title="Strumenti">🧰</button>
     <button class="topbar-btn" id="cam-toggle-btn" onclick="toggleCamera()">📷</button>
     <button class="topbar-btn" onclick="openSettings()" title="Impostazioni">⚙</button>
@@ -656,6 +657,10 @@
         </div>
       </div>
       <div class="field">
+        <label>Modello visione 👁️ (webcam)</label>
+        <input type="text" id="set-vision" placeholder="es. llama3.2-vision / llava / moondream">
+      </div>
+      <div class="field">
         <label>Personalità / Persona</label>
         <textarea id="set-persona" placeholder="Descrivi come deve comportarsi Maik..."></textarea>
       </div>
@@ -715,6 +720,7 @@
 const DEFAULTS = {
   ollamaUrl: 'http://localhost:11434',
   model: '',
+  visionModel: 'llama3.2-vision',   // modello multimodale per la webcam (👁️ Guarda)
   persona: "Sei MAIK (Multi-modal Autonomous Intelligence Kernel), un assistente AI personale empatico, curioso e leale. Parli sempre in italiano, in modo naturale e caldo. Sei conciso ma completo.",
   temperature: 0.8,
   tts: true,
@@ -1028,6 +1034,43 @@ function stopCamera() {
   sphereState='idle';
 }
 function toggleCamera(){ if(cameraActive){ stopCamera(); toast('📷 Telecamera disattivata'); } else startCamera(); }
+
+// 👁️ MAIK guarda davvero: cattura un frame e lo manda a un modello multimodale
+async function guardaCam(){
+  if (generating) return;
+  if (!cameraActive){ try{ await startCamera(); }catch{ return; } await new Promise(r=>setTimeout(r,900)); }
+  const v = document.getElementById('camera-big-video');
+  if (!v || v.readyState<2){ toast('Webcam non pronta, riprova','error'); return; }
+  const c = document.createElement('canvas'); c.width = v.videoWidth||320; c.height = v.videoHeight||240;
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+  const img = c.toDataURL('image/jpeg', 0.7).split(',')[1];
+
+  if (!ollamaOnline){ await checkOllama(); if(!ollamaOnline){ toast('Ollama offline — avvia il servizio','error'); return; } }
+
+  const typing = addMessage('maik','',{typing:true});
+  typing.querySelector('.msg-bubble').innerHTML = '👁️ <span class="stream-cursor"></span>';
+  generating = true; sphereState = 'thinking';
+  const vm = state.settings.visionModel || 'llama3.2-vision';
+  try {
+    const resp = await fetch(`${state.settings.ollamaUrl}/api/chat`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model: vm, stream:false, messages:[{ role:'user',
+        content:'Guardi attraverso una webcam la persona con cui chiacchieri. Descrivi in modo amichevole e naturale cosa vedi (la persona, l\'espressione, l\'ambiente), in italiano, in 1-2 frasi, come farebbe un amico. Niente elenchi.',
+        images:[img] }] })
+    });
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    const txt = (data.message?.content || '').trim();
+    typing.remove();
+    finishReply('👁️ ' + (txt || 'non riesco a descrivere bene cosa vedo'));
+  } catch(err) {
+    typing.remove();
+    addMessage('maik', `👁️ Non riesco a vedere. Installa un modello visione con \`ollama pull ${vm}\` e impostalo in ⚙ Impostazioni.`);
+    sphereState='idle';
+    toast('Modello visione non disponibile','error');
+  }
+  generating = false;
+}
 
 // presenza reale: FaceDetector nativo se c'è, altrimenti rilevamento movimento
 // (differenza tra frame) — reagisce a te che ci sei davvero, non a caso.
@@ -1676,6 +1719,7 @@ function renderAll(){ renderProfile(); renderPeople(); renderGoals(); renderRemi
 function openSettings(){
   const s=state.settings;
   document.getElementById('set-url').value=s.ollamaUrl;
+  document.getElementById('set-vision').value=s.visionModel||'';
   document.getElementById('set-persona').value=s.persona;
   document.getElementById('set-temp').value=s.temperature;
   document.getElementById('temp-val').textContent=s.temperature;
@@ -1713,6 +1757,7 @@ function saveSettings(){
   const s=state.settings;
   s.ollamaUrl=document.getElementById('set-url').value.trim()||DEFAULTS.ollamaUrl;
   s.model=document.getElementById('set-model').value;
+  s.visionModel=document.getElementById('set-vision').value.trim()||DEFAULTS.visionModel;
   s.persona=document.getElementById('set-persona').value.trim()||DEFAULTS.persona;
   s.temperature=parseFloat(document.getElementById('set-temp').value);
   s.tts=document.getElementById('set-tts').checked;

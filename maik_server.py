@@ -50,6 +50,7 @@ _OLLAMA_BASE = _env("MAIK_OLLAMA", "http://localhost:11434").rstrip("/")
 CONFIG = {
     "nome_ai":  _env("MAIK_NOME", "Maik"),
     "modello":  _env("MAIK_MODELLO", "llama3.1"),
+    "modello_visione": _env("MAIK_MODELLO_VISIONE", "llama3.2-vision"),  # multimodale per la webcam
     "ollama_base": _OLLAMA_BASE,
     "ollama_url":  _OLLAMA_BASE + "/api/chat",
     "ollama_tags": _OLLAMA_BASE + "/api/tags",
@@ -573,6 +574,24 @@ class Cervello:
         except Exception as e:
             return f"__ERRORE__ {e}"
 
+    def vedi(self, img_b64, prompt=""):
+        """Manda un fotogramma della webcam a un modello multimodale e ritorna la descrizione."""
+        istr = prompt or ("Guardi attraverso una webcam la persona con cui chiacchieri. "
+                          "Descrivi in modo amichevole e naturale cosa vedi (la persona, l'espressione, "
+                          "l'ambiente), in italiano, in 1-2 frasi, come farebbe un amico. Niente elenchi.")
+        payload = json.dumps({
+            "model": CONFIG["modello_visione"],
+            "messages": [{"role": "user", "content": istr, "images": [img_b64]}],
+            "stream": False,
+        }).encode("utf-8")
+        req = urllib.request.Request(CONFIG["ollama_url"], data=payload,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=CONFIG["timeout_chat"]) as r:
+                return json.loads(r.read().decode("utf-8"))["message"]["content"].strip()
+        except Exception as e:
+            return f"__ERRORE__ {e}"
+
 
 # ════════════════════════════════════════════════════════════
 # ESTRATTORE AVANZATO — cattura fatti dalle frasi
@@ -913,6 +932,7 @@ class Handler(BaseHTTPRequestHandler):
                             "modello": CONFIG["modello"], "nome": CONFIG["nome_ai"]})
             elif base == "/config":
                 self._json({"nome": CONFIG["nome_ai"], "modello": CONFIG["modello"],
+                            "modello_visione": CONFIG["modello_visione"],
                             "modelli": MOTORE.cervello.modelli(), "carattere": CONFIG["carattere"],
                             "ollama": CONFIG["ollama_base"]})
             elif base == "/meteo":
@@ -1007,6 +1027,20 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._json({"ok": False})
 
+            elif base == "/vedi":
+                c = self._read_json_body()
+                img = c.get("immagine", "")
+                if "," in img:                       # togli il prefisso data:image/...;base64,
+                    img = img.split(",", 1)[1]
+                if not img:
+                    self._json({"ok": False, "errore": "nessuna immagine"}); return
+                testo = MOTORE.cervello.vedi(img, c.get("prompt", "").strip())
+                if testo.startswith("__ERRORE"):
+                    self._json({"ok": False, "errore": "Modello visione non raggiungibile. "
+                                "Installa un modello multimodale, es: ollama pull " + CONFIG["modello_visione"]})
+                else:
+                    self._json({"ok": True, "testo": testo})
+
             else:
                 self.send_error(404)
         except (BrokenPipeError, ConnectionResetError):
@@ -1053,11 +1087,11 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   :root{--cyan:#00f5ff;--bg:#050a0f;--bg2:#080d14;--panel:rgba(8,20,35,.92);--border:rgba(0,245,255,.18);--text:#c8e8f0;--dim:#5a7a8a;--green:#00ff88;--red:#ff3355;--purple:#a855f7;}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:var(--bg);color:var(--text);font-family:'Rajdhani',system-ui,Segoe UI,sans-serif;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-  header{display:flex;align-items:center;gap:12px;padding:0 16px;height:48px;border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0}
-  .logo{font-weight:800;letter-spacing:5px;font-family:'Orbitron',monospace}.logo span{color:var(--cyan)}
+  header{display:flex;align-items:center;gap:12px;padding:0 14px;height:48px;border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0}
+  .logo{font-weight:800;letter-spacing:5px;font-family:'Orbitron',monospace;white-space:nowrap}.logo span{color:var(--cyan)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}.dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}.dot.busy{background:var(--purple);box-shadow:0 0 8px var(--purple)}
-  .hbtn{background:transparent;border:1px solid var(--border);color:var(--cyan);padding:5px 10px;border-radius:4px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:11px}
-  .hbtn:hover{background:rgba(0,245,255,.12)}
+  .hbtn{background:transparent;border:1px solid var(--border);color:var(--cyan);padding:5px 9px;border-radius:4px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:11px;white-space:nowrap}
+  .hbtn:hover{background:rgba(0,245,255,.12)}.hbtn.on{background:rgba(0,255,136,.15);border-color:var(--green);color:var(--green)}
   #wrap{flex:1;display:flex;overflow:hidden}
   #side{width:250px;border-right:1px solid var(--border);padding:14px;overflow:auto;font-size:13px;background:var(--panel);flex-shrink:0;transition:width .25s}
   #side.hidden{width:0;padding:0;overflow:hidden}
@@ -1071,13 +1105,19 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
   #sphere-area{flex:1;position:relative;overflow:hidden;min-height:120px}
   #sphere-wrap{position:absolute;cursor:grab;user-select:none;touch-action:none}
-  #sphere-wrap:active{cursor:grabbing}
+  #fbadge{display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);align-items:center;gap:7px;background:rgba(5,10,20,.85);border:1px solid var(--green);color:var(--green);padding:4px 12px;border-radius:14px;z-index:30;font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:2px;box-shadow:0 0 16px rgba(0,255,136,.25)}
+  .fbdot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pl 1.5s infinite}@keyframes pl{0%,100%{opacity:1}50%{opacity:.4}}
+  #cambox{display:none;position:absolute;top:10px;right:10px;width:160px;aspect-ratio:4/3;border-radius:8px;overflow:hidden;border:1px solid var(--border);z-index:30;background:#000}
+  #cambox video{width:100%;height:100%;object-fit:cover}
+  #fstat{position:absolute;bottom:0;left:0;right:0;background:rgba(5,10,20,.8);padding:2px 6px;font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--dim);letter-spacing:1px}
   #msgs{height:54%;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:11px;border-top:1px solid var(--border)}
   .m{max-width:80%;padding:10px 14px;border-radius:10px;line-height:1.5;white-space:pre-wrap;word-break:break-word;animation:in .2s ease}
   @keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1}}
   .m.ai{align-self:flex-start;background:rgba(0,245,255,.07);border:1px solid rgba(0,245,255,.2);border-radius:4px 12px 12px 12px}
   .m.me{align-self:flex-end;background:rgba(0,245,255,.14);color:#fff;border-radius:12px 4px 12px 12px}
-  #bar{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--border);flex-shrink:0}
+  #bar{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--border);flex-shrink:0;align-items:center}
+  .micbtn{background:rgba(0,245,255,.06);border:1px solid var(--border);color:var(--cyan);width:42px;height:42px;border-radius:50%;font-size:15px;cursor:pointer;flex-shrink:0}
+  .micbtn.on{background:rgba(255,51,85,.15);border-color:var(--red);color:var(--red)}
   #inp{flex:1;background:rgba(0,245,255,.05);border:1px solid var(--border);border-radius:20px;padding:11px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit;min-width:0}
   #inp:focus{border-color:var(--cyan)}
   .send{background:var(--cyan);border:none;color:#050a0f;width:44px;height:44px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700;flex-shrink:0}
@@ -1087,7 +1127,6 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .quick button:hover{color:var(--cyan);border-color:var(--cyan)}
   .cursor{display:inline-block;width:7px;height:14px;background:var(--cyan);vertical-align:middle;animation:bl 1s infinite}@keyframes bl{50%{opacity:.3}}
   .note{color:var(--dim);font-size:11px;margin-top:14px;line-height:1.5}
-  /* MODAL */
   .ov{position:fixed;inset:0;background:rgba(2,6,12,.8);backdrop-filter:blur(4px);z-index:1000;display:none;align-items:center;justify-content:center;padding:16px}
   .ov.open{display:flex}
   .mod{background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:100%;max-width:470px;max-height:88vh;overflow:auto}
@@ -1114,16 +1153,17 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .nitem{background:rgba(0,245,255,.04);border-left:2px solid var(--cyan);padding:7px 9px;border-radius:0 6px 6px 0;margin-top:6px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
   .nx{background:none;border:none;color:var(--dim);cursor:pointer}.nx:hover{color:var(--red)}
   #toast{position:fixed;top:58px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:6px}
-  .tst{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cyan);padding:8px 14px;border-radius:4px;font-size:12px}
+  .tst{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cyan);padding:8px 14px;border-radius:4px;font-size:12px;max-width:280px}
   .tst.ok{border-left-color:var(--green)}.tst.err{border-left-color:var(--red)}
-  @media(max-width:760px){#side{position:absolute;top:48px;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:760px){#side{position:absolute;top:48px;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}.logo{font-size:11px;letter-spacing:3px}}
 </style></head>
 <body>
 <header>
   <div class="logo">M A I K <span>// SERVER</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span>
-  <span style="color:var(--dim)" id="meta"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
+    <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico">🫂 AMICO</button>
+    <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam">👁️</button>
     <button class="hbtn" onclick="openTools()">🧰</button>
     <button class="hbtn" onclick="toggleSide()">≡</button>
   </div>
@@ -1133,6 +1173,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   <div id="side">
     <h3>Stato</h3>
     <div class="kv"><span>Modello</span><span id="s-mod">—</span></div>
+    <div class="kv"><span>Visione</span><span id="s-vis">—</span></div>
     <div class="kv"><span>Giorni</span><span id="s-gg">—</span></div>
     <div class="kv"><span>Scambi</span><span id="s-sc">—</span></div>
     <div class="kv"><span>Utente</span><span id="s-ut">—</span></div>
@@ -1141,28 +1182,30 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <h3>Cerca nella memoria</h3>
     <input class="sfield" id="memq" placeholder="Cerca un ricordo..." oninput="cercaMem()">
     <div id="memres"></div>
-    <div class="note">Memoria salvata su disco dal server. Per la GUI 3D completa puoi mettere <b>aria.html</b> accanto a <b>maik_server.py</b>.</div>
+    <div class="note">Memoria su disco dal server. <b>🫂 AMICO</b>: MAIK ti vede e ti parla. <b>👁️</b>: MAIK guarda la webcam (serve un modello visione).</div>
   </div>
   <div id="main">
     <div id="sphere-area">
+      <div id="fbadge"><span class="fbdot"></span> MAIK · MODALITÀ AMICO</div>
+      <div id="cambox"><video id="cam" autoplay muted playsinline></video><div id="fstat">webcam</div></div>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
     </div>
     <div id="msgs"></div>
     <div class="quick">
       <button onclick="q('Ciao!')">ciao</button>
+      <button onclick="guarda()">👁️ guardami</button>
       <button onclick="q('Cosa sai di me?')">cosa sai di me</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
-      <button onclick="q('Ti insegno che ')">ti insegno che…</button>
       <button onclick="q('Voglio ')">voglio…</button>
     </div>
     <div id="bar">
+      <button class="micbtn" id="mic" onclick="toggleMic()" title="Voce">🎤</button>
       <input id="inp" placeholder="Scrivi a Maik…" onkeydown="if(event.key==='Enter')invia()">
       <button class="send" id="send" onclick="invia()">➤</button>
     </div>
   </div>
 </div>
 
-<!-- TOOLS MODAL -->
 <div class="ov" id="tmodal">
   <div class="mod">
     <div class="modh">
@@ -1178,11 +1221,11 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 
 <script>
 const $=s=>document.querySelector(s);
-const SRV='';   // stessa origine del server
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function toast(m,t){const d=document.createElement('div');d.className='tst '+(t||'');d.textContent=m;$('#toast').appendChild(d);setTimeout(()=>d.remove(),3000);}
 function q(t){$('#inp').value=t;$('#inp').focus();}
 function toggleSide(){$('#side').classList.toggle('hidden');}
+let pName='';
 
 // ---------- STATO / PROFILO / MEMORIA ----------
 async function stato(){
@@ -1190,9 +1233,10 @@ async function stato(){
     $('#dot').className='dot'+(s.online?' on':'');
     $('#stato').textContent=s.online?'ollama online':'ollama offline';
     $('#s-mod').textContent=s.modello;$('#s-gg').textContent=s.giorni;$('#s-sc').textContent=s.scambi;$('#s-ut').textContent=s.nome_utente||'—';
-    $('#meta').textContent='· '+(s.nome_utente?s.nome_utente+' · ':'')+s.giorni+'gg · '+s.scambi+' scambi';
+    pName=s.nome_utente||'';
   }catch(e){$('#stato').textContent='server non raggiungibile';}
 }
+async function cfg(){try{const c=await (await fetch('/config')).json();$('#s-vis').textContent=c.modello_visione||'—';}catch(e){}}
 async function profilo(){
   try{const s=await (await fetch('/statistiche')).json();const p=s.profilo||{};const k=Object.keys(p);
     $('#profilo').innerHTML=k.length?k.map(x=>`<div class="kv"><span>${esc(x)}</span><span>${esc(String(p[x]))}</span></div>`).join(''):'nessun dato ancora';
@@ -1202,8 +1246,8 @@ let memT;
 function cercaMem(){clearTimeout(memT);memT=setTimeout(async()=>{
   const v=$('#memq').value.trim();const box=$('#memres');
   if(!v){box.innerHTML='';return;}
-  try{const r=await (await fetch('/cerca?q='+encodeURIComponent(v))).json();const hits=r.risultati||[];
-    box.innerHTML=hits.length?hits.slice(0,8).map(h=>`<div class="memhit">${esc(JSON.stringify(h).slice(0,90))}</div>`).join(''):'<div class="note">Nessun ricordo</div>';
+  try{const r=await (await fetch('/cerca?q='+encodeURIComponent(v))).json();const h=r.risultati||[];
+    box.innerHTML=h.length?h.slice(0,8).map(x=>`<div class="memhit">${esc(JSON.stringify(x).slice(0,90))}</div>`).join(''):'<div class="note">Nessun ricordo</div>';
   }catch(e){}
 },250);}
 
@@ -1212,7 +1256,7 @@ function add(role,txt){const d=document.createElement('div');d.className='m '+ro
 let busy=false;
 async function invia(){
   const t=$('#inp').value.trim();if(!t||busy)return;
-  $('#inp').value='';$('#send').disabled=true;busy=true;
+  $('#inp').value='';$('#send').disabled=true;busy=true;lastAct=Date.now();
   add('me',t);
   SPH.state='thinking';$('#dot').className='dot busy';
   const bubble=add('ai','');bubble.innerHTML='<span class="cursor"></span>';
@@ -1231,13 +1275,14 @@ async function invia(){
         if(obj.done){
           if(obj.comando){bubble.textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){bubble.textContent=obj.risposta||'Errore.';}
-          else{bubble.textContent=full;if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');}
+          else{bubble.textContent=full;if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');say(full);}
           stato();profilo();
         }
       }
     }
   }catch(e){bubble.textContent='Errore di connessione: '+e.message;}
-  SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;$('#inp').focus();
+  SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;
+  if(!friend)$('#inp').focus();
 }
 
 // ---------- SFERA 3D ----------
@@ -1280,6 +1325,70 @@ document.addEventListener('mouseup',()=>{if(SPH.drag){SPH.drag=false;SPH.vx=(Mat
 wrap.addEventListener('touchstart',e=>{const t=e.touches[0];SPH.drag=true;const r=wrap.getBoundingClientRect();SPH.ox=t.clientX-r.left;SPH.oy=t.clientY-r.top;},{passive:true});
 document.addEventListener('touchmove',e=>{if(!SPH.drag)return;const t=e.touches[0];const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(a.width-SPH.size,t.clientX-a.left-SPH.ox));SPH.y=Math.max(0,Math.min(a.height-SPH.size,t.clientY-a.top-SPH.oy));sphPos();},{passive:true});
 document.addEventListener('touchend',()=>{SPH.drag=false;});
+
+// ---------- WEBCAM + PRESENZA ----------
+let camOn=false,camStream=null,faceTimer=null,present=false,awaySince=Date.now();
+async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:true});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
+function stopCam(){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
+function detectPresence(){
+  let fd=null;if('FaceDetector' in window){try{fd=new FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(e){}}
+  const off=document.createElement('canvas');off.width=64;off.height=48;const oc=off.getContext('2d',{willReadFrequently:true});
+  let prev=null,lastMo=0;present=false;awaySince=Date.now();
+  faceTimer=setInterval(async()=>{
+    const v=$('#cam');if(!camOn||v.readyState<2)return;let pr=false;
+    if(fd){try{pr=(await fd.detect(v)).length>0;}catch(e){fd=null;}}
+    if(!fd){try{oc.drawImage(v,0,0,64,48);const cur=oc.getImageData(0,0,64,48).data;if(prev){let d=0;for(let i=0;i<cur.length;i+=4)d+=Math.abs(cur[i]-prev[i]);d/=(cur.length/4);if(d>7)lastMo=Date.now();}prev=cur;pr=(Date.now()-lastMo)<9000;}catch(e){}}
+    onPresence(pr);
+  },700);
+}
+function onPresence(pr){const s=$('#fstat');if(pr){if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
+
+// ---------- VISIONE (👁️ Guarda) ----------
+function snap(){const v=$('#cam');const c=document.createElement('canvas');c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.7);}
+async function guarda(){
+  if(busy)return;
+  if(!camOn){const ok=await startCam();if(!ok)return;await new Promise(r=>setTimeout(r,900));}
+  const img=snap();busy=true;SPH.state='thinking';
+  const b=add('ai','');b.innerHTML='👁️ <span class="cursor"></span>';
+  try{
+    const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:img})})).json();
+    if(r.ok){b.textContent='👁️ '+r.testo;say(r.testo);}
+    else{b.textContent='👁️ '+(r.errore||'Non riesco a vedere');}
+  }catch(e){b.textContent='Errore visione: '+e.message;}
+  SPH.state='idle';busy=false;
+}
+
+// ---------- VOCE (riconoscimento) ----------
+let reco=null,listening=false,micFatal=false;
+function initReco(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;reco=new SR();reco.lang='it-IT';reco.continuous=false;reco.interimResults=true;let fin='';
+  reco.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;}$('#inp').value=(fin+it).trim();};
+  reco.onend=()=>{listening=false;$('#mic').classList.remove('on');const val=$('#inp').value.trim();if(val)invia();else if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,700);fin='';};
+  reco.onerror=e=>{listening=false;$('#mic').classList.remove('on');if(e.error==='no-speech'){if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,500);return;}if(e.error==='aborted')return;if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){micFatal=true;toast('Microfono non disponibile — scrivi pure','err');return;}toast('Errore microfono: '+e.error,'err');};
+}
+function startReco(){if(!reco||listening||busy||speaking||micFatal)return;try{listening=true;reco.start();$('#mic').classList.add('on');}catch(e){}}
+function toggleMic(){if(!reco){toast('Voce non supportata dal browser','err');return;}if(listening){reco.stop();}else{micFatal=false;startReco();}}
+
+// ---------- TTS (voce di MAIK) ----------
+let ttsOn=false,speaking=false;
+function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=(t||'').replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
+
+// ---------- MODALITÀ AMICO ----------
+let friend=false,lastAct=Date.now(),proTimer=null,proGap=90000;
+function toggleFriend(){friend?exitFriend():enterFriend();}
+async function enterFriend(){
+  friend=true;ttsOn=true;micFatal=false;
+  $('#fbtn').classList.add('on');$('#fbtn').textContent='🫂 AMICO ON';$('#fbadge').style.display='flex';
+  await startCam();
+  if(reco){setTimeout(()=>{if(friend&&!speaking&&!busy)startReco();},1200);}else toast('Voce non supportata: potrai scrivere','err');
+  const nm=pName?' '+pName:'';
+  const hi='Ehi'+nm+'! Da ora ti tengo compagnia: ti vedo, ti ascolto e chiacchieriamo come amici. Dimmi pure 😊';
+  setTimeout(()=>{add('ai',hi);say(hi);},500);
+  lastAct=Date.now();proGap=80000;startPro();toast('🫂 Modalità Amico attiva','ok');
+}
+function exitFriend(){friend=false;clearInterval(proTimer);if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').textContent='🫂 AMICO';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
+function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
+function sayPro(){const nm=pName?' '+pName:'';const h=new Date().getHours();const pool=['Allora'+nm+', come va la giornata?','A cosa stai pensando'+nm+'?','Ti va di raccontarmi qualcosa?','Sono qui'+nm+', se vuoi parlare ci sono.','Hai fatto qualcosa di bello oggi?','Come ti senti'+nm+'?','Se potessi fare una cosa qualsiasi adesso, cosa faresti?'];if(h<11)pool.push('Buongiorno'+nm+'! Come hai dormito?');else if(h>=21)pool.push('Si è fatta sera'+nm+'… com\'è stata la giornata?');const line=pool[Math.floor(Math.random()*pool.length)];add('ai',line);say(line);}
+function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const line='Bentornato'+nm+'! Ti rivedo 😊';add('ai',line);say(line);}
 
 // ---------- STRUMENTI ----------
 const TOOLS=[
@@ -1354,8 +1463,9 @@ function beep(n){try{const c=new (window.AudioContext||window.webkitAudioContext
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTools();});
 $('#tmodal').addEventListener('click',e=>{if(e.target.id==='tmodal')closeTools();});
 window.addEventListener('resize',()=>{sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(SPH.x,a.width-SPH.size));SPH.y=Math.max(0,Math.min(SPH.y,a.height-SPH.size));sphPos();});
-sphInit();sphLoop();stato();profilo();setInterval(stato,15000);
-add('ai','Ciao! Sono Maik. La mia memoria è salvata su disco dal server. Scrivimi pure 💚');
+if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
+initReco();sphInit();sphLoop();stato();cfg();profilo();setInterval(stato,15000);
+add('ai','Ciao! Sono Maik. La mia memoria è su disco dal server. Premi 🫂 AMICO per farmi vedere e parlare, o 👁️ per farmi guardare 💚');
 </script>
 </body></html>"""
 
@@ -1384,11 +1494,22 @@ def main():
 """)
     else:
         mod = MOTORE.cervello.modelli()
-        print(f"  Ollama online  ·  modello: {CONFIG['modello']}")
+        print(f"  Ollama online  ·  chat: {CONFIG['modello']}  ·  visione: {CONFIG['modello_visione']}")
         if mod:
             print(f"  Modelli pronti: {', '.join(mod)}")
             if CONFIG["modello"] not in mod:
-                print(f"  ⚠  Attenzione: '{CONFIG['modello']}' non è tra i modelli installati.")
+                print(f"  ⚠  '{CONFIG['modello']}' non installato →  ollama pull {CONFIG['modello']}")
+            if CONFIG["modello_visione"] not in mod:
+                print(f"  ⚠  modello visione '{CONFIG['modello_visione']}' non installato "
+                      f"(serve per 👁️ Guarda) →  ollama pull {CONFIG['modello_visione']}")
+
+    print("""
+  ── MODELLI CONSIGLIATI ──────────────────────────────────────
+   PC potente (>=16GB RAM / GPU):  chat  qwen2.5:14b  ·  visione  llama3.2-vision
+   PC medio   (~8-12GB):           chat  llama3.1     ·  visione  llava
+   PC leggero (<=8GB):             chat  llama3.2:3b  ·  visione  moondream
+   Installa:  ollama pull <nome>   ·   imposta con MAIK_MODELLO / MAIK_MODELLO_VISIONE
+  ─────────────────────────────────────────────────────────────""")
 
     url = f"http://{CONFIG['host']}:{CONFIG['porta']}"
     gui = "aria.html" if os.path.exists(HTML_FILE) else "GUI integrata di riserva"
@@ -1396,12 +1517,10 @@ def main():
     print(f"  Pronto su:  {url}")
     print(f"  Premi Ctrl+C per chiudere\n")
     print(f"  Endpoint principali:")
-    print(f"    POST /chat/stream   — chat in streaming (token-per-token)  [NUOVO]")
-    print(f"    POST /chat          — chat classica (risposta completa)")
-    print(f"    GET  /salute        — stato rapido del server             [NUOVO]")
-    print(f"    GET  /config        — config corrente + modelli           [NUOVO]")
-    print(f"    GET  /timeline      — storico eventi memorizzati")
-    print(f"    GET  /cerca?q=testo — ricerca in tutta la memoria")
+    print(f"    POST /chat/stream   — chat in streaming (token-per-token)")
+    print(f"    POST /vedi          — visione: descrive un frame webcam     [NUOVO]")
+    print(f"    GET  /salute /config — stato e configurazione del server")
+    print(f"    GET  /timeline /cerca?q=testo — memoria")
     print(f"    POST /episodio /obiettivo /relazione /reset /importa\n")
 
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()

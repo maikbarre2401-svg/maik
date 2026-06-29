@@ -11,6 +11,27 @@ Due modi di usare MAIK, scegli quello che preferisci:
 
 Entrambi parlano con un modello locale tramite **Ollama** e rispondono in **streaming**.
 
+## Quali modelli Ollama usare
+
+MAIK usa due modelli: uno per **chattare/ragionare** e uno **multimodale per la webcam** (👁️ Guarda). Scegli in base al tuo PC:
+
+| Il tuo PC | Chat / ragionamento | Visione (webcam) |
+|---|---|---|
+| 💪 Potente (≥16 GB RAM o GPU) | `qwen2.5:14b` (o `llama3.1:8b`) | `llama3.2-vision` |
+| ⚖️ Medio (8–12 GB) | `llama3.1` | `llava` |
+| 🪶 Leggero (≤8 GB) | `llama3.2:3b` | `moondream` |
+
+```bash
+ollama pull llama3.1           # chat
+ollama pull llama3.2-vision    # visione (per far "vedere" MAIK)
+```
+
+- Nel **client** (`index.html`): scegli il modello chat in **⚙ Impostazioni**; per la visione usa lo stesso campo o un modello multimodale installato.
+- Nel **server** (`maik_server.py`): imposta con le variabili d'ambiente
+  `MAIK_MODELLO` (chat) e `MAIK_MODELLO_VISIONE` (webcam). All'avvio il server stampa i modelli consigliati e avvisa se mancano.
+
+> Suggerimento: `llama3.2-vision` è il miglior compromesso per la webcam; `moondream` è piccolo e veloce per PC deboli; modelli più grandi (es. `llama3.2-vision:90b`) solo con molta VRAM.
+
 ---
 
 ## MAIK // CORE V7.0 — `index.html`
@@ -85,7 +106,9 @@ ollama pull llama3.1      # una volta
 python maik_server.py     # si apre da solo nel browser su :8137
 ```
 
-Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **stessa sfera 3D animata + chat in streaming + pannello 🧰 strumenti** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
+Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **sfera 3D animata + chat in streaming + pannello 🧰 strumenti + 🫂 Modalità Amico + 👁️ visione webcam** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
+
+Anche il server ha la **🫂 Modalità Amico** (ti vede, ti ascolta e ti parla) e il pulsante **👁️ Guarda**: cattura un fotogramma dalla webcam e lo manda al modello multimodale (`MAIK_MODELLO_VISIONE`) tramite il nuovo endpoint `POST /vedi`, e MAIK descrive cosa vede.
 
 ### Novità V6.0 rispetto a v5.0
 

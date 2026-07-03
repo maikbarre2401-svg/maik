@@ -58,3 +58,23 @@ Consiglio: ritaglia le schermate togliendo la barra di ricerca e i pannelli di G
 ## Come aprirlo
 
 Doppio click su `New_Kokus.dc.html` (serve internet la prima volta per i caratteri e la libreria grafica).
+
+## Come metterlo ONLINE (gratis, 2 minuti) 🌐
+
+Il modo più facile è **Netlify Drop** — non serve saper programmare:
+
+1. Vai su **https://app.netlify.com/drop**
+2. **Trascina l'intera cartella `new-kokus`** dentro la pagina
+3. Fine! Ti dà subito un indirizzo tipo `https://nome-a-caso.netlify.app` da condividere su WhatsApp e Instagram
+4. (Facoltativo) Registrandoti gratis puoi cambiare il nome, es. `newkokus.netlify.app`, o collegare un dominio tuo tipo `newkokus.it`
+
+Alternative che funzionano uguale: **Vercel** (vercel.com), **GitHub Pages**, o qualsiasi hosting — basta caricare la cartella così com'è (c'è già `index.html` che fa da porta d'ingresso).
+
+⚠️ Prima di pubblicare ricordati di mettere le **foto vere** in `assets/` (vedi le tabelle sopra), così il sito esce già bello pronto.
+
+## SEO già incluso ✅
+
+- Titolo e descrizione per Google
+- Anteprima social (Open Graph): quando condividi il link su WhatsApp/Facebook esce foto + titolo
+- Scheda ristorante (dati strutturati schema.org) con indirizzi, telefono e orari dei due locali
+- Favicon 🌴

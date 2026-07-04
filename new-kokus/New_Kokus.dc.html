@@ -75,10 +75,17 @@
   .rv.rv-in{opacity:1;transform:perspective(900px) translateY(0) rotateX(0deg);}
   .rv-d1{transition-delay:.12s}.rv-d2{transition-delay:.24s}.rv-d3{transition-delay:.36s}
   #arrivo{--arrx:56px;}
+  .scene-paused *{animation-play-state:paused!important;}
   @media (max-width:640px){
     .leaf-l{transform:scale(.5);transform-origin:top left;}
     .leaf-r{transform:scale(.5);transform-origin:top right;}
     #arrivo{--arrx:10px;}
+  }
+  @media (max-width:860px),(pointer:coarse){
+    .arr-sway{animation:none!important;}
+    .arr-cap{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:rgba(20,4,14,.88)!important;}
+    .neon-sign{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;}
+    .hero-glow{animation:none!important;opacity:.6!important;}
   }
   @media (prefers-reduced-motion:reduce){
     *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
@@ -116,13 +123,13 @@
     <div style="position:absolute;inset:0;transform-style:preserve-3d;animation:dolly 5s cubic-bezier(.22,.61,.36,1) .15s both;">
       <div style="position:absolute;inset:0;transform-style:preserve-3d;animation:sway 16s ease-in-out 5.4s infinite;">
 
-        <div style="position:absolute;left:50%;top:48%;width:900px;height:900px;transform:translate(-50%,-50%) translateZ(-1980px);background:radial-gradient(circle,rgba(255,196,110,.55),rgba(255,120,80,.12) 45%,transparent 70%);filter:blur(6px);animation:glow 5s ease-in-out 1s infinite;"></div>
+        <div class="hero-glow" style="position:absolute;left:50%;top:48%;width:900px;height:900px;transform:translate(-50%,-50%) translateZ(-1980px);background:radial-gradient(circle,rgba(255,196,110,.55),rgba(255,120,80,.12) 45%,transparent 70%);filter:blur(6px);animation:glow 5s ease-in-out 1s infinite;"></div>
 
         <div style="position:absolute;left:50%;top:29%;width:1150px;height:60px;transform:translate(-50%,-50%) translateZ(-2050px);background-image:radial-gradient(circle,#ffe6a0 2px,transparent 3px);background-size:42px 100%;border-radius:0 0 50% 50%;filter:drop-shadow(0 0 5px #ffcf7a);"></div>
         <div style="position:absolute;left:50%;top:24%;width:1150px;height:60px;transform:translate(-50%,-50%) translateZ(-1560px);background-image:radial-gradient(circle,#ffe6a0 2px,transparent 3px);background-size:46px 100%;border-radius:0 0 50% 50%;filter:drop-shadow(0 0 5px #ffcf7a);"></div>
         <div style="position:absolute;left:50%;top:21%;width:1300px;height:60px;transform:translate(-50%,-50%) translateZ(-1150px);background-image:radial-gradient(circle,#ffe6a0 2px,transparent 3px);background-size:52px 100%;border-radius:0 0 50% 50%;filter:drop-shadow(0 0 5px #ffcf7a);"></div>
 
-        <div style="position:absolute;left:50%;top:7%;transform:translate(-50%,-50%) translateZ(-1600px);padding:16px 44px;border-radius:20px;border:3px solid rgba(255,110,180,.85);background:rgba(24,5,18,.6);box-shadow:0 0 48px rgba(229,25,127,.55),inset 0 0 34px rgba(229,25,127,.3);text-align:center;animation:flicker 6s linear 5.2s infinite;">
+        <div class="neon-sign" style="position:absolute;left:50%;top:7%;transform:translate(-50%,-50%) translateZ(-1600px);padding:16px 44px;border-radius:20px;border:3px solid rgba(255,110,180,.85);background:rgba(24,5,18,.6);box-shadow:0 0 48px rgba(229,25,127,.55),inset 0 0 34px rgba(229,25,127,.3);text-align:center;animation:flicker 6s linear 5.2s infinite;">
           <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:76px;letter-spacing:6px;color:#ffe3f1;line-height:1;text-shadow:0 0 10px #ff5fae,0 0 30px #e5197f,0 0 66px #e5197f;white-space:nowrap;">NEW KOKUS</div>
           <div style="font-family:'Caveat',cursive;font-weight:700;font-size:32px;color:#ffe6a0;text-shadow:0 0 16px rgba(255,206,90,.85);margin-top:4px;">sabor latino · Roma</div>
         </div>
@@ -426,7 +433,7 @@
 
     <div ref="{{ arrSceneRef }}" style="position:relative;height:min(66vh,600px);perspective:950px;perspective-origin:50% 44%;">
       <div style="{{ arrWorld }}">
-        <div style="position:absolute;inset:0;transform-style:preserve-3d;animation:arrSway 14s ease-in-out infinite alternate;">
+        <div class="arr-sway" style="position:absolute;inset:0;transform-style:preserve-3d;animation:arrSway 14s ease-in-out infinite alternate;">
 
           <sc-for list="{{ arrDeco }}" as="dz" hint-placeholder-count="8">
             <div style="{{ dz.style }}"><span style="{{ dz.inner }}"></span>{{ dz.txt }}</div>
@@ -437,7 +444,7 @@
               <div role="img" aria-label="{{ p.title }}" style="{{ p.frame }}"></div>
               <div style="display:flex;align-items:flex-start;gap:12px;margin-top:14px;text-align:left;">
                 <span style="flex:0 0 auto;width:34px;height:34px;border-radius:50%;background:linear-gradient(180deg,#f12b91,#d10f74);display:grid;place-items:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:15px;color:#fff;border:2px solid #ffd76a;box-shadow:0 6px 16px rgba(0,0,0,.4);">{{ p.num }}</span>
-                <div style="background:rgba(20,4,14,.55);border-radius:12px;padding:8px 14px;backdrop-filter:blur(4px);">
+                <div class="arr-cap" style="background:rgba(20,4,14,.55);border-radius:12px;padding:8px 14px;backdrop-filter:blur(4px);">
                   <div style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px;color:#fff;">{{ p.title }}</div>
                   <div style="font-size:13.5px;color:#e9c9d8;line-height:1.45;margin-top:2px;">{{ p.desc }}</div>
                 </div>
@@ -583,7 +590,10 @@ class Component extends DCLogic {
     this.onDocLeave = this.onDocLeave.bind(this);
     this._tiltEl = null;
     this._io = null;
+    this._sceneIo = null;
     this._arrTimer = null;
+    this._lite = typeof window !== 'undefined' && window.matchMedia &&
+      (matchMedia('(max-width: 860px)').matches || matchMedia('(pointer: coarse)').matches);
     this.flies = this.makeFlies();
     this.state = { editing: false, menu: this.loadMenu(), arrStep: 0, arrPlaying: false };
   }
@@ -623,7 +633,8 @@ class Component extends DCLogic {
   makeFlies(){
     const cols = ['#ffd76a','#9bf2b0','#ff7fb8','#ffe6a0'];
     const out = [];
-    for (let i = 0; i < 14; i++){
+    const n = this._lite ? 7 : 14;
+    for (let i = 0; i < n; i++){
       const z = -320 - ((i * 137) % 1600);
       const left = 6 + ((i * 61) % 88);
       const top = 26 + ((i * 37) % 44);
@@ -694,6 +705,13 @@ class Component extends DCLogic {
           if (en.isIntersecting){ en.target.classList.add('rv-in'); this._io.unobserve(en.target); }
         }
       }, { threshold: .12, rootMargin: '0px 0px -36px 0px' });
+      this._sceneIo = new IntersectionObserver((entries) => {
+        for (const en of entries){
+          en.target.classList.toggle('scene-paused', !en.isIntersecting);
+        }
+      }, { rootMargin: '80px 0px 80px 0px' });
+      if (this.scene.current) this._sceneIo.observe(this.scene.current);
+      if (this.arrScene.current) this._sceneIo.observe(this.arrScene.current);
     }
     this.observeReveals();
     this.onScroll();
@@ -716,6 +734,7 @@ class Component extends DCLogic {
     document.removeEventListener('mousemove', this.onTiltMove);
     document.documentElement.removeEventListener('mouseleave', this.onDocLeave);
     if (this._io) this._io.disconnect();
+    if (this._sceneIo) this._sceneIo.disconnect();
     if (this._arrTimer) clearInterval(this._arrTimer);
   }
   book = (e) => {
@@ -818,7 +837,8 @@ class Component extends DCLogic {
     const arrWorld = {
       position:'absolute', inset:'0', transformStyle:'preserve-3d',
       transform:'translateZ(' + (arrStep * ARR_STEP_Z) + 'px)',
-      transition:'transform 1.15s cubic-bezier(.22,.61,.36,1)'
+      transition:'transform 1.15s cubic-bezier(.22,.61,.36,1)',
+      willChange:'transform'
     };
     const arrPanels = arrData.map((s, i) => {
       const rel = i - arrStep;
@@ -837,8 +857,10 @@ class Component extends DCLogic {
           backgroundImage:'url(' + s.img + ')',
           backgroundSize:'cover', backgroundPosition:'center',
           border: isLast ? '5px solid #ffd76a' : '5px solid #fff',
-          boxShadow: isLast ? '0 0 60px rgba(229,25,127,.7), 0 30px 70px rgba(0,0,0,.55)' : '0 30px 70px rgba(0,0,0,.55)',
-          animation:'arrFloat ' + (4 + (i % 3)) + 's ease-in-out ' + ((i * 0.45) % 2).toFixed(2) + 's infinite'
+          boxShadow: this._lite
+            ? (isLast ? '0 0 34px rgba(229,25,127,.6), 0 12px 26px rgba(0,0,0,.5)' : '0 12px 26px rgba(0,0,0,.5)')
+            : (isLast ? '0 0 60px rgba(229,25,127,.7), 0 30px 70px rgba(0,0,0,.55)' : '0 30px 70px rgba(0,0,0,.55)'),
+          animation: this._lite ? 'none' : 'arrFloat ' + (4 + (i % 3)) + 's ease-in-out ' + ((i * 0.45) % 2).toFixed(2) + 's infinite'
         }
       };
     });
@@ -848,9 +870,15 @@ class Component extends DCLogic {
       ['rgba(255,215,106,.5)','rgba(244,168,44,.3)'],
       ['rgba(155,242,176,.45)','rgba(26,162,79,.3)']
     ];
+    const lite = this._lite;
     for (let i = 0; i < arrData.length; i++){
       const rc = ringCols[i % 3];
-      arrDeco.push({ txt:'', inner:{ display:'none' }, style:{
+      arrDeco.push({ txt:'', inner:{ display:'none' }, style: lite ? {
+        position:'absolute', left:'50%', top:'44%', width:'760px', height:'480px',
+        transform:'translate(-50%,-50%) translateZ(' + (-(i * ARR_STEP_Z) - 390) + 'px)',
+        borderRadius:'50%', border:'2px solid ' + rc[0],
+        pointerEvents:'none'
+      } : {
         position:'absolute', left:'50%', top:'44%', width:'920px', height:'580px',
         transform:'translate(-50%,-50%) translateZ(' + (-(i * ARR_STEP_Z) - 390) + 'px)',
         borderRadius:'50%', border:'2.5px solid ' + rc[0],
@@ -860,7 +888,8 @@ class Component extends DCLogic {
       }});
     }
     const orbCols = ['#ffd76a','#9bf2b0','#ff7fb8','#ffe6a0'];
-    for (let i = 0; i < 26; i++){
+    const nOrbs = lite ? 8 : 26;
+    for (let i = 0; i < nOrbs; i++){
       const c = orbCols[i % 4];
       const s2 = 4 + (i % 5);
       arrDeco.push({ txt:'', style:{
@@ -869,15 +898,17 @@ class Component extends DCLogic {
       }, inner:{
         display:'block', width: s2 + 'px', height: s2 + 'px', borderRadius:'50%',
         background: c, boxShadow:'0 0 ' + (s2 * 3.5) + 'px ' + c,
-        animation:'fly ' + (5 + (i % 6)) + 's ease-in-out ' + ((i * 0.6) % 4).toFixed(1) + 's infinite'
+        animation: lite ? 'none' : 'fly ' + (5 + (i % 6)) + 's ease-in-out ' + ((i * 0.6) % 4).toFixed(1) + 's infinite'
       }});
     }
-    for (let i = 0; i < 6; i++){
+    const nPalms = lite ? 2 : 6;
+    for (let i = 0; i < nPalms; i++){
       arrDeco.push({ txt:'🌴', inner:{ display:'none' }, style:{
         position:'absolute', left: (i % 2 ? 82 + (i * 2) : 4 + (i * 2)) + '%', top: (56 + (i * 5) % 20) + '%',
         transform:'translateZ(' + (-420 - i * 1050) + 'px)' + (i % 2 ? ' scaleX(-1)' : ''),
         fontSize: (56 + (i * 13) % 52) + 'px', lineHeight:'1',
-        filter:'drop-shadow(0 0 20px rgba(26,162,79,.55))', opacity:'.95', pointerEvents:'none'
+        filter: lite ? 'none' : 'drop-shadow(0 0 20px rgba(26,162,79,.55))',
+        opacity:'.95', pointerEvents:'none'
       }});
     }
     const arrDots = arrData.map((s, i) => ({

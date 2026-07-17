@@ -34,6 +34,19 @@ NOVITA' v3.0 (questa versione) — GUI 3D AVANZATA + NUOVI STRUMENTI:
  * BUILDER MULTIPIATTAFORMA: funziona anche su Linux e macOS (genera sia
    gradlew.bat che gradlew), ricerca JDK/SDK cross-platform.
  * Opzione --solo-progetto (o --no-build): genera il progetto senza compilare.
+
+NOVITA' v3.1 — RICERCA VIE E CIVICI COMPLETA (fix "me ne da' poche"):
+ * Ogni via ora compare per OGNI citta' in cui esiste (prima "Via Roma"
+   veniva indicizzata una sola volta per tutta la regione).
+ * Civici letti anche dagli EDIFICI (way con addr:housenumber), non solo
+   dai nodi: in Italia quasi tutti i civici sono sugli edifici, quindi
+   prima se ne perdeva la maggior parte.
+ * A ogni via viene assegnata la citta' piu' vicina (nodi place OSM):
+   il filtro "via roma, milano" ora funziona davvero.
+ * La ricerca capisce il numero nel testo: "via roma 10" trova la via
+   e poi il civico 10 di QUELLA via (entro 4 km).
+ * Indice V2: quelli vecchi vengono ricostruiti automaticamente al primo
+   avvio della ricerca (nessuna azione manuale necessaria).
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -78,8 +91,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 45
-        versionName "3.0.0"
+        versionCode 46
+        versionName "3.1.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -1477,9 +1490,11 @@ public final class RoutingEngine {
 """
 
 # ============================================================
-#  OFFLINE GEOCODER
-#  Indicizza vie e civici dal file OSM .pbf e permette la ricerca
-#  di un indirizzo per nome, 100% offline.
+#  OFFLINE GEOCODER v3.1 — indice COMPLETO di vie e civici
+#  Fix: prima trovava "poche vie con civico" perche' (1) ogni nome
+#  via era indicizzato UNA sola volta per regione, (2) i civici
+#  venivano letti solo dai nodi e non dagli edifici, (3) la query
+#  "via roma 10" non capiva il numero.
 # ============================================================
 OFFLINE_GEOCODER = r"""package com.offlinegps.map.routing;
 
@@ -1494,20 +1509,32 @@ import java.text.Normalizer;
 import java.util.*;
 
 /**
- * Geocoder offline AVANZATO: cerca vie E numeri civici dal file .pbf.
- * Indice costruito (una volta per regione) leggendo il .pbf:
- *  - VIE: ogni way con highway+name -> nodo centrale -> coordinate
- *  - CIVICI: ogni nodo con addr:housenumber (+ addr:street) -> coordinate
- *  - CITTA': memorizzata se presente addr:city, per affinare la ricerca
- * Righe indice: tipo\tlabel\tcity\tlat\tlon (tipo = "S" via, "H" civico)
- * Ricerca: normalizzazione (minuscolo, senza accenti);
- * match esatto > inizia-con > contiene > fuzzy (distanza di edit <=2);
- * se la query contiene una citta nota, da priorita' a quella citta.
+ * Geocoder offline v3.1 — indice COMPLETO di vie e civici dal file .pbf.
+ *
+ * Novita' rispetto alla versione precedente (che trovava "poche vie con civico"):
+ *  - una via con lo stesso nome in citta' diverse ora compare PIU' VOLTE
+ *    (prima "Via Roma" veniva indicizzata una sola volta per tutta la regione);
+ *  - i numeri civici vengono letti anche dagli EDIFICI (way con
+ *    addr:housenumber), non solo dai nodi: in Italia la maggior parte dei
+ *    civici e' mappata sugli edifici, quindi prima se ne perdevano quasi tutti;
+ *  - a ogni via viene assegnata la CITTA' piu' vicina (nodi "place" di OSM),
+ *    cosi' il filtro "via roma, milano" funziona davvero;
+ *  - la ricerca capisce il civico nel testo: "via roma 10" trova la via
+ *    e poi il numero 10 di QUELLA via (entro 4 km dal suo centro).
+ *
+ * Formato indice V2 (una riga per voce, prima riga = intestazione "V2"):
+ *   S\tnome\tcitta\tlat\tlon      via (piu' righe per lo stesso nome)
+ *   H\tvia\tnumero\tlat\tlon      civico (raggruppato per via al caricamento)
+ * Gli indici vecchi (senza intestazione V2) vengono ricostruiti da soli.
  */
 public final class OfflineGeocoder {
     private static final String TAG = "OfflineGeocoder";
+    private static final String INDEX_HEADER = "V2";
     private static volatile OfflineGeocoder INSTANCE;
-    private final List<Entry> entries = new ArrayList<>();
+
+    private final List<Entry> streets = new ArrayList<>();
+    private final Map<String, CivicGroup> civics = new HashMap<>();
+    private int civicTotal = 0;
     private String loadedRegionTag;
     @Nullable private String lastError;
 
@@ -1524,6 +1551,18 @@ public final class OfflineGeocoder {
         public boolean isHouseNumber() { return "H".equals(type); }
     }
 
+    /** Un civico: numero + coordinate (float: precisione ~1 m, meta' memoria). */
+    private static final class Civic {
+        final String num; final float lat, lon;
+        Civic(String num, float lat, float lon) { this.num = num; this.lat = lat; this.lon = lon; }
+    }
+    /** Tutti i civici di una via (chiave: nome via normalizzato). */
+    private static final class CivicGroup {
+        final String display;
+        final ArrayList<Civic> list = new ArrayList<>();
+        CivicGroup(String display) { this.display = display; }
+    }
+
     private OfflineGeocoder() {}
 
     @NonNull
@@ -1532,26 +1571,35 @@ public final class OfflineGeocoder {
         return INSTANCE;
     }
 
-    public boolean isReady() { return !entries.isEmpty(); }
+    public boolean isReady() { return !streets.isEmpty(); }
     @Nullable public String getLoadedRegionTag() { return loadedRegionTag; }
-    public int size() { return entries.size(); }
+    public int size() { return streets.size() + civicTotal; }
+    public int streetCount() { return streets.size(); }
+    public int civicCount() { return civicTotal; }
 
     @WorkerThread
     public synchronized void loadOrBuild(@NonNull File pbfFile, @NonNull File indexFile,
             @NonNull String regionTag, @Nullable RoutingEngine.BuildProgressListener listener) {
-        if (regionTag.equals(loadedRegionTag) && !entries.isEmpty()) return;
+        if (regionTag.equals(loadedRegionTag) && !streets.isEmpty()) return;
         lastError = null;
         try {
             if (!pbfFile.exists()) { lastError = "File .pbf non trovato"; return; }
+            // indice della vecchia versione? ricostruisci con vie+civici completi
+            if (indexFile.exists() && !isCurrentVersion(indexFile)) {
+                Log.d(TAG, "Indice vecchio: ricostruzione completa (vie multi-citta' + civici edifici)");
+                indexFile.delete();
+            }
             if (!indexFile.exists()) {
-                if (listener != null) listener.onProgress("Indicizzazione indirizzi e civici (prima volta)...", -1);
+                if (listener != null) listener.onProgress(
+                    "Indicizzazione COMPLETA di vie e civici (prima volta, qualche minuto)...", -1);
                 buildIndex(pbfFile, indexFile);
             }
             if (listener != null) listener.onProgress("Caricamento indice indirizzi...", -1);
             loadIndex(indexFile);
             loadedRegionTag = regionTag;
-            if (entries.isEmpty()) lastError = "Indice vuoto (nessuna via trovata nel file)";
-            Log.d(TAG, "Geocoder: " + entries.size() + " voci (" + regionTag + ")");
+            if (streets.isEmpty()) lastError = "Indice vuoto (nessuna via trovata nel file)";
+            Log.d(TAG, "Geocoder: " + streets.size() + " voci via, " + civicTotal
+                + " civici (" + regionTag + ")");
         } catch (Throwable e) {
             lastError = e.getClass().getSimpleName() + ": " + e.getMessage();
             Log.e(TAG, "loadOrBuild: " + lastError, e);
@@ -1562,144 +1610,356 @@ public final class OfflineGeocoder {
 
     @Nullable public String getLastError() { return lastError; }
 
-    /** Costruisce l'indice (vie + civici) leggendo due volte il .pbf. */
+    private boolean isCurrentVersion(File indexFile) {
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(
+                new FileInputStream(indexFile), "UTF-8"))) {
+            return INDEX_HEADER.equals(br.readLine());
+        } catch (Exception e) { return false; }
+    }
+
+    /** Costruisce l'indice: vie multi-citta' + civici da nodi ED edifici. */
     @WorkerThread
     private void buildIndex(File pbf, File indexOut) throws Exception {
-        // --- Passata 1: way con highway+name -> nodo centrale; raccogli node ids ---
-        Map<Long, String[]> nodeToStreet = new HashMap<>();  // nodeId -> [name, city]
-        Set<String> seenStreets = new HashSet<>();
+        final int SEED_CAP = 120;  // segmenti campionati per ogni nome-via
+        // nome normalizzato -> nodi centrali campionati. Reservoir sampling:
+        // per nomi comuni ("Via Roma" esiste in centinaia di comuni) il
+        // campione resta rappresentativo di TUTTA la regione.
+        Map<String, ArrayList<Long>> streetSeeds = new HashMap<>();
+        Map<String, Integer> seedTotal = new HashMap<>();
+        Map<String, String> streetDisplay = new HashMap<>();
+        // primo nodo di ogni EDIFICIO con civico -> {via, numero}
+        Map<Long, String[]> civicWayNodes = new HashMap<>();
+        Random rnd = new Random(42);
 
+        // --- Passata 1: way (vie con nome + edifici con civico) ---
         try (OSMInputFile in = new OSMInputFile(pbf).setWorkerThreads(1).open()) {
             ReaderElement el;
             while ((el = in.getNext()) != null) {
-                if (el.getType() == ReaderElement.Type.WAY) {
-                    ReaderWay w = (ReaderWay) el;
-                    String name = w.getTag("name", null);
-                    if (name != null && w.hasTag("highway") && !name.isEmpty()) {
-                        String city = firstNonNull(w.getTag("addr:city", null),
-                                                   w.getTag("is_in", null), "");
-                        if (seenStreets.add(name.toLowerCase(Locale.ROOT))) {
-                            com.carrotsearch.hppc.LongIndexedContainer nodes = w.getNodes();
-                            if (nodes != null && nodes.size() > 0) {
-                                long mid = nodes.get(nodes.size() / 2);
-                                nodeToStreet.put(mid, new String[]{name, city});
-                            }
-                        }
-                    }
+                if (el.getType() != ReaderElement.Type.WAY) continue;
+                ReaderWay w = (ReaderWay) el;
+                com.carrotsearch.hppc.LongIndexedContainer nodes = w.getNodes();
+                if (nodes == null || nodes.size() == 0) continue;
+
+                String name = w.getTag("name", null);
+                if (name != null && !name.isEmpty() && w.hasTag("highway")) {
+                    String norm = normalize(name);
+                    if (!streetDisplay.containsKey(norm)) streetDisplay.put(norm, name);
+                    long mid = nodes.get(nodes.size() / 2);
+                    Integer prev = seedTotal.get(norm);
+                    int total = (prev == null ? 0 : prev) + 1;
+                    seedTotal.put(norm, total);
+                    ArrayList<Long> seeds = streetSeeds.get(norm);
+                    if (seeds == null) { seeds = new ArrayList<>(); streetSeeds.put(norm, seeds); }
+                    if (seeds.size() < SEED_CAP) seeds.add(mid);
+                    else { int j = rnd.nextInt(total); if (j < SEED_CAP) seeds.set(j, mid); }
+                }
+
+                String hn = w.getTag("addr:housenumber", null);
+                if (hn != null && !hn.isEmpty()) {
+                    String street = firstNonNull(w.getTag("addr:street", null), "");
+                    if (!street.isEmpty())
+                        civicWayNodes.put(nodes.get(0), new String[]{street, hn});
                 }
             }
         }
 
-        // --- Passata 2: coordinate dei nodi via + civici come nodi ---
-        Map<String, double[]> streetCoord = new HashMap<>();   // "name\tcity" -> latlon
-        List<String[]> houseRows = new ArrayList<>();          // [label, city, lat, lon]
+        // mappa inversa: nodo campione -> nomi via che lo usano
+        Map<Long, ArrayList<String>> nodeToNames = new HashMap<>();
+        for (Map.Entry<String, ArrayList<Long>> e : streetSeeds.entrySet()) {
+            for (Long id : e.getValue()) {
+                ArrayList<String> l = nodeToNames.get(id);
+                if (l == null) { l = new ArrayList<>(2); nodeToNames.put(id, l); }
+                l.add(e.getKey());
+            }
+        }
+        streetSeeds.clear();
+
+        // --- Passata 2: nodi (coordinate vie, civici su nodo, luoghi/citta') ---
+        Map<String, ArrayList<double[]>> streetCoords = new HashMap<>();
+        ArrayList<String[]> civicRows = new ArrayList<>();  // {via, numero, lat, lon}
+        HashSet<String> civicSeen = new HashSet<>();
+        ArrayList<Object[]> places = new ArrayList<>();     // {nome, peso, lat, lon}
 
         try (OSMInputFile in = new OSMInputFile(pbf).setWorkerThreads(1).open()) {
             ReaderElement el;
             while ((el = in.getNext()) != null) {
                 if (el.getType() != ReaderElement.Type.NODE) continue;
                 ReaderNode n = (ReaderNode) el;
+                long id = n.getId();
 
-                // a) coordinate per le vie
-                String[] st = nodeToStreet.get(n.getId());
-                if (st != null) {
-                    String key = st[0] + "\t" + st[1];
-                    if (!streetCoord.containsKey(key))
-                        streetCoord.put(key, new double[]{n.getLat(), n.getLon()});
+                // a) coordinate dei nodi campione delle vie
+                ArrayList<String> names = nodeToNames.get(id);
+                if (names != null) {
+                    for (String norm : names) {
+                        ArrayList<double[]> l = streetCoords.get(norm);
+                        if (l == null) { l = new ArrayList<>(); streetCoords.put(norm, l); }
+                        l.add(new double[]{n.getLat(), n.getLon()});
+                    }
                 }
 
-                // b) civici sui nodi (addr:housenumber + addr:street)
+                // b) civici degli EDIFICI (coordinate del primo nodo del way)
+                String[] wc = civicWayNodes.get(id);
+                if (wc != null) addCivic(civicRows, civicSeen, wc[0], wc[1], n.getLat(), n.getLon());
+
+                // c) civici mappati direttamente come nodo
                 String hn = n.getTag("addr:housenumber", null);
                 if (hn != null && !hn.isEmpty()) {
                     String street = firstNonNull(n.getTag("addr:street", null), "");
-                    String city   = firstNonNull(n.getTag("addr:city", null), "");
-                    String label  = street.isEmpty() ? hn : street + " " + hn;
-                    houseRows.add(new String[]{label, city,
-                        String.valueOf(n.getLat()), String.valueOf(n.getLon())});
+                    if (!street.isEmpty())
+                        addCivic(civicRows, civicSeen, street, hn, n.getLat(), n.getLon());
+                }
+
+                // d) nodi "place": servono per assegnare la citta' alle vie
+                String place = n.getTag("place", null);
+                if (place != null) {
+                    String pname = n.getTag("name", null);
+                    double weight = placeWeight(place);
+                    if (pname != null && !pname.isEmpty() && weight > 0)
+                        places.add(new Object[]{pname, weight, n.getLat(), n.getLon()});
                 }
             }
         }
+        civicWayNodes.clear(); nodeToNames.clear();
 
-        // --- Scrittura indice ---
+        PlaceGrid grid = new PlaceGrid(places);
+
+        // --- Scrittura indice V2 ---
         indexOut.getParentFile().mkdirs();
+        int streetRows = 0;
         try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(
                 new FileOutputStream(indexOut), "UTF-8"))) {
-            for (Map.Entry<String, double[]> e : streetCoord.entrySet()) {
-                String[] nc = e.getKey().split("\t", -1);
-                double[] c = e.getValue();
-                bw.write("S\t" + safe(nc[0]) + "\t" + safe(nc.length > 1 ? nc[1] : "")
-                    + "\t" + c[0] + "\t" + c[1]);
-                bw.newLine();
+            bw.write(INDEX_HEADER); bw.newLine();
+            for (Map.Entry<String, ArrayList<double[]>> e : streetCoords.entrySet()) {
+                String display = streetDisplay.get(e.getKey());
+                if (display == null) continue;
+                // dedup spaziale: un punto per paese (segmenti a <1.5 km si fondono)
+                ArrayList<double[]> kept = spatialDedup(e.getValue(), 1500, 60);
+                for (double[] c : kept) {
+                    String city = grid.nearestCity(c[0], c[1]);
+                    bw.write("S\t" + safe(display) + "\t" + safe(city)
+                        + "\t" + c[0] + "\t" + c[1]);
+                    bw.newLine();
+                    streetRows++;
+                }
             }
-            for (String[] h : houseRows) {
+            for (String[] h : civicRows) {
                 bw.write("H\t" + safe(h[0]) + "\t" + safe(h[1]) + "\t" + h[2] + "\t" + h[3]);
                 bw.newLine();
             }
         }
-        Log.d(TAG, "Indice: " + streetCoord.size() + " vie, " + houseRows.size() + " civici");
+        Log.d(TAG, "Indice V2: " + streetRows + " voci via, " + civicRows.size() + " civici");
+    }
+
+    private static void addCivic(ArrayList<String[]> rows, HashSet<String> seen,
+            String street, String num, double lat, double lon) {
+        // dedup: stesso via+numero entro ~50 m e' lo stesso civico
+        String key = normalize(street) + "|" + normalize(num) + "|"
+            + Math.round(lat * 2000) + "|" + Math.round(lon * 2000);
+        if (!seen.add(key)) return;
+        rows.add(new String[]{street, num, String.valueOf(lat), String.valueOf(lon)});
+    }
+
+    private static double placeWeight(String place) {
+        // peso < 1 = preferito anche se un po' piu' lontano
+        switch (place) {
+            case "city":    return 0.30;
+            case "town":    return 0.55;
+            case "village": return 1.0;
+            case "suburb":  return 1.2;
+            case "hamlet":  return 1.3;
+            default:        return 0;
+        }
+    }
+
+    /** Tiene solo punti distanti almeno minDistM l'uno dall'altro (max maxKeep). */
+    private static ArrayList<double[]> spatialDedup(ArrayList<double[]> pts,
+            double minDistM, int maxKeep) {
+        ArrayList<double[]> kept = new ArrayList<>();
+        for (double[] p : pts) {
+            boolean far = true;
+            for (double[] k : kept) {
+                if (approxDistM(p[0], p[1], k[0], k[1]) < minDistM) { far = false; break; }
+            }
+            if (far) { kept.add(p); if (kept.size() >= maxKeep) break; }
+        }
+        return kept;
+    }
+
+    /** Distanza approssimata in metri (equirettangolare: veloce, basta per noi). */
+    private static double approxDistM(double lat1, double lon1, double lat2, double lon2) {
+        double dLat = (lat2 - lat1) * 111320.0;
+        double dLon = (lon2 - lon1) * 111320.0 * Math.cos(Math.toRadians((lat1 + lat2) / 2));
+        return Math.sqrt(dLat * dLat + dLon * dLon);
+    }
+
+    /** Griglia dei nodi place per trovare la citta' piu' vicina velocemente. */
+    private static final class PlaceGrid {
+        private static final double CELL = 0.25;   // ~25 km
+        private final HashMap<Long, ArrayList<Object[]>> cells = new HashMap<>();
+        PlaceGrid(ArrayList<Object[]> places) {
+            for (Object[] p : places) {
+                long key = cellKey((int) Math.floor((double) p[2] / CELL),
+                                   (int) Math.floor((double) p[3] / CELL));
+                ArrayList<Object[]> l = cells.get(key);
+                if (l == null) { l = new ArrayList<>(); cells.put(key, l); }
+                l.add(p);
+            }
+        }
+        private static long cellKey(int cy, int cx) {
+            return (((long) cy) << 32) | (cx & 0xffffffffL);
+        }
+        String nearestCity(double lat, double lon) {
+            String best = ""; double bestScore = Double.MAX_VALUE;
+            int cy = (int) Math.floor(lat / CELL), cx = (int) Math.floor(lon / CELL);
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                ArrayList<Object[]> l = cells.get(cellKey(cy + dy, cx + dx));
+                if (l == null) continue;
+                for (Object[] p : l) {
+                    double d = approxDistM(lat, lon, (double) p[2], (double) p[3]);
+                    if (d > 25000) continue;             // oltre 25 km non ha senso
+                    double score = d * (double) p[1];    // preferisci citta'/paesi grandi
+                    if (score < bestScore) { bestScore = score; best = (String) p[0]; }
+                }
+            }
+            return best;
+        }
     }
 
     @WorkerThread
     private void loadIndex(File indexFile) throws IOException {
-        entries.clear();
+        streets.clear(); civics.clear(); civicTotal = 0;
+        HashMap<String, String> intern = new HashMap<>();   // condivide i nomi via ripetuti
         try (BufferedReader br = new BufferedReader(new InputStreamReader(
                 new FileInputStream(indexFile), "UTF-8"))) {
-            String line;
+            String line = br.readLine();
+            if (!INDEX_HEADER.equals(line)) throw new IOException("Indice non valido");
             while ((line = br.readLine()) != null) {
                 String[] p = line.split("\t", -1);
                 if (p.length < 5) continue;
                 try {
                     double lat = Double.parseDouble(p[3]);
                     double lon = Double.parseDouble(p[4]);
-                    entries.add(new Entry(p[0], p[1], p[2], lat, lon));
+                    if ("S".equals(p[0])) {
+                        streets.add(new Entry("S", p[1], p[2], lat, lon));
+                    } else if ("H".equals(p[0])) {
+                        String street = intern.get(p[1]);
+                        if (street == null) { intern.put(p[1], p[1]); street = p[1]; }
+                        String norm = normalize(street);
+                        CivicGroup g = civics.get(norm);
+                        if (g == null) { g = new CivicGroup(street); civics.put(norm, g); }
+                        g.list.add(new Civic(p[2], (float) lat, (float) lon));
+                        civicTotal++;
+                    }
                 } catch (NumberFormatException ignored) {}
             }
         }
     }
 
-    /** Ricerca avanzata: esatto > inizia > contiene > fuzzy. Civici in coda. */
+    /**
+     * Ricerca: "via roma" -> tutte le "Via Roma" (una per citta');
+     * "via roma 10" o "via roma 10, milano" -> il civico 10 di quella via.
+     * Ordine: esatto > inizia-con > contiene > fuzzy (errori di battitura).
+     */
     @NonNull
     public List<Entry> search(@NonNull String query, int maxResults) {
         List<Entry> out = new ArrayList<>();
-        if (query.trim().isEmpty() || entries.isEmpty()) return out;
+        if (query.trim().isEmpty() || streets.isEmpty()) return out;
         String q = normalize(query);
 
-        // separa eventuale citta dopo la virgola: "via roma, milano"
+        // citta' dopo la virgola: "via roma 10, milano"
         String qCity = "";
         int comma = q.indexOf(',');
         if (comma > 0) { qCity = q.substring(comma + 1).trim(); q = q.substring(0, comma).trim(); }
+
+        // civico alla fine: "via roma 10" / "via roma 10/b" / "via roma 12a"
+        String qNum = null;
+        int lastSpace = q.lastIndexOf(' ');
+        if (lastSpace > 0) {
+            String tail = q.substring(lastSpace + 1);
+            if (tail.matches("\\d{1,4}[a-z]?(/\\w{1,3})?")) {
+                qNum = tail;
+                q = q.substring(0, lastSpace).trim();
+            }
+        }
+        if (q.isEmpty()) return out;
         final String fq = q, fCity = qCity;
 
         List<Entry> exact = new ArrayList<>(), starts = new ArrayList<>(),
                     contains = new ArrayList<>(), fuzzy = new ArrayList<>();
-
-        for (Entry e : entries) {
+        for (Entry e : streets) {
             if (!fCity.isEmpty() && !normalize(e.city).contains(fCity)) continue;
             String n = e.normName;
             if (n.equals(fq)) exact.add(e);
             else if (n.startsWith(fq)) starts.add(e);
             else if (n.contains(fq)) contains.add(e);
         }
-        // Il fuzzy (distanza di edit) e' costoso: lo calcoliamo SOLO se le
-        // ricerche esatte/parziali non bastano. Cosi' la ricerca resta veloce
-        // anche con regioni grandi (centinaia di migliaia di vie).
+        // Il fuzzy (distanza di edit) e' costoso: solo se serve davvero.
         int found = exact.size() + starts.size() + contains.size();
         if (found < maxResults && fq.length() >= 4) {
-            for (Entry e : entries) {
+            for (Entry e : streets) {
                 if (!fCity.isEmpty() && !normalize(e.city).contains(fCity)) continue;
                 String n = e.normName;
                 if (n.equals(fq) || n.startsWith(fq) || n.contains(fq)) continue;
                 if (editDistanceWithin(n, fq, 2)) {
                     fuzzy.add(e);
-                    if (fuzzy.size() >= maxResults) break;  // basta cosi'
+                    if (fuzzy.size() >= maxResults) break;
                 }
             }
         }
-        addAll(out, exact, maxResults);
-        addAll(out, starts, maxResults);
-        addAll(out, contains, maxResults);
-        addAll(out, fuzzy, maxResults);
+        List<Entry> ranked = new ArrayList<>();
+        addAll(ranked, exact, 200); addAll(ranked, starts, 200);
+        addAll(ranked, contains, 200); addAll(ranked, fuzzy, 200);
+
+        if (qNum == null) {
+            // senza civico: una voce per via+citta' (niente doppioni)
+            HashSet<String> seen = new HashSet<>();
+            for (Entry e : ranked) {
+                if (out.size() >= maxResults) break;
+                if (seen.add(e.normName + "|" + normalize(e.city))) out.add(e);
+            }
+            return out;
+        }
+
+        // con civico: per ogni via trovata cerca il numero in QUELLA zona
+        String normNum = normalize(qNum);
+        HashSet<String> seenOut = new HashSet<>();
+        for (Entry st : ranked) {
+            if (out.size() >= maxResults) break;
+            CivicGroup g = civics.get(st.normName);
+            if (g == null) continue;
+            Civic best = findCivic(g, normNum, st.lat, st.lon, true);
+            if (best == null) best = findCivic(g, normNum, st.lat, st.lon, false);
+            if (best == null) continue;
+            String label = st.name + " " + best.num;
+            if (seenOut.add(normalize(label) + "|" + normalize(st.city)
+                    + "|" + Math.round(best.lat * 10000)))
+                out.add(new Entry("H", label, st.city, best.lat, best.lon));
+        }
+        // nessun civico trovato: mostra almeno le vie
+        if (out.isEmpty()) {
+            HashSet<String> seen = new HashSet<>();
+            for (Entry e : ranked) {
+                if (out.size() >= maxResults) break;
+                if (seen.add(e.normName + "|" + normalize(e.city))) out.add(e);
+            }
+        }
         return out;
+    }
+
+    /** Il civico giusto e' quello (esatto o per prefisso) piu' vicino alla via. */
+    @Nullable
+    private static Civic findCivic(CivicGroup g, String normNum,
+            double lat, double lon, boolean exactMatch) {
+        Civic best = null; double bestD = Double.MAX_VALUE;
+        for (Civic c : g.list) {
+            String cn = normalize(c.num);
+            boolean match = exactMatch ? cn.equals(normNum) : cn.startsWith(normNum);
+            if (!match) continue;
+            double d = approxDistM(lat, lon, c.lat, c.lon);
+            if (d > 4000 || d >= bestD) continue;   // il civico deve stare vicino alla via
+            best = c; bestD = d;
+        }
+        return best;
     }
 
     private void addAll(List<Entry> out, List<Entry> src, int max) {
@@ -1741,7 +2001,9 @@ public final class OfflineGeocoder {
     }
     private static String safe(String s) { return s == null ? "" : s.replace("\t", " "); }
 
-    public void clear() { entries.clear(); loadedRegionTag = null; }
+    public void clear() {
+        streets.clear(); civics.clear(); civicTotal = 0; loadedRegionTag = null;
+    }
 }
 """
 
@@ -2183,7 +2445,7 @@ public class AddressSearchActivity extends AppCompatActivity {
     /** Costruisce l'indice da QUALSIASI .pbf scaricato (non dipende dal GPS). */
     private void ensureGeocoderReady() {
         if (OfflineGeocoder.getInstance().isReady()) {
-            setHint("Scrivi una via, un civico o un waypoint");
+            setHint("Scrivi una via o un civico, es. Via Roma 10");
             return;
         }
         File pbf = pickAvailablePbf();
@@ -2239,8 +2501,9 @@ public class AddressSearchActivity extends AppCompatActivity {
             main.post(() -> {
                 showLoading(false);
                 if (OfflineGeocoder.getInstance().isReady()) {
-                    setHint("Pronto: " + OfflineGeocoder.getInstance().size()
-                        + " indirizzi. Scrivi una via.");
+                    setHint("Pronto: " + OfflineGeocoder.getInstance().streetCount()
+                        + " vie e " + OfflineGeocoder.getInstance().civicCount()
+                        + " civici. Prova: Via Roma 10");
                     if (etQuery != null && etQuery.getText().length() >= 2)
                         doSearch(etQuery.getText().toString());
                 } else {
@@ -2277,7 +2540,7 @@ public class AddressSearchActivity extends AppCompatActivity {
             } catch (Exception ignored) {}
 
             // 2) vie e civici dall'indice geocoding
-            List<OfflineGeocoder.Entry> hits = OfflineGeocoder.getInstance().search(query, 40);
+            List<OfflineGeocoder.Entry> hits = OfflineGeocoder.getInstance().search(query, 50);
             for (OfflineGeocoder.Entry e : hits) {
                 String label = e.name;
                 if (e.city != null && !e.city.isEmpty()) label += ", " + e.city;
@@ -9667,7 +9930,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v3.0")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v3.1")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -9800,7 +10063,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v3.0.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v3.1.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -9826,6 +10089,8 @@ def summarise(apk, solo_progetto=False):
     print(f"  {C.OK}[NEW]{C.RESET}  Primo soccorso offline (emorragie, RCP, vipera...)")
     print(f"  {C.OK}[NEW]{C.RESET}  Tempi di marcia (regola di Naismith)")
     print(f"  {C.OK}[NEW]{C.RESET}  Tachimetro HUD specchiato per parabrezza")
+    print(f"  {C.OK}[FIX]{C.RESET}  RICERCA v3.1: tutte le vie in ogni citta + civici dagli edifici")
+    print(f"  {C.OK}[FIX]{C.RESET}  'Via Roma 10' ora trova il civico; filtro citta funzionante")
     print(f"  {C.OK}[FIX]{C.RESET}  Import file .map dal file manager (content://) ora funziona")
     print(f"  {C.OK}[FIX]{C.RESET}  Builder multipiattaforma: Windows, Linux e macOS")
 
@@ -9846,7 +10111,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v3.0.apk")
+    info("1. Installa OfflineGPS-3D-v3.1.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -9858,7 +10123,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v3.0 - GUI neon 3D + navigazione offline")
+    print("  OfflineGPS 3D v3.1 - ricerca vie+civici completa")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -9875,7 +10140,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v3.0 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v3.1 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

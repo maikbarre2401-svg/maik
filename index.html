@@ -4,19 +4,24 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#050a0f">
-  <title>MAIK // CORE V8</title>
+  <title>MAIK // CORE V9</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
 
     :root {
-      --cyan: #00f5ff;
-      --cyan-dim: #00a8b5;
-      --cyan-glow: rgba(0,245,255,0.15);
+      /* V9: tutto deriva dal tema (MaikKit.applyTheme imposta --accent, --accent-rgb, --accent2, --bg…) */
+      --accent-rgb: 0,245,255;
+      --accent2: #7c3aed;
+      --accent2-rgb: 124,58,237;
+      --bg-rgb: 5,10,15;
+      --cyan: var(--accent);
+      --cyan-dim: rgba(var(--accent-rgb),0.72);
+      --cyan-glow: rgba(var(--accent-rgb),0.15);
       --bg: #050a0f;
       --bg2: #080d14;
       --bg3: #0d1520;
-      --panel: rgba(8,20,35,0.92);
-      --border: rgba(0,245,255,0.18);
+      --panel: rgba(var(--bg-rgb),0.78);
+      --border: rgba(var(--accent-rgb),0.18);
       --text: #c8e8f0;
       --text-dim: #5a7a8a;
       --red: #ff3355;
@@ -152,11 +157,11 @@
     .weather-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
     .weather-loc { font-size: 11px; color: var(--accent); }
     .weather-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 8px 0; }
-    .weather-cell { background: rgba(0,245,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; }
+    .weather-cell { background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; }
     .weather-val { font-family: 'Orbitron', monospace; font-size: 13px; color: white; }
     .weather-key { font-size: 9px; color: var(--text-dim); letter-spacing: 1px; }
     .weather-forecast { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 4px; }
-    .forecast-day { flex-shrink: 0; text-align: center; background: rgba(0,245,255,0.05); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; font-size: 10px; }
+    .forecast-day { flex-shrink: 0; text-align: center; background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; font-size: 10px; }
     .forecast-day .day-name { color: var(--cyan-dim); font-size: 9px; }
     .forecast-day .day-temp { color: white; font-size: 11px; margin-top: 2px; }
 
@@ -167,12 +172,12 @@
       object-fit: cover; border: 1px solid var(--border); display: none;
     }
     #camera-placeholder {
-      width: 100%; aspect-ratio: 4/3; background: rgba(0,245,255,0.03);
+      width: 100%; aspect-ratio: 4/3; background: rgba(var(--accent-rgb),0.03);
       border: 1px dashed var(--border); border-radius: 4px; display: flex;
       flex-direction: column; align-items: center; justify-content: center;
       gap: 8px; cursor: pointer; transition: all 0.2s;
     }
-    #camera-placeholder:hover { background: rgba(0,245,255,0.06); border-color: var(--accent); }
+    #camera-placeholder:hover { background: rgba(var(--accent-rgb),0.06); border-color: var(--accent); }
     .cam-icon { font-size: 24px; opacity: 0.4; }
     .cam-text { font-size: 11px; color: var(--text-dim); text-align: center; }
     #face-status {
@@ -185,7 +190,7 @@
     /* INPUTS */
     .search-row { display: flex; gap: 6px; align-items: center; }
     .sidebar-input {
-      flex: 1; background: rgba(0,245,255,0.05); border: 1px solid var(--border);
+      flex: 1; background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border);
       border-radius: 4px; padding: 6px 10px; color: var(--text); font-size: 12px;
       font-family: 'Rajdhani', sans-serif; outline: none; transition: border-color 0.2s; min-width: 0;
     }
@@ -193,14 +198,14 @@
     .sidebar-input::placeholder { color: var(--text-dim); }
 
     .icon-btn {
-      background: rgba(0,245,255,0.08); border: 1px solid var(--border); color: var(--accent);
+      background: rgba(var(--accent-rgb),0.08); border: 1px solid var(--border); color: var(--accent);
       width: 28px; height: 28px; border-radius: 4px; cursor: pointer; display: flex;
       align-items: center; justify-content: center; font-size: 13px; transition: all 0.2s; flex-shrink: 0;
     }
-    .icon-btn:hover { background: rgba(0,245,255,0.18); }
+    .icon-btn:hover { background: rgba(var(--accent-rgb),0.18); }
 
     /* PROFILE */
-    .profile-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(0,245,255,0.05); gap: 6px; }
+    .profile-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(var(--accent-rgb),0.05); gap: 6px; }
     .profile-key { color: var(--cyan-dim); font-size: 11px; text-transform: capitalize; }
     .profile-val { color: var(--text); font-size: 11px; text-align: right; flex: 1; }
     .mini-x { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 11px; padding: 0 2px; flex-shrink: 0; }
@@ -212,15 +217,15 @@
     .emotion-icon { font-size: 22px; }
     .emotion-label { font-size: 12px; color: var(--text); }
     .emotion-sub { font-size: 10px; color: var(--text-dim); }
-    .emotion-bar { height: 4px; background: rgba(0,245,255,0.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+    .emotion-bar { height: 4px; background: rgba(var(--accent-rgb),0.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
     .emotion-bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s, background 0.4s; }
     /* V8: grafico umore, personalità, ragionamento, allarmi */
     #mood-chart { margin-top: 8px; }
     #mood-chart .mood-note { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
     .persona-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-    .persona-chip { background: rgba(0,245,255,0.05); border: 1px solid var(--border); color: var(--text); padding: 4px 9px; border-radius: 12px; font-size: 11px; cursor: pointer; font-family: inherit; transition: 0.15s; }
+    .persona-chip { background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); color: var(--text); padding: 4px 9px; border-radius: 12px; font-size: 11px; cursor: pointer; font-family: inherit; transition: 0.15s; }
     .persona-chip:hover { border-color: var(--accent); }
-    .persona-chip.on { background: rgba(0,245,255,0.18); border-color: var(--accent); color: #fff; }
+    .persona-chip.on { background: rgba(var(--accent-rgb),0.18); border-color: var(--accent); color: #fff; }
     .think { background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); border-radius: 6px; padding: 4px 8px; margin-bottom: 6px; font-size: 12px; color: #b9a3d9; }
     .think summary { cursor: pointer; color: var(--purple); font-family: 'Share Tech Mono', monospace; letter-spacing: 1px; }
     .think div { white-space: pre-wrap; margin-top: 4px; max-height: 200px; overflow: auto; }
@@ -230,7 +235,7 @@
     /* CARDS */
     .item-list { display: flex; flex-direction: column; gap: 5px; }
     .person-card, .reminder-card {
-      background: rgba(0,245,255,0.04); border: 1px solid var(--border); border-radius: 4px;
+      background: rgba(var(--accent-rgb),0.04); border: 1px solid var(--border); border-radius: 4px;
       padding: 6px 8px; display: flex; justify-content: space-between; align-items: center; gap: 6px;
     }
     .person-name { font-size: 12px; color: white; }
@@ -240,21 +245,21 @@
     .reminder-card.done .reminder-text { text-decoration: line-through; color: var(--text-dim); }
 
     .goal-item {
-      background: rgba(0,245,255,0.04); border-left: 2px solid var(--accent); padding: 5px 8px;
+      background: rgba(var(--accent-rgb),0.04); border-left: 2px solid var(--accent); padding: 5px 8px;
       font-size: 12px; border-radius: 0 4px 4px 0; display: flex; justify-content: space-between; align-items: center; gap: 6px;
     }
 
     .sidebar-add-btn {
-      width: 100%; background: rgba(0,245,255,0.06); border: 1px dashed var(--border); color: var(--accent);
+      width: 100%; background: rgba(var(--accent-rgb),0.06); border: 1px dashed var(--border); color: var(--accent);
       padding: 7px; border-radius: 4px; cursor: pointer; font-family: 'Rajdhani', sans-serif; font-size: 11px;
       letter-spacing: 2px; text-transform: uppercase; margin-top: 8px; transition: all 0.2s;
     }
-    .sidebar-add-btn:hover { background: rgba(0,245,255,0.12); }
+    .sidebar-add-btn:hover { background: rgba(var(--accent-rgb),0.12); }
 
     .empty-state { font-size: 11px; color: var(--text-dim); text-align: center; padding: 8px 0; font-style: italic; }
 
     #memory-results { margin-top: 6px; display: none; flex-direction: column; gap: 4px; }
-    .memory-item { background: rgba(0,245,255,0.05); border-left: 2px solid var(--accent); padding: 4px 8px; font-size: 11px; border-radius: 0 4px 4px 0; }
+    .memory-item { background: rgba(var(--accent-rgb),0.05); border-left: 2px solid var(--accent); padding: 4px 8px; font-size: 11px; border-radius: 0 4px 4px 0; }
 
     /* CENTER */
     #center { flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden; }
@@ -306,8 +311,8 @@
     .msg.user .msg-label { color: var(--text-dim); justify-content: flex-end; }
     .msg-time { color: var(--text-dim); font-size: 8px; opacity: 0.7; }
     .msg-bubble { padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.55; word-wrap: break-word; overflow-wrap: anywhere; }
-    .msg.maik .msg-bubble { background: rgba(0,245,255,0.07); border: 1px solid rgba(0,245,255,0.2); border-radius: 4px 12px 12px 12px; color: var(--text); }
-    .msg.user .msg-bubble { background: rgba(0,245,255,0.12); border: 1px solid rgba(0,245,255,0.25); border-radius: 12px 4px 12px 12px; color: white; }
+    .msg.maik .msg-bubble { background: rgba(var(--accent-rgb),0.07); border: 1px solid rgba(var(--accent-rgb),0.2); border-radius: 4px 12px 12px 12px; color: var(--text); }
+    .msg.user .msg-bubble { background: rgba(var(--accent-rgb),0.12); border: 1px solid rgba(var(--accent-rgb),0.25); border-radius: 12px 4px 12px 12px; color: white; }
     .msg-bubble p { margin: 0 0 6px; } .msg-bubble p:last-child { margin: 0; }
     .msg-bubble code { background: rgba(0,0,0,0.4); padding: 1px 5px; border-radius: 3px; font-family: 'Share Tech Mono', monospace; font-size: 12px; color: var(--green); }
     .msg-bubble pre { background: rgba(0,0,0,0.45); border: 1px solid var(--border); padding: 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
@@ -334,12 +339,12 @@
       width: 42px; height: 42px; border-radius: 50%; cursor: pointer; display: flex;
       align-items: center; justify-content: center; font-size: 16px; transition: all 0.2s; flex-shrink: 0;
     }
-    #voice-btn { background: rgba(0,245,255,0.06); border: 1px solid var(--border); color: var(--accent); }
+    #voice-btn { background: rgba(var(--accent-rgb),0.06); border: 1px solid var(--border); color: var(--accent); }
     #voice-btn.active { background: rgba(255,51,85,0.15); border-color: var(--red); color: var(--red); animation: voicePulse 1s infinite; }
     @keyframes voicePulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,51,85,0.4)} 50%{box-shadow:0 0 0 8px rgba(255,51,85,0)} }
 
     #chat-input {
-      flex: 1; background: rgba(0,245,255,0.05); border: 1px solid var(--border); border-radius: 20px;
+      flex: 1; background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); border-radius: 20px;
       padding: 10px 16px; color: white; font-size: 14px; font-family: 'Rajdhani', sans-serif; outline: none;
       transition: border-color 0.2s; min-width: 0;
     }
@@ -353,7 +358,7 @@
 
     #quick-replies { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
     .quick-btn {
-      background: transparent; border: 1px solid rgba(0,245,255,0.2); color: var(--text-dim); padding: 4px 10px;
+      background: transparent; border: 1px solid rgba(var(--accent-rgb),0.2); color: var(--text-dim); padding: 4px 10px;
       border-radius: 12px; cursor: pointer; font-family: 'Rajdhani', sans-serif; font-size: 11px; transition: all 0.2s; white-space: nowrap;
     }
     .quick-btn:hover { background: var(--cyan-glow); color: var(--accent); border-color: var(--accent); }
@@ -379,7 +384,7 @@
     .modal-overlay.open { display: flex; animation: toastIn 0.2s ease; }
     .modal {
       background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; width: 100%; max-width: 440px;
-      max-height: 88vh; overflow-y: auto; box-shadow: 0 0 40px rgba(0,245,255,0.1);
+      max-height: 88vh; overflow-y: auto; box-shadow: 0 0 40px rgba(var(--accent-rgb),0.1);
     }
     .modal-header {
       display: flex; justify-content: space-between; align-items: center; padding: 14px 18px;
@@ -390,7 +395,7 @@
     .field { margin-bottom: 14px; }
     .field label { display: block; font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 2px; color: var(--cyan-dim); margin-bottom: 5px; text-transform: uppercase; }
     .field input[type=text], .field input[type=number], .field select, .field textarea {
-      width: 100%; background: rgba(0,245,255,0.05); border: 1px solid var(--border); border-radius: 4px;
+      width: 100%; background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); border-radius: 4px;
       padding: 8px 10px; color: var(--text); font-size: 13px; font-family: 'Rajdhani', sans-serif; outline: none;
     }
     .field textarea { resize: vertical; min-height: 70px; }
@@ -414,7 +419,7 @@
     /* TOOLS */
     .tools-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .tool-card {
-      background: rgba(0,245,255,0.05); border: 1px solid var(--border); border-radius: 8px;
+      background: rgba(var(--accent-rgb),0.05); border: 1px solid var(--border); border-radius: 8px;
       padding: 14px 8px; text-align: center; cursor: pointer; transition: all 0.18s; display: flex;
       flex-direction: column; align-items: center; gap: 6px;
     }
@@ -430,25 +435,25 @@
     .tool-big { font-family: 'Orbitron', monospace; font-size: 30px; color: white; text-align: center; letter-spacing: 1px; }
     .tool-btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .tool-btn {
-      flex: 1; min-width: 64px; background: rgba(0,245,255,0.08); border: 1px solid var(--border); color: var(--accent);
+      flex: 1; min-width: 64px; background: rgba(var(--accent-rgb),0.08); border: 1px solid var(--border); color: var(--accent);
       padding: 9px; border-radius: 6px; cursor: pointer; font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 600; transition: all 0.15s;
     }
     .tool-btn:hover { background: var(--cyan-glow); }
     .tool-btn.solid { background: var(--accent); color: #050a0f; border: none; }
     .calc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px; }
     .calc-grid button {
-      background: rgba(0,245,255,0.06); border: 1px solid var(--border); color: var(--text); padding: 12px 0;
+      background: rgba(var(--accent-rgb),0.06); border: 1px solid var(--border); color: var(--text); padding: 12px 0;
       border-radius: 6px; cursor: pointer; font-size: 16px; font-family: 'Rajdhani', sans-serif; transition: all 0.12s;
     }
     .calc-grid button:hover { background: var(--cyan-glow); }
     .calc-grid button.op { color: var(--accent); }
     .calc-grid button.eq { background: var(--accent); color: #050a0f; grid-column: span 2; }
     .calc-grid button.span2 { grid-column: span 2; }
-    .clock-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid rgba(0,245,255,0.07); }
+    .clock-row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid rgba(var(--accent-rgb),0.07); }
     .clock-row .city { color: var(--text-dim); font-size: 13px; }
     .clock-row .time { font-family: 'Orbitron', monospace; color: white; font-size: 15px; }
-    .note-item { background: rgba(0,245,255,0.04); border-left: 2px solid var(--accent); padding: 7px 9px; border-radius: 0 6px 6px 0; margin-top: 6px; font-size: 13px; display:flex; justify-content:space-between; gap:8px; }
-    .tool-field { width:100%; background: rgba(0,245,255,0.05); border:1px solid var(--border); border-radius:6px; padding:9px 11px; color:var(--text); font-size:14px; font-family:'Rajdhani',sans-serif; outline:none; margin-top:8px; }
+    .note-item { background: rgba(var(--accent-rgb),0.04); border-left: 2px solid var(--accent); padding: 7px 9px; border-radius: 0 6px 6px 0; margin-top: 6px; font-size: 13px; display:flex; justify-content:space-between; gap:8px; }
+    .tool-field { width:100%; background: rgba(var(--accent-rgb),0.05); border:1px solid var(--border); border-radius:6px; padding:9px 11px; color:var(--text); font-size:14px; font-family:'Rajdhani',sans-serif; outline:none; margin-top:8px; }
     .tool-field:focus { border-color: var(--accent); }
     select.tool-field { cursor:pointer; }
     @media (max-width: 480px) { .tools-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -473,6 +478,96 @@
     }
     .topbar-status { min-width: 0; }
     .topbar-actions { flex-shrink: 0; }
+
+    /* ============================================================
+       V9 — GRAFICA: aurora, vetro, bolle, azioni, allegati, memoria
+       ============================================================ */
+    body { background: var(--bg); }
+    body::before {                       /* aurora animata, colori del tema */
+      content: ''; position: fixed; inset: -20%; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(40% 35% at 20% 25%, rgba(var(--accent-rgb),0.10), transparent 70%),
+        radial-gradient(35% 40% at 80% 70%, rgba(var(--accent2-rgb),0.12), transparent 70%),
+        radial-gradient(30% 30% at 60% 15%, rgba(var(--accent2-rgb),0.06), transparent 70%);
+      animation: aurora 26s ease-in-out infinite alternate;
+    }
+    @keyframes aurora { from { transform: translate3d(-3%,-2%,0) rotate(0deg); } to { transform: translate3d(3%,2%,0) rotate(8deg); } }
+    #topbar, #main, #ollama-bar { position: relative; z-index: 1; }
+    #topbar { background: rgba(var(--bg-rgb),0.72); backdrop-filter: blur(14px) saturate(140%); -webkit-backdrop-filter: blur(14px) saturate(140%); }
+    #sidebar { background: rgba(var(--bg-rgb),0.62); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); }
+    #chat-area { background: rgba(var(--bg-rgb),0.45); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    #input-area { background: rgba(var(--bg-rgb),0.7); }
+    .logo { background: linear-gradient(90deg, #fff 0%, #fff 55%, var(--accent) 100%); -webkit-background-clip: text; background-clip: text; }
+    .logo span { -webkit-text-fill-color: var(--accent); text-shadow: 0 0 14px rgba(var(--accent-rgb),0.6); }
+
+    /* bolle dei messaggi */
+    .msg { max-width: min(82%, 760px); position: relative; }
+    .msg.maik { padding-left: 34px; }
+    .msg.maik::before {                  /* avatar: un piccolo nucleo che respira */
+      content: ''; position: absolute; left: 0; top: 18px; width: 24px; height: 24px; border-radius: 50%;
+      background: radial-gradient(circle at 50% 50%, #fff 0 12%, rgba(var(--accent-rgb),0.9) 22%, rgba(var(--accent2-rgb),0.35) 55%, transparent 72%);
+      box-shadow: 0 0 14px rgba(var(--accent-rgb),0.45); animation: avatarPulse 3.2s ease-in-out infinite;
+    }
+    @keyframes avatarPulse { 0%,100% { transform: scale(0.92); opacity: 0.85; } 50% { transform: scale(1.05); opacity: 1; } }
+    .msg.maik .msg-bubble {
+      background: linear-gradient(135deg, rgba(var(--accent-rgb),0.10), rgba(var(--accent2-rgb),0.07));
+      border: 1px solid rgba(var(--accent-rgb),0.22); box-shadow: 0 6px 22px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+    }
+    .msg.user .msg-bubble {
+      background: linear-gradient(135deg, rgba(var(--accent-rgb),0.24), rgba(var(--accent-rgb),0.12));
+      border: 1px solid rgba(var(--accent-rgb),0.32); box-shadow: 0 6px 22px rgba(0,0,0,0.22);
+    }
+    .msg-bubble img.attach-img { display: block; max-width: min(260px, 100%); border-radius: 8px; margin-bottom: 6px; border: 1px solid rgba(var(--accent-rgb),0.3); }
+    .file-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.25); border: 1px solid rgba(var(--accent-rgb),0.3);
+      border-radius: 7px; padding: 3px 8px; font-size: 12px; margin-bottom: 6px; font-family: 'Share Tech Mono', monospace; }
+    .msg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 2px; opacity: 0; transition: opacity 0.2s; }
+    .msg.maik:hover .msg-actions, .msg.maik:focus-within .msg-actions { opacity: 1; }
+    @media (hover: none) { .msg-actions { opacity: 0.7; } }
+    .msg-actions button { white-space: nowrap; flex-shrink: 0; background: rgba(var(--accent-rgb),0.06); border: 1px solid rgba(var(--accent-rgb),0.18); color: var(--text-dim);
+      border-radius: 6px; font-size: 11px; padding: 2px 7px; cursor: pointer; font-family: inherit; transition: 0.15s; }
+    .msg-actions button:hover { color: var(--accent); border-color: var(--accent); }
+    .msg-actions .act-regen { display: none; }
+    .msg.maik.last-reply .act-regen { display: inline-block; }
+    .msg-meta { font-family: 'Share Tech Mono', monospace; font-size: 9.5px; letter-spacing: 1px; color: var(--text-dim); opacity: 0.85; }
+    .msg-meta b { color: var(--accent); font-weight: 400; }
+    .msg-bubble .md-h { display: block; color: #fff; margin: 6px 0 2px; letter-spacing: 0.3px; }
+
+    /* allegati */
+    #attach-btn { width: 42px; height: 42px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; flex-shrink: 0; background: rgba(var(--accent-rgb),0.06); border: 1px solid var(--border); color: var(--accent); transition: 0.2s; }
+    #attach-btn:hover { background: rgba(var(--accent-rgb),0.16); }
+    #attach-preview { display: none; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px 8px; border-radius: 10px;
+      background: rgba(var(--accent-rgb),0.07); border: 1px dashed rgba(var(--accent-rgb),0.35); font-size: 12px; }
+    #attach-preview.on { display: flex; }
+    #attach-preview img { width: 38px; height: 38px; object-fit: cover; border-radius: 6px; }
+    #attach-preview .x { margin-left: auto; background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; }
+    #chat-area.drop { outline: 2px dashed var(--accent); outline-offset: -8px; }
+
+    /* memoria completa */
+    .mem-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+    .mem-row { display: flex; gap: 8px; align-items: flex-start; padding: 7px 4px; border-bottom: 1px solid rgba(var(--accent-rgb),0.08); font-size: 13px; }
+    .mem-row .tag { font-family: 'Share Tech Mono', monospace; font-size: 9px; letter-spacing: 1px; padding: 1px 6px; border-radius: 8px; flex-shrink: 0; margin-top: 2px;
+      background: rgba(var(--accent-rgb),0.12); color: var(--accent); text-transform: uppercase; }
+    .mem-row .tag.ia { background: rgba(var(--accent2-rgb),0.2); color: #d8c8ff; }
+    .mem-row .txt { flex: 1; }
+    .mem-summary { background: rgba(var(--accent2-rgb),0.08); border: 1px solid rgba(var(--accent2-rgb),0.25); border-radius: 8px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; white-space: pre-wrap; }
+
+    /* temi */
+    .theme-swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .theme-sw { border: 1px solid var(--border); border-radius: 9px; padding: 8px; cursor: pointer; background: rgba(0,0,0,0.25); color: var(--text);
+      font-family: 'Share Tech Mono', monospace; font-size: 10px; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; transition: 0.15s; }
+    .theme-sw i { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; }
+    .theme-sw.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 14px rgba(var(--accent-rgb),0.3); color: #fff; }
+
+    /* accessibilità */
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:focus:not(:focus-visible), input:focus:not(:focus-visible) { outline: none; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+    }
+    @media (max-width: 480px) { .msg { max-width: 92%; } .msg.maik { padding-left: 28px; } .msg.maik::before { width: 20px; height: 20px; } }
+    /* sul telefono la barra laterale si apre SOPRA la chat: niente vetro trasparente, deve essere leggibile */
+    @media (max-width: 820px) { #sidebar { background: rgba(var(--bg-rgb),0.97); box-shadow: 8px 0 30px rgba(0,0,0,0.6); } }
   </style>
 </head>
 <body>
@@ -491,12 +586,13 @@
     <span class="hide-sm">scambi <strong id="exchange-count" style="color:var(--accent)">0</strong></span>
   </div>
   <div class="topbar-actions" style="display:flex;gap:6px">
-    <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla">🫂<span class="hide-xs"> AMICO</span></button>
-    <button class="topbar-btn" onclick="guardaCam()" title="MAIK guarda dalla webcam">👁️</button>
-    <button class="topbar-btn" onclick="openTools()" title="Strumenti">🧰</button>
-    <button class="topbar-btn" id="cam-toggle-btn" onclick="toggleCamera()">📷</button>
-    <button class="topbar-btn" onclick="openSettings()" title="Impostazioni">⚙</button>
-    <button class="topbar-btn active" id="sidebar-toggle-btn" onclick="toggleSidebar()">≡</button>
+    <button class="topbar-btn hide-xs" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
+    <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla" aria-label="Modalità Amico">🫂<span class="hide-xs"> AMICO</span></button>
+    <button class="topbar-btn" onclick="guardaCam()" title="MAIK guarda dalla webcam" aria-label="MAIK guarda dalla webcam">👁️</button>
+    <button class="topbar-btn" onclick="openTools()" title="Strumenti" aria-label="Strumenti">🧰</button>
+    <button class="topbar-btn" id="cam-toggle-btn" onclick="toggleCamera()" title="Webcam" aria-label="Accendi o spegni la webcam">📷</button>
+    <button class="topbar-btn" onclick="openSettings()" title="Impostazioni" aria-label="Impostazioni">⚙</button>
+    <button class="topbar-btn active" id="sidebar-toggle-btn" onclick="toggleSidebar()" title="Barra laterale" aria-label="Mostra o nascondi la barra laterale">≡</button>
   </div>
 </div>
 
@@ -556,6 +652,7 @@
         <button class="icon-btn" onclick="searchMemory()">🔍</button>
       </div>
       <div id="memory-results"></div>
+      <button class="sidebar-add-btn" onclick="openMemory()">🧠 Apri la memoria completa</button>
     </div>
 
     <div class="sidebar-section">
@@ -634,8 +731,11 @@
       <div id="messages"></div>
       <div id="input-area">
         <div id="listening-label">· IN ASCOLTO ·</div>
+        <div id="attach-preview" aria-live="polite"></div>
         <div id="input-row">
-          <button id="voice-btn" onclick="toggleVoice()" title="Voce">🎤</button>
+          <button id="attach-btn" onclick="document.getElementById('attach-input').click()" title="Allega un'immagine (MAIK la guarda) o un file di testo" aria-label="Allega un file">📎</button>
+          <input type="file" id="attach-input" accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.mjs,.ts,.jsx,.tsx,.py,.html,.htm,.css,.scss,.xml,.yml,.yaml,.ini,.cfg,.toml,.log,.sql,.java,.kt,.c,.h,.cpp,.hpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.swift,.r" style="display:none" onchange="onAttachInput(event)">
+          <button id="voice-btn" onclick="toggleVoice()" title="Voce" aria-label="Parla con MAIK">🎤</button>
           <input id="chat-input" placeholder="Scrivi a Maik, o usa il microfono..." onkeydown="if(event.key==='Enter')sendMessage()">
           <button id="stop-btn" onclick="stopGeneration()" title="Ferma">■</button>
           <button id="send-btn" onclick="sendMessage()">➤</button>
@@ -659,6 +759,8 @@
       <span>MODEL: <strong style="color:var(--accent)" id="bar-model">—</strong></span>
       <span>|</span>
       <span id="token-count">TOKEN: 0</span>
+      <span class="hide-xs">|</span>
+      <span id="speed-badge" class="hide-xs" title="Velocità dell'ultima risposta">⚡ —</span>
     </div>
   </div>
 </div>
@@ -712,12 +814,34 @@
         <label style="margin:0">Auto-ascolto continuo</label>
         <input type="checkbox" id="set-autolisten">
       </div>
+      <div class="field switch">
+        <label style="margin:0">👂 In Modalità Amico rispondi solo se dico «Maik»</label>
+        <input type="checkbox" id="set-wakeword">
+      </div>
+      <div class="field switch">
+        <label style="margin:0">✨ Animazione di avvio</label>
+        <input type="checkbox" id="set-boot">
+      </div>
       <div class="field">
-        <label>Colore accento</label>
-        <div class="accent-swatches" id="accent-swatches"></div>
+        <label>🎨 Tema</label>
+        <div class="theme-swatches" id="theme-swatches"></div>
       </div>
       <button class="modal-btn" onclick="saveSettings()">SALVA</button>
       <button class="modal-btn secondary" onclick="closeSettings()">CHIUDI</button>
+    </div>
+  </div>
+</div>
+
+<!-- MEMORIA COMPLETA -->
+<div class="modal-overlay" id="memory-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title">🧠 MEMORIA DI MAIK</div>
+      <button class="icon-btn" onclick="closeMemory()" aria-label="Chiudi">✕</button>
+    </div>
+    <div class="modal-body">
+      <input class="sidebar-input" id="mem-filter" placeholder="Filtra i ricordi…" oninput="renderMemory()" style="width:100%;margin-bottom:10px">
+      <div id="mem-body"></div>
     </div>
   </div>
 </div>
@@ -742,9 +866,384 @@
 </div>
 
 <script>
+/* ============================================================
+   MAIK KIT v9 — grafica e componenti condivisi
+   (identico in index.html e nella GUI del server)
+   · Neural Core: nucleo neurale 3D nitido su ogni schermo (HiDPI)
+   · Temi coerenti (--accent-rgb) · Avvio con controlli reali
+   · Palette comandi Ctrl+K · Evidenziazione del codice · Microfono
+   ============================================================ */
+const MaikKit = (() => {
+  const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const hexRgb = h => { h = String(h || '#00f5ff').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; };
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // ---------------- TEMI ----------------
+  const THEMES = {
+    neon:      { nm: 'Neon',      accent: '#00f5ff', accent2: '#7c3aed', bg: '#050a0f' },
+    synthwave: { nm: 'Synthwave', accent: '#ff4fd8', accent2: '#6d28d9', bg: '#0a0612' },
+    matrix:    { nm: 'Matrix',    accent: '#00ff88', accent2: '#0891b2', bg: '#030a06' },
+    solar:     { nm: 'Solar',     accent: '#ffb020', accent2: '#ff3d6e', bg: '#0d0805' },
+    ice:       { nm: 'Ice',       accent: '#a5f3fc', accent2: '#6366f1', bg: '#060912' },
+    ruby:      { nm: 'Ruby',      accent: '#ff3d5a', accent2: '#f59e0b', bg: '#0d0507' },
+  };
+  function applyTheme(key) {
+    const t = THEMES[key] || THEMES.neon, s = document.documentElement.style;
+    const a = hexRgb(t.accent), a2 = hexRgb(t.accent2), b = hexRgb(t.bg);
+    s.setProperty('--accent', t.accent);   s.setProperty('--accent-rgb', a.join(','));
+    s.setProperty('--accent2', t.accent2); s.setProperty('--accent2-rgb', a2.join(','));
+    s.setProperty('--bg', t.bg);           s.setProperty('--bg-rgb', b.join(','));
+    const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.setAttribute('content', t.bg);
+    return { key: THEMES[key] ? key : 'neon', accent: a, accent2: a2 };
+  }
+
+  // ---------------- NEURAL CORE ----------------
+  const STATE_COL = { thinking: [168, 85, 247], listening: [0, 255, 136], detecting: [0, 255, 136], alarm: [255, 196, 0] };
+  function core(canvas, opts = {}) {
+    const ctx = canvas.getContext('2d');
+    const light = opts.light ?? (touch || innerWidth < 700);
+    const NO = light ? 84 : 132, NI = light ? 26 : 40;
+    const nodes = [], links = [], signals = [], waves = [];
+    // due gusci (Fibonacci): esterno + interno, per dare profondità al "cervello"
+    const shell = (n, r) => { const inc = Math.PI * (3 - Math.sqrt(5)), off = nodes.length;
+      for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, rr = Math.sqrt(Math.max(0, 1 - y * y)), p = i * inc;
+        nodes.push({ x: Math.cos(p) * rr * r, y: y * r, z: Math.sin(p) * rr * r, inner: r < 1, flash: 0, sx: 0, sy: 0, d: 0 }); } return off; };
+    shell(NO, 1); shell(NI, 0.55);
+    // collegamenti tra vicini (calcolati una volta sola)
+    const seen = new Set();
+    nodes.forEach((a, i) => {
+      nodes.map((b, j) => [j, (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2]).filter(x => x[0] !== i)
+        .sort((p, q) => p[1] - q[1]).slice(0, 3).forEach(([j]) => { const key = i < j ? i + '-' + j : j + '-' + i;
+          if (!seen.has(key)) { seen.add(key); links.push([Math.min(i, j), Math.max(i, j)]); } });
+    });
+    const nbr = nodes.map(() => []); links.forEach(([a, b], li) => { nbr[a].push(li); nbr[b].push(li); });
+
+    let W = 200, state = 'idle', t = 0, rotX = 0.45, rotY = 0, level = 0, levelT = 0, word = 0, lastWave = 0;
+    const col = [0, 245, 255], accent = [0, 245, 255], accent2 = [124, 58, 237];
+
+    function resize(px) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(px * dpr); canvas.height = Math.round(px * dpr);
+      canvas.style.width = px + 'px'; canvas.style.height = px + 'px'; W = canvas.width;
+    }
+    function setAccent(a, a2) { accent.splice(0, 3, ...a); accent2.splice(0, 3, ...(a2 || a)); }
+    function setState(s) { if (s === state) return; state = s; if (s === 'thinking' || s === 'speaking' || s === 'alarm') wave(); }
+    function setLevel(v) { levelT = Math.max(0, Math.min(1, v || 0)); }
+    function pulse(k = 1) { word = Math.min(1.6, word + 0.55 * k); }
+    function wave() { if (!reduceMotion) { waves.push({ r: 0.35, a: 0.7 }); if (waves.length > 5) waves.shift(); } }
+    function spawn(from) {
+      if (signals.length > (light ? 26 : 44)) return;
+      const ls = from == null ? null : nbr[from];
+      const li = ls && ls.length ? ls[(Math.random() * ls.length) | 0] : (Math.random() * links.length) | 0;
+      const [a, b] = links[li], dir = from == null ? (Math.random() < 0.5 ? 1 : -1) : (a === from ? 1 : -1);
+      signals.push({ li, p: 0, dir, v: 0.025 + Math.random() * 0.035 });
+    }
+
+    function frame() {
+      const now = performance.now();
+      t += reduceMotion ? 0.004 : 0.016;
+      const tgt = STATE_COL[state] || accent;
+      for (let i = 0; i < 3; i++) col[i] += (tgt[i] - col[i]) * 0.07;          // cambi di colore morbidi
+      level += (levelT - level) * 0.3; word *= 0.9;
+      const energy = state === 'thinking' ? 1 : state === 'speaking' ? 0.55 + word * 0.5 : state === 'alarm' ? 0.9
+                   : state === 'listening' ? 0.25 + level * 1.3 : state === 'detecting' ? 0.35 : 0.14;
+      const spin = (reduceMotion ? 0.3 : 1) * (state === 'thinking' ? 0.016 : state === 'speaking' ? 0.009 : 0.0045);
+      rotY += spin; rotX += spin * 0.32;
+      if (!reduceMotion && Math.random() < energy * 0.55) spawn(null);
+      if (state === 'alarm' && now - lastWave > 650) { wave(); lastWave = now; }
+      draw(energy);
+    }
+
+    function draw(energy) {
+      const cx = W / 2, cy = W / 2, R = W * 0.315, k = W / 200, [r, g, b] = col.map(v => v | 0);
+      const rgba = (a, c = col) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+      const breath = 1 + Math.sin(t * 2) * 0.014 + word * 0.045 + level * 0.07;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, W);
+      ctx.globalCompositeOperation = 'lighter';
+
+      // 1) aura
+      let gr = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.95);
+      gr.addColorStop(0, rgba(0.20 + energy * 0.12)); gr.addColorStop(0.55, rgba(0.07, accent2)); gr.addColorStop(1, rgba(0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, R * 1.95, 0, 6.2832); ctx.fill();
+
+      // 2) anelli HUD (ellissi tratteggiate in movimento + quadrante con tacche + scanner)
+      ctx.lineWidth = 1 * k;
+      ctx.setLineDash([6 * k, 9 * k]); ctx.lineDashOffset = -t * 30 * k; ctx.strokeStyle = rgba(0.32);
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.38, R * 0.42, t * 0.12, 0, 6.2832); ctx.stroke();
+      ctx.setLineDash([2 * k, 12 * k]); ctx.lineDashOffset = t * 22 * k; ctx.strokeStyle = rgba(0.28, accent2);
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.52, R * 0.6, 1.05 - t * 0.08, 0, 6.2832); ctx.stroke();
+      ctx.setLineDash([]);
+      const RR = R * 1.72, rot = t * 0.05;
+      for (let i = 0; i < 72; i++) {                                   // quadrante con tacche
+        const an = rot + i * 0.08727, long = i % 6 === 0, l = (long ? 7 : 3) * k;
+        ctx.strokeStyle = rgba(long ? 0.45 : 0.18); ctx.lineWidth = (long ? 1.4 : 0.8) * k;
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * RR, cy + Math.sin(an) * RR);
+        ctx.lineTo(cx + Math.cos(an) * (RR - l), cy + Math.sin(an) * (RR - l)); ctx.stroke();
+      }
+      const sc = t * (state === 'thinking' ? 2.6 : 0.9);              // arco "scanner"
+      ctx.lineWidth = 2.2 * k; ctx.lineCap = 'round';
+      for (let i = 0; i < 10; i++) { ctx.strokeStyle = rgba(0.06 * (i + 1)); ctx.beginPath();
+        ctx.arc(cx, cy, RR + 5 * k, sc + i * 0.06, sc + i * 0.06 + 0.07); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+
+      // 3) proiezione 3D dei nodi
+      const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
+      for (const n of nodes) {
+        let x = n.x * cY - n.z * sY, z = n.x * sY + n.z * cY; const y = n.y * cX - z * sX; z = n.y * sX + z * cX;
+        const p = 1 / (1.85 - z * 0.85);
+        n.sx = cx + x * R * p * breath; n.sy = cy + y * R * p * breath; n.d = (z + 1) / 2; n.flash *= 0.92;
+      }
+      // 4) collegamenti, raggruppati per luminosità (pochi stroke = veloce)
+      const bins = [[], [], [], []];
+      for (const [a, c] of links) { const d = (nodes[a].d + nodes[c].d) / 2; bins[Math.min(3, (d * 4) | 0)].push(a, c); }
+      bins.forEach((arr, bi) => { if (!arr.length) return; ctx.strokeStyle = rgba((0.06 + bi * 0.075) * (0.75 + energy * 0.5));
+        ctx.lineWidth = (0.55 + bi * 0.2) * k; ctx.beginPath();
+        for (let i = 0; i < arr.length; i += 2) { const A = nodes[arr[i]], B = nodes[arr[i + 1]]; ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); }
+        ctx.stroke(); });
+      // 5) nodi
+      for (const n of nodes) {
+        const f = n.inner ? 0.55 : 1, a = (0.18 + n.d * 0.62) * f + n.flash * 0.8, s = (0.45 + n.d * 1.25) * k * (n.inner ? 0.75 : 1) + n.flash * 1.6 * k;
+        ctx.fillStyle = `rgba(${Math.min(255, r + 80 * n.d) | 0},${Math.min(255, g + 80 * n.d) | 0},${Math.min(255, b + 80 * n.d) | 0},${Math.min(1, a)})`;
+        ctx.beginPath(); ctx.arc(n.sx, n.sy, s, 0, 6.2832); ctx.fill();
+      }
+      // 6) impulsi che corrono lungo le sinapsi
+      for (let i = signals.length - 1; i >= 0; i--) {
+        const sg = signals[i]; sg.p += sg.v; const [a, c] = links[sg.li];
+        const A = nodes[sg.dir > 0 ? a : c], B = nodes[sg.dir > 0 ? c : a];
+        if (sg.p >= 1) { B.flash = 1; signals.splice(i, 1); if (Math.random() < 0.45 * energy + 0.1) spawn(nodes.indexOf(B)); continue; }
+        const x = A.sx + (B.sx - A.sx) * sg.p, y = A.sy + (B.sy - A.sy) * sg.p;
+        ctx.fillStyle = rgba(0.18); ctx.beginPath(); ctx.arc(x, y, 3.2 * k, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(x, y, 1.1 * k, 0, 6.2832); ctx.fill();
+      }
+      // 7) nucleo
+      const cr = R * (0.13 + Math.sin(t * 3.2) * 0.012 + word * 0.05 + level * 0.07);
+      gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr * 2.3);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.22, rgba(0.55)); gr.addColorStop(1, rgba(0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, cr * 2.3, 0, 6.2832); ctx.fill();
+      ctx.setLineDash([3 * k, 5 * k]); ctx.lineDashOffset = t * 20 * k; ctx.strokeStyle = rgba(0.55); ctx.lineWidth = 1 * k;
+      ctx.beginPath(); ctx.arc(cx, cy, cr * 1.75, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+
+      // 8) anello voce: barre quando parla, onda morbida quando ascolta
+      if (state === 'speaking' || state === 'listening') {
+        const base = R * 1.12, M = 72;
+        if (state === 'speaking') {
+          ctx.lineWidth = 2 * k; ctx.strokeStyle = rgba(0.75); ctx.beginPath();
+          for (let i = 0; i < M; i++) { const an = i / M * 6.2832;
+            const h = (2 + (0.4 + 0.6 * Math.abs(Math.sin(t * 7 + i * 0.7) * Math.cos(t * 3.3 + i * 0.23))) * (6 + word * 13)) * k;
+            ctx.moveTo(cx + Math.cos(an) * base, cy + Math.sin(an) * base); ctx.lineTo(cx + Math.cos(an) * (base + h), cy + Math.sin(an) * (base + h)); }
+          ctx.stroke();
+        } else {
+          for (let ring = 0; ring < 2; ring++) {
+            ctx.lineWidth = (ring ? 1 : 1.6) * k; ctx.strokeStyle = rgba(ring ? 0.35 : 0.75); ctx.beginPath();
+            for (let i = 0; i <= M; i++) { const an = i / M * 6.2832;
+              const rr = base + ring * 7 * k + (1.5 + level * 11 * (0.55 + 0.45 * Math.sin(i * 0.52 + t * 8 + ring * 2)) * (0.6 + 0.4 * Math.sin(i * 0.13 - t * 3))) * k;
+              const x = cx + Math.cos(an) * rr, y = cy + Math.sin(an) * rr; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+            ctx.stroke();
+          }
+        }
+      }
+      // 9) onde d'urto ai cambi di stato
+      for (let i = waves.length - 1; i >= 0; i--) {
+        const w = waves[i]; w.r += 0.035; w.a *= 0.955;
+        if (w.a < 0.02) { waves.splice(i, 1); continue; }
+        ctx.strokeStyle = rgba(w.a); ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.arc(cx, cy, R * w.r * 1.6, 0, 6.2832); ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    resize(opts.size || 200);
+    return { resize, setAccent, setState, setLevel, pulse, wave, frame, get state() { return state; } };
+  }
+
+  // ---------------- LIVELLO DEL MICROFONO (solo desktop: sul telefono può disturbare il riconoscimento vocale) ----------------
+  function mic() {
+    let stream = null, an = null, ac = null, buf = null, on = false, starting = false;
+    async function start() {
+      if (on || starting || touch) return on; starting = true;
+      try {
+        if (navigator.permissions) { const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null); if (p && p.state !== 'granted') return false; }
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        ac = new (window.AudioContext || window.webkitAudioContext)(); an = ac.createAnalyser(); an.fftSize = 512;
+        buf = new Uint8Array(an.fftSize); ac.createMediaStreamSource(stream).connect(an); on = true;
+      } catch (e) { on = false; } finally { starting = false; }
+      return on;
+    }
+    function level() { if (!on) return 0; an.getByteTimeDomainData(buf); let s = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; } return Math.min(1, Math.sqrt(s / buf.length) * 5); }
+    function stop() { if (stream) stream.getTracks().forEach(tr => tr.stop()); if (ac) ac.close().catch(() => {}); stream = an = ac = null; on = false; }
+    return { start, stop, level, get on() { return on; } };
+  }
+
+  // ---------------- STILI DEI COMPONENTI (iniettati una volta) ----------------
+  const CSS = `
+  .mk-boot{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;
+    background:radial-gradient(ellipse at center,rgba(var(--accent-rgb,0,245,255),.10),transparent 60%),var(--bg,#050a0f);transition:opacity .45s ease;cursor:pointer}
+  .mk-boot.out{opacity:0;pointer-events:none}
+  .mk-boot-logo{font-family:'Orbitron',monospace;font-weight:900;font-size:clamp(28px,7vw,54px);letter-spacing:.45em;padding-left:.45em;color:#fff;
+    text-shadow:0 0 18px rgba(var(--accent-rgb,0,245,255),.8),0 0 42px rgba(var(--accent-rgb,0,245,255),.35);animation:mkFlick 2.2s ease-in-out infinite}
+  .mk-boot-ver{font-family:'Share Tech Mono',monospace;color:var(--accent,#00f5ff);letter-spacing:.5em;font-size:11px;margin-top:-10px}
+  .mk-boot-list{font-family:'Share Tech Mono',monospace;font-size:12px;color:#9fb8c4;min-width:min(340px,86vw);display:flex;flex-direction:column;gap:6px}
+  .mk-boot-row{display:flex;justify-content:space-between;gap:12px;opacity:0;transform:translateY(4px);transition:all .25s ease}
+  .mk-boot-row.in{opacity:1;transform:none}.mk-boot-row b{font-weight:400}.mk-ok{color:#00ff88}.mk-warn{color:#ffcc00}.mk-wait{color:var(--accent,#00f5ff)}
+  .mk-boot-bar{width:min(340px,86vw);height:2px;background:rgba(var(--accent-rgb,0,245,255),.15);border-radius:2px;overflow:hidden}
+  .mk-boot-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent,#00f5ff),var(--accent2,#7c3aed));transition:width .3s ease;box-shadow:0 0 12px var(--accent,#00f5ff)}
+  .mk-boot-skip{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:2px;color:#4f6b78}
+  @keyframes mkFlick{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.55}94%{opacity:1}96%{opacity:.75}97%{opacity:1}}
+  .mk-pal{position:fixed;inset:0;z-index:4000;background:rgba(2,5,10,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 16px}
+  .mk-pal.open{display:flex}
+  .mk-pal-box{width:min(560px,100%);background:rgba(var(--bg-rgb,5,10,15),.92);border:1px solid rgba(var(--accent-rgb,0,245,255),.35);border-radius:14px;overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03),0 0 40px rgba(var(--accent-rgb,0,245,255),.12);animation:mkPop .16s ease}
+  @keyframes mkPop{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+  .mk-pal-in{width:100%;background:transparent;border:none;border-bottom:1px solid rgba(var(--accent-rgb,0,245,255),.18);padding:16px 18px;color:#fff;font-size:16px;outline:none;font-family:inherit}
+  .mk-pal-list{max-height:min(52vh,420px);overflow:auto;padding:6px}
+  .mk-pal-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;cursor:pointer;color:#c8e8f0;font-size:14px}
+  .mk-pal-item .ic{width:22px;text-align:center}.mk-pal-item .hint{margin-left:auto;font-size:11px;color:#5a7a8a;font-family:'Share Tech Mono',monospace}
+  .mk-pal-item.sel{background:rgba(var(--accent-rgb,0,245,255),.14);color:#fff;box-shadow:inset 2px 0 0 var(--accent,#00f5ff)}
+  .mk-pal-foot{display:flex;gap:14px;padding:8px 14px;border-top:1px solid rgba(var(--accent-rgb,0,245,255),.12);font-size:10px;color:#5a7a8a;font-family:'Share Tech Mono',monospace}
+  .mk-pal-empty{padding:18px;text-align:center;color:#5a7a8a;font-size:13px}
+  .codeblock{margin:8px 0;border:1px solid rgba(var(--accent-rgb,0,245,255),.22);border-radius:9px;overflow:hidden;background:rgba(0,0,0,.42)}
+  .cb-head{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:rgba(var(--accent-rgb,0,245,255),.07);
+    font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--accent,#00f5ff);text-transform:uppercase}
+  .cb-copy{background:none;border:1px solid rgba(var(--accent-rgb,0,245,255),.3);color:var(--accent,#00f5ff);border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:inherit}
+  .cb-copy:hover{background:rgba(var(--accent-rgb,0,245,255),.15)}
+  .codeblock pre{margin:0!important;border:none!important;border-radius:0!important;background:none!important;padding:10px 12px!important;overflow-x:auto}
+  .codeblock code{font-family:'Share Tech Mono',ui-monospace,monospace;font-size:12.5px;line-height:1.55;color:#d6e9f2;background:none!important;padding:0!important}
+  .hl-k{color:#c792ea}.hl-s{color:#c3e88d}.hl-n{color:#f78c6c}.hl-c{color:#5f7e8c;font-style:italic}.hl-f{color:#82aaff}
+  `;
+  function injectCSS() { if (document.getElementById('mk-css')) return; const s = document.createElement('style'); s.id = 'mk-css'; s.textContent = CSS; document.head.appendChild(s); }
+
+  // ---------------- AVVIO (controlli reali, una volta per sessione) ----------------
+  function boot({ version = 'V9', checks = [], key = 'maik_boot_v9', force = false } = {}) {
+    injectCSS();
+    let seen = false; try { seen = sessionStorage.getItem(key) === '1'; } catch (e) {}
+    if (seen && !force) return Promise.resolve(false);
+    try { sessionStorage.setItem(key, '1'); } catch (e) {}
+    const el = document.createElement('div'); el.className = 'mk-boot'; el.setAttribute('role', 'status'); el.setAttribute('aria-label', 'Avvio di MAIK');
+    el.innerHTML = `<div class="mk-boot-logo">MAIK</div><div class="mk-boot-ver">${esc(version)} · SISTEMA</div>
+      <div class="mk-boot-list"></div><div class="mk-boot-bar"><i></i></div><div class="mk-boot-skip">CLIC O INVIO PER SALTARE</div>`;
+    document.body.appendChild(el);
+    const list = el.querySelector('.mk-boot-list'), bar = el.querySelector('.mk-boot-bar i');
+    let done = false, resolveP;
+    const close = () => { if (done) return; done = true; el.classList.add('out'); document.removeEventListener('keydown', onKey);
+      setTimeout(() => el.remove(), 480); resolveP(true); };
+    const onKey = e => { if (['Escape', 'Enter', ' '].includes(e.key)) close(); };
+    el.addEventListener('click', close); document.addEventListener('keydown', onKey);
+    const pause = ms => new Promise(r => setTimeout(r, reduceMotion ? 0 : ms));
+    return new Promise(async res => {
+      resolveP = res;
+      for (let i = 0; i < checks.length && !done; i++) {
+        const row = document.createElement('div'); row.className = 'mk-boot-row';
+        row.innerHTML = `<span>▸ ${esc(checks[i].label)}</span><b class="mk-wait">…</b>`; list.appendChild(row);
+        requestAnimationFrame(() => row.classList.add('in'));
+        let r = { ok: null, text: '' };
+        try { r = await Promise.race([checks[i].run(), new Promise(z => setTimeout(() => z({ ok: false, text: 'timeout' }), 2500))]) || r; } catch (e) { r = { ok: false, text: 'errore' }; }
+        const st = row.querySelector('b'); st.className = r.ok === false ? 'mk-warn' : 'mk-ok'; st.textContent = (r.text || (r.ok === false ? 'non disponibile' : 'ok')) + (r.ok === false ? ' ⚠' : ' ✓');
+        bar.style.width = ((i + 1) / checks.length * 100) + '%';
+        await pause(140);
+      }
+      await pause(550); close();
+    });
+  }
+
+  // ---------------- PALETTE COMANDI (Ctrl+K) ----------------
+  function palette(getCommands) {
+    injectCSS();
+    const el = document.createElement('div'); el.className = 'mk-pal'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Palette comandi');
+    el.innerHTML = `<div class="mk-pal-box"><input class="mk-pal-in" placeholder="Cerca un comando… (es. tema, timer, briefing)" aria-label="Cerca un comando">
+      <div class="mk-pal-list" role="listbox"></div><div class="mk-pal-foot"><span>↑↓ scegli</span><span>⏎ esegui</span><span>esc chiudi</span><span style="margin-left:auto">CTRL+K</span></div></div>`;
+    document.body.appendChild(el);
+    const input = el.querySelector('input'), list = el.querySelector('.mk-pal-list');
+    let cmds = [], shown = [], sel = 0;
+    const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const score = (c, q) => { if (!q) return 1; const h = norm(c.label + ' ' + (c.keywords || '') + ' ' + (c.hint || ''));
+      if (h.includes(q)) return 3 - (h.indexOf(q) === 0 ? 0 : 1); let i = 0; for (const ch of h) if (ch === q[i]) i++; return i === q.length ? 1 : 0; };
+    function render() {
+      const q = norm(input.value.trim());
+      shown = cmds.map(c => [c, score(c, q)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 60);
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      list.innerHTML = shown.length ? shown.map((c, i) => `<div class="mk-pal-item${i === sel ? ' sel' : ''}" role="option" data-i="${i}"><span class="ic">${c.ic || '•'}</span><span>${esc(c.label)}</span><span class="hint">${esc(c.hint || '')}</span></div>`).join('')
+                                 : '<div class="mk-pal-empty">Nessun comando trovato</div>';
+      const s = list.querySelector('.sel'); if (s) s.scrollIntoView({ block: 'nearest' });
+    }
+    function open() { cmds = getCommands(); input.value = ''; sel = 0; render(); el.classList.add('open'); input.focus(); }   // focus subito: niente tasti persi
+    function close() { el.classList.remove('open'); }
+    function run(i) { const c = shown[i]; if (!c) return; close(); setTimeout(() => c.run(), 10); }
+    input.addEventListener('input', () => { sel = 0; render(); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { sel = Math.min(shown.length - 1, sel + 1); render(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); render(); e.preventDefault(); }
+      else if (e.key === 'Enter') { run(sel); e.preventDefault(); }
+      else if (e.key === 'Escape') { close(); e.preventDefault(); }
+    });
+    list.addEventListener('click', e => { const it = e.target.closest('.mk-pal-item'); if (it) run(+it.dataset.i); });
+    el.addEventListener('click', e => { if (e.target === el) close(); });
+    document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); el.classList.contains('open') ? close() : open(); } });
+    return { open, close, get isOpen() { return el.classList.contains('open'); } };
+  }
+
+  // ---------------- EVIDENZIAZIONE DEL CODICE ----------------
+  const KW = new Set(('const let var function return if else for while do switch case break continue new class extends import from export default try catch finally throw ' +
+    'async await yield def lambda pass None True False null undefined true false self this in of not and or is elif with as print public private protected static ' +
+    'void int float double char bool boolean string struct enum interface type select insert update delete where join create table echo fn mut impl use pub match').split(' '));
+  function highlight(code, lang = '') {
+    lang = String(lang || '').toLowerCase();
+    const hashComments = !lang || /^(python|py|bash|sh|shell|zsh|yaml|yml|ruby|rb|r|perl|toml|ini|conf|cfg|dockerfile|makefile|powershell|ps1|text|txt)$/.test(lang);
+    const re = new RegExp([
+      '(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/|<!--[\\s\\S]*?-->' + (hashComments ? '|#[^\\n]*' : '') + ')',   // commenti
+      '("(?:\\\\.|[^"\\\\\\n])*"|\'(?:\\\\.|[^\'\\\\\\n])*\'|`(?:\\\\.|[^`\\\\])*`)',                       // stringhe
+      '\\b(\\d+(?:\\.\\d+)?)\\b',                                                                            // numeri
+      '\\b([A-Za-z_][\\w]*)(?=\\s*\\()',                                                                     // funzioni
+      '\\b([A-Za-z_][\\w]*)\\b',                                                                             // parole
+    ].join('|'), 'g');
+    let out = '', last = 0, m;
+    while ((m = re.exec(code))) {
+      out += esc(code.slice(last, m.index)); last = re.lastIndex;
+      if (m[1]) out += `<span class="hl-c">${esc(m[1])}</span>`;
+      else if (m[2]) out += `<span class="hl-s">${esc(m[2])}</span>`;
+      else if (m[3]) out += `<span class="hl-n">${m[3]}</span>`;
+      else if (m[4]) out += KW.has(m[4]) ? `<span class="hl-k">${m[4]}</span>` : `<span class="hl-f">${m[4]}</span>`;
+      else out += KW.has(m[5]) ? `<span class="hl-k">${m[5]}</span>` : m[5];
+      if (m[0] === '') re.lastIndex++;
+    }
+    return out + esc(code.slice(last));
+  }
+  function codeBlock(code, lang) {
+    return `<div class="codeblock"><div class="cb-head"><span>${esc(lang || 'codice')}</span><button class="cb-copy" type="button" aria-label="Copia il codice">Copia</button></div><pre><code>${highlight(code, lang)}</code></pre></div>`;
+  }
+  // copia del codice (un solo listener per tutta la pagina)
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.cb-copy'); if (!b) return;
+    const code = b.closest('.codeblock').querySelector('code').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => { b.textContent = 'Copiato ✓'; setTimeout(() => b.textContent = 'Copia', 1500); },
+      () => { b.textContent = 'Errore'; setTimeout(() => b.textContent = 'Copia', 1500); });
+  });
+
+  // immagine → JPEG ridimensionato (per la visione: payload leggero)
+  function shrinkImage(file, max = 1024) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => { const img = new Image(); img.onload = () => {
+        const s = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', 0.85)); }; img.onerror = rej; img.src = fr.result; };
+      fr.onerror = rej; fr.readAsDataURL(file);
+    });
+  }
+  const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|jsx|tsx|py|html?|css|scss|xml|ya?ml|ini|cfg|toml|log|sql|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|sh|bat|ps1|swift|r)$/i;
+
+  // parola di attivazione «Maik» (il riconoscimento vocale italiano la scrive in vari modi)
+  const WAKE = /(?:^|[\s,.!?])(?:(?:ehi|hey|ok|ciao)\s+)?(maik|maic|mike|maike|maich|mayk|myke|meik|maicol)(?=$|[\s,.!?])[\s,.!?]*/i;
+  function wake(text) { const m = String(text || '').match(WAKE); if (!m) return null; return (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim(); }
+
+  return { THEMES, applyTheme, hexRgb, core, mic, boot, palette, highlight, codeBlock, shrinkImage, TEXT_EXT, wake, reduceMotion, touch, injectCSS };
+})();
+</script>
+
+<script>
 "use strict";
 // ============================================================
-// MAIK V8 — assistente personale (single-file)
+// MAIK V9 — assistente personale (single-file)
 // ============================================================
 
 const DEFAULTS = {
@@ -758,10 +1257,14 @@ const DEFAULTS = {
   autoListen: false,
   accent: '#00f5ff',
   smartLearn: true,        // V8: dopo ogni messaggio personale il modello estrae fatti nuovi (JSON)
-  personaKey: 'amico'      // V8: personalità attiva (amico/coach/prof/comico/zen/genio/custom)
+  personaKey: 'amico',     // V8: personalità attiva (amico/coach/prof/comico/zen/genio/custom)
+  theme: 'neon',           // V9: tema completo (neon/synthwave/matrix/solar/ice/ruby)
+  wakeWord: false,         // V9: in Modalità Amico risponde solo se sente «Maik»
+  bootAnim: true           // V9: animazione di avvio con i controlli di sistema
 };
+// V9: chi aveva scelto un colore d'accento nella V8 ritrova il tema corrispondente
+const ACCENT_TO_THEME = { '#00f5ff':'neon', '#00ff88':'matrix', '#a855f7':'synthwave', '#ffcc00':'solar', '#ff3355':'ruby', '#ff7b00':'solar' };
 
-const ACCENTS = ['#00f5ff','#00ff88','#a855f7','#ffcc00','#ff3355','#ff7b00'];
 
 // --- STATE ---
 let state = loadState();
@@ -784,7 +1287,9 @@ function loadState() {
     const raw = localStorage.getItem('maik_state_v7');
     if (raw) {
       const s = JSON.parse(raw);
+      const hadTheme = !!(s.settings && s.settings.theme);
       s.settings = Object.assign({}, DEFAULTS, s.settings || {});
+      if (!hadTheme) s.settings.theme = ACCENT_TO_THEME[String(s.settings.accent||'').toLowerCase()] || 'neon';
       s.profile = s.profile || {};
       s.facts = s.facts || [];
       s.people = s.people || [];
@@ -819,11 +1324,14 @@ function loadState() {
 function safeParse(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } }
 function save() { localStorage.setItem('maik_state_v7', JSON.stringify(state)); }
 
-// ---------- ACCENT ----------
-function applyAccent(color) {
-  document.documentElement.style.setProperty('--accent', color);
-  document.querySelector('meta[name=theme-color]').setAttribute('content', '#050a0f');
+// ---------- TEMA (V9) ----------
+let themeRGB = { accent:[0,245,255], accent2:[124,58,237] };
+function applyTheme(key) {
+  themeRGB = MaikKit.applyTheme(key);
+  if (core) core.setAccent(themeRGB.accent, themeRGB.accent2);
+  return themeRGB;
 }
+function applyAccent(color) { applyTheme(ACCENT_TO_THEME[String(color||'').toLowerCase()] || 'neon'); }   // compatibilità V8
 
 // ============================================================
 // SPHERE
@@ -838,31 +1346,22 @@ let sphereX = 0, sphereY = 0, sphereVx = 0.7, sphereVy = 0.45;
 let sphereState = 'idle';   // idle | speaking | thinking | detecting
 let sphereTime = 0, rotX = 0.5, rotY = 0, isDragging = false, dragOffX = 0, dragOffY = 0;
 
-// nuvola di punti su una sfera (distribuzione di Fibonacci) per il rendering 3D
-const NODES = [];
-function buildNodes(n) {
-  NODES.length = 0;
-  const inc = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < n; i++) {
-    const y = 1 - (i / (n - 1)) * 2;
-    const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const phi = i * inc;
-    NODES.push({ x: Math.cos(phi) * r, y, z: Math.sin(phi) * r });
-  }
-}
+// V9: il disegno è del Neural Core (MaikKit.core): nitido su ogni schermo, reagisce a voce e stati
+let core = null;
+const micMeter = MaikKit.mic();
 
-// la sfera si adatta allo spazio disponibile (importante su mobile)
+// il nucleo si adatta allo spazio disponibile (importante su mobile)
 function computeSphereSize() {
   const a = sphereArea.getBoundingClientRect();
-  let s = Math.round(Math.min(a.width * 0.6, a.height * 0.7));
+  let s = Math.round(Math.min(a.width * 0.62, a.height * 0.82));
   if (!s || s < 0) s = 180;
-  SPH = Math.max(120, Math.min(240, s));
-  sphereCanvas.width = SPH; sphereCanvas.height = SPH;
-  sphereCanvas.style.width = SPH + 'px'; sphereCanvas.style.height = SPH + 'px';
+  SPH = Math.max(140, Math.min(MaikKit.touch ? 260 : 320, s));
+  if (core) core.resize(SPH);
 }
 
 function initSphere() {
-  buildNodes(130);
+  core = MaikKit.core(sphereCanvas, { size: 200 });
+  core.setAccent(themeRGB.accent, themeRGB.accent2);
   computeSphereSize();
   const a = sphereArea.getBoundingClientRect();
   sphereX = Math.max(8, (a.width - SPH) / 2);
@@ -875,101 +1374,20 @@ function animateSphere() {
   sphereTime += 0.02;
   const a = sphereArea.getBoundingClientRect();
   const maxX = a.width - SPH, maxY = a.height - SPH;
-  if (!spherePinned && sphereMoving && !isDragging) {
+  if (!spherePinned && sphereMoving && !isDragging && !MaikKit.reduceMotion) {
     if (maxX > 4 && maxY > 4) {            // muoviti solo se c'è spazio (evita blocco su mobile)
-      sphereX += sphereVx; sphereY += sphereVy;
+      sphereX += sphereVx * 0.6; sphereY += sphereVy * 0.6;
       if (sphereX <= 0 || sphereX >= maxX) { sphereVx *= -1; sphereX = Math.max(0, Math.min(maxX, sphereX)); }
       if (sphereY <= 0 || sphereY >= maxY) { sphereVy *= -1; sphereY = Math.max(0, Math.min(maxY, sphereY)); }
       updateSpherePos();
     }
   }
-  drawSphere();
+  // stato del nucleo: quello della conversazione, oppure "ascolto" quando il microfono è aperto
+  const st = sphereState !== 'idle' ? sphereState : (recognizing ? 'listening' : 'idle');
+  core.setState(st);
+  if (st === 'listening') core.setLevel(micMeter.on ? micMeter.level() : 0.15 + Math.abs(Math.sin(sphereTime * 3)) * 0.2);
+  core.frame();
   requestAnimationFrame(animateSphere);
-}
-
-function accentRGB() {
-  const c = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00f5ff';
-  const m = c.replace('#','');
-  return [parseInt(m.substr(0,2),16), parseInt(m.substr(2,2),16), parseInt(m.substr(4,2),16)];
-}
-
-function drawSphere() {
-  const w = sphereCanvas.width, h = sphereCanvas.height, cx = w/2, cy = h/2;
-  const R = w * 0.40;
-  const k = w / 200;                              // fattore di scala per dimensioni relative
-  sphereCtx.clearRect(0,0,w,h);
-  const [ar,ag,ab] = accentRGB();
-
-  // colore + velocità di rotazione in base allo stato
-  let cr=ar, cg=ag, cb=ab, speed=0.006, pulseAmp=0;
-  if (sphereState==='thinking'){ cr=168; cg=85; cb=247; speed=0.020; }
-  else if (sphereState==='speaking'){ speed=0.013; pulseAmp=0.10; }
-  else if (sphereState==='detecting'){ cr=0; cg=255; cb=136; speed=0.011; }
-
-  rotY += speed; rotX += speed*0.35;
-  const breath = 1 + Math.sin(sphereTime*2)*0.02 +
-                 (sphereState==='speaking' ? Math.abs(Math.sin(sphereTime*9))*pulseAmp : 0);
-
-  // bagliore esterno
-  const glowR = R*1.55;
-  const glow = sphereCtx.createRadialGradient(cx,cy,R*0.35,cx,cy,glowR);
-  glow.addColorStop(0,`rgba(${cr},${cg},${cb},${0.18+Math.sin(sphereTime*2)*0.06})`);
-  glow.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);
-  sphereCtx.beginPath(); sphereCtx.arc(cx,cy,glowR,0,Math.PI*2); sphereCtx.fillStyle=glow; sphereCtx.fill();
-
-  // ruota e proietta i nodi 3D -> 2D (prospettiva)
-  const cosY=Math.cos(rotY), sinY=Math.sin(rotY), cosX=Math.cos(rotX), sinX=Math.sin(rotX);
-  const pts = new Array(NODES.length);
-  for (let i=0;i<NODES.length;i++){
-    const p = NODES[i];
-    let x = p.x*cosY - p.z*sinY;
-    let z = p.x*sinY + p.z*cosY;
-    let y = p.y*cosX - z*sinX;
-    z = p.y*sinX + z*cosX;
-    const persp = 1 / (1.8 - z);                 // z ∈ [-1,1] -> prospettiva
-    pts[i] = { sx: cx + x*R*persp*breath, sy: cy + y*R*persp*breath, z };
-  }
-
-  // linea a spirale che collega i nodi (effetto tech)
-  sphereCtx.beginPath();
-  for (let i=0;i<pts.length;i++){
-    if (i===0) sphereCtx.moveTo(pts[i].sx, pts[i].sy);
-    else sphereCtx.lineTo(pts[i].sx, pts[i].sy);
-  }
-  sphereCtx.strokeStyle=`rgba(${cr},${cg},${cb},0.10)`; sphereCtx.lineWidth=0.6; sphereCtx.stroke();
-
-  // nodi disegnati dal più lontano al più vicino (profondità)
-  const order = pts.slice().sort((a,b)=>a.z-b.z);
-  for (const pt of order){
-    const depth = (pt.z+1)/2;                    // 0 dietro .. 1 davanti
-    const size = (0.5 + depth*1.9) * k;
-    const alpha = 0.22 + depth*0.68;
-    sphereCtx.beginPath();
-    sphereCtx.arc(pt.sx, pt.sy, size, 0, Math.PI*2);
-    sphereCtx.fillStyle = `rgba(${Math.min(255,cr+70*depth)|0},${Math.min(255,cg+70*depth)|0},${Math.min(255,cb+70*depth)|0},${alpha})`;
-    sphereCtx.fill();
-  }
-
-  // nucleo luminoso pulsante
-  const coreR = (7 + Math.sin(sphereTime*4)*3) * k;
-  const core = sphereCtx.createRadialGradient(cx,cy,0,cx,cy,coreR*2.4);
-  core.addColorStop(0,'rgba(255,255,255,0.95)');
-  core.addColorStop(0.4,`rgba(${cr},${cg},${cb},0.7)`);
-  core.addColorStop(1,'rgba(0,0,0,0)');
-  sphereCtx.beginPath(); sphereCtx.arc(cx,cy,coreR*2.4,0,Math.PI*2); sphereCtx.fillStyle=core; sphereCtx.fill();
-
-  // barre radiali quando "parla"
-  if (sphereState==='speaking'){
-    const rr = R*1.08;
-    for (let i=0;i<16;i++){
-      const angle=(i/16)*Math.PI*2;
-      const barH=(7+Math.abs(Math.sin(sphereTime*9+i))*14)*k;
-      const bx=cx+Math.cos(angle)*rr, by=cy+Math.sin(angle)*rr;
-      const ex=cx+Math.cos(angle)*(rr+barH), ey=cy+Math.sin(angle)*(rr+barH);
-      sphereCtx.beginPath(); sphereCtx.moveTo(bx,by); sphereCtx.lineTo(ex,ey);
-      sphereCtx.strokeStyle=`rgba(${cr},${cg},${cb},0.7)`; sphereCtx.lineWidth=2; sphereCtx.stroke();
-    }
-  }
 }
 
 function startDrag(cx, cy) {
@@ -1016,22 +1434,31 @@ function resetSpherePos() {
 // ============================================================
 const pCanvas = document.getElementById('particles-canvas');
 const pCtx = pCanvas.getContext('2d');
-let particles = [];
-function resizeParticles(){ pCanvas.width=pCanvas.offsetWidth; pCanvas.height=pCanvas.offsetHeight; }
+let particles = [], pScale = 1;
+// V9: nitide su schermi HiDPI, colore del tema in cache (niente getComputedStyle a ogni frame), costellazioni
+function resizeParticles(){
+  pScale = Math.min(2, window.devicePixelRatio || 1);
+  pCanvas.width = Math.round(pCanvas.offsetWidth * pScale); pCanvas.height = Math.round(pCanvas.offsetHeight * pScale);
+}
 function initParticles(){
   particles = [];
-  for (let i=0;i<60;i++) particles.push({ x:Math.random()*pCanvas.width, y:Math.random()*pCanvas.height, size:Math.random()*2, vx:(Math.random()-0.5)*0.3, vy:(Math.random()-0.5)*0.3, opacity:Math.random()*0.5 });
+  const n = MaikKit.touch ? 34 : 64;
+  for (let i=0;i<n;i++) particles.push({ x:Math.random()*pCanvas.width, y:Math.random()*pCanvas.height, size:(0.4+Math.random()*1.6)*pScale,
+    vx:(Math.random()-0.5)*0.3*pScale, vy:(Math.random()-0.5)*0.3*pScale, opacity:0.15+Math.random()*0.45 });
 }
 function animateParticles(){
-  pCtx.clearRect(0,0,pCanvas.width,pCanvas.height);
-  const [ar,ag,ab]=accentRGB();
-  for (let p of particles){
-    p.x+=p.vx; p.y+=p.vy;
-    if(p.x<0)p.x=pCanvas.width; if(p.x>pCanvas.width)p.x=0;
-    if(p.y<0)p.y=pCanvas.height; if(p.y>pCanvas.height)p.y=0;
-    pCtx.beginPath(); pCtx.arc(p.x,p.y,p.size,0,Math.PI*2);
-    pCtx.fillStyle=`rgba(${ar},${ag},${ab},${p.opacity})`; pCtx.fill();
+  const W=pCanvas.width, H=pCanvas.height, [ar,ag,ab]=themeRGB.accent, link=90*pScale;
+  pCtx.clearRect(0,0,W,H);
+  for (const p of particles){
+    if (!MaikKit.reduceMotion){ p.x+=p.vx; p.y+=p.vy; }
+    if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
   }
+  pCtx.lineWidth = 0.6*pScale;
+  for (let i=0;i<particles.length;i++) for (let j=i+1;j<particles.length;j++){
+    const a=particles[i], b=particles[j], dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy;
+    if (d2 < link*link){ pCtx.strokeStyle=`rgba(${ar},${ag},${ab},${(1-Math.sqrt(d2)/link)*0.16})`; pCtx.beginPath(); pCtx.moveTo(a.x,a.y); pCtx.lineTo(b.x,b.y); pCtx.stroke(); }
+  }
+  for (const p of particles){ pCtx.beginPath(); pCtx.arc(p.x,p.y,p.size,0,Math.PI*2); pCtx.fillStyle=`rgba(${ar},${ag},${ab},${p.opacity})`; pCtx.fill(); }
   requestAnimationFrame(animateParticles);
 }
 
@@ -1257,6 +1684,7 @@ function updateModelBadge() {
 }
 
 // Streaming chat with Ollama
+let lastStats = null;
 async function streamChat(userMessage, onToken) {
   const payload = {
     model: state.settings.model,
@@ -1265,6 +1693,7 @@ async function streamChat(userMessage, onToken) {
     options: { temperature: parseFloat(state.settings.temperature), num_predict: 600 }
   };
   abortController = new AbortController();
+  const t0 = performance.now(); let ttft = 0;
   const resp = await fetch(`${state.settings.ollamaUrl}/api/chat`, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(payload), signal: abortController.signal
@@ -1273,7 +1702,7 @@ async function streamChat(userMessage, onToken) {
 
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
-  let buffer='', full='', promptTok=0, evalTok=0;
+  let buffer='', full='', promptTok=0, evalTok=0, evalNs=0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -1284,11 +1713,16 @@ async function streamChat(userMessage, onToken) {
       if (!line) continue;
       try {
         const obj = JSON.parse(line);
-        if (obj.message?.content) { full += obj.message.content; onToken(full); }
-        if (obj.done) { promptTok = obj.prompt_eval_count||0; evalTok = obj.eval_count||0; }
+        if (obj.message?.content) { if (!ttft) ttft = performance.now()-t0; full += obj.message.content; onToken(full); }
+        if (obj.done) { promptTok = obj.prompt_eval_count||0; evalTok = obj.eval_count||0; evalNs = obj.eval_duration||0; }
       } catch {}
     }
   }
+  const total = performance.now()-t0;
+  // V9: velocità vera dal modello (eval_count / eval_duration); se manca, stima dal tempo di generazione
+  const tps = evalTok && evalNs ? evalTok/(evalNs/1e9) : (evalTok && total>ttft ? evalTok/((total-ttft)/1000) : 0);
+  lastStats = { tps, ttft: ttft||total, total, tokens: evalTok };
+  if (tps) document.getElementById('speed-badge').textContent = `⚡ ${tps.toLocaleString('it-IT',{maximumFractionDigits:1})} tok/s`;
   state.meta.totalTokens += promptTok + evalTok;
   document.getElementById('token-count').textContent = `TOKEN: ${state.meta.totalTokens}`;
   return full;
@@ -1340,14 +1774,16 @@ Scambi: ${state.meta.exchangeCount} · Telecamera: ${cameraActive?'attiva':'spen
 function escapeHtml(str){ return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function renderMarkdown(src) {
-  // code blocks first
+  // V9: blocchi di codice con evidenziazione + "Copia"; un ``` non ancora chiuso (streaming) si chiude da solo
+  if (((src.match(/```/g) || []).length) % 2) src += '\n```';
   const blocks = [];
-  src = src.replace(/```([\s\S]*?)```/g, (_,code)=>{ blocks.push(code); return `CB${blocks.length-1}`; });
+  src = src.replace(/```([\w+#.-]*)[^\S\n]*\n?([\s\S]*?)```/g, (_,lang,code)=>{ blocks.push({lang, code:code.replace(/\n$/,'')}); return `\u0000CB${blocks.length-1}\u0000`; });
   let html = escapeHtml(src);
   html = html.replace(/`([^`]+)`/g, (_,c)=>`<code>${c}</code>`);
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  html = html.replace(/^#{1,3}\s+(.+)$/gm, '<strong class="md-h">$1</strong>');          // titoletti
   // lists
   html = html.replace(/(?:^|\n)((?:[-*] .+(?:\n|$))+)/g, (m, list)=>{
     const items = list.trim().split('\n').map(l=>`<li>${l.replace(/^[-*]\s+/,'')}</li>`).join('');
@@ -1357,62 +1793,105 @@ function renderMarkdown(src) {
     const items = list.trim().split('\n').map(l=>`<li>${l.replace(/^\d+\.\s+/,'')}</li>`).join('');
     return `\n<ol>${items}</ol>`;
   });
-  html = html.split(/\n{2,}/).map(p=> /^<(ul|ol|pre)/.test(p.trim()) ? p : `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
-  html = html.replace(/CB(\d+)/g, (_,i)=>{ const code = blocks[i] != null ? blocks[i].replace(/^\w*\n/,'') : ''; return `<pre><code>${escapeHtml(code)}</code></pre>`; });
+  html = html.split(/\n{2,}/).map(p=> /^(<(ul|ol)|\u0000CB\d+\u0000$)/.test(p.trim()) ? p : `<p>${p.replace(/\n/g,'<br>')}</p>`).join('');
+  html = html.replace(/(?:<p>)?\u0000CB(\d+)\u0000(?:<\/p>)?/g, (_,i)=> blocks[i] ? MaikKit.codeBlock(blocks[i].code, blocks[i].lang) : '');
   return html;
 }
 
 function timeNow(){ return new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); }
+
+function fmtStats(st){
+  if (!st || !st.tps) return '';
+  const t = ms => ms < 1000 ? `${Math.round(ms)} ms` : `${(ms/1000).toLocaleString('it-IT',{maximumFractionDigits:1})} s`;
+  return `⚡ <b>${st.tps.toLocaleString('it-IT',{maximumFractionDigits:1})}</b> tok/s · prima parola ${t(st.ttft)} · totale ${t(st.total)}`;
+}
 
 function addMessage(role, text, opts={}) {
   const msgs = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
   const label = role==='maik' ? 'MAIK' : 'TU';
-  const body = opts.typing
-    ? '<div class="typing-bubble"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>'
-    : (role==='maik' ? renderReply(text) : escapeHtml(text).replace(/\n/g,'<br>'));
+  let body;
+  if (opts.typing) body = '<div class="typing-bubble"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+  else if (role==='maik') body = renderReply(text);
+  else body = (opts.image ? `<img class="attach-img" src="${opts.image}" alt="Immagine allegata">` : '')
+            + (opts.file ? `<div class="file-chip">📄 ${escapeHtml(opts.file)}</div>` : '')
+            + escapeHtml(text).replace(/\n/g,'<br>');
   div.innerHTML = `<div class="msg-label">${label}<span class="msg-time">${timeNow()}</span></div><div class="msg-bubble">${body}</div>`;
+  if (role==='maik' && !opts.typing){
+    div.dataset.raw = text;
+    const actions = document.createElement('div'); actions.className = 'msg-actions';
+    actions.innerHTML = `<button type="button" data-act="copy" title="Copia la risposta">⧉ copia</button><button type="button" data-act="speak" title="Ascolta">🔊</button><button type="button" class="act-regen" data-act="regen" title="Rigenera la risposta">↻ rigenera</button>`
+                      + (opts.stats ? `<span class="msg-meta" style="margin-left:6px;align-self:center">${fmtStats(opts.stats)}</span>` : '');
+    div.appendChild(actions);
+  }
   msgs.appendChild(div);
+  if (role==='maik' && !opts.typing) markLastReply();
   msgs.scrollTop = msgs.scrollHeight;
   return div;
+}
+// solo l'ultima risposta di MAIK si può rigenerare
+function markLastReply(){
+  const all=[...document.querySelectorAll('#messages .msg.maik[data-raw]')];
+  all.forEach(m=>m.classList.remove('last-reply'));
+  const last=all[all.length-1], tail=document.querySelector('#messages .msg:last-child');
+  if (last && last===tail) last.classList.add('last-reply');
 }
 
 function restoreConversation() {
   const msgs = document.getElementById('messages');
   msgs.innerHTML='';
-  state.conversation.slice(-40).forEach(m => addMessage(m.role, m.content));
+  state.conversation.slice(-40).forEach(m => addMessage(m.role, m.content, { file: m.attach && m.attach.kind==='text' ? m.attach.name : null }));
   conversationHistory = state.conversation.slice(-20).map(m=>({ role: m.role==='maik'?'assistant':'user', content: stripThink(m.content) }));
 }
 
 // ============================================================
 // SEND
 // ============================================================
-async function sendMessage() {
+// override: testo da mandare al posto della casella; opts.regenerate: rifà l'ultima risposta
+async function sendMessage(override, opts={}) {
   const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text || generating) return;
-  input.value='';
+  const regen = !!opts.regenerate;
+  const text = (override!=null ? String(override) : input.value).trim();
+  const att = regen ? null : pendingAttach;
+  if ((!text && !att) || generating) return;
+  if (!regen) { input.value=''; clearAttach(); }
   lastUserActivity = Date.now();             // l'utente è attivo: MAIK non interrompe
   document.getElementById('send-btn').disabled = true;
 
-  state.meta.exchangeCount++;
-  document.getElementById('exchange-count').textContent = state.meta.exchangeCount;
+  if (!regen) {
+    state.meta.exchangeCount++;
+    document.getElementById('exchange-count').textContent = state.meta.exchangeCount;
+    addMessage('user', text, { image: att && att.kind==='image' ? att.dataUrl : null, file: att && att.kind==='text' ? att.name : null });
+    state.conversation.push({ role:'user', content:text, ts:Date.now(), ...(att ? { attach:{ kind:att.kind, name:att.name } } : {}) });
+    if (text) { analyzeEmotion(text); learnFromMessage(text); }
+  }
 
-  addMessage('user', text);
-  state.conversation.push({ role:'user', content:text, ts:Date.now() });
-  analyzeEmotion(text);
-  learnFromMessage(text);
-  conversationHistory.push({ role:'user', content:text });
+  // V9: un'immagine allegata la guarda il modello visione (con la domanda scritta, se c'è)
+  if (att && att.kind==='image') {
+    conversationHistory.push({ role:'user', content:`[ti ha mandato un'immagine «${att.name}»] ${text}` });
+    save();
+    await answerImage(att, text);
+    document.getElementById('send-btn').disabled=false;
+    return;
+  }
+  // un file di testo va al modello insieme al messaggio (ma azioni ed estrattori guardano solo ciò che hai scritto)
+  const modelText = att && att.kind==='text'
+    ? `${text || 'Analizza questo file e dimmi cosa contiene.'}\n\n📎 File «${att.name}»${att.truncated?' (troncato)':''}:\n\`\`\`\n${att.content}\n\`\`\``
+    : text;
+  if (!regen) conversationHistory.push({ role:'user', content:modelText });
   save();
 
   // V8: azioni pratiche (timer, promemoria, lista, calcoli, ora, meteo, briefing…) — istantanee, anche offline
-  let local = null;
-  try { local = await smartRouter(text); } catch(e) { local = null; }
-  if (local) {
-    document.getElementById('send-btn').disabled = false;
-    finishReply(local);
-    return;
+  const lastUser = [...state.conversation].reverse().find(m=>m.role==='user');
+  if (!att && !(regen && lastUser && lastUser.attach)) {
+    let local = null;
+    try { local = await smartRouter(text); } catch(e) { local = null; }
+    if (local) {
+      document.getElementById('send-btn').disabled = false;
+      finishReply(local);
+      return;
+    }
   }
 
   const typing = addMessage('maik','',{typing:true});
@@ -1420,13 +1899,14 @@ async function sendMessage() {
   document.getElementById('ollama-dot').className='status-dot thinking';
   generating = true;
   document.getElementById('stop-btn').style.display='flex';
+  let partialText = '';
 
   try {
     if (!ollamaOnline) await checkOllama();
-    let reply='';
     if (ollamaOnline && state.settings.model) {
       let bubbleDiv=null;
-      reply = await streamChat(text, (partial)=>{
+      const reply = await streamChat(text || modelText, (partial)=>{
+        partialText = partial;
         if (!bubbleDiv){
           typing.querySelector('.msg-bubble').innerHTML='';
           bubbleDiv = typing.querySelector('.msg-bubble');
@@ -1436,7 +1916,7 @@ async function sendMessage() {
         document.getElementById('messages').scrollTop = 1e9;
       });
       typing.remove();
-      finishReply(reply);
+      finishReply(reply, lastStats);
       afterReply(text);          // in background: apprendimento IA + riassunto a lungo termine
     } else {
       typing.remove();
@@ -1444,7 +1924,7 @@ async function sendMessage() {
     }
   } catch(err) {
     typing.remove();
-    if (err.name==='AbortError') { finishReply('_(generazione interrotta)_'); }
+    if (err.name==='AbortError') { finishReply((partialText ? partialText + '\n\n' : '') + '*(interrotta)*'); }   // tieni quello che aveva già scritto
     else {
       addMessage('maik', `⚠️ Errore: ${escapeHtml(err.message)}. Assicurati che Ollama sia attivo (\`ollama serve\`) e che il modello **${state.settings.model||'?'}** sia installato.`);
       state.conversation.push({ role:'maik', content:`Errore: ${err.message}`, ts:Date.now() });
@@ -1461,8 +1941,8 @@ async function sendMessage() {
   }
 }
 
-function finishReply(reply) {
-  addMessage('maik', reply);
+function finishReply(reply, stats) {
+  addMessage('maik', reply, { stats });
   conversationHistory.push({ role:'assistant', content:stripThink(reply) });   // il <think> non occupa contesto
   state.conversation.push({ role:'maik', content:reply, ts:Date.now() });
   if (state.conversation.length>200) state.conversation = state.conversation.slice(-200);
@@ -1471,6 +1951,66 @@ function finishReply(reply) {
   maybeSpeak(reply);
   setTimeout(()=>{ if(sphereState==='speaking' && !window.speechSynthesis?.speaking) sphereState='idle'; }, 3500);
 }
+
+// ↻ rigenera l'ultima risposta (stessa domanda, nuova risposta)
+async function regenerateLast(){
+  if (generating) return;
+  const conv = state.conversation, i = conv.length-1;
+  if (i<1 || conv[i].role!=='maik' || conv[i-1].role!=='user') { toast('Non c\'è una risposta da rigenerare','error'); return; }
+  if (conv[i-1].attach && conv[i-1].attach.kind==='image') { toast('Per un\'immagine, allegala di nuovo 🙂','error'); return; }
+  conv.splice(i,1);
+  for (let j=conversationHistory.length-1; j>=0; j--) if (conversationHistory[j].role==='assistant') { conversationHistory.splice(j,1); break; }
+  const last = document.querySelector('#messages .msg.maik.last-reply'); if (last) last.remove();
+  save();
+  await sendMessage(conv[i-1].content, { regenerate:true });
+}
+
+// 🖼️ risposta su un'immagine allegata (modello visione, con la cascata llava → moondream…)
+async function answerImage(att, question){
+  if (!ollamaOnline) await checkOllama();
+  if (!ollamaOnline) { finishReply('⚠️ Ollama non è connesso: avvialo e potrò guardare le tue immagini.'); return; }
+  const typing = addMessage('maik','',{typing:true});
+  generating = true; sphereState='thinking';
+  try {
+    const prompt = question
+      ? `Guarda attentamente questa immagine e rispondi in italiano, in modo chiaro e amichevole, a questa domanda: ${question}`
+      : 'Descrivi questa immagine in italiano, in modo chiaro e amichevole (3-4 frasi): cosa si vede, i dettagli interessanti e l\'eventuale testo leggibile.';
+    const txt = await visionDescribe(att.dataUrl.split(',')[1], prompt);
+    typing.remove();
+    finishReply('🖼️ ' + (txt || 'Non riesco a descrivere bene questa immagine.'));
+  } catch(err) {
+    typing.remove();
+    finishReply(err.offline ? '👁️ Ollama non risponde, riprova quando è acceso.'
+      : '👁️ Per guardare le immagini mi serve un modello visione: nel terminale fai **`ollama pull llava`** (poi scegli il modello in ⚙ Impostazioni).');
+  } finally { generating=false; }
+}
+
+// ---------- ALLEGATI (📎, trascina e rilascia, incolla un'immagine) ----------
+let pendingAttach = null;
+async function attachFile(file){
+  if (!file) return;
+  try {
+    if (/^image\//.test(file.type)) {
+      pendingAttach = { kind:'image', name:file.name||'immagine', dataUrl: await MaikKit.shrinkImage(file) };
+    } else if (MaikKit.TEXT_EXT.test(file.name||'') || /^text\//.test(file.type)) {
+      if (file.size > 400000) { toast('File troppo grande (massimo 400 KB)','error'); return; }
+      const raw = await file.text();
+      pendingAttach = { kind:'text', name:file.name, content: raw.slice(0,12000), truncated: raw.length>12000 };
+    } else { toast('Posso leggere immagini e file di testo (txt, md, csv, codice…)','error'); return; }
+    renderAttach();
+    document.getElementById('chat-input').focus();
+  } catch(e) { toast('Non riesco a leggere il file','error'); }
+}
+function onAttachInput(e){ attachFile(e.target.files[0]); e.target.value=''; }
+function renderAttach(){
+  const el = document.getElementById('attach-preview');
+  if (!pendingAttach){ el.classList.remove('on'); el.innerHTML=''; return; }
+  el.classList.add('on');
+  el.innerHTML = (pendingAttach.kind==='image' ? `<img src="${pendingAttach.dataUrl}" alt="">` : '<span style="font-size:22px">📄</span>')
+    + `<span>${escapeHtml(pendingAttach.name)} · ${pendingAttach.kind==='image' ? 'MAIK la guarderà 👁️' : pendingAttach.content.length.toLocaleString('it-IT')+' caratteri'+(pendingAttach.truncated?' (tagliato)':'')}</span>`
+    + `<button class="x" type="button" onclick="clearAttach()" aria-label="Rimuovi l'allegato">✕</button>`;
+}
+function clearAttach(){ pendingAttach=null; renderAttach(); }
 
 function stopGeneration(){ if(abortController) abortController.abort(); if(window.speechSynthesis) speechSynthesis.cancel(); }
 
@@ -1593,6 +2133,7 @@ function maybeSpeak(text){
   const voices = speechSynthesis.getVoices();
   const chosen = voices.find(v=>v.name===state.settings.voiceName) || voices.find(v=>v.lang.startsWith('it'));
   if (chosen) u.voice=chosen;
+  u.onboundary=()=>{ if (core) core.pulse(1); };   // V9: il nucleo pulsa a ogni parola
   u.onstart=()=>{
     speaking=true; sphereState='speaking';
     // mentre MAIK parla, metti in pausa il microfono per non sentirsi da solo
@@ -1628,10 +2169,18 @@ function initSpeechRecognition(){
     recognizing=false;
     document.getElementById('voice-btn').classList.remove('active');
     const ll=document.getElementById('listening-label'); ll.classList.remove('active'); ll.textContent='· IN ASCOLTO ·';
-    const val=document.getElementById('chat-input').value.trim();
+    const input=document.getElementById('chat-input');
+    let val=input.value.trim();
+    finalT='';
+    // V9: in Modalità Amico con la parola di attivazione, senza «Maik» non rispondo (TV, altre persone…)
+    if (val && friendMode && state.settings.wakeWord){
+      const rest = MaikKit.wake(val);
+      if (rest===null){ input.value=''; val=''; ll.textContent='· DI «MAIK» PER PARLARMI ·'; }
+      else { input.value = rest || 'Ciao!'; val = input.value; }
+    }
     if (val){ sendMessage(); }
     else if (friendMode && !speaking && !generating && !micFatal){ setTimeout(()=>startRecognition(), 700); } // resta in ascolto
-    finalT='';
+    if (!friendMode) setTimeout(()=>{ if (!recognizing) micMeter.stop(); }, 1500);
   };
   recognition.onerror = e=>{
     recognizing=false;
@@ -1653,7 +2202,9 @@ function startRecognition(){
   try {
     recognizing=true; recognition.start();
     document.getElementById('voice-btn').classList.add('active');
-    const ll=document.getElementById('listening-label'); ll.classList.add('active'); ll.textContent='· REGISTRANDO ·';
+    const ll=document.getElementById('listening-label'); ll.classList.add('active');
+    ll.textContent = friendMode && state.settings.wakeWord ? '· TI ASCOLTO · DI «MAIK» ·' : '· REGISTRANDO ·';
+    micMeter.start();          // V9: livello reale del microfono per l'onda del nucleo (solo desktop)
   } catch {}
 }
 function toggleVoice(){
@@ -1827,10 +2378,13 @@ function openSettings(){
   document.getElementById('set-tts').checked=s.tts;
   document.getElementById('set-autolisten').checked=s.autoListen;
   document.getElementById('set-smartlearn').checked=s.smartLearn!==false;
-  populateModelSelect(); populateVoiceSelect(); populateAccents();
+  document.getElementById('set-wakeword').checked=!!s.wakeWord;
+  document.getElementById('set-boot').checked=s.bootAnim!==false;
+  populateModelSelect(); populateVoiceSelect(); populateThemes();
   document.getElementById('settings-modal').classList.add('open');
 }
-function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
+// chiudendo senza salvare, l'anteprima del tema torna a quello salvato
+function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); applyTheme(state.settings.theme); }
 function populateModelSelect(){
   const sel=document.getElementById('set-model'); sel.innerHTML='';
   const models = availableModels.length ? availableModels : (state.settings.model?[state.settings.model]:[]);
@@ -1845,14 +2399,16 @@ function populateVoiceSelect(){
   const auto=document.createElement('option'); auto.value=''; auto.textContent='Automatica (italiano)'; sel.appendChild(auto);
   list.forEach(v=>{ const o=document.createElement('option'); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; if(v.name===state.settings.voiceName)o.selected=true; sel.appendChild(o); });
 }
-function populateAccents(){
-  const box=document.getElementById('accent-swatches'); box.innerHTML='';
-  ACCENTS.forEach(c=>{
-    const s=document.createElement('div'); s.className='swatch'+(c===state.settings.accent?' sel':''); s.style.background=c;
-    s.onclick=()=>{ box.querySelectorAll('.swatch').forEach(x=>x.classList.remove('sel')); s.classList.add('sel'); s.dataset.pick='1'; box.dataset.picked=c; applyAccent(c); };
-    box.appendChild(s);
+// V9: temi completi (non solo un colore): accento + secondo colore + sfondo, con anteprima dal vivo
+function populateThemes(){
+  const box=document.getElementById('theme-swatches'); box.innerHTML='';
+  Object.entries(MaikKit.THEMES).forEach(([k,t])=>{
+    const b=document.createElement('button'); b.type='button'; b.className='theme-sw'+(k===state.settings.theme?' sel':'');
+    b.innerHTML=`<i style="background:linear-gradient(135deg,${t.accent},${t.accent2})"></i>${t.nm}`;
+    b.onclick=()=>{ box.querySelectorAll('.theme-sw').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); box.dataset.picked=k; applyTheme(k); };
+    box.appendChild(b);
   });
-  box.dataset.picked=state.settings.accent;
+  box.dataset.picked=state.settings.theme;
 }
 async function refreshModels(){ toast('Aggiorno modelli...'); await checkOllama(); populateModelSelect(); }
 function saveSettings(){
@@ -1870,8 +2426,11 @@ function saveSettings(){
   if (!PERSONAS[s.personaKey] || PERSONAS[s.personaKey].txt !== s.persona)
     s.personaKey = Object.keys(PERSONAS).find(k=>PERSONAS[k].txt===s.persona) || 'custom';
   renderPersonas();
-  s.accent=document.getElementById('accent-swatches').dataset.picked||DEFAULTS.accent;
-  applyAccent(s.accent); updateModelBadge(); save(); closeSettings();
+  s.wakeWord=document.getElementById('set-wakeword').checked;
+  s.bootAnim=document.getElementById('set-boot').checked;
+  s.theme=document.getElementById('theme-swatches').dataset.picked||'neon';
+  s.accent=MaikKit.THEMES[s.theme].accent;
+  updateModelBadge(); save(); closeSettings();
   toast('Impostazioni salvate','success'); checkOllama();
 }
 
@@ -1894,8 +2453,12 @@ function importData(ev){
       const s=JSON.parse(reader.result);
       state.profile=s.profile||{}; state.facts=s.facts||[]; state.people=s.people||[];
       state.goals=s.goals||[]; state.reminders=s.reminders||[]; state.conversation=s.conversation||[];
+      // V9: anche note, lista, umore e riassunto (prima si perdevano nell'importazione)
+      state.notes=s.notes||[]; state.checklist=s.checklist||[]; state.moods=s.moods||[]; state.summary=s.summary||'';
+      const hadTheme=!!(s.settings&&s.settings.theme);
       state.settings=Object.assign({},DEFAULTS,s.settings||{}); state.meta=Object.assign(state.meta,s.meta||{});
-      applyAccent(state.settings.accent); save(); renderAll(); restoreConversation(); updateModelBadge();
+      if (!hadTheme) state.settings.theme=ACCENT_TO_THEME[String(state.settings.accent||'').toLowerCase()]||'neon';
+      applyTheme(state.settings.theme); save(); renderAll(); renderPersonas(); drawMoodChart(); restoreConversation(); updateModelBadge();
       toast('Backup importato','success');
     } catch { toast('File non valido','error'); }
   };
@@ -1974,6 +2537,7 @@ async function enterFriendMode(){
 function exitFriendMode(){
   friendMode = false;
   autoListenLoop = false;
+  micMeter.stop();
   clearInterval(proactiveTimer);
   if (recognizing){ try{ recognition.stop(); }catch{} }
   if (window.speechSynthesis) speechSynthesis.cancel();
@@ -2892,6 +3456,7 @@ function fireReminder(r, late){
   state.conversation.push({ role:'maik', content:msg, ts:Date.now() });
   const plain=msg.replace(/\*+/g,'');
   beep(3); toast(plain,'success'); notify('MAIK', plain);
+  sphereState='alarm'; setTimeout(()=>{ if (sphereState==='alarm') sphereState='idle'; }, 2500);   // V9: onde d'urto ambra
   const prev=state.settings.tts; state.settings.tts=true; maybeSpeak(msg); state.settings.tts=prev;   // l'allarme si sente sempre
 }
 function checkDue(){
@@ -2914,7 +3479,7 @@ function drawMoodChart(){
   const W=240, H=54, n=arr.length, pts=arr.map((u,i)=>[(i/(n-1))*(W-8)+4, H-4-(u.v/10)*(H-8)]);
   const last=arr[n-1], col=last.v>=6?'var(--green)':last.v>=4?'var(--accent)':'#5a9bd4';
   el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Andamento dell'umore">
-    <line x1="4" x2="${W-4}" y1="${H/2}" y2="${H/2}" stroke="rgba(0,245,255,0.15)" stroke-dasharray="3 3"/>
+    <line x1="4" x2="${W-4}" y1="${H/2}" y2="${H/2}" style="stroke:rgba(var(--accent-rgb),0.15)" stroke-dasharray="3 3"/>
     <polyline points="${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
     ${pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" fill="${col}"><title>${arr[i].icon||''} ${arr[i].label} · ${new Date(arr[i].ts).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</title></circle>`).join('')}
   </svg><div class="mood-note">Andamento umore · ultimi ${n} momenti</div>`;
@@ -2993,10 +3558,83 @@ async function maybeSummarize(){
 async function afterReply(userText){ await smartLearn(userText); await maybeSummarize(); }
 
 // ============================================================
+// V9 — MEMORIA COMPLETA · PALETTE COMANDI · AVVIO
+// ============================================================
+const TAG_LABEL = { ia:'IA', insegnamento:'insegnato', gusto:'gusti', nota:'nota', fatto:'fatto' };
+function openMemory(){ document.getElementById('mem-filter').value=''; renderMemory(); document.getElementById('memory-modal').classList.add('open'); }
+function closeMemory(){ document.getElementById('memory-modal').classList.remove('open'); }
+function renderMemory(){
+  const q = normTxt(document.getElementById('mem-filter').value);
+  const facts = state.facts.map((f,i)=>({f,i})).filter(x=>!q || normTxt(x.f.text).includes(q)).reverse();
+  let h = '';
+  if (state.summary) h += `<div class="sidebar-label">Riassunto delle conversazioni <button class="mini-x" onclick="forgetSummary()" title="Cancella il riassunto" aria-label="Cancella il riassunto">✕</button></div><div class="mem-summary">${escapeHtml(state.summary)}</div>`;
+  h += `<div class="sidebar-label">Ricordi <span class="count-pill">${state.facts.length}</span></div>`;
+  h += facts.length
+    ? facts.map(({f,i})=>`<div class="mem-row"><span class="tag${f.tag==='ia'?' ia':''}">${escapeHtml(TAG_LABEL[f.tag]||f.tag||'fatto')}</span><span class="txt">${escapeHtml(f.text)}</span><button class="mini-x" onclick="forgetFact(${i})" title="Dimentica" aria-label="Dimentica questo ricordo">✕</button></div>`).join('')
+    : `<div class="empty-state">${q ? 'Nessun ricordo con questo filtro' : 'Ancora nessun ricordo: parlami di te!'}</div>`;
+  document.getElementById('mem-body').innerHTML = h;
+}
+function forgetFact(i){ state.facts.splice(i,1); save(); renderMemory(); toast('Ricordo dimenticato'); }
+function forgetSummary(){ state.summary=''; save(); renderMemory(); toast('Riassunto cancellato'); }
+
+let palette = null;
+function openPalette(){ if (palette) palette.open(); }
+function paletteCommands(){
+  const c = (ic,label,run,hint='',keywords='') => ({ ic, label, run, hint, keywords });
+  const go = t => () => quickGo(t);
+  const list = [
+    c('☀️','Briefing del giorno',go('briefing'),'azione','riepilogo giornata'),
+    c('⏱️','Timer di 5 minuti',go('metti un timer di 5 minuti'),'azione','sveglia countdown'),
+    c('⏰','Crea un promemoria…',()=>quickSend('Ricordami alle 18 di '),'azione','ricordami'),
+    c('🛒','Mostra la lista della spesa',go("cosa c'è nella lista?"),'azione','spesa'),
+    c('❓','Cosa sai fare?',go('aiuto'),'azione','aiuto comandi help'),
+    c('🫂', friendMode ? 'Esci dalla Modalità Amico' : 'Modalità Amico', ()=>toggleFriendMode(),'webcam + voce','amico compagnia'),
+    c('👁️','Guarda dalla webcam',()=>guardaCam(),'visione','camera'),
+    c('📎','Allega immagine o file',()=>document.getElementById('attach-input').click(),'allegato','foto documento'),
+    c('🧠','Memoria completa',()=>openMemory(),'ricordi','dimentica'),
+    c('🧰','Strumenti',()=>openTools(),'calcolatrice, timer…','tools'),
+    c('⚙️','Impostazioni',()=>openSettings(),'modello, voce, tema','settings'),
+    c('🔊', state.settings.tts ? 'Disattiva la voce di MAIK' : 'Attiva la voce di MAIK', ()=>{ state.settings.tts=!state.settings.tts; save(); toast(state.settings.tts?'🔊 Voce attiva':'🔇 Voce disattivata'); },'voce','tts parla'),
+    c('🎤','Parla con MAIK',()=>toggleVoice(),'microfono','voce'),
+    c('↺','Centra il nucleo',()=>resetSpherePos(),'sfera','core'),
+    c('≡','Mostra / nascondi la barra laterale',()=>toggleSidebar(),'',''),
+    c('⤓','Esporta i dati (backup)',()=>exportData(),'backup','salva'),
+  ];
+  Object.entries(MaikKit.THEMES).forEach(([k,t])=>list.push(c('🎨',`Tema: ${t.nm}`,()=>{ state.settings.theme=k; state.settings.accent=t.accent; applyTheme(k); save(); toast(`🎨 Tema ${t.nm}`,'success'); },'tema','colore')));
+  Object.entries(PERSONAS).forEach(([k,p])=>list.push(c(p.ic,`Personalità: ${p.nm}`,()=>setPersona(k),'personalità','modalità')));
+  return list;
+}
+function voicesReady(){
+  return new Promise(res=>{
+    if (!window.speechSynthesis) return res([]);
+    const v = speechSynthesis.getVoices(); if (v.length) return res(v);
+    setTimeout(()=>res(speechSynthesis.getVoices()), 900);
+  });
+}
+function runBoot(){
+  if (state.settings.bootAnim===false) return;
+  MaikKit.boot({ version:'V9', checks:[
+    { label:'Memoria', run: async()=>({ ok:true, text:`${state.facts.length} ricordi · ${Object.keys(state.profile).length} dati` }) },
+    { label:'Ollama', run: async()=>{ try { const ctl=new AbortController(); setTimeout(()=>ctl.abort(), 2000);
+        const d=await (await fetch(`${state.settings.ollamaUrl}/api/tags`,{signal:ctl.signal})).json(); const n=(d.models||[]).length;
+        return { ok:true, text:`online · ${n} modell${n===1?'o':'i'}` }; } catch { return { ok:false, text:'offline' }; } } },
+    { label:'Voce italiana', run: async()=>{ const v=await voicesReady(); return v.some(x=>x.lang && x.lang.startsWith('it')) ? { ok:true, text:'disponibile' } : { ok:false, text:'non trovata' }; } },
+    { label:'Promemoria', run: async()=>{ const n=state.reminders.filter(r=>!r.done).length; return { ok:true, text: n ? `${n} attiv${n===1?'o':'i'}` : 'nessuno' }; } },
+    { label:'Webcam', run: async()=>{ try { const d=await navigator.mediaDevices.enumerateDevices(); return d.some(x=>x.kind==='videoinput') ? { ok:true, text:'trovata' } : { ok:false, text:'assente' }; } catch { return { ok:false, text:'non disponibile' }; } } },
+    { label:'Nucleo neurale', run: async()=>({ ok:true, text:`pronto · tema ${MaikKit.THEMES[state.settings.theme]?.nm||'Neon'}` }) },
+  ]});
+}
+
+// ============================================================
 // INIT
 // ============================================================
 async function init(){
-  applyAccent(state.settings.accent);
+  applyTheme(state.settings.theme);
+  // V9: sul telefono si parte con la chat libera (barra laterale chiusa); toccando la chat la barra si richiude
+  if (window.innerWidth <= 820) { document.getElementById('sidebar').classList.add('hidden'); document.getElementById('sidebar-toggle-btn').classList.remove('active'); }
+  document.getElementById('center').addEventListener('click', ()=>{ if (window.innerWidth <= 820 && !document.getElementById('sidebar').classList.contains('hidden')) toggleSidebar(); });
+  runBoot();                                  // V9: avvio con controlli reali (una volta per sessione)
+  palette = MaikKit.palette(paletteCommands); // V9: Ctrl+K
   updateModelBadge();
   document.getElementById('exchange-count').textContent=state.meta.exchangeCount;
   document.getElementById('token-count').textContent=`TOKEN: ${state.meta.totalTokens}`;
@@ -3045,8 +3683,23 @@ async function init(){
     sphereY=Math.max(0, Math.min(sphereY, a.height-SPH));
     updateSpherePos();
   });
-  // keyboard: Esc closes settings/tools
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeSettings(); closeTools(); } });
+  // keyboard: Esc chiude impostazioni/strumenti/memoria
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ if (document.getElementById('settings-modal').classList.contains('open')) closeSettings(); closeTools(); closeMemory(); } });
+  document.getElementById('memory-modal').addEventListener('click', e=>{ if(e.target.id==='memory-modal') closeMemory(); });
+  // V9: azioni sui messaggi (copia / ascolta / rigenera)
+  document.getElementById('messages').addEventListener('click', e=>{
+    const b=e.target.closest('.msg-actions button'); if(!b) return;
+    const raw=b.closest('.msg').dataset.raw||'';
+    if (b.dataset.act==='copy') (navigator.clipboard?navigator.clipboard.writeText(stripThink(raw)):Promise.reject()).then(()=>toast('Copiato ✓','success'),()=>toast('Copia non riuscita','error'));
+    else if (b.dataset.act==='speak'){ const prev=state.settings.tts; state.settings.tts=true; maybeSpeak(raw); state.settings.tts=prev; }
+    else if (b.dataset.act==='regen') regenerateLast();
+  });
+  // V9: allegati — trascina e rilascia sulla chat, oppure incolla un'immagine
+  const chatArea=document.getElementById('chat-area');
+  ['dragenter','dragover'].forEach(ev=>chatArea.addEventListener(ev, e=>{ if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')){ e.preventDefault(); chatArea.classList.add('drop'); } }));
+  ['dragleave','drop'].forEach(ev=>chatArea.addEventListener(ev, ()=>chatArea.classList.remove('drop')));
+  chatArea.addEventListener('drop', e=>{ e.preventDefault(); const f=e.dataTransfer.files && e.dataTransfer.files[0]; if (f) attachFile(f); });
+  document.getElementById('chat-input').addEventListener('paste', e=>{ const it=[...(e.clipboardData?.items||[])].find(x=>x.type.startsWith('image/')); if (it){ e.preventDefault(); attachFile(it.getAsFile()); } });
   // close modal on overlay click
   document.getElementById('settings-modal').addEventListener('click', e=>{ if(e.target.id==='settings-modal') closeSettings(); });
   document.getElementById('tools-modal').addEventListener('click', e=>{ if(e.target.id==='tools-modal') closeTools(); });

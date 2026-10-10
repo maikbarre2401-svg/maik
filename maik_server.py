@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v8.0                      ║
+║                  MAIK — Server v9.0                      ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v9.0 — GRAFICA E SISTEMA:
+  • Nucleo neurale 3D nitido su ogni schermo (sinapsi, impulsi, anelli HUD,
+    onde d'urto), reagisce alla voce parola per parola e al microfono
+  • 6 temi completi (Neon, Synthwave, Matrix, Solar, Ice, Ruby), aurora, vetro
+  • Avvio con controlli reali · palette comandi Ctrl+K · codice evidenziato
+  • 📎 Allegati: immagini (le guarda il modello visione) e file di testo
+  • Velocità vera del modello (token/s, prima parola), ■ stop che tiene il testo,
+    ↻ rigenera, copia, ascolta · parola di attivazione «Maik»
+  • Memoria completa consultabile, con «dimentica»
+  • Nuovi endpoint: /imparato/elimina, /episodio/elimina, /riassunto/elimina;
+    /chat/stream accetta "allegato" e "rigenera" e restituisce "stat"
 
 NOVITÀ v8.0 — PIÙ INTELLIGENTE:
   • Apprendimento con l'IA: dopo ogni messaggio il modello estrae da solo
@@ -405,12 +417,31 @@ class Memoria:
         with self._lock:
             self.diario.append({
                 "quando": datetime.datetime.now().isoformat(timespec="seconds"),
-                "tu": tu,
-                "ai": ai,
+                "tu": tu[:4000],      # niente file interi nel diario: resta leggero e veloce
+                "ai": ai[:6000],
             })
             if len(self.diario) > 2000:
                 self.diario = self.diario[-2000:]
             self._salva(CONFIG["file_diario"], self.diario)
+
+    def rimuovi_ultimo_scambio(self, tu=None):
+        """Per «rigenera»: toglie l'ultimo scambio se è proprio quella domanda."""
+        with self._lock:
+            if self.diario and (tu is None or self.diario[-1].get("tu", "").strip() == tu.strip()[:4000].strip()):
+                self.diario.pop()
+                self._salva(CONFIG["file_diario"], self.diario)
+                return True
+            return False
+
+    def dimentica_elemento(self, tipo, indice):
+        """Cancella un ricordo («imparato») o un momento («episodio») dalla memoria completa."""
+        lista, file_ = {"imparato": (self.imparato, "file_imparato"), "episodio": (self.episodi, "file_episodi")}.get(tipo, (None, None))
+        with self._lock:
+            if lista is None or not (0 <= indice < len(lista)):
+                return False
+            lista.pop(indice)
+            self._salva(CONFIG[file_], lista)
+            return True
 
     def ultimi_scambi(self, n=6):
         with self._lock:
@@ -783,6 +814,7 @@ class Memoria:
                 "umore_grafico":     [{"data": u.get("data", ""), "umore": u.get("umore", ""),
                                        "v": valenza_umore(u.get("umore", ""), u.get("intensita", 5))}
                                       for u in self.umore[-20:]],
+                "riassunto":         self.ricordi.get("riassunto", ""),
                 "n_promemoria":      len([p for p in self.promemoria if not p.get("fatto")]),
                 "n_lista":           len([x for x in self.lista if not x.get("fatto")]),
             }
@@ -848,14 +880,16 @@ class Cervello:
         except Exception:
             return None
 
-    def pensa_stream(self, system_prompt, messaggi, on_token):
-        """Streaming token-per-token. Chiama on_token(chunk) e ritorna il testo completo."""
+    def pensa_stream(self, system_prompt, messaggi, on_token, stat=None):
+        """Streaming token-per-token. Chiama on_token(chunk) e ritorna il testo completo.
+        Se passi un dict `stat`, lo riempie con la velocità vera: token/s, prima parola, durata."""
         req = urllib.request.Request(
             CONFIG["ollama_url"],
             data=self._payload(system_prompt, messaggi, True),
             headers={"Content-Type": "application/json"},
         )
         full = []
+        t0, ttft = time.perf_counter(), 0.0
         try:
             with urllib.request.urlopen(req, timeout=CONFIG["timeout_chat"]) as r:
                 for raw in r:                       # Ollama invia NDJSON: 1 oggetto per riga
@@ -868,9 +902,17 @@ class Cervello:
                         continue
                     chunk = obj.get("message", {}).get("content", "")
                     if chunk:
+                        if not ttft:
+                            ttft = time.perf_counter() - t0
                         full.append(chunk)
                         on_token(chunk)
                     if obj.get("done"):
+                        if stat is not None:
+                            totale = time.perf_counter() - t0
+                            n, ns = obj.get("eval_count") or 0, obj.get("eval_duration") or 0
+                            tps = n / (ns / 1e9) if n and ns else (n / max(1e-3, totale - ttft) if n else 0)
+                            stat.update(tps=round(tps, 1), ttft_ms=round((ttft or totale) * 1000),
+                                        totale_ms=round(totale * 1000), token=n)
                         break
             return "".join(full).strip()
         except Exception as e:
@@ -1831,25 +1873,38 @@ impostato qualcosa se non è successo davvero."""
         threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         return self._meta(ok=True, risposta=risposta, imparato=imparato)
 
-    def rispondi_stream(self, testo, on_token):
-        """Versione in streaming: chiama on_token(chunk) e ritorna i metadati finali."""
-        cmd = self._gestisci_comando(testo)
-        if cmd:
-            return {"done": True, "comando": cmd}
-        azione = Azioni.prova(testo, self.memoria)   # azioni pratiche: istantanee, anche offline
-        if azione:
-            on_token(azione)
-            self.memoria.salva_scambio(testo, azione)
-            return self._meta(done=True, ok=True, azione=True)
-        imparato = Estrattore.analizza(testo, self.memoria)
-        risposta = self.cervello.pensa_stream(self._system_prompt(testo), self._costruisci_messaggi(testo), on_token)
+    def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False):
+        """Versione in streaming: chiama on_token(chunk) e ritorna i metadati finali.
+        allegato = {"nome", "contenuto"}: un file di testo che va al modello ma NON alle azioni/estrattori.
+        rigenera = True: rifà l'ultima risposta (toglie lo scambio precedente dal diario)."""
+        if rigenera:
+            self.memoria.rimuovi_ultimo_scambio(testo)
+        if not allegato:
+            cmd = self._gestisci_comando(testo)
+            if cmd:
+                return {"done": True, "comando": cmd}
+            azione = Azioni.prova(testo, self.memoria)   # azioni pratiche: istantanee, anche offline
+            if azione:
+                on_token(azione)
+                self.memoria.salva_scambio(testo, azione)
+                return self._meta(done=True, ok=True, azione=True)
+        imparato = Estrattore.analizza(testo, self.memoria) if testo and not rigenera else None
+        msg, nome = testo, ""
+        if allegato:
+            nome = str(allegato.get("nome") or "file")[:80]
+            contenuto = str(allegato.get("contenuto") or "")[:12000]
+            msg = (f"{testo or 'Analizza questo file e dimmi cosa contiene.'}\n\n"
+                   f"📎 File «{nome}»:\n```\n{contenuto}\n```")
+        stat = {}
+        risposta = self.cervello.pensa_stream(self._system_prompt(testo or nome), self._costruisci_messaggi(msg), on_token, stat)
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
         # in memoria va la risposta senza il "ragionamento" <think> (risparmia contesto)
-        self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
-        threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
-        return self._meta(done=True, ok=True, imparato=imparato)
+        self.memoria.salva_scambio(testo + (f" [📎 {nome}]" if allegato else ""), pulisci_pensiero(risposta) or risposta)
+        if testo and not rigenera:
+            threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
+        return self._meta(done=True, ok=True, imparato=imparato, stat=stat)
 
     def stato(self):
         return {
@@ -2031,6 +2086,16 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._json({"ok": False})
 
+            elif base in ("/imparato/elimina", "/episodio/elimina"):
+                try:
+                    indice = int(self._read_json_body().get("indice", -1))
+                except (TypeError, ValueError):
+                    indice = -1
+                self._json({"ok": MOTORE.memoria.dimentica_elemento(base.split("/")[1], indice)})
+
+            elif base == "/riassunto/elimina":
+                MOTORE.memoria.aggiorna_ricordi(""); self._json({"ok": True})
+
             elif base == "/reset":
                 cat = self._read_json_body().get("categoria", "").strip()
                 self._json({"ok": MOTORE.memoria.reset_categoria(cat)})
@@ -2100,7 +2165,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── streaming SSE ───────────────────────────────────────
     def _chat_stream(self):
-        testo = self._read_json_body().get("testo", "").strip()
+        corpo = self._read_json_body()
+        testo = str(corpo.get("testo", "")).strip()
+        allegato = corpo.get("allegato") if isinstance(corpo.get("allegato"), dict) else None
+        rigenera = bool(corpo.get("rigenera"))
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -2115,11 +2183,11 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 raise
 
-        if not testo:
+        if not testo and not allegato:
             invia({"done": True, "ok": False, "risposta": "..."})
             return
         try:
-            meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}))
+            meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}), allegato=allegato, rigenera=rigenera)
             invia(meta)
         except (BrokenPipeError, ConnectionResetError):
             pass  # il client ha chiuso, niente da fare
@@ -2134,26 +2202,28 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Server</title>
+<title>MAIK // Server V9</title>
+<meta name="theme-color" content="#050a0f">
 <style>
-  :root{--cyan:#00f5ff;--bg:#050a0f;--bg2:#080d14;--panel:rgba(8,20,35,.92);--border:rgba(0,245,255,.18);--text:#c8e8f0;--dim:#5a7a8a;--green:#00ff88;--red:#ff3355;--purple:#a855f7;}
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@700;900&display=swap');
+  :root{--accent:#00f5ff;--accent-rgb:0,245,255;--accent2:#7c3aed;--accent2-rgb:124,58,237;--bg-rgb:5,10,15;--cyan:var(--accent);--bg:#050a0f;--bg2:#080d14;--panel:rgba(var(--bg-rgb),.78);--border:rgba(var(--accent-rgb),.18);--text:#c8e8f0;--dim:#5a7a8a;--green:#00ff88;--red:#ff3355;--purple:#a855f7;}
   *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
   body{background:var(--bg);color:var(--text);font-family:'Rajdhani',system-ui,Segoe UI,sans-serif;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
   header{display:flex;align-items:center;gap:12px;padding:0 14px;height:48px;border-bottom:1px solid var(--border);font-size:13px;flex-shrink:0}
   .logo{font-weight:800;letter-spacing:5px;font-family:'Orbitron',monospace;white-space:nowrap}.logo span{color:var(--cyan)}
   .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}.dot.on{background:var(--green);box-shadow:0 0 8px var(--green)}.dot.busy{background:var(--purple);box-shadow:0 0 8px var(--purple)}
   .hbtn{background:transparent;border:1px solid var(--border);color:var(--cyan);padding:5px 9px;border-radius:4px;cursor:pointer;font-family:'Share Tech Mono',monospace;font-size:11px;white-space:nowrap}
-  .hbtn:hover{background:rgba(0,245,255,.12)}.hbtn.on{background:rgba(0,255,136,.15);border-color:var(--green);color:var(--green)}
+  .hbtn:hover{background:rgba(var(--accent-rgb),.12)}.hbtn.on{background:rgba(0,255,136,.15);border-color:var(--green);color:var(--green)}
   #wrap{flex:1;display:flex;overflow:hidden}
   #side{width:250px;border-right:1px solid var(--border);padding:14px;overflow:auto;font-size:13px;background:var(--panel);flex-shrink:0;transition:width .25s}
   #side.hidden{width:0;padding:0;overflow:hidden}
   #side h3{font-size:10px;letter-spacing:2px;color:var(--cyan);margin:16px 0 6px;text-transform:uppercase}
   #side h3:first-child{margin-top:0}
-  .kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(0,245,255,.06);gap:8px}
+  .kv{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid rgba(var(--accent-rgb),.06);gap:8px}
   .kv span:last-child{color:#fff;text-align:right}
-  .sfield{width:100%;background:rgba(0,245,255,.05);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
+  .sfield{width:100%;background:rgba(var(--accent-rgb),.05);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text);font-size:13px;outline:none;font-family:inherit}
   .sfield:focus{border-color:var(--cyan)}
-  .memhit{background:rgba(0,245,255,.05);border-left:2px solid var(--cyan);padding:4px 8px;font-size:11px;border-radius:0 4px 4px 0;margin-top:4px}
+  .memhit{background:rgba(var(--accent-rgb),.05);border-left:2px solid var(--cyan);padding:4px 8px;font-size:11px;border-radius:0 4px 4px 0;margin-top:4px}
   #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
   #sphere-area{flex:1;position:relative;overflow:hidden;min-height:120px}
   #sphere-wrap{position:absolute;cursor:grab;user-select:none;touch-action:none}
@@ -2165,17 +2235,17 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #msgs{height:54%;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:11px;border-top:1px solid var(--border)}
   .m{max-width:80%;padding:10px 14px;border-radius:10px;line-height:1.5;white-space:pre-wrap;word-break:break-word;animation:in .2s ease}
   @keyframes in{from{opacity:0;transform:translateY(5px)}to{opacity:1}}
-  .m.ai{align-self:flex-start;background:rgba(0,245,255,.07);border:1px solid rgba(0,245,255,.2);border-radius:4px 12px 12px 12px}
-  .m.me{align-self:flex-end;background:rgba(0,245,255,.14);color:#fff;border-radius:12px 4px 12px 12px}
+  .m.ai{align-self:flex-start;background:rgba(var(--accent-rgb),.07);border:1px solid rgba(var(--accent-rgb),.2);border-radius:4px 12px 12px 12px}
+  .m.me{align-self:flex-end;background:rgba(var(--accent-rgb),.14);color:#fff;border-radius:12px 4px 12px 12px}
   #bar{display:flex;gap:8px;padding:11px 12px;border-top:1px solid var(--border);flex-shrink:0;align-items:center}
-  .micbtn{background:rgba(0,245,255,.06);border:1px solid var(--border);color:var(--cyan);width:42px;height:42px;border-radius:50%;font-size:15px;cursor:pointer;flex-shrink:0}
+  .micbtn{background:rgba(var(--accent-rgb),.06);border:1px solid var(--border);color:var(--cyan);width:42px;height:42px;border-radius:50%;font-size:15px;cursor:pointer;flex-shrink:0}
   .micbtn.on{background:rgba(255,51,85,.15);border-color:var(--red);color:var(--red)}
-  #inp{flex:1;background:rgba(0,245,255,.05);border:1px solid var(--border);border-radius:20px;padding:11px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit;min-width:0}
+  #inp{flex:1;background:rgba(var(--accent-rgb),.05);border:1px solid var(--border);border-radius:20px;padding:11px 16px;color:#fff;font-size:14px;outline:none;font-family:inherit;min-width:0}
   #inp:focus{border-color:var(--cyan)}
   .send{background:var(--cyan);border:none;color:#050a0f;width:44px;height:44px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700;flex-shrink:0}
   .send:disabled{opacity:.4}
   .quick{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px}
-  .quick button{background:transparent;border:1px solid rgba(0,245,255,.2);color:var(--dim);padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit}
+  .quick button{background:transparent;border:1px solid rgba(var(--accent-rgb),.2);color:var(--dim);padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit}
   .quick button:hover{color:var(--cyan);border-color:var(--cyan)}
   .cursor{display:inline-block;width:7px;height:14px;background:var(--cyan);vertical-align:middle;animation:bl 1s infinite}@keyframes bl{50%{opacity:.3}}
   .note{color:var(--dim);font-size:11px;margin-top:14px;line-height:1.5}
@@ -2184,54 +2254,95 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .mod{background:var(--bg2);border:1px solid var(--border);border-radius:8px;width:100%;max-width:470px;max-height:88vh;overflow:auto}
   .modh{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2)}
   .modt{font-family:'Orbitron',monospace;font-size:13px;letter-spacing:2px;color:#fff}
-  .ib{background:rgba(0,245,255,.08);border:1px solid var(--border);color:var(--cyan);width:28px;height:28px;border-radius:4px;cursor:pointer}
+  .ib{background:rgba(var(--accent-rgb),.08);border:1px solid var(--border);color:var(--cyan);width:28px;height:28px;border-radius:4px;cursor:pointer}
   .modb{padding:16px}
   .tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-  .tcard{background:rgba(0,245,255,.05);border:1px solid var(--border);border-radius:8px;padding:14px 8px;text-align:center;cursor:pointer;transition:.15s;display:flex;flex-direction:column;align-items:center;gap:6px}
-  .tcard:hover{background:rgba(0,245,255,.12);border-color:var(--cyan);transform:translateY(-2px)}
+  .tcard{background:rgba(var(--accent-rgb),.05);border:1px solid var(--border);border-radius:8px;padding:14px 8px;text-align:center;cursor:pointer;transition:.15s;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .tcard:hover{background:rgba(var(--accent-rgb),.12);border-color:var(--cyan);transform:translateY(-2px)}
   .tcard .ic{font-size:25px}.tcard .nm{font-size:11px}
   #tpanel h4{font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:2px;color:var(--cyan);margin-bottom:10px;text-transform:uppercase}
   .tout{background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:'Share Tech Mono',monospace;color:var(--cyan);margin-top:10px;word-break:break-word;min-height:20px;font-size:14px}
   .tbig{font-family:'Orbitron',monospace;font-size:30px;color:#fff;text-align:center;letter-spacing:1px}
   .trow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .tbtn{flex:1;min-width:64px;background:rgba(0,245,255,.08);border:1px solid var(--border);color:var(--cyan);padding:9px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
-  .tbtn:hover{background:rgba(0,245,255,.15)}.tbtn.solid{background:var(--cyan);color:#050a0f;border:none}
-  .tfield{width:100%;background:rgba(0,245,255,.05);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-top:8px}
+  .tbtn{flex:1;min-width:64px;background:rgba(var(--accent-rgb),.08);border:1px solid var(--border);color:var(--cyan);padding:9px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
+  .tbtn:hover{background:rgba(var(--accent-rgb),.15)}.tbtn.solid{background:var(--cyan);color:#050a0f;border:none}
+  .tfield{width:100%;background:rgba(var(--accent-rgb),.05);border:1px solid var(--border);border-radius:6px;padding:9px 11px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-top:8px}
   .tfield:focus{border-color:var(--cyan)}
   .cg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
-  .cg button{background:rgba(0,245,255,.06);border:1px solid var(--border);color:var(--text);padding:12px 0;border-radius:6px;cursor:pointer;font-size:16px;font-family:inherit}
-  .cg button:hover{background:rgba(0,245,255,.12)}.cg button.op{color:var(--cyan)}.cg button.eq{background:var(--cyan);color:#050a0f;grid-column:span 2}.cg button.s2{grid-column:span 2}
-  .crow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(0,245,255,.07)}.crow .c{color:var(--dim)}.crow .t{font-family:'Orbitron',monospace;color:#fff}
-  .nitem{background:rgba(0,245,255,.04);border-left:2px solid var(--cyan);padding:7px 9px;border-radius:0 6px 6px 0;margin-top:6px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+  .cg button{background:rgba(var(--accent-rgb),.06);border:1px solid var(--border);color:var(--text);padding:12px 0;border-radius:6px;cursor:pointer;font-size:16px;font-family:inherit}
+  .cg button:hover{background:rgba(var(--accent-rgb),.12)}.cg button.op{color:var(--cyan)}.cg button.eq{background:var(--cyan);color:#050a0f;grid-column:span 2}.cg button.s2{grid-column:span 2}
+  .crow{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(var(--accent-rgb),.07)}.crow .c{color:var(--dim)}.crow .t{font-family:'Orbitron',monospace;color:#fff}
+  .nitem{background:rgba(var(--accent-rgb),.04);border-left:2px solid var(--cyan);padding:7px 9px;border-radius:0 6px 6px 0;margin-top:6px;font-size:13px;display:flex;justify-content:space-between;gap:8px}
   .nx{background:none;border:none;color:var(--dim);cursor:pointer}.nx:hover{color:var(--red)}
   #toast{position:fixed;top:58px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:6px}
   .tst{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cyan);padding:8px 14px;border-radius:4px;font-size:12px;max-width:280px}
   .tst.ok{border-left-color:var(--green)}.tst.err{border-left-color:var(--red)}
   .m.ai{white-space:normal}.m b{color:#fff}.m ul{margin:4px 0 4px 18px}.m li{margin:2px 0}
-  .m code{background:rgba(0,245,255,.1);padding:1px 5px;border-radius:3px;font-family:'Share Tech Mono',monospace;font-size:.92em}
+  .m code{background:rgba(var(--accent-rgb),.1);padding:1px 5px;border-radius:3px;font-family:'Share Tech Mono',monospace;font-size:.92em}
   .think{background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3);border-radius:6px;padding:4px 8px;margin-bottom:6px;font-size:12px;color:#b9a3d9}
   .think summary{cursor:pointer;color:var(--purple);font-family:'Share Tech Mono',monospace;letter-spacing:1px}
   .think div{white-space:pre-wrap;margin-top:4px;max-height:180px;overflow:auto}
   .m.alarm{border-color:var(--green)!important;box-shadow:0 0 18px rgba(0,255,136,.25);animation:ring .25s ease 6}
   @keyframes ring{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
   .pchips{display:flex;flex-wrap:wrap;gap:5px}
-  .pchip{background:rgba(0,245,255,.05);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit}
-  .pchip:hover{border-color:var(--cyan)}.pchip.on{background:rgba(0,245,255,.18);border-color:var(--cyan);color:#fff}
-  .pr{display:flex;justify-content:space-between;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(0,245,255,.06);font-size:12px}
+  .pchip{background:rgba(var(--accent-rgb),.05);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit}
+  .pchip:hover{border-color:var(--cyan)}.pchip.on{background:rgba(var(--accent-rgb),.18);border-color:var(--cyan);color:#fff}
+  .pr{display:flex;justify-content:space-between;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(var(--accent-rgb),.06);font-size:12px}
   .pr small{display:block;color:var(--dim);font-size:10px}
   @media(max-width:480px){header{padding:0 10px;gap:8px}.logo span,#stato,.hx{display:none}.hbtn{padding:5px 7px}}
   header>div:last-child{flex-shrink:0}
+  /* ===== V9: aurora, vetro, bolle, azioni, allegati, memoria, temi ===== */
+  body::before{content:'';position:fixed;inset:-20%;z-index:0;pointer-events:none;
+    background:radial-gradient(40% 35% at 20% 25%,rgba(var(--accent-rgb),.10),transparent 70%),radial-gradient(35% 40% at 80% 70%,rgba(var(--accent2-rgb),.12),transparent 70%);
+    animation:aurora 26s ease-in-out infinite alternate}
+  @keyframes aurora{from{transform:translate3d(-3%,-2%,0)}to{transform:translate3d(3%,2%,0) rotate(8deg)}}
+  header,#wrap{position:relative;z-index:1}
+  header{background:rgba(var(--bg-rgb),.72);backdrop-filter:blur(14px) saturate(140%);-webkit-backdrop-filter:blur(14px) saturate(140%)}
+  #side{background:rgba(var(--bg-rgb),.62);backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%)}
+  #msgs{background:rgba(var(--bg-rgb),.4)}
+  .logo span{color:var(--accent);text-shadow:0 0 14px rgba(var(--accent-rgb),.6)}
+  .m.ai{position:relative;margin-left:34px;background:linear-gradient(135deg,rgba(var(--accent-rgb),.10),rgba(var(--accent2-rgb),.07));border-color:rgba(var(--accent-rgb),.22);box-shadow:0 6px 22px rgba(0,0,0,.25)}
+  .m.ai::before{content:'';position:absolute;left:-34px;top:6px;width:24px;height:24px;border-radius:50%;
+    background:radial-gradient(circle,#fff 0 12%,rgba(var(--accent-rgb),.9) 22%,rgba(var(--accent2-rgb),.35) 55%,transparent 72%);box-shadow:0 0 14px rgba(var(--accent-rgb),.45);animation:av 3.2s ease-in-out infinite}
+  @keyframes av{0%,100%{transform:scale(.92);opacity:.85}50%{transform:scale(1.05);opacity:1}}
+  .m.me{background:linear-gradient(135deg,rgba(var(--accent-rgb),.24),rgba(var(--accent-rgb),.12));border:1px solid rgba(var(--accent-rgb),.32)}
+  .m img.att{display:block;max-width:min(240px,100%);border-radius:8px;margin-bottom:6px;border:1px solid rgba(var(--accent-rgb),.3)}
+  .fchip{display:inline-block;background:rgba(0,0,0,.25);border:1px solid rgba(var(--accent-rgb),.3);border-radius:7px;padding:2px 8px;font-size:12px;margin-bottom:6px;font-family:'Share Tech Mono',monospace}
+  .acts{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:0;max-height:0;overflow:hidden;opacity:0;transition:opacity .2s,max-height .2s,margin .2s}
+  .m.ai:hover .acts,.m.ai:focus-within .acts,.m.ai.last .acts{opacity:1;max-height:60px;margin-top:6px}
+  @media(hover:none){.acts{opacity:.7;max-height:60px;margin-top:6px}}
+  .acts button{white-space:nowrap;background:rgba(var(--accent-rgb),.06);border:1px solid rgba(var(--accent-rgb),.18);color:var(--dim);border-radius:6px;font-size:11px;padding:2px 7px;cursor:pointer;font-family:inherit}
+  .acts button:hover{color:var(--accent);border-color:var(--accent)}.acts .act-regen{display:none}.m.ai.last .act-regen{display:inline-block}
+  .acts .meta{font-family:'Share Tech Mono',monospace;font-size:9.5px;letter-spacing:1px;color:var(--dim);margin-left:4px}.acts .meta b{color:var(--accent);font-weight:400}
+  .mc .md-h{display:block;color:#fff;margin:6px 0 2px}
+  #attbtn,#stopbtn{width:42px;height:42px;border-radius:50%;cursor:pointer;flex-shrink:0;font-size:15px;background:rgba(var(--accent-rgb),.06);border:1px solid var(--border);color:var(--accent)}
+  #stopbtn{display:none;background:rgba(255,51,85,.15);border-color:var(--red);color:var(--red)}
+  #attprev{display:none;align-items:center;gap:8px;margin:0 12px 8px;padding:6px 8px;border-radius:10px;background:rgba(var(--accent-rgb),.07);border:1px dashed rgba(var(--accent-rgb),.35);font-size:12px}
+  #attprev.on{display:flex}#attprev img{width:38px;height:38px;object-fit:cover;border-radius:6px}#attprev .x{margin-left:auto;background:none;border:none;color:var(--dim);cursor:pointer;font-size:14px}
+  #main.drop{outline:2px dashed var(--accent);outline-offset:-8px}
+  .thsw{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .thsw button{display:flex;align-items:center;gap:6px;border:1px solid var(--border);background:rgba(0,0,0,.25);color:var(--text);border-radius:8px;padding:5px 6px;font-size:10px;cursor:pointer;font-family:'Share Tech Mono',monospace}
+  .thsw button i{width:14px;height:14px;border-radius:50%;flex-shrink:0}.thsw button.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent);color:#fff}
+  .opt{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:4px 0}
+  .memrow{display:flex;gap:8px;align-items:flex-start;padding:7px 2px;border-bottom:1px solid rgba(var(--accent-rgb),.08);font-size:13px}
+  .memrow .tag{font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;padding:1px 6px;border-radius:8px;flex-shrink:0;margin-top:2px;background:rgba(var(--accent-rgb),.12);color:var(--accent);text-transform:uppercase}
+  .memrow .tag.ia{background:rgba(var(--accent2-rgb),.2);color:#d8c8ff}.memrow .txt{flex:1}
+  .memsum{background:rgba(var(--accent2-rgb),.08);border:1px solid rgba(var(--accent2-rgb),.25);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:10px;white-space:pre-wrap}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+  @media(max-width:760px){#side{background:rgba(var(--bg-rgb),.97)}.m.ai{margin-left:28px}.m.ai::before{left:-28px;width:20px;height:20px}.m{max-width:90%}}
   @media(max-width:760px){#side{position:absolute;top:48px;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}.logo{font-size:11px;letter-spacing:3px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V8</span></div>
-  <span class="dot" id="dot"></span><span id="stato">verifico…</span>
+  <div class="logo">M A I K <span>// V9</span></div>
+  <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
-    <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam">👁️</button>
-    <button class="hbtn" onclick="openTools()">🧰</button>
-    <button class="hbtn" onclick="toggleSide()">≡</button>
+    <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
+    <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico" aria-label="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
+    <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam" aria-label="MAIK guarda dalla webcam">👁️</button>
+    <button class="hbtn" onclick="openTools()" title="Strumenti" aria-label="Strumenti">🧰</button>
+    <button class="hbtn" id="sidebtn" onclick="toggleSide()" title="Barra laterale" aria-label="Mostra o nascondi la barra laterale">≡</button>
   </div>
 </header>
 <div id="toast"></div>
@@ -2254,6 +2365,12 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <h3>Cerca nella memoria</h3>
     <input class="sfield" id="memq" placeholder="Cerca un ricordo..." oninput="cercaMem()">
     <div id="memres"></div>
+    <button class="tbtn" style="width:100%;margin-top:8px" onclick="openMem()">🧠 Memoria completa</button>
+    <h3>🎨 Tema</h3>
+    <div class="thsw" id="themes"></div>
+    <h3>⚙ Opzioni</h3>
+    <label class="opt">👂 Modalità Amico: solo se dico «Maik»<input type="checkbox" id="optwake" onchange="setOpt('wake',this.checked)"></label>
+    <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <div class="note">Memoria su disco. MAIK impara da solo mentre parlate 🧠 · scrivi <b>aiuto</b> per vedere le azioni (timer, promemoria, lista, calcoli…). <b>🫂 AMICO</b>: ti vede e ti parla. <b>👁️</b>: guarda la webcam.</div>
   </div>
   <div id="main">
@@ -2272,11 +2389,22 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
     </div>
+    <div id="attprev" aria-live="polite"></div>
     <div id="bar">
-      <button class="micbtn" id="mic" onclick="toggleMic()" title="Voce">🎤</button>
+      <button id="attbtn" onclick="$('#attin').click()" title="Allega un'immagine (MAIK la guarda) o un file di testo" aria-label="Allega un file">📎</button>
+      <input type="file" id="attin" accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r" style="display:none" onchange="onAttIn(event)">
+      <button class="micbtn" id="mic" onclick="toggleMic()" title="Voce" aria-label="Parla con MAIK">🎤</button>
       <input id="inp" placeholder="Scrivi a Maik…" onkeydown="if(event.key==='Enter')invia()">
-      <button class="send" id="send" onclick="invia()">➤</button>
+      <button id="stopbtn" onclick="stopGen()" title="Ferma" aria-label="Ferma la risposta">■</button>
+      <button class="send" id="send" onclick="invia()" aria-label="Invia">➤</button>
     </div>
+  </div>
+</div>
+
+<div class="ov" id="mmodal">
+  <div class="mod" style="max-width:560px">
+    <div class="modh"><div class="modt">🧠 MEMORIA DI MAIK</div><button class="ib" onclick="closeMem()" aria-label="Chiudi">✕</button></div>
+    <div class="modb"><input class="sfield" id="memf" placeholder="Filtra i ricordi…" oninput="renderMem()" style="margin-bottom:10px"><div id="membody"></div></div>
   </div>
 </div>
 
@@ -2294,6 +2422,380 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <script>
+/* ============================================================
+   MAIK KIT v9 — grafica e componenti condivisi
+   (identico in index.html e nella GUI del server)
+   · Neural Core: nucleo neurale 3D nitido su ogni schermo (HiDPI)
+   · Temi coerenti (--accent-rgb) · Avvio con controlli reali
+   · Palette comandi Ctrl+K · Evidenziazione del codice · Microfono
+   ============================================================ */
+const MaikKit = (() => {
+  const reduceMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+  const hexRgb = h => { h = String(h || '#00f5ff').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; };
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // ---------------- TEMI ----------------
+  const THEMES = {
+    neon:      { nm: 'Neon',      accent: '#00f5ff', accent2: '#7c3aed', bg: '#050a0f' },
+    synthwave: { nm: 'Synthwave', accent: '#ff4fd8', accent2: '#6d28d9', bg: '#0a0612' },
+    matrix:    { nm: 'Matrix',    accent: '#00ff88', accent2: '#0891b2', bg: '#030a06' },
+    solar:     { nm: 'Solar',     accent: '#ffb020', accent2: '#ff3d6e', bg: '#0d0805' },
+    ice:       { nm: 'Ice',       accent: '#a5f3fc', accent2: '#6366f1', bg: '#060912' },
+    ruby:      { nm: 'Ruby',      accent: '#ff3d5a', accent2: '#f59e0b', bg: '#0d0507' },
+  };
+  function applyTheme(key) {
+    const t = THEMES[key] || THEMES.neon, s = document.documentElement.style;
+    const a = hexRgb(t.accent), a2 = hexRgb(t.accent2), b = hexRgb(t.bg);
+    s.setProperty('--accent', t.accent);   s.setProperty('--accent-rgb', a.join(','));
+    s.setProperty('--accent2', t.accent2); s.setProperty('--accent2-rgb', a2.join(','));
+    s.setProperty('--bg', t.bg);           s.setProperty('--bg-rgb', b.join(','));
+    const meta = document.querySelector('meta[name=theme-color]'); if (meta) meta.setAttribute('content', t.bg);
+    return { key: THEMES[key] ? key : 'neon', accent: a, accent2: a2 };
+  }
+
+  // ---------------- NEURAL CORE ----------------
+  const STATE_COL = { thinking: [168, 85, 247], listening: [0, 255, 136], detecting: [0, 255, 136], alarm: [255, 196, 0] };
+  function core(canvas, opts = {}) {
+    const ctx = canvas.getContext('2d');
+    const light = opts.light ?? (touch || innerWidth < 700);
+    const NO = light ? 84 : 132, NI = light ? 26 : 40;
+    const nodes = [], links = [], signals = [], waves = [];
+    // due gusci (Fibonacci): esterno + interno, per dare profondità al "cervello"
+    const shell = (n, r) => { const inc = Math.PI * (3 - Math.sqrt(5)), off = nodes.length;
+      for (let i = 0; i < n; i++) { const y = 1 - (i / (n - 1)) * 2, rr = Math.sqrt(Math.max(0, 1 - y * y)), p = i * inc;
+        nodes.push({ x: Math.cos(p) * rr * r, y: y * r, z: Math.sin(p) * rr * r, inner: r < 1, flash: 0, sx: 0, sy: 0, d: 0 }); } return off; };
+    shell(NO, 1); shell(NI, 0.55);
+    // collegamenti tra vicini (calcolati una volta sola)
+    const seen = new Set();
+    nodes.forEach((a, i) => {
+      nodes.map((b, j) => [j, (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2]).filter(x => x[0] !== i)
+        .sort((p, q) => p[1] - q[1]).slice(0, 3).forEach(([j]) => { const key = i < j ? i + '-' + j : j + '-' + i;
+          if (!seen.has(key)) { seen.add(key); links.push([Math.min(i, j), Math.max(i, j)]); } });
+    });
+    const nbr = nodes.map(() => []); links.forEach(([a, b], li) => { nbr[a].push(li); nbr[b].push(li); });
+
+    let W = 200, state = 'idle', t = 0, rotX = 0.45, rotY = 0, level = 0, levelT = 0, word = 0, lastWave = 0;
+    const col = [0, 245, 255], accent = [0, 245, 255], accent2 = [124, 58, 237];
+
+    function resize(px) {
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = Math.round(px * dpr); canvas.height = Math.round(px * dpr);
+      canvas.style.width = px + 'px'; canvas.style.height = px + 'px'; W = canvas.width;
+    }
+    function setAccent(a, a2) { accent.splice(0, 3, ...a); accent2.splice(0, 3, ...(a2 || a)); }
+    function setState(s) { if (s === state) return; state = s; if (s === 'thinking' || s === 'speaking' || s === 'alarm') wave(); }
+    function setLevel(v) { levelT = Math.max(0, Math.min(1, v || 0)); }
+    function pulse(k = 1) { word = Math.min(1.6, word + 0.55 * k); }
+    function wave() { if (!reduceMotion) { waves.push({ r: 0.35, a: 0.7 }); if (waves.length > 5) waves.shift(); } }
+    function spawn(from) {
+      if (signals.length > (light ? 26 : 44)) return;
+      const ls = from == null ? null : nbr[from];
+      const li = ls && ls.length ? ls[(Math.random() * ls.length) | 0] : (Math.random() * links.length) | 0;
+      const [a, b] = links[li], dir = from == null ? (Math.random() < 0.5 ? 1 : -1) : (a === from ? 1 : -1);
+      signals.push({ li, p: 0, dir, v: 0.025 + Math.random() * 0.035 });
+    }
+
+    function frame() {
+      const now = performance.now();
+      t += reduceMotion ? 0.004 : 0.016;
+      const tgt = STATE_COL[state] || accent;
+      for (let i = 0; i < 3; i++) col[i] += (tgt[i] - col[i]) * 0.07;          // cambi di colore morbidi
+      level += (levelT - level) * 0.3; word *= 0.9;
+      const energy = state === 'thinking' ? 1 : state === 'speaking' ? 0.55 + word * 0.5 : state === 'alarm' ? 0.9
+                   : state === 'listening' ? 0.25 + level * 1.3 : state === 'detecting' ? 0.35 : 0.14;
+      const spin = (reduceMotion ? 0.3 : 1) * (state === 'thinking' ? 0.016 : state === 'speaking' ? 0.009 : 0.0045);
+      rotY += spin; rotX += spin * 0.32;
+      if (!reduceMotion && Math.random() < energy * 0.55) spawn(null);
+      if (state === 'alarm' && now - lastWave > 650) { wave(); lastWave = now; }
+      draw(energy);
+    }
+
+    function draw(energy) {
+      const cx = W / 2, cy = W / 2, R = W * 0.315, k = W / 200, [r, g, b] = col.map(v => v | 0);
+      const rgba = (a, c = col) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+      const breath = 1 + Math.sin(t * 2) * 0.014 + word * 0.045 + level * 0.07;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, W);
+      ctx.globalCompositeOperation = 'lighter';
+
+      // 1) aura
+      let gr = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.95);
+      gr.addColorStop(0, rgba(0.20 + energy * 0.12)); gr.addColorStop(0.55, rgba(0.07, accent2)); gr.addColorStop(1, rgba(0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, R * 1.95, 0, 6.2832); ctx.fill();
+
+      // 2) anelli HUD (ellissi tratteggiate in movimento + quadrante con tacche + scanner)
+      ctx.lineWidth = 1 * k;
+      ctx.setLineDash([6 * k, 9 * k]); ctx.lineDashOffset = -t * 30 * k; ctx.strokeStyle = rgba(0.32);
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.38, R * 0.42, t * 0.12, 0, 6.2832); ctx.stroke();
+      ctx.setLineDash([2 * k, 12 * k]); ctx.lineDashOffset = t * 22 * k; ctx.strokeStyle = rgba(0.28, accent2);
+      ctx.beginPath(); ctx.ellipse(cx, cy, R * 1.52, R * 0.6, 1.05 - t * 0.08, 0, 6.2832); ctx.stroke();
+      ctx.setLineDash([]);
+      const RR = R * 1.72, rot = t * 0.05;
+      for (let i = 0; i < 72; i++) {                                   // quadrante con tacche
+        const an = rot + i * 0.08727, long = i % 6 === 0, l = (long ? 7 : 3) * k;
+        ctx.strokeStyle = rgba(long ? 0.45 : 0.18); ctx.lineWidth = (long ? 1.4 : 0.8) * k;
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * RR, cy + Math.sin(an) * RR);
+        ctx.lineTo(cx + Math.cos(an) * (RR - l), cy + Math.sin(an) * (RR - l)); ctx.stroke();
+      }
+      const sc = t * (state === 'thinking' ? 2.6 : 0.9);              // arco "scanner"
+      ctx.lineWidth = 2.2 * k; ctx.lineCap = 'round';
+      for (let i = 0; i < 10; i++) { ctx.strokeStyle = rgba(0.06 * (i + 1)); ctx.beginPath();
+        ctx.arc(cx, cy, RR + 5 * k, sc + i * 0.06, sc + i * 0.06 + 0.07); ctx.stroke(); }
+      ctx.lineCap = 'butt';
+
+      // 3) proiezione 3D dei nodi
+      const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
+      for (const n of nodes) {
+        let x = n.x * cY - n.z * sY, z = n.x * sY + n.z * cY; const y = n.y * cX - z * sX; z = n.y * sX + z * cX;
+        const p = 1 / (1.85 - z * 0.85);
+        n.sx = cx + x * R * p * breath; n.sy = cy + y * R * p * breath; n.d = (z + 1) / 2; n.flash *= 0.92;
+      }
+      // 4) collegamenti, raggruppati per luminosità (pochi stroke = veloce)
+      const bins = [[], [], [], []];
+      for (const [a, c] of links) { const d = (nodes[a].d + nodes[c].d) / 2; bins[Math.min(3, (d * 4) | 0)].push(a, c); }
+      bins.forEach((arr, bi) => { if (!arr.length) return; ctx.strokeStyle = rgba((0.06 + bi * 0.075) * (0.75 + energy * 0.5));
+        ctx.lineWidth = (0.55 + bi * 0.2) * k; ctx.beginPath();
+        for (let i = 0; i < arr.length; i += 2) { const A = nodes[arr[i]], B = nodes[arr[i + 1]]; ctx.moveTo(A.sx, A.sy); ctx.lineTo(B.sx, B.sy); }
+        ctx.stroke(); });
+      // 5) nodi
+      for (const n of nodes) {
+        const f = n.inner ? 0.55 : 1, a = (0.18 + n.d * 0.62) * f + n.flash * 0.8, s = (0.45 + n.d * 1.25) * k * (n.inner ? 0.75 : 1) + n.flash * 1.6 * k;
+        ctx.fillStyle = `rgba(${Math.min(255, r + 80 * n.d) | 0},${Math.min(255, g + 80 * n.d) | 0},${Math.min(255, b + 80 * n.d) | 0},${Math.min(1, a)})`;
+        ctx.beginPath(); ctx.arc(n.sx, n.sy, s, 0, 6.2832); ctx.fill();
+      }
+      // 6) impulsi che corrono lungo le sinapsi
+      for (let i = signals.length - 1; i >= 0; i--) {
+        const sg = signals[i]; sg.p += sg.v; const [a, c] = links[sg.li];
+        const A = nodes[sg.dir > 0 ? a : c], B = nodes[sg.dir > 0 ? c : a];
+        if (sg.p >= 1) { B.flash = 1; signals.splice(i, 1); if (Math.random() < 0.45 * energy + 0.1) spawn(nodes.indexOf(B)); continue; }
+        const x = A.sx + (B.sx - A.sx) * sg.p, y = A.sy + (B.sy - A.sy) * sg.p;
+        ctx.fillStyle = rgba(0.18); ctx.beginPath(); ctx.arc(x, y, 3.2 * k, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.arc(x, y, 1.1 * k, 0, 6.2832); ctx.fill();
+      }
+      // 7) nucleo
+      const cr = R * (0.13 + Math.sin(t * 3.2) * 0.012 + word * 0.05 + level * 0.07);
+      gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr * 2.3);
+      gr.addColorStop(0, 'rgba(255,255,255,0.9)'); gr.addColorStop(0.22, rgba(0.55)); gr.addColorStop(1, rgba(0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, cr * 2.3, 0, 6.2832); ctx.fill();
+      ctx.setLineDash([3 * k, 5 * k]); ctx.lineDashOffset = t * 20 * k; ctx.strokeStyle = rgba(0.55); ctx.lineWidth = 1 * k;
+      ctx.beginPath(); ctx.arc(cx, cy, cr * 1.75, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+
+      // 8) anello voce: barre quando parla, onda morbida quando ascolta
+      if (state === 'speaking' || state === 'listening') {
+        const base = R * 1.12, M = 72;
+        if (state === 'speaking') {
+          ctx.lineWidth = 2 * k; ctx.strokeStyle = rgba(0.75); ctx.beginPath();
+          for (let i = 0; i < M; i++) { const an = i / M * 6.2832;
+            const h = (2 + (0.4 + 0.6 * Math.abs(Math.sin(t * 7 + i * 0.7) * Math.cos(t * 3.3 + i * 0.23))) * (6 + word * 13)) * k;
+            ctx.moveTo(cx + Math.cos(an) * base, cy + Math.sin(an) * base); ctx.lineTo(cx + Math.cos(an) * (base + h), cy + Math.sin(an) * (base + h)); }
+          ctx.stroke();
+        } else {
+          for (let ring = 0; ring < 2; ring++) {
+            ctx.lineWidth = (ring ? 1 : 1.6) * k; ctx.strokeStyle = rgba(ring ? 0.35 : 0.75); ctx.beginPath();
+            for (let i = 0; i <= M; i++) { const an = i / M * 6.2832;
+              const rr = base + ring * 7 * k + (1.5 + level * 11 * (0.55 + 0.45 * Math.sin(i * 0.52 + t * 8 + ring * 2)) * (0.6 + 0.4 * Math.sin(i * 0.13 - t * 3))) * k;
+              const x = cx + Math.cos(an) * rr, y = cy + Math.sin(an) * rr; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+            ctx.stroke();
+          }
+        }
+      }
+      // 9) onde d'urto ai cambi di stato
+      for (let i = waves.length - 1; i >= 0; i--) {
+        const w = waves[i]; w.r += 0.035; w.a *= 0.955;
+        if (w.a < 0.02) { waves.splice(i, 1); continue; }
+        ctx.strokeStyle = rgba(w.a); ctx.lineWidth = 2 * k; ctx.beginPath(); ctx.arc(cx, cy, R * w.r * 1.6, 0, 6.2832); ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    resize(opts.size || 200);
+    return { resize, setAccent, setState, setLevel, pulse, wave, frame, get state() { return state; } };
+  }
+
+  // ---------------- LIVELLO DEL MICROFONO (solo desktop: sul telefono può disturbare il riconoscimento vocale) ----------------
+  function mic() {
+    let stream = null, an = null, ac = null, buf = null, on = false, starting = false;
+    async function start() {
+      if (on || starting || touch) return on; starting = true;
+      try {
+        if (navigator.permissions) { const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null); if (p && p.state !== 'granted') return false; }
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        ac = new (window.AudioContext || window.webkitAudioContext)(); an = ac.createAnalyser(); an.fftSize = 512;
+        buf = new Uint8Array(an.fftSize); ac.createMediaStreamSource(stream).connect(an); on = true;
+      } catch (e) { on = false; } finally { starting = false; }
+      return on;
+    }
+    function level() { if (!on) return 0; an.getByteTimeDomainData(buf); let s = 0;
+      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; s += v * v; } return Math.min(1, Math.sqrt(s / buf.length) * 5); }
+    function stop() { if (stream) stream.getTracks().forEach(tr => tr.stop()); if (ac) ac.close().catch(() => {}); stream = an = ac = null; on = false; }
+    return { start, stop, level, get on() { return on; } };
+  }
+
+  // ---------------- STILI DEI COMPONENTI (iniettati una volta) ----------------
+  const CSS = `
+  .mk-boot{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;
+    background:radial-gradient(ellipse at center,rgba(var(--accent-rgb,0,245,255),.10),transparent 60%),var(--bg,#050a0f);transition:opacity .45s ease;cursor:pointer}
+  .mk-boot.out{opacity:0;pointer-events:none}
+  .mk-boot-logo{font-family:'Orbitron',monospace;font-weight:900;font-size:clamp(28px,7vw,54px);letter-spacing:.45em;padding-left:.45em;color:#fff;
+    text-shadow:0 0 18px rgba(var(--accent-rgb,0,245,255),.8),0 0 42px rgba(var(--accent-rgb,0,245,255),.35);animation:mkFlick 2.2s ease-in-out infinite}
+  .mk-boot-ver{font-family:'Share Tech Mono',monospace;color:var(--accent,#00f5ff);letter-spacing:.5em;font-size:11px;margin-top:-10px}
+  .mk-boot-list{font-family:'Share Tech Mono',monospace;font-size:12px;color:#9fb8c4;min-width:min(340px,86vw);display:flex;flex-direction:column;gap:6px}
+  .mk-boot-row{display:flex;justify-content:space-between;gap:12px;opacity:0;transform:translateY(4px);transition:all .25s ease}
+  .mk-boot-row.in{opacity:1;transform:none}.mk-boot-row b{font-weight:400}.mk-ok{color:#00ff88}.mk-warn{color:#ffcc00}.mk-wait{color:var(--accent,#00f5ff)}
+  .mk-boot-bar{width:min(340px,86vw);height:2px;background:rgba(var(--accent-rgb,0,245,255),.15);border-radius:2px;overflow:hidden}
+  .mk-boot-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent,#00f5ff),var(--accent2,#7c3aed));transition:width .3s ease;box-shadow:0 0 12px var(--accent,#00f5ff)}
+  .mk-boot-skip{font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:2px;color:#4f6b78}
+  @keyframes mkFlick{0%,100%{opacity:1}92%{opacity:1}93%{opacity:.55}94%{opacity:1}96%{opacity:.75}97%{opacity:1}}
+  .mk-pal{position:fixed;inset:0;z-index:4000;background:rgba(2,5,10,.62);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:flex-start;justify-content:center;padding:12vh 16px 16px}
+  .mk-pal.open{display:flex}
+  .mk-pal-box{width:min(560px,100%);background:rgba(var(--bg-rgb,5,10,15),.92);border:1px solid rgba(var(--accent-rgb,0,245,255),.35);border-radius:14px;overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.03),0 0 40px rgba(var(--accent-rgb,0,245,255),.12);animation:mkPop .16s ease}
+  @keyframes mkPop{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+  .mk-pal-in{width:100%;background:transparent;border:none;border-bottom:1px solid rgba(var(--accent-rgb,0,245,255),.18);padding:16px 18px;color:#fff;font-size:16px;outline:none;font-family:inherit}
+  .mk-pal-list{max-height:min(52vh,420px);overflow:auto;padding:6px}
+  .mk-pal-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:9px;cursor:pointer;color:#c8e8f0;font-size:14px}
+  .mk-pal-item .ic{width:22px;text-align:center}.mk-pal-item .hint{margin-left:auto;font-size:11px;color:#5a7a8a;font-family:'Share Tech Mono',monospace}
+  .mk-pal-item.sel{background:rgba(var(--accent-rgb,0,245,255),.14);color:#fff;box-shadow:inset 2px 0 0 var(--accent,#00f5ff)}
+  .mk-pal-foot{display:flex;gap:14px;padding:8px 14px;border-top:1px solid rgba(var(--accent-rgb,0,245,255),.12);font-size:10px;color:#5a7a8a;font-family:'Share Tech Mono',monospace}
+  .mk-pal-empty{padding:18px;text-align:center;color:#5a7a8a;font-size:13px}
+  .codeblock{margin:8px 0;border:1px solid rgba(var(--accent-rgb,0,245,255),.22);border-radius:9px;overflow:hidden;background:rgba(0,0,0,.42)}
+  .cb-head{display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:rgba(var(--accent-rgb,0,245,255),.07);
+    font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1.5px;color:var(--accent,#00f5ff);text-transform:uppercase}
+  .cb-copy{background:none;border:1px solid rgba(var(--accent-rgb,0,245,255),.3);color:var(--accent,#00f5ff);border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:inherit}
+  .cb-copy:hover{background:rgba(var(--accent-rgb,0,245,255),.15)}
+  .codeblock pre{margin:0!important;border:none!important;border-radius:0!important;background:none!important;padding:10px 12px!important;overflow-x:auto}
+  .codeblock code{font-family:'Share Tech Mono',ui-monospace,monospace;font-size:12.5px;line-height:1.55;color:#d6e9f2;background:none!important;padding:0!important}
+  .hl-k{color:#c792ea}.hl-s{color:#c3e88d}.hl-n{color:#f78c6c}.hl-c{color:#5f7e8c;font-style:italic}.hl-f{color:#82aaff}
+  `;
+  function injectCSS() { if (document.getElementById('mk-css')) return; const s = document.createElement('style'); s.id = 'mk-css'; s.textContent = CSS; document.head.appendChild(s); }
+
+  // ---------------- AVVIO (controlli reali, una volta per sessione) ----------------
+  function boot({ version = 'V9', checks = [], key = 'maik_boot_v9', force = false } = {}) {
+    injectCSS();
+    let seen = false; try { seen = sessionStorage.getItem(key) === '1'; } catch (e) {}
+    if (seen && !force) return Promise.resolve(false);
+    try { sessionStorage.setItem(key, '1'); } catch (e) {}
+    const el = document.createElement('div'); el.className = 'mk-boot'; el.setAttribute('role', 'status'); el.setAttribute('aria-label', 'Avvio di MAIK');
+    el.innerHTML = `<div class="mk-boot-logo">MAIK</div><div class="mk-boot-ver">${esc(version)} · SISTEMA</div>
+      <div class="mk-boot-list"></div><div class="mk-boot-bar"><i></i></div><div class="mk-boot-skip">CLIC O INVIO PER SALTARE</div>`;
+    document.body.appendChild(el);
+    const list = el.querySelector('.mk-boot-list'), bar = el.querySelector('.mk-boot-bar i');
+    let done = false, resolveP;
+    const close = () => { if (done) return; done = true; el.classList.add('out'); document.removeEventListener('keydown', onKey);
+      setTimeout(() => el.remove(), 480); resolveP(true); };
+    const onKey = e => { if (['Escape', 'Enter', ' '].includes(e.key)) close(); };
+    el.addEventListener('click', close); document.addEventListener('keydown', onKey);
+    const pause = ms => new Promise(r => setTimeout(r, reduceMotion ? 0 : ms));
+    return new Promise(async res => {
+      resolveP = res;
+      for (let i = 0; i < checks.length && !done; i++) {
+        const row = document.createElement('div'); row.className = 'mk-boot-row';
+        row.innerHTML = `<span>▸ ${esc(checks[i].label)}</span><b class="mk-wait">…</b>`; list.appendChild(row);
+        requestAnimationFrame(() => row.classList.add('in'));
+        let r = { ok: null, text: '' };
+        try { r = await Promise.race([checks[i].run(), new Promise(z => setTimeout(() => z({ ok: false, text: 'timeout' }), 2500))]) || r; } catch (e) { r = { ok: false, text: 'errore' }; }
+        const st = row.querySelector('b'); st.className = r.ok === false ? 'mk-warn' : 'mk-ok'; st.textContent = (r.text || (r.ok === false ? 'non disponibile' : 'ok')) + (r.ok === false ? ' ⚠' : ' ✓');
+        bar.style.width = ((i + 1) / checks.length * 100) + '%';
+        await pause(140);
+      }
+      await pause(550); close();
+    });
+  }
+
+  // ---------------- PALETTE COMANDI (Ctrl+K) ----------------
+  function palette(getCommands) {
+    injectCSS();
+    const el = document.createElement('div'); el.className = 'mk-pal'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Palette comandi');
+    el.innerHTML = `<div class="mk-pal-box"><input class="mk-pal-in" placeholder="Cerca un comando… (es. tema, timer, briefing)" aria-label="Cerca un comando">
+      <div class="mk-pal-list" role="listbox"></div><div class="mk-pal-foot"><span>↑↓ scegli</span><span>⏎ esegui</span><span>esc chiudi</span><span style="margin-left:auto">CTRL+K</span></div></div>`;
+    document.body.appendChild(el);
+    const input = el.querySelector('input'), list = el.querySelector('.mk-pal-list');
+    let cmds = [], shown = [], sel = 0;
+    const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const score = (c, q) => { if (!q) return 1; const h = norm(c.label + ' ' + (c.keywords || '') + ' ' + (c.hint || ''));
+      if (h.includes(q)) return 3 - (h.indexOf(q) === 0 ? 0 : 1); let i = 0; for (const ch of h) if (ch === q[i]) i++; return i === q.length ? 1 : 0; };
+    function render() {
+      const q = norm(input.value.trim());
+      shown = cmds.map(c => [c, score(c, q)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 60);
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      list.innerHTML = shown.length ? shown.map((c, i) => `<div class="mk-pal-item${i === sel ? ' sel' : ''}" role="option" data-i="${i}"><span class="ic">${c.ic || '•'}</span><span>${esc(c.label)}</span><span class="hint">${esc(c.hint || '')}</span></div>`).join('')
+                                 : '<div class="mk-pal-empty">Nessun comando trovato</div>';
+      const s = list.querySelector('.sel'); if (s) s.scrollIntoView({ block: 'nearest' });
+    }
+    function open() { cmds = getCommands(); input.value = ''; sel = 0; render(); el.classList.add('open'); input.focus(); }   // focus subito: niente tasti persi
+    function close() { el.classList.remove('open'); }
+    function run(i) { const c = shown[i]; if (!c) return; close(); setTimeout(() => c.run(), 10); }
+    input.addEventListener('input', () => { sel = 0; render(); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { sel = Math.min(shown.length - 1, sel + 1); render(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { sel = Math.max(0, sel - 1); render(); e.preventDefault(); }
+      else if (e.key === 'Enter') { run(sel); e.preventDefault(); }
+      else if (e.key === 'Escape') { close(); e.preventDefault(); }
+    });
+    list.addEventListener('click', e => { const it = e.target.closest('.mk-pal-item'); if (it) run(+it.dataset.i); });
+    el.addEventListener('click', e => { if (e.target === el) close(); });
+    document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); el.classList.contains('open') ? close() : open(); } });
+    return { open, close, get isOpen() { return el.classList.contains('open'); } };
+  }
+
+  // ---------------- EVIDENZIAZIONE DEL CODICE ----------------
+  const KW = new Set(('const let var function return if else for while do switch case break continue new class extends import from export default try catch finally throw ' +
+    'async await yield def lambda pass None True False null undefined true false self this in of not and or is elif with as print public private protected static ' +
+    'void int float double char bool boolean string struct enum interface type select insert update delete where join create table echo fn mut impl use pub match').split(' '));
+  function highlight(code, lang = '') {
+    lang = String(lang || '').toLowerCase();
+    const hashComments = !lang || /^(python|py|bash|sh|shell|zsh|yaml|yml|ruby|rb|r|perl|toml|ini|conf|cfg|dockerfile|makefile|powershell|ps1|text|txt)$/.test(lang);
+    const re = new RegExp([
+      '(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/|<!--[\\s\\S]*?-->' + (hashComments ? '|#[^\\n]*' : '') + ')',   // commenti
+      '("(?:\\\\.|[^"\\\\\\n])*"|\'(?:\\\\.|[^\'\\\\\\n])*\'|`(?:\\\\.|[^`\\\\])*`)',                       // stringhe
+      '\\b(\\d+(?:\\.\\d+)?)\\b',                                                                            // numeri
+      '\\b([A-Za-z_][\\w]*)(?=\\s*\\()',                                                                     // funzioni
+      '\\b([A-Za-z_][\\w]*)\\b',                                                                             // parole
+    ].join('|'), 'g');
+    let out = '', last = 0, m;
+    while ((m = re.exec(code))) {
+      out += esc(code.slice(last, m.index)); last = re.lastIndex;
+      if (m[1]) out += `<span class="hl-c">${esc(m[1])}</span>`;
+      else if (m[2]) out += `<span class="hl-s">${esc(m[2])}</span>`;
+      else if (m[3]) out += `<span class="hl-n">${m[3]}</span>`;
+      else if (m[4]) out += KW.has(m[4]) ? `<span class="hl-k">${m[4]}</span>` : `<span class="hl-f">${m[4]}</span>`;
+      else out += KW.has(m[5]) ? `<span class="hl-k">${m[5]}</span>` : m[5];
+      if (m[0] === '') re.lastIndex++;
+    }
+    return out + esc(code.slice(last));
+  }
+  function codeBlock(code, lang) {
+    return `<div class="codeblock"><div class="cb-head"><span>${esc(lang || 'codice')}</span><button class="cb-copy" type="button" aria-label="Copia il codice">Copia</button></div><pre><code>${highlight(code, lang)}</code></pre></div>`;
+  }
+  // copia del codice (un solo listener per tutta la pagina)
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('.cb-copy'); if (!b) return;
+    const code = b.closest('.codeblock').querySelector('code').textContent;
+    (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(() => { b.textContent = 'Copiato ✓'; setTimeout(() => b.textContent = 'Copia', 1500); },
+      () => { b.textContent = 'Errore'; setTimeout(() => b.textContent = 'Copia', 1500); });
+  });
+
+  // immagine → JPEG ridimensionato (per la visione: payload leggero)
+  function shrinkImage(file, max = 1024) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onload = () => { const img = new Image(); img.onload = () => {
+        const s = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/jpeg', 0.85)); }; img.onerror = rej; img.src = fr.result; };
+      fr.onerror = rej; fr.readAsDataURL(file);
+    });
+  }
+  const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|jsx|tsx|py|html?|css|scss|xml|ya?ml|ini|cfg|toml|log|sql|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|sh|bat|ps1|swift|r)$/i;
+
+  // parola di attivazione «Maik» (il riconoscimento vocale italiano la scrive in vari modi)
+  const WAKE = /(?:^|[\s,.!?])(?:(?:ehi|hey|ok|ciao)\s+)?(maik|maic|mike|maike|maich|mayk|myke|meik|maicol)(?=$|[\s,.!?])[\s,.!?]*/i;
+  function wake(text) { const m = String(text || '').match(WAKE); if (!m) return null; return (text.slice(0, m.index) + ' ' + text.slice(m.index + m[0].length)).replace(/\s{2,}/g, ' ').trim(); }
+
+  return { THEMES, applyTheme, hexRgb, core, mic, boot, palette, highlight, codeBlock, shrinkImage, TEXT_EXT, wake, reduceMotion, touch, injectCSS };
+})();
+</script>
+<script>
 const $=s=>document.querySelector(s);
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function toast(m,t){const d=document.createElement('div');d.className='tst '+(t||'');d.textContent=m;$('#toast').appendChild(d);setTimeout(()=>d.remove(),3000);}
@@ -2304,12 +2806,16 @@ let pName='';
 
 // ---------- MARKDOWN + RAGIONAMENTO (<think>) ----------
 function md(s){
-  s=esc(s||'');
+  s=s||'';if(((s.match(/```/g)||[]).length)%2)s+='\n```';   // ``` ancora aperto durante lo streaming
+  const blocks=[];s=s.replace(/```([\w+#.-]*)[^\S\n]*\n?([\s\S]*?)```/g,(_,l,c)=>{blocks.push([l,c.replace(/\n$/,'')]);return '\u0000CB'+(blocks.length-1)+'\u0000';});
+  s=esc(s);
+  s=s.replace(/^#{1,3}\s+(.+)$/gm,'<b class="md-h">$1</b>');
   s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
   s=s.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
   s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>');
   s=s.replace(/(?:^|\n)((?:- .+(?:\n|$))+)/g,(m,l)=>'\n<ul>'+l.trim().split('\n').map(x=>'<li>'+x.replace(/^- /,'')+'</li>').join('')+'</ul>');
-  return s.replace(/\n/g,'<br>').replace(/<br><ul>/g,'<ul>').replace(/<\/ul><br>/g,'</ul>');
+  s=s.replace(/\n/g,'<br>').replace(/<br><ul>/g,'<ul>').replace(/<\/ul><br>/g,'</ul>');
+  return s.replace(/(?:<br>)*\u0000CB(\d+)\u0000(?:<br>)*/g,(_,i)=>MaikKit.codeBlock(blocks[i][1],blocks[i][0]));
 }
 function splitThink(t){const m=(t||'').match(/<think>([\s\S]*?)(<\/think>|$)/i);if(!m)return{think:'',ans:t||'',open:false};return{think:m[1].trim(),ans:m[2]?t.replace(m[0],'').trim():'',open:!m[2]};}
 function stripThink(t){return /<think>/i.test(t||'')?splitThink(t).ans:(t||'');}
@@ -2330,7 +2836,7 @@ function drawMood(arr){
   if(!arr||arr.length<2){el.innerHTML='<div class="note" style="margin:0">Parlami di come stai: qui vedrai il tuo andamento 💙</div>';return;}
   const W=220,H=56,n=arr.length,pts=arr.map((u,i)=>[(i/(n-1))*(W-8)+4,H-4-(u.v/10)*(H-8)]);
   const last=arr[n-1],col=last.v>=6?'var(--green)':last.v>=4?'var(--cyan)':'#5a9bd4';
-  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'"><line x1="4" x2="'+(W-4)+'" y1="'+(H/2)+'" y2="'+(H/2)+'" stroke="rgba(0,245,255,.15)" stroke-dasharray="3 3"/><polyline points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round"/>'+pts.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.2" fill="'+col+'"/>').join('')+'</svg><div class="note" style="margin:2px 0 0">Ultimo: <b>'+esc(last.umore||'')+'</b></div>';
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'"><line x1="4" x2="'+(W-4)+'" y1="'+(H/2)+'" y2="'+(H/2)+'" style="stroke:rgba(var(--accent-rgb),.15)" stroke-dasharray="3 3"/><polyline points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round"/>'+pts.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.2" fill="'+col+'"/>').join('')+'</svg><div class="note" style="margin:2px 0 0">Ultimo: <b>'+esc(last.umore||'')+'</b></div>';
 }
 
 // ---------- PROMEMORIA + ALLARMI ----------
@@ -2342,6 +2848,7 @@ function askNotify(){try{if('Notification' in window&&Notification.permission===
 function fireAlarm(p){
   const msg=p.tipo==='timer'?'⏱️ '+p.testo+': tempo scaduto!':'⏰ Promemoria: **'+p.testo+'**';
   add('ai',msg,'alarm');beep(3);toast(msg.replace(/\*\*/g,''),'ok');notify('MAIK',msg.replace(/\*\*/g,''));
+  SPH.state='alarm';setTimeout(()=>{if(SPH.state==='alarm')SPH.state='idle';},2500);
   const was=ttsOn;ttsOn=true;say(msg);ttsOn=was;
 }
 async function checkScaduti(){try{const r=await (await fetch('/promemoria/scaduti')).json();const s=r.scaduti||[];s.forEach(fireAlarm);if(s.length)loadPr();}catch(e){}}
@@ -2377,18 +2884,40 @@ function cercaMem(){clearTimeout(memT);memT=setTimeout(async()=>{
 },250);}
 
 // ---------- CHAT (streaming SSE) ----------
-function add(role,txt,extra){const d=document.createElement('div');d.className='m '+role+(extra?' '+extra:'');if(role==='ai')d.innerHTML=renderAI(txt);else d.textContent=txt;$('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d;}
-let busy=false;
-async function invia(){
-  const t=$('#inp').value.trim();if(!t||busy)return;
-  $('#inp').value='';$('#send').disabled=true;busy=true;lastAct=Date.now();
+function add(role,txt,extra,opt){const d=document.createElement('div');d.className='m '+role+(extra?' '+extra:'');
+  if(role==='ai')d.innerHTML='<div class="mc">'+renderAI(txt)+'</div>';
+  else{opt=opt||{};d.innerHTML=(opt.img?'<img class="att" src="'+opt.img+'" alt="Immagine allegata">':'')+(opt.file?'<div class="fchip">📄 '+esc(opt.file)+'</div><br>':'');d.appendChild(document.createTextNode(txt));}
+  $('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d;}
+function mc(d){return d.querySelector('.mc')||d;}
+function fmtStats(st){if(!st||!st.tps)return '';const t=ms=>ms<1000?Math.round(ms)+' ms':(ms/1000).toLocaleString('it-IT',{maximumFractionDigits:1})+' s';
+  return '⚡ <b>'+st.tps.toLocaleString('it-IT',{maximumFractionDigits:1})+'</b> tok/s · prima parola '+t(st.ttft_ms)+' · totale '+t(st.totale_ms);}
+// azioni sotto la risposta: copia, ascolta, rigenera (solo l'ultima) + velocità vera del modello
+function finalize(d,raw,st,q){d.dataset.raw=raw;if(q!=null)d.dataset.q=q;let a=d.querySelector('.acts');if(!a){a=document.createElement('div');a.className='acts';d.appendChild(a);}
+  a.innerHTML='<button type="button" data-act="copy">⧉ copia</button><button type="button" data-act="speak">🔊</button>'+(q!=null?'<button type="button" class="act-regen" data-act="regen">↻ rigenera</button>':'')+(st&&st.tps?'<span class="meta">'+fmtStats(st)+'</span>':'');markLast();}
+function markLast(){document.querySelectorAll('#msgs .m.ai.last').forEach(x=>x.classList.remove('last'));const all=[...document.querySelectorAll('#msgs .m')];const l=all[all.length-1];if(l&&l.classList.contains('ai')&&l.dataset.raw!=null)l.classList.add('last');}
+let busy=false,ctl=null,att=null;
+async function invia(opt){
+  opt=opt||{};const regen=!!opt.regen;
+  const t=(opt.text!=null?opt.text:$('#inp').value).trim();const A=regen?null:att;
+  if((!t&&!A)||busy)return;
+  if(!regen){$('#inp').value='';clearAtt();}
+  $('#send').disabled=true;busy=true;lastAct=Date.now();
   if(/ricordami|avvisami|timer|sveglia|svegliami|promemoria/i.test(t))askNotify();
-  add('me',t);
+  if(!regen)add('me',t,null,{img:A&&A.kind==='image'?A.dataUrl:null,file:A&&A.kind==='text'?A.name:null});
   SPH.state='thinking';$('#dot').className='dot busy';
-  const bubble=add('ai','');bubble.innerHTML='<span class="cursor"></span>';
-  let full='';
+  const bubble=add('ai','');mc(bubble).innerHTML='<span class="cursor"></span>';
+  // 🖼️ immagine allegata → modello visione, con la domanda scritta
+  if(A&&A.kind==='image'){
+    try{const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:A.dataUrl,
+        prompt:t?'Guarda attentamente questa immagine e rispondi in italiano, in modo chiaro e amichevole, a questa domanda: '+t:'Descrivi questa immagine in italiano, in modo chiaro e amichevole (3-4 frasi): cosa si vede, i dettagli interessanti e l\'eventuale testo leggibile.'})})).json();
+      const out=r.ok?'🖼️ '+r.testo:'👁️ '+(r.errore||'Non riesco a vedere');mc(bubble).innerHTML=renderAI(out);finalize(bubble,out,null,null);if(r.ok)say(r.testo);}
+    catch(e){mc(bubble).textContent='Errore visione: '+e.message;}
+    SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;return;
+  }
+  let full='';ctl=new AbortController();$('#stopbtn').style.display='inline-block';
   try{
-    const resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({testo:t})});
+    const body={testo:t};if(regen)body.rigenera=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
+    const resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
     const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
       const {done,value}=await reader.read();if(done)break;
@@ -2397,12 +2926,13 @@ async function invia(){
         const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
-        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';bubble.innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
+        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
         if(obj.done){
-          if(obj.comando){bubble.textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
-          else if(obj.ok===false){bubble.textContent=obj.risposta||'Errore.';}
+          if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
+          else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
-            bubble.innerHTML=renderAI(full);say(full);
+            mc(bubble).innerHTML=renderAI(full);say(full);finalize(bubble,full,obj.stat,A?null:t);
+            if(obj.stat&&obj.stat.tps)$('#speed').textContent='⚡ '+obj.stat.tps.toLocaleString('it-IT')+' tok/s';
             if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');
             if(obj.azione){loadPr();}else{setTimeout(checkLearn,4000);setTimeout(checkLearn,12000);}
           }
@@ -2410,44 +2940,42 @@ async function invia(){
         }
       }
     }
-  }catch(e){bubble.textContent='Errore di connessione: '+e.message;}
+  }catch(e){
+    if(e.name==='AbortError'){const out=(full?full+'\n\n':'')+'*(interrotta)*';mc(bubble).innerHTML=renderAI(out);finalize(bubble,out,null,null);}   // tieni ciò che aveva scritto
+    else mc(bubble).textContent='Errore di connessione: '+e.message;
+  }
+  ctl=null;$('#stopbtn').style.display='none';
   SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;
   if(!friend)$('#inp').focus();
 }
+function stopGen(){if(ctl)ctl.abort();if(window.speechSynthesis)speechSynthesis.cancel();}
+function regen(d){if(busy)return;const q=d.dataset.q;if(q==null){toast('Questa risposta non si può rigenerare','err');return;}d.remove();invia({text:q,regen:true});}
 
-// ---------- SFERA 3D ----------
-const cv=$('#sph'),cx=cv.getContext('2d'),wrap=$('#sphere-wrap'),area=$('#sphere-area');
-const SPH={size:200,x:0,y:0,vx:.7,vy:.45,t:0,rx:.5,ry:0,state:'idle',drag:false,ox:0,oy:0,nodes:[]};
-function buildNodes(n){SPH.nodes=[];const inc=Math.PI*(3-Math.sqrt(5));for(let i=0;i<n;i++){const y=1-(i/(n-1))*2,r=Math.sqrt(Math.max(0,1-y*y)),p=i*inc;SPH.nodes.push({x:Math.cos(p)*r,y,z:Math.sin(p)*r});}}
-function sphSize(){const a=area.getBoundingClientRect();let s=Math.round(Math.min(a.width*.6,a.height*.7));if(!s||s<0)s=180;SPH.size=Math.max(120,Math.min(240,s));cv.width=SPH.size;cv.height=SPH.size;cv.style.width=SPH.size+'px';cv.style.height=SPH.size+'px';}
-function sphInit(){buildNodes(130);sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(8,(a.width-SPH.size)/2);SPH.y=Math.max(8,(a.height-SPH.size)/2);sphPos();}
+// ---------- ALLEGATI (📎, trascina e rilascia, incolla) ----------
+async function attachFile(f){if(!f)return;try{
+  if(/^image\//.test(f.type))att={kind:'image',name:f.name||'immagine',dataUrl:await MaikKit.shrinkImage(f)};
+  else if(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type)){if(f.size>400000){toast('File troppo grande (massimo 400 KB)','err');return;}const raw=await f.text();att={kind:'text',name:f.name,content:raw.slice(0,12000),cut:raw.length>12000};}
+  else{toast('Posso leggere immagini e file di testo (txt, md, csv, codice…)','err');return;}
+  renderAtt();$('#inp').focus();}catch(e){toast('Non riesco a leggere il file','err');}}
+function onAttIn(e){attachFile(e.target.files[0]);e.target.value='';}
+function renderAtt(){const el=$('#attprev');if(!att){el.classList.remove('on');el.innerHTML='';return;}el.classList.add('on');
+  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span><button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato">✕</button>';}
+function clearAtt(){att=null;renderAtt();}
+
+// ---------- NUCLEO NEURALE (MaikKit.core: nitido su ogni schermo, reagisce a voce e stati) ----------
+const cv=$('#sph'),wrap=$('#sphere-wrap'),area=$('#sphere-area');
+const SPH={size:200,x:0,y:0,vx:.45,vy:.3,state:'idle',drag:false,ox:0,oy:0};
+let core=null,themeRGB=MaikKit.applyTheme('neon');const micMeter=MaikKit.mic();
+function sphSize(){const a=area.getBoundingClientRect();let s=Math.round(Math.min(a.width*.62,a.height*.85));if(!s||s<0)s=180;SPH.size=Math.max(140,Math.min(MaikKit.touch?260:320,s));if(core)core.resize(SPH.size);}
+function sphInit(){core=MaikKit.core(cv,{size:200});core.setAccent(themeRGB.accent,themeRGB.accent2);sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(8,(a.width-SPH.size)/2);SPH.y=Math.max(8,(a.height-SPH.size)/2);sphPos();}
 function sphPos(){wrap.style.left=SPH.x+'px';wrap.style.top=SPH.y+'px';}
+let sphT=0;
 function sphLoop(){
-  SPH.t+=.02;const a=area.getBoundingClientRect();const mx=a.width-SPH.size,my=a.height-SPH.size;
-  if(!SPH.drag&&mx>4&&my>4){SPH.x+=SPH.vx;SPH.y+=SPH.vy;if(SPH.x<=0||SPH.x>=mx){SPH.vx*=-1;SPH.x=Math.max(0,Math.min(mx,SPH.x));}if(SPH.y<=0||SPH.y>=my){SPH.vy*=-1;SPH.y=Math.max(0,Math.min(my,SPH.y));}sphPos();}
-  sphDraw();requestAnimationFrame(sphLoop);
-}
-function sphDraw(){
-  const w=cv.width,h=cv.height,c=w/2,m=h/2,R=w*.40,k=w/200;cx.clearRect(0,0,w,h);
-  let cr=0,cg=245,cb=255,sp=.006,pa=0;
-  if(SPH.state==='thinking'){cr=168;cg=85;cb=247;sp=.020;}
-  else if(SPH.state==='speaking'){sp=.013;pa=.10;}
-  else if(SPH.state==='detecting'){cr=0;cg=255;cb=136;sp=.011;}
-  SPH.ry+=sp;SPH.rx+=sp*.35;
-  const br=1+Math.sin(SPH.t*2)*.02+(SPH.state==='speaking'?Math.abs(Math.sin(SPH.t*9))*pa:0);
-  const gR=R*1.55,g=cx.createRadialGradient(c,m,R*.35,c,m,gR);
-  g.addColorStop(0,'rgba('+cr+','+cg+','+cb+','+(.18+Math.sin(SPH.t*2)*.06)+')');g.addColorStop(1,'rgba('+cr+','+cg+','+cb+',0)');
-  cx.beginPath();cx.arc(c,m,gR,0,Math.PI*2);cx.fillStyle=g;cx.fill();
-  const cosY=Math.cos(SPH.ry),sinY=Math.sin(SPH.ry),cosX=Math.cos(SPH.rx),sinX=Math.sin(SPH.rx);
-  const pts=new Array(SPH.nodes.length);
-  for(let i=0;i<SPH.nodes.length;i++){const p=SPH.nodes[i];let x=p.x*cosY-p.z*sinY;let z=p.x*sinY+p.z*cosY;let y=p.y*cosX-z*sinX;z=p.y*sinX+z*cosX;const pe=1/(1.8-z);pts[i]={sx:c+x*R*pe*br,sy:m+y*R*pe*br,z};}
-  cx.beginPath();for(let i=0;i<pts.length;i++){if(i===0)cx.moveTo(pts[i].sx,pts[i].sy);else cx.lineTo(pts[i].sx,pts[i].sy);}cx.strokeStyle='rgba('+cr+','+cg+','+cb+',.10)';cx.lineWidth=.6;cx.stroke();
-  const ord=pts.slice().sort((a,b)=>a.z-b.z);
-  for(const p of ord){const d=(p.z+1)/2,sz=(.5+d*1.9)*k,al=.22+d*.68;cx.beginPath();cx.arc(p.sx,p.sy,sz,0,Math.PI*2);cx.fillStyle='rgba('+(Math.min(255,cr+70*d)|0)+','+(Math.min(255,cg+70*d)|0)+','+(Math.min(255,cb+70*d)|0)+','+al+')';cx.fill();}
-  const coR=(7+Math.sin(SPH.t*4)*3)*k,co=cx.createRadialGradient(c,m,0,c,m,coR*2.4);
-  co.addColorStop(0,'rgba(255,255,255,.95)');co.addColorStop(.4,'rgba('+cr+','+cg+','+cb+',.7)');co.addColorStop(1,'rgba(0,0,0,0)');
-  cx.beginPath();cx.arc(c,m,coR*2.4,0,Math.PI*2);cx.fillStyle=co;cx.fill();
-  if(SPH.state==='speaking'){const rr=R*1.08;for(let i=0;i<16;i++){const an=(i/16)*Math.PI*2,bh=(7+Math.abs(Math.sin(SPH.t*9+i))*14)*k;cx.beginPath();cx.moveTo(c+Math.cos(an)*rr,m+Math.sin(an)*rr);cx.lineTo(c+Math.cos(an)*(rr+bh),m+Math.sin(an)*(rr+bh));cx.strokeStyle='rgba('+cr+','+cg+','+cb+',.7)';cx.lineWidth=2;cx.stroke();}}
+  sphT+=.02;const a=area.getBoundingClientRect();const mx=a.width-SPH.size,my=a.height-SPH.size;
+  if(!SPH.drag&&!MaikKit.reduceMotion&&mx>4&&my>4){SPH.x+=SPH.vx;SPH.y+=SPH.vy;if(SPH.x<=0||SPH.x>=mx){SPH.vx*=-1;SPH.x=Math.max(0,Math.min(mx,SPH.x));}if(SPH.y<=0||SPH.y>=my){SPH.vy*=-1;SPH.y=Math.max(0,Math.min(my,SPH.y));}sphPos();}
+  const st=SPH.state!=='idle'?SPH.state:(listening?'listening':'idle');core.setState(st);
+  if(st==='listening')core.setLevel(micMeter.on?micMeter.level():.15+Math.abs(Math.sin(sphT*3))*.2);
+  core.frame();requestAnimationFrame(sphLoop);
 }
 wrap.addEventListener('mousedown',e=>{SPH.drag=true;const r=wrap.getBoundingClientRect();SPH.ox=e.clientX-r.left;SPH.oy=e.clientY-r.top;});
 document.addEventListener('mousemove',e=>{if(!SPH.drag)return;const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(a.width-SPH.size,e.clientX-a.left-SPH.ox));SPH.y=Math.max(0,Math.min(a.height-SPH.size,e.clientY-a.top-SPH.oy));sphPos();});
@@ -2480,12 +3008,12 @@ async function guarda(){
   if(busy)return;
   if(!camOn){const ok=await startCam();if(!ok)return;await new Promise(r=>setTimeout(r,900));}
   const img=snap();busy=true;SPH.state='thinking';
-  const b=add('ai','');b.innerHTML='👁️ <span class="cursor"></span>';
+  const b=add('ai','');mc(b).innerHTML='👁️ <span class="cursor"></span>';
   try{
     const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:img})})).json();
-    if(r.ok){b.textContent='👁️ '+r.testo;say(r.testo);}
-    else{b.textContent='👁️ '+(r.errore||'Non riesco a vedere');visionBroken=true;}
-  }catch(e){b.textContent='Errore visione: '+e.message;}
+    if(r.ok){mc(b).textContent='👁️ '+r.testo;finalize(b,'👁️ '+r.testo,null,null);say(r.testo);}
+    else{mc(b).textContent='👁️ '+(r.errore||'Non riesco a vedere');visionBroken=true;}
+  }catch(e){mc(b).textContent='Errore visione: '+e.message;}
   SPH.state='idle';busy=false;
 }
 async function autoGlance(){
@@ -2502,15 +3030,18 @@ async function autoGlance(){
 let reco=null,listening=false,micFatal=false;
 function initReco(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;reco=new SR();reco.lang='it-IT';reco.continuous=false;reco.interimResults=true;let fin='';
   reco.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;}$('#inp').value=(fin+it).trim();};
-  reco.onend=()=>{listening=false;$('#mic').classList.remove('on');const val=$('#inp').value.trim();if(val)invia();else if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,700);fin='';};
+  reco.onend=()=>{listening=false;$('#mic').classList.remove('on');let val=$('#inp').value.trim();fin='';
+    if(val&&friend&&OPT.wake){const rest=MaikKit.wake(val);if(rest===null){$('#inp').value='';val='';}else{$('#inp').value=rest||'Ciao!';val=$('#inp').value;}}   // senza «Maik» non rispondo
+    if(val)invia();else if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,700);
+    if(!friend)setTimeout(()=>{if(!listening)micMeter.stop();},1500);};
   reco.onerror=e=>{listening=false;$('#mic').classList.remove('on');if(e.error==='no-speech'){if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,500);return;}if(e.error==='aborted')return;if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){micFatal=true;toast('Microfono non disponibile — scrivi pure','err');return;}toast('Errore microfono: '+e.error,'err');};
 }
-function startReco(){if(!reco||listening||busy||speaking||micFatal)return;try{listening=true;reco.start();$('#mic').classList.add('on');}catch(e){}}
+function startReco(){if(!reco||listening||busy||speaking||micFatal)return;try{listening=true;reco.start();$('#mic').classList.add('on');micMeter.start();}catch(e){}}
 function toggleMic(){if(!reco){toast('Voce non supportata dal browser','err');return;}if(listening){reco.stop();}else{micFatal=false;startReco();}}
 
 // ---------- TTS (voce di MAIK) ----------
 let ttsOn=false,speaking=false;
-function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=stripThink(t).replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
+function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=stripThink(t).replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onboundary=()=>{if(core)core.pulse(1);};u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
 
 // ---------- MODALITÀ AMICO ----------
 let friend=false,lastAct=Date.now(),proTimer=null,proGap=90000;
@@ -2525,7 +3056,7 @@ async function enterFriend(){
   setTimeout(()=>{add('ai',hi);say(hi);},500);
   lastAct=Date.now();proGap=80000;startPro();toast('🫂 Modalità Amico attiva','ok');
 }
-function exitFriend(){friend=false;clearInterval(proTimer);if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO</span>';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
+function exitFriend(){friend=false;clearInterval(proTimer);micMeter.stop();if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO</span>';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
 function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){if(camOn&&!visionBroken&&Math.random()<0.35)autoGlance();else sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
 function sayPro(){const nm=pName?' '+pName:'';const h=new Date().getHours();const pool=['Allora'+nm+', come va la giornata?','A cosa stai pensando'+nm+'?','Ti va di raccontarmi qualcosa?','Sono qui'+nm+', se vuoi parlare ci sono.','Hai fatto qualcosa di bello oggi?','Come ti senti'+nm+'?','Se potessi fare una cosa qualsiasi adesso, cosa faresti?'];if(h<11)pool.push('Buongiorno'+nm+'! Come hai dormito?');else if(h>=21)pool.push('Si è fatta sera'+nm+'… com\'è stata la giornata?');const line=pool[Math.floor(Math.random()*pool.length)];add('ai',line);say(line);}
 function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const line='Bentornato'+nm+'! Ti rivedo 😊';add('ai',line);say(line);}
@@ -2605,15 +3136,74 @@ async function ckClr(){ckRen(await ckApi({azione:'pulisci'}));}
 
 function beep(n){try{const c=new (window.AudioContext||window.webkitAudioContext)();for(let i=0;i<(n||1);i++){const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;o.type='sine';const t=c.currentTime+i*.25;g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.3,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2);}}catch(e){}}
 
+// ---------- V9: TEMI · OPZIONI · MEMORIA COMPLETA · PALETTE · AVVIO ----------
+const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+const OPT=Object.assign({wake:false,boot:true,theme:'neon'},LS.get('maik_srv_opt',{}));
+function setOpt(k,v){OPT[k]=v;LS.set('maik_srv_opt',OPT);}
+function setTheme(k){themeRGB=MaikKit.applyTheme(k);if(core)core.setAccent(themeRGB.accent,themeRGB.accent2);setOpt('theme',k);renderThemes();}
+function renderThemes(){$('#themes').innerHTML=Object.entries(MaikKit.THEMES).map(([k,t])=>'<button type="button" class="'+(k===OPT.theme?'on':'')+'" onclick="setTheme(\''+k+'\')"><i style="background:linear-gradient(135deg,'+t.accent+','+t.accent2+')"></i>'+t.nm+'</button>').join('');}
+let MEM=null;
+async function openMem(){$('#memf').value='';$('#mmodal').classList.add('open');$('#membody').innerHTML='<div class="note">Carico…</div>';try{MEM=await (await fetch('/statistiche')).json();}catch(e){MEM=null;}renderMem();}
+function closeMem(){$('#mmodal').classList.remove('open');}
+function renderMem(){
+  if(!MEM){$('#membody').innerHTML='<div class="note">Server non raggiungibile</div>';return;}
+  const q=($('#memf').value||'').toLowerCase(),imp=MEM.imparato_recenti||[],ep=MEM.episodi||[],off=(MEM.n_episodi||ep.length)-ep.length;
+  let h='';
+  if(MEM.riassunto)h+='<h4 style="margin-bottom:6px">Riassunto della vostra storia <button class="nx" onclick="forget(\'riassunto\')" title="Cancella" aria-label="Cancella il riassunto">✕</button></h4><div class="memsum">'+esc(MEM.riassunto)+'</div>';
+  const rows=imp.map((x,i)=>({x,i})).filter(o=>!q||(o.x.cosa||'').toLowerCase().includes(q)).reverse();
+  h+='<h4 style="margin:6px 0">Ricordi ('+imp.length+')</h4>'+(rows.length?rows.map(o=>'<div class="memrow"><span class="tag'+(o.x.categoria==='ia'?' ia':'')+'">'+esc(o.x.categoria||'fatto')+'</span><span class="txt">'+esc(o.x.cosa||'')+'</span><button class="nx" onclick="forget(\'imparato\','+o.i+')" title="Dimentica" aria-label="Dimentica questo ricordo">✕</button></div>').join(''):'<div class="note">Nessun ricordo</div>');
+  const eps=ep.map((x,i)=>({x,i:off+i})).filter(o=>!q||((o.x.titolo||'')+' '+(o.x.desc||'')).toLowerCase().includes(q)).reverse();
+  if(eps.length)h+='<h4 style="margin:12px 0 6px">Momenti importanti</h4>'+eps.map(o=>'<div class="memrow"><span class="tag">'+esc(o.x.data||'')+'</span><span class="txt">'+esc(o.x.titolo||'')+'</span><button class="nx" onclick="forget(\'episodio\','+o.i+')" title="Dimentica" aria-label="Dimentica questo momento">✕</button></div>').join('');
+  $('#membody').innerHTML=h;
+}
+async function forget(tipo,i){const url=tipo==='riassunto'?'/riassunto/elimina':'/'+tipo+'/elimina';
+  try{await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indice:i})});MEM=await (await fetch('/statistiche')).json();renderMem();toast('Dimenticato','ok');profilo();}catch(e){toast('Errore','err');}}
+let pal=null;
+function openPalette(){if(pal)pal.open();}
+function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',keywords:kw||''});const go=t=>()=>qs(t);
+  const L=[c('☀️','Briefing del giorno',go('briefing'),'azione'),c('⏱️','Timer di 5 minuti',go('metti un timer di 5 minuti'),'azione','sveglia'),
+    c('⏰','Crea un promemoria…',()=>q('Ricordami alle 18 di '),'azione','ricordami'),c('🛒','Mostra la lista della spesa',go("cosa c'è nella lista?"),'azione','spesa'),
+    c('❓','Cosa sai fare?',go('aiuto'),'azione','aiuto help'),c('🫂',friend?'Esci dalla Modalità Amico':'Modalità Amico',()=>toggleFriend(),'webcam + voce'),
+    c('👁️','Guarda dalla webcam',()=>guarda(),'visione'),c('📎','Allega immagine o file',()=>$('#attin').click(),'allegato'),
+    c('🧠','Memoria completa',()=>openMem(),'ricordi'),c('🧰','Strumenti',()=>openTools(),'calcolatrice, timer…'),
+    c('🎤','Parla con MAIK',()=>toggleMic(),'microfono'),c('≡','Mostra / nascondi la barra laterale',()=>toggleSide(),'')];
+  Object.entries(MaikKit.THEMES).forEach(([k,t])=>L.push(c('🎨','Tema: '+t.nm,()=>{setTheme(k);toast('🎨 Tema '+t.nm,'ok');},'tema','colore')));
+  PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
+  return L;}
+function runBoot(){if(OPT.boot===false)return;
+  MaikKit.boot({version:'V9 · SERVER',checks:[
+    {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
+    {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
+    {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Nucleo neurale',run:async()=>({ok:true,text:'pronto · tema '+(MaikKit.THEMES[OPT.theme]||MaikKit.THEMES.neon).nm})}]});}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTools();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();}});
 $('#tmodal').addEventListener('click',e=>{if(e.target.id==='tmodal')closeTools();});
+$('#mmodal').addEventListener('click',e=>{if(e.target.id==='mmodal')closeMem();});
 window.addEventListener('resize',()=>{sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(SPH.x,a.width-SPH.size));SPH.y=Math.max(0,Math.min(SPH.y,a.height-SPH.size));sphPos();});
+themeRGB=MaikKit.applyTheme(OPT.theme);renderThemes();$('#optwake').checked=!!OPT.wake;$('#optboot').checked=OPT.boot!==false;
+runBoot();pal=MaikKit.palette(palCmds);
+// sul telefono si parte con la chat libera; toccando la chat la barra laterale si richiude
+if(innerWidth<=760)$('#side').classList.add('hidden');
+$('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
+// azioni sui messaggi
+$('#msgs').addEventListener('click',e=>{const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
+  if(b.dataset.act==='copy')(navigator.clipboard?navigator.clipboard.writeText(stripThink(raw)):Promise.reject()).then(()=>toast('Copiato ✓','ok'),()=>toast('Copia non riuscita','err'));
+  else if(b.dataset.act==='speak'){const w=ttsOn;ttsOn=true;say(raw);ttsOn=w;}
+  else if(b.dataset.act==='regen')regen(d);});
+// allegati: trascina e rilascia, incolla un'immagine
+['dragenter','dragover'].forEach(ev=>$('#main').addEventListener(ev,e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){e.preventDefault();$('#main').classList.add('drop');}}));
+['dragleave','drop'].forEach(ev=>$('#main').addEventListener(ev,()=>$('#main').classList.remove('drop')));
+$('#main').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)attachFile(f);});
+$('#inp').addEventListener('paste',e=>{const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(x=>x.type.startsWith('image/'));if(it){e.preventDefault();attachFile(it.getAsFile());}});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
 setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);
 (async()=>{try{const r=await (await fetch('/briefing?auto=1')).json();if(r.testo){add('ai',r.testo);return;}}catch(e){}
-  add('ai','Ciao! Sono **Maik**, versione 8 🧠 Imparo da solo mentre parliamo e so fare azioni vere: timer, promemoria che suonano, lista della spesa, calcoli… Scrivi **aiuto** per vederle tutte. Premi 🫂 AMICO per farmi vedere e parlare 💚');})();
+  add('ai','Ciao! Sono **Maik**, versione 9 🧠 Imparo da solo mentre parliamo, so fare azioni vere (timer, promemoria che suonano, lista, calcoli…) e posso guardare le immagini che mi mandi con 📎. Scrivi **aiuto** per vedere tutto, oppure premi **Ctrl+K** 💚');})();
 </script>
 </body></html>"""
 
@@ -2624,7 +3214,7 @@ setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,2
 def main():
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 8.0 — Server avviato             ║
+║           MAIK 9.0 — Server avviato             ║
 ║   Impara da solo · azioni · promemoria · voce    ║
 ╚══════════════════════════════════════════════════╝""")
 

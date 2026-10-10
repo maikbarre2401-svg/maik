@@ -43,6 +43,23 @@ e non lo legge ad alta voce né lo salva in memoria.
 
 ---
 
+## ✨ Novità V9 — grafica e sistema (client e server)
+
+| | Cosa cambia |
+|---|---|
+| 🧠 **Nucleo neurale 3D** | Al posto della vecchia sfera: una rete di neuroni con sinapsi e impulsi che corrono, anelli HUD, onde d'urto ai cambi di stato. **Nitido su ogni schermo** (prima era sfocato su telefoni e schermi HiDPI). Colori per stato: viola = pensa, verde = ti ascolta, ambra = allarme. Mentre MAIK parla pulsa **a ogni parola**; mentre ascolta segue il **volume vero del microfono** (sul computer). |
+| 🎨 **6 temi completi** | Neon, Synthwave, Matrix, Solar, Ice, Ruby. Cambiano davvero *tutto* (prima ~60 colori restavano ciano fisso), con sfondo ad aurora animata ed effetto vetro. Anteprima dal vivo nelle impostazioni. |
+| ⌘ **Palette comandi** | **Ctrl+K** (o il tasto ⌘K): cerca e lancia qualsiasi cosa — briefing, timer, temi, personalità, memoria, strumenti… |
+| 🚀 **Avvio con controlli veri** | All'apertura (una volta per sessione) MAIK controlla memoria, Ollama, voce italiana, promemoria e webcam e ti mostra lo stato. Si salta con un clic; si spegne nelle impostazioni. |
+| 📎 **Allegati** | Trascina, incolla o allega un'**immagine**: la guarda il modello visione e risponde alla tua domanda («cosa c'è scritto qui?»). Oppure un **file di testo/codice** (txt, md, csv, json, py, js…): va al modello insieme al messaggio. Le immagini non vengono salvate. |
+| 💬 **Messaggi migliori** | Codice con **evidenziazione dei colori** e pulsante *Copia*; sotto ogni risposta **⧉ copia · 🔊 ascolta · ↻ rigenera**; **velocità vera** del modello (token/s, tempo della prima parola, durata). Il pulsante **■ stop** ora tiene il testo già scritto. |
+| 👂 **Parola di attivazione «Maik»** | In Modalità Amico puoi farlo rispondere solo quando dici «Maik» (es. «Ehi Maik, che ore sono?»): niente risposte alla TV o ad altre persone. |
+| 🧠 **Memoria completa** | Una finestra con tutti i ricordi (con l'etichetta di chi li ha imparati: IA, nota, gusti…), il riassunto delle conversazioni e un filtro: puoi **dimenticare** ciò che vuoi. |
+| ♿ **Accessibilità e telefono** | Contorni di focus per la tastiera, etichette sui pulsanti a icona, rispetto di «riduci movimento» del sistema. Sul telefono si parte con la chat libera e la barra laterale si chiude toccando la chat. |
+| 🐛 **Bug corretti** | ■ stop cancellava la risposta e mostrava `_(generazione interrotta)_`; l'importazione di un backup perdeva note, lista, umore e riassunto; nel server i font non venivano caricati; animazioni che ricalcolavano gli stili a ogni fotogramma. |
+
+---
+
 ## 🧠 Novità V8 — più intelligente (client e server)
 
 | | Cosa fa |
@@ -76,7 +93,7 @@ Il riconoscimento è prudente: frasi normali come *«sono sveglia da 3 ore»*, *
 
 ---
 
-## MAIK // CORE V8 — `index.html`
+## MAIK // CORE V9 — `index.html`
 
 Assistente AI personale in un **singolo file HTML**. Nessuna installazione, nessun build: apri `index.html` nel browser e funziona. Si connette a un modello locale tramite **Ollama** e ricorda tutto in `localStorage`.
 
@@ -139,7 +156,7 @@ Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di ret
 
 ---
 
-## MAIK — Server V8 — `maik_server.py`
+## MAIK — Server V9 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
@@ -151,6 +168,13 @@ python maik_server.py     # si apre da solo nel browser su :8137
 Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **sfera 3D animata + chat in streaming + pannello 🧰 strumenti + 🫂 Modalità Amico + 👁️ visione webcam** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
 
 Anche il server ha la **🫂 Modalità Amico** (ti vede, ti ascolta e ti parla) e il pulsante **👁️ Guarda**: cattura un fotogramma dalla webcam e lo manda al modello multimodale (`MAIK_MODELLO_VISIONE`) tramite il nuovo endpoint `POST /vedi`, e MAIK descrive cosa vede.
+
+### Nuovi endpoint V9
+
+`POST /imparato/elimina` · `POST /episodio/elimina` · `POST /riassunto/elimina` (per la finestra Memoria).
+`POST /chat/stream` accetta anche `"allegato": {"nome", "contenuto"}` (un file di testo: va al modello ma non alle azioni) e
+`"rigenera": true`, e nella risposta finale restituisce `"stat"` con token/s, prima parola e durata.
+Nel diario ogni domanda è salvata al massimo a 4000 caratteri (i file allegati non finiscono nel diario).
 
 ### Nuovi endpoint V8
 

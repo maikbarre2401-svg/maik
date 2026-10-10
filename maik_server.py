@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v6.0                      ║
+║                  MAIK — Server v8.0                      ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,19 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v8.0 — PIÙ INTELLIGENTE:
+  • Apprendimento con l'IA: dopo ogni messaggio il modello estrae da solo
+    fatti nuovi su di te (JSON), non solo con le frasi fisse
+  • Memoria rilevante: nel prompt entrano i ricordi legati a ciò di cui parli
+  • Azioni vere, anche offline: timer, promemoria con orario che SUONANO,
+    calcoli, ora nel mondo, lista della spesa, note, dado/moneta, meteo
+  • Briefing del giorno (meteo, promemoria, obiettivi, lista, frase del giorno)
+  • 6 personalità: amico, coach, prof, comico, zen, genio
+  • Supporto modelli che "ragionano" (deepseek-r1, qwen3): il <think> viene
+    mostrato a parte e non finisce né nella voce né nella memoria
+  • Nuovi endpoint: /promemoria, /promemoria/scaduti, /lista, /personalita,
+    /briefing, /appreso
 
 NOVITÀ v6.0 — PIÙ POTENTE E ROBUSTO:
   • Risposte in STREAMING token-per-token (/chat/stream) — niente più attese mute
@@ -28,10 +41,17 @@ EREDITA DA v5.0:
 
 import os
 import re
+import ast
 import json
+import math
+import time
+import uuid
+import random
 import shutil
+import operator
 import datetime
 import threading
+import unicodedata
 import webbrowser
 import urllib.request
 import urllib.parse
@@ -74,6 +94,10 @@ che avete vissuto insieme, citalo con calore.""",
     "file_umore":     "umore.json",
     "file_obiettivi": "obiettivi.json",
     "file_relazioni": "relazioni.json",
+    "file_promemoria": "promemoria.json",
+    "file_lista":     "lista.json",
+    # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
+    "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
     "timeout_chat":   int(_env("MAIK_TIMEOUT", "300")),
     # Open-Meteo (gratuito, no key)
@@ -105,6 +129,61 @@ WMO_EMOJI = {
     85:"🌨️",86:"❄️",95:"⛈️",96:"⛈️",99:"⛈️",
 }
 GIORNI_IT = ["Lun","Mar","Mer","Gio","Ven","Sab","Dom"]
+GIORNI_LUNGHI = ["lunedì","martedì","mercoledì","giovedì","venerdì","sabato","domenica"]
+MESI_IT = ["gennaio","febbraio","marzo","aprile","maggio","giugno",
+           "luglio","agosto","settembre","ottobre","novembre","dicembre"]
+
+def data_it(d):
+    """Data in italiano indipendente dal locale del sistema (Windows compreso)."""
+    return f"{GIORNI_LUNGHI[d.weekday()]} {d.day} {MESI_IT[d.month-1]} {d.year}"
+
+def _senza_accenti(s):
+    return "".join(c for c in unicodedata.normalize("NFD", s or "") if unicodedata.category(c) != "Mn")
+
+def _normalizza(s):
+    return re.sub(r"[^a-z0-9 ]+", " ", _senza_accenti(s).lower()).strip()
+
+_STOP = set(("il lo la i gli le un uno una di da in con su per tra fra e o ma che chi non mi ti si "
+             "ci vi ho hai ha abbiamo avete hanno sono sei siamo siete era del della dei delle al "
+             "alla ai alle dal dalla nel nella sul sulla come cosa quando dove perche anche piu "
+             "molto poco questo questa quello quella mio mia tuo tua suo sua cui se poi gia "
+             "ancora sempre mai oggi ieri domani fatto fare essere stato tutto tutti").split())
+
+def _token(s):
+    """Parole significative (senza accenti, senza stop-word, troncate per gestire plurali/verbi)."""
+    return {w[:6] for w in _normalizza(s).split() if len(w) > 2 and w not in _STOP}
+
+_PAROLE_TAGLIO = set(("e ed ma con che ho sono sto dove perche perché pero però quando per mi ti ci poi anche "
+                      "se come da del della nel nella in a al alla oggi ieri domani adesso ora molto tanto "
+                      "ma insieme vicino").split())
+
+def _taglia_frase(frase, max_parole=3):
+    """Prende l'inizio di una frase fermandosi a congiunzioni e simili (la prima parola resta sempre)."""
+    parole = re.sub(r"[^\wà-ÿ' ]+", " ", frase).split()
+    out = []
+    for i, w in enumerate(parole):
+        if i and (w in _PAROLE_TAGLIO or len(out) >= max_parole):
+            break
+        out.append(w)
+    return " ".join(out).strip(" '")
+
+def pulisci_pensiero(testo):
+    """Toglie il blocco <think>…</think> dei modelli che ragionano (deepseek-r1, qwen3…)."""
+    t = re.sub(r"<think>.*?</think>", "", testo or "", flags=re.S | re.I)
+    t = re.sub(r"<think>.*\Z", "", t, flags=re.S | re.I)   # pensiero rimasto aperto
+    return t.strip()
+
+_UMORI_POSITIVI = {"felice", "contento", "ottimo", "bene", "euforico", "sereno", "rilassato",
+                   "eccitato", "entusiasta", "innamorato", "soddisfatto"}
+
+def valenza_umore(umore, intensita=5):
+    """0 = molto giù, 10 = al settimo cielo (per il grafico dell'umore)."""
+    try:
+        i = float(intensita)
+    except (TypeError, ValueError):
+        i = 5.0
+    v = 5 + i / 2 if (umore or "").lower() in _UMORI_POSITIVI else 5 - i / 2
+    return round(max(0.0, min(10.0, v)), 1)
 
 def _get(url, timeout=8):
     try:
@@ -113,10 +192,10 @@ def _get(url, timeout=8):
     except Exception:
         return None
 
-def ottieni_meteo(citta="Roma"):
+def ottieni_meteo(citta="Roma", timeout=8):
     geo_url = (f"{CONFIG['meteo_geo_url']}?name={urllib.parse.quote(citta)}"
                f"&count=1&language=it&format=json")
-    geo = _get(geo_url)
+    geo = _get(geo_url, timeout)
     if not geo or not geo.get("results"):
         return {"errore": f"Città '{citta}' non trovata"}
     r = geo["results"][0]
@@ -128,7 +207,7 @@ def ottieni_meteo(citta="Roma"):
               f"wind_speed_10m,precipitation,weather_code"
               f"&daily=weather_code,temperature_2m_max,temperature_2m_min"
               f"&timezone=auto&forecast_days=5")
-    fc = _get(fc_url)
+    fc = _get(fc_url, timeout)
     if not fc or "current" not in fc:
         return {"errore": "Impossibile ottenere previsioni"}
 
@@ -178,6 +257,8 @@ class Memoria:
         self.umore     = self._carica(CONFIG["file_umore"],     [])
         self.obiettivi = self._carica(CONFIG["file_obiettivi"], [])
         self.relazioni = self._carica(CONFIG["file_relazioni"], {})
+        self.promemoria = self._carica(CONFIG["file_promemoria"], [])
+        self.lista     = self._carica(CONFIG["file_lista"],     [])
         self._segna_giorno()
 
     # ── I/O ─────────────────────────────────────────────────
@@ -344,6 +425,167 @@ class Memoria:
             self.ricordi["riassunto"] = nuovo
             self._salva(CONFIG["file_ricordi"], self.ricordi)
 
+    def imposta_ricordo(self, chiave, valore):
+        with self._lock:
+            self.ricordi[chiave] = valore
+            self._salva(CONFIG["file_ricordi"], self.ricordi)
+
+    # ── Promemoria con orario (suonano davvero) ──────────────
+    def aggiungi_promemoria(self, testo, quando=None, tipo="promemoria"):
+        with self._lock:
+            item = {
+                "id":        uuid.uuid4().hex[:8],
+                "testo":     testo,
+                "quando":    quando.isoformat(timespec="seconds") if quando else None,
+                "tipo":      tipo,
+                "creato":    datetime.datetime.now().isoformat(timespec="seconds"),
+                "notificato": False,
+                "fatto":     False,
+            }
+            self.promemoria.append(item)
+            eccesso = len(self.promemoria) - 300
+            if eccesso > 0:   # butta via i più vecchi tra quelli già chiusi
+                vecchi = {id(p) for p in [p for p in self.promemoria if p.get("fatto")][:eccesso]}
+                self.promemoria = [p for p in self.promemoria if id(p) not in vecchi]
+            self._salva(CONFIG["file_promemoria"], self.promemoria)
+            return item
+
+    def promemoria_attivi(self):
+        with self._lock:
+            attivi = [p for p in self.promemoria if not p.get("fatto")]
+        return sorted(attivi, key=lambda p: p.get("quando") or "9999")
+
+    def promemoria_scaduti(self):
+        """Ritorna (e segna come notificati) i promemoria arrivati all'orario."""
+        ora = datetime.datetime.now()
+        scaduti = []
+        with self._lock:
+            for p in self.promemoria:
+                if p.get("quando") and not p.get("notificato"):
+                    try:
+                        if datetime.datetime.fromisoformat(p["quando"]) <= ora:
+                            p["notificato"] = True
+                            if p.get("tipo") == "timer":
+                                p["fatto"] = True
+                            scaduti.append(dict(p))
+                    except ValueError:
+                        p["notificato"] = True
+            if scaduti:
+                self._salva(CONFIG["file_promemoria"], self.promemoria)
+        return scaduti
+
+    def promemoria_di_oggi(self):
+        oggi = datetime.date.today().isoformat()
+        return [p for p in self.promemoria_attivi() if (p.get("quando") or "")[:10] == oggi]
+
+    def chiudi_promemoria(self, pid=None, tutti=False):
+        with self._lock:
+            n = 0
+            for p in self.promemoria:
+                if not p.get("fatto") and (tutti or p.get("id") == pid):
+                    p["fatto"] = True
+                    n += 1
+            if n:
+                self._salva(CONFIG["file_promemoria"], self.promemoria)
+            return n
+
+    # ── Lista della spesa / cose da fare ─────────────────────
+    def lista_aggiungi(self, voci):
+        aggiunte = []
+        with self._lock:
+            presenti = {x["testo"].lower() for x in self.lista if not x.get("fatto")}
+            for v in voci:
+                v = v.strip(" .,;!?").strip()
+                if v and v.lower() not in presenti and len(v) <= 80:
+                    self.lista.append({"testo": v, "fatto": False})
+                    presenti.add(v.lower())
+                    aggiunte.append(v)
+            if aggiunte:
+                self._salva(CONFIG["file_lista"], self.lista)
+        return aggiunte
+
+    def lista_rimuovi(self, testo):
+        t = testo.lower().strip(" .,;!?")
+        with self._lock:
+            prima = len(self.lista)
+            self.lista = [x for x in self.lista if t not in x["testo"].lower()]
+            if len(self.lista) != prima:
+                self._salva(CONFIG["file_lista"], self.lista)
+            return prima - len(self.lista)
+
+    def lista_modifica(self, azione, indice=-1, testo=""):
+        with self._lock:
+            if azione == "aggiungi" and testo:
+                self.lista.append({"testo": testo.strip()[:80], "fatto": False})
+            elif azione == "toggle" and 0 <= indice < len(self.lista):
+                self.lista[indice]["fatto"] = not self.lista[indice].get("fatto")
+            elif azione == "elimina" and 0 <= indice < len(self.lista):
+                self.lista.pop(indice)
+            elif azione == "pulisci":
+                self.lista = [x for x in self.lista if not x.get("fatto")]
+            elif azione == "svuota":
+                self.lista = []
+            else:
+                return False
+            self._salva(CONFIG["file_lista"], self.lista)
+            return True
+
+    # ── Apprendimento con l'IA ───────────────────────────────
+    ALIAS_CHIAVI = {"città": "citta", "city": "citta", "name": "nome", "eta": "età", "age": "età",
+                    "job": "lavoro", "professione": "lavoro", "mestiere": "lavoro"}
+
+    def gia_noto(self):
+        """Riassunto compatto di ciò che si sa già (per non far reimparare le stesse cose)."""
+        with self._lock:
+            prof = {k: (v.get("valore") if isinstance(v, dict) else v) for k, v in self.profilo.items()}
+            return json.dumps({"profilo": prof,
+                               "fatti": [x["cosa"] for x in self.imparato[-25:]],
+                               "persone": [i["nome"] for i in self.relazioni.values()][:20]},
+                              ensure_ascii=False)[:2500]
+
+    def impara_da_ia(self, dati):
+        """Unisce in memoria i fatti estratti dal modello. Ritorna cosa ha imparato davvero."""
+        appreso = []
+        if not isinstance(dati, dict):
+            return appreso
+        pulisci = lambda s: re.sub(r"\s+", " ", str(s or "")).strip()[:90]
+        vuoto = re.compile(r"^(sconosciut|non\s|n/?a$|null|none|nessun|-$)", re.I)
+
+        prof = dati.get("profilo")
+        if isinstance(prof, dict):
+            for k, v in list(prof.items())[:5]:
+                k = pulisci(k).lower().replace(" ", "_")[:20]
+                k = self.ALIAS_CHIAVI.get(k, k)
+                v = pulisci(v)
+                if not k or not v or vuoto.search(v) or self.get_valore_profilo(k).lower() == v.lower():
+                    continue
+                self.ricorda_fatto(k, v)
+                appreso.append(f"{k}: {v}")
+
+        noti = {_normalizza(x.get("cosa", "")) for x in self.imparato}
+        for f in (dati.get("fatti") or [])[:4]:
+            f = pulisci(f)
+            n = _normalizza(f)
+            if len(f) > 4 and n not in noti and not any(n in m or m in n for m in noti if m):
+                self.impara_cosa(f, "ia")
+                noti.add(n)
+                appreso.append(f)
+
+        for p in (dati.get("persone") or [])[:3]:
+            if not isinstance(p, dict):
+                continue
+            nome, ruolo = pulisci(p.get("nome"))[:30], pulisci(p.get("ruolo"))[:30]
+            if nome and not vuoto.search(nome) and nome.lower() not in self.relazioni:
+                self.ricorda_persona(nome, ruolo or "persona")
+                appreso.append(nome + (f" ({ruolo})" if ruolo else ""))
+
+        for o in (dati.get("obiettivi") or [])[:2]:
+            o = pulisci(o)
+            if len(o) > 3 and not any(o.lower()[:30] == x.get("testo", "").lower()[:30] for x in self.obiettivi):
+                self.aggiungi_obiettivo(o, "obiettivo")
+                appreso.append("🎯 " + o)
+        return appreso
+
     # ── Ricerca nei ricordi ──────────────────────────────────
     def cerca(self, query):
         q = (query or "").lower().strip()
@@ -393,8 +635,27 @@ class Memoria:
             eventi.sort(key=lambda e: e["data"])
             return eventi
 
+    # ── Ricordi rilevanti per l'argomento corrente ───────────
+    @staticmethod
+    def _rilevanti(elementi, testo_di, query, k=6, recenti=4):
+        """I `recenti` più nuovi + fino a `k` più pertinenti alla domanda (sovrapposizione di parole)."""
+        if not elementi:
+            return []
+        scelti = list(range(max(0, len(elementi) - recenti), len(elementi)))
+        q = _token(query)
+        if q:
+            punteggi = []
+            for i, el in enumerate(elementi):
+                comuni = len(q & _token(testo_di(el)))
+                if comuni:
+                    punteggi.append((comuni + i / (len(elementi) * 2), i))
+            for _, i in sorted(punteggi, reverse=True)[:k]:
+                if i not in scelti:
+                    scelti.append(i)
+        return [elementi[i] for i in sorted(scelti)]
+
     # ── Costruzione contesto per il system prompt ────────────
-    def costruisci_contesto(self):
+    def costruisci_contesto(self, query=""):
         with self._lock:
             parti = []
             if self.profilo:
@@ -419,11 +680,19 @@ class Memoria:
             if self.ricordi.get("riassunto"):
                 parti.append(f"RIASSUNTO DELLA VOSTRA STORIA:\n{self.ricordi['riassunto']}")
             if self.imparato:
-                cose = "\n".join(f"- {x['cosa']}" for x in self.imparato[-15:])
-                parti.append(f"COSE CHE TI HA INSEGNATO:\n{cose}")
+                sel = self._rilevanti(self.imparato, lambda x: x.get("cosa", ""), query, k=8, recenti=6)
+                cose = "\n".join(f"- {x['cosa']}" for x in sel)
+                parti.append(f"COSE CHE SAI DI LEI/LUI (le più pertinenti ora):\n{cose}")
             if self.episodi:
-                ep_txt = "\n".join(f"- {ep['data']}: {ep['titolo']}" for ep in self.episodi[-5:])
+                sel = self._rilevanti(self.episodi, lambda e: e.get("titolo", "") + " " + e.get("desc", ""),
+                                      query, k=4, recenti=3)
+                ep_txt = "\n".join(f"- {ep['data']}: {ep['titolo']}" for ep in sel)
                 parti.append(f"MOMENTI IMPORTANTI CHE RICORDI:\n{ep_txt}")
+            attivi = [p for p in self.promemoria if not p.get("fatto")][:6]
+            if attivi:
+                pr = "\n".join(f"- {p['testo']}" + (f" ({p['quando'].replace('T', ' ')[:16]})" if p.get("quando") else "")
+                               for p in attivi)
+                parti.append(f"PROMEMORIA ATTIVI:\n{pr}")
             giorni = self.ricordi.get("giorni_insieme", 1)
             parti.append(f"Vi conoscete da {giorni} giorni diversi di chiacchierate.")
             if not parti:
@@ -442,6 +711,8 @@ class Memoria:
                 "obiettivi": self.obiettivi,
                 "relazioni": self.relazioni,
                 "diario":    self.diario[-200:],
+                "promemoria": self.promemoria,
+                "lista":     self.lista,
                 "esportato_il": datetime.datetime.now().isoformat(timespec="seconds"),
             }
 
@@ -455,6 +726,8 @@ class Memoria:
             "obiettivi": ("file_obiettivi", "obiettivi"),
             "relazioni": ("file_relazioni", "relazioni"),
             "diario":    ("file_diario",    "diario"),
+            "promemoria": ("file_promemoria", "promemoria"),
+            "lista":     ("file_lista",     "lista"),
         }
         with self._lock:
             for chiave, (cfg_key, attr) in mapping.items():
@@ -471,6 +744,8 @@ class Memoria:
             "obiettivi": ("file_obiettivi", "obiettivi", []),
             "relazioni": ("file_relazioni", "relazioni", {}),
             "diario":    ("file_diario",    "diario",    []),
+            "promemoria": ("file_promemoria", "promemoria", []),
+            "lista":     ("file_lista",     "lista",     []),
         }
         with self._lock:
             if categoria in mapping:
@@ -505,6 +780,11 @@ class Memoria:
                 "obiettivi_completati": ob_completati,
                 "n_relazioni":       len(self.relazioni),
                 "relazioni":         list(self.relazioni.values()),
+                "umore_grafico":     [{"data": u.get("data", ""), "umore": u.get("umore", ""),
+                                       "v": valenza_umore(u.get("umore", ""), u.get("intensita", 5))}
+                                      for u in self.umore[-20:]],
+                "n_promemoria":      len([p for p in self.promemoria if not p.get("fatto")]),
+                "n_lista":           len([x for x in self.lista if not x.get("fatto")]),
             }
 
 
@@ -546,6 +826,27 @@ class Cervello:
                 return json.loads(r.read().decode("utf-8"))["message"]["content"].strip()
         except Exception as e:
             return f"__ERRORE__ {e}"
+
+    def pensa_json(self, prompt, timeout=120):
+        """Chiede al modello una risposta in JSON (format: json) e la restituisce come dict, o None."""
+        req = urllib.request.Request(
+            CONFIG["ollama_url"],
+            data=json.dumps({
+                "model": CONFIG["modello"],
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0, "num_predict": 300},
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                testo = pulisci_pensiero(json.loads(r.read().decode("utf-8"))["message"]["content"])
+            m = re.search(r"\{.*\}", testo, re.S)   # tollera testo attorno al JSON
+            return json.loads(m.group(0)) if m else None
+        except Exception:
+            return None
 
     def pensa_stream(self, system_prompt, messaggi, on_token):
         """Streaming token-per-token. Chiama on_token(chunk) e ritorna il testo completo."""
@@ -667,19 +968,24 @@ class Estrattore:
             salvati.append(f"la tua età ({eta} anni)")
 
         # ── 3. CITTÀ / LUOGO ─────────────────────────────────
-        m = re.search(r"\b(vivo a|abito a|sono di|vengo da|mi trovo a)\s+([A-Za-zÀ-ÿ\s]{2,25})\b", tl)
+        # (si ferma a "e/con/che/…": "vivo a Milano e ho un cane" → "Milano")
+        m = re.search(r"\b(vivo a|abito a|sono di|vengo da|mi trovo a)\s+([a-zà-ÿ' ]{2,40})", tl)
         if m:
-            citta = m.group(2).strip().title()
-            memoria.ricorda_fatto("citta", citta)
-            salvati.append(f"dove vivi ({citta})")
+            citta = _taglia_frase(m.group(2), 3).title()
+            if citta and citta.lower() not in Estrattore.STOP_NOMI:
+                memoria.ricorda_fatto("citta", citta)
+                salvati.append(f"dove vivi ({citta})")
 
         # ── 4. LAVORO / STUDIO ───────────────────────────────
-        m = re.search(r"\b(lavoro come|faccio il|faccio la|sono un|sono una|lavoro in|studio|frequento)\s+(.{3,40})\b", tl)
-        if m and len(tl.split()) <= 10:
-            lavoro = m.group(2).strip().rstrip(".,;!")
+        # niente "sono un/una": "sono un po' triste" non è un mestiere
+        m = re.search(r"\b(lavoro come|faccio il|faccio la|faccio lo|di mestiere faccio|lavoro in|lavoro presso|"
+                      r"studio|frequento)\s+([a-zà-ÿ' ]{3,40})", tl)
+        if m and len(tl.split()) <= 12:
+            lavoro = _taglia_frase(m.group(2), 4)
             chiave = "studio" if m.group(1) in ("studio", "frequento") else "lavoro"
-            memoria.ricorda_fatto(chiave, lavoro)
-            salvati.append(f"cosa fai nella vita ({lavoro})")
+            if len(lavoro) >= 3:
+                memoria.ricorda_fatto(chiave, lavoro)
+                salvati.append(f"cosa fai nella vita ({lavoro})")
 
         # ── 5. HOBBY / PASSIONI ──────────────────────────────
         m = re.search(r"\b(mi piace|adoro|amo|sono appassionato di|la mia passione è|nel tempo libero)\s+(.{3,60})\b", tl)
@@ -764,26 +1070,698 @@ class Estrattore:
 
 
 # ════════════════════════════════════════════════════════════
+# PERSONALITÀ
+# ════════════════════════════════════════════════════════════
+CARATTERE_BASE = CONFIG["carattere"]
+PERSONALITA = {
+    "amico":  ("🫂", "Amico",  CARATTERE_BASE),
+    "coach":  ("💪", "Coach",  "Sei Maik in modalità COACH motivazionale. Energico, diretto e positivo: spingi "
+                                "la persona all'azione con passi piccoli e concreti, celebri ogni progresso, non "
+                                "accetti scuse ma sempre con affetto. In italiano, frasi brevi e cariche."),
+    "prof":   ("🎓", "Prof",   "Sei Maik in modalità PROFESSORE. Spieghi in modo chiaro e ordinato, con esempi "
+                                "semplici e analogie di tutti i giorni; alla fine fai una piccola domanda per "
+                                "verificare che sia tutto chiaro. Paziente e preciso, in italiano."),
+    "comico": ("😂", "Comico", "Sei Maik in modalità COMICO. Ironico e brillante, fai battute e giochi di parole "
+                                "in italiano, ma resti gentile e davvero utile. Mai volgare né offensivo."),
+    "zen":    ("🧘", "Zen",    "Sei Maik in modalità ZEN. Calmo, lento e rassicurante: aiuti a respirare, a "
+                                "ridimensionare i problemi e a stare nel presente. Frasi brevi e tono morbido, in italiano."),
+    "genio":  ("🧠", "Genio",  "Sei Maik in modalità GENIO. Ragioni passo dopo passo con rigore, consideri pro, "
+                                "contro e casi particolari, e dai risposte approfondite e ben organizzate (titoletti ed "
+                                "elenchi quando aiutano). In italiano, chiaro anche quando l'argomento è complesso."),
+}
+CONFIG["personalita"] = "amico"
+
+def imposta_personalita(chiave, memoria=None):
+    if chiave not in PERSONALITA:
+        return False
+    CONFIG["carattere"] = PERSONALITA[chiave][2]
+    CONFIG["personalita"] = chiave
+    if memoria is not None:
+        memoria.imposta_ricordo("personalita", chiave)
+    return True
+
+
+# ════════════════════════════════════════════════════════════
+# TEMPO: durate, orari, fusi orari (solo libreria standard)
+# ════════════════════════════════════════════════════════════
+_NUMERI_PAROLE = {"un": 1, "uno": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6,
+                  "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "quindici": 15, "venti": 20,
+                  "trenta": 30, "quaranta": 40, "cinquanta": 50, "mezz": 0.5, "mezzo": 0.5, "mezza": 0.5}
+_RE_DURATA = re.compile(
+    r"\b(\d+(?:[.,]\d+)?|un|uno|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|quindici|venti|"
+    r"trenta|quaranta|cinquanta|mezz|mezzo|mezza)\s*'?\s*(secondi|secondo|sec|minuti|minuto|min|ore|ora|h|giorni|giorno)\b")
+
+def _secondi_unita(u):
+    return 1 if u.startswith("sec") else 60 if u.startswith("min") else 86400 if u.startswith("giorn") else 3600
+
+def _durata_iniziale(seg):
+    """Durata espressa all'inizio di `seg` ("10 minuti", "un'ora e mezza"). Ritorna (secondi, caratteri usati)."""
+    tot, pos = 0.0, 0
+    for m in _RE_DURATA.finditer(seg):
+        if seg[pos:m.start()].strip() not in ("", "e"):
+            break
+        q, u = m.group(1), m.group(2)
+        n = _NUMERI_PAROLE.get(q)
+        n = float(q.replace(",", ".")) if n is None else n
+        tot += n * _secondi_unita(u)
+        pos = m.end()
+        mm = re.match(r"\s+e\s+mezz[oa]\b", seg[pos:])
+        if mm:
+            tot += _secondi_unita(u) / 2
+            pos += mm.end()
+    return int(tot), pos
+
+def parse_durata(testo):
+    """Somma tutte le durate nel testo: "1 ora e 30 minuti" → 5400."""
+    t = testo.lower()
+    for m in _RE_DURATA.finditer(t):
+        sec, _ = _durata_iniziale(t[m.start():])
+        if sec:
+            return sec
+    return 0
+
+def fmt_durata(sec):
+    sec = int(round(sec))
+    h, r = divmod(sec, 3600)
+    m, s = divmod(r, 60)
+    parti = []
+    if h:
+        parti.append("1 ora" if h == 1 else f"{h} ore")
+    if m:
+        parti.append("1 minuto" if m == 1 else f"{m} minuti")
+    if s and not h:
+        parti.append("1 secondo" if s == 1 else f"{s} secondi")
+    return " e ".join(parti) or "0 secondi"
+
+def fmt_quando(d, ora=None):
+    ora = ora or datetime.datetime.now()
+    hh = d.strftime("%H:%M")
+    giorni = (d.date() - ora.date()).days
+    secondi = (d - ora).total_seconds()
+    if 0 <= secondi < 3600:
+        return f"tra {fmt_durata(secondi)} (alle {d.strftime('%H:%M:%S') if secondi < 120 else hh})"
+    if giorni == 0:
+        return f"oggi alle {hh}"
+    if giorni == 1:
+        return f"domani alle {hh}"
+    if 1 < giorni < 7:
+        return f"{GIORNI_LUNGHI[d.weekday()]} alle {hh}"
+    return f"il {d.day} {MESI_IT[d.month-1]} alle {hh}"
+
+_GIORNI_SETT_RE = [(r"luned[iì]", 0), (r"marted[iì]", 1), (r"mercoled[iì]", 2), (r"gioved[iì]", 3),
+                   (r"venerd[iì]", 4), (r"sabato", 5), (r"domenica", 6)]
+_FASCE = [(r"stamattina|questa mattina|di mattina|la mattina|in mattinata", (9, 0)),
+          (r"oggi pomeriggio|questo pomeriggio|nel pomeriggio|di pomeriggio", (15, 0)),
+          (r"stasera|questa sera|di sera|la sera|in serata", (20, 0)),
+          (r"stanotte|questa notte", (23, 0)),
+          (r"a mezzogiorno|mezzogiorno", (12, 0)),
+          (r"a mezzanotte|mezzanotte", (0, 0))]
+
+def _rimuovi_span(testo, spans):
+    out, pos = [], 0
+    for a, b in sorted(spans):
+        if a < pos:
+            continue
+        out.append(testo[pos:a])
+        pos = b
+    out.append(testo[pos:])
+    return re.sub(r"\s{2,}", " ", "".join(out)).strip()
+
+def parse_quando(testo, ora=None):
+    """Capisce quando in italiano ("tra 10 minuti", "domani alle 9", "stasera", "lunedì alle 18:30").
+    Ritorna (datetime | None, testo senza le parole di tempo)."""
+    ora = ora or datetime.datetime.now()
+    tl = testo.lower()            # stessa lunghezza dell'originale: gli indici valgono per entrambi
+    spans = []
+
+    # 1) relativo: "tra 10 minuti", "fra un'ora e mezza", "tra mezz'ora"
+    for m in re.finditer(r"\b(?:tra|fra)\s+", tl):
+        sec, lung = _durata_iniziale(tl[m.end():])
+        if sec > 0:
+            return ora + datetime.timedelta(seconds=sec), _rimuovi_span(testo, [(m.start(), m.end() + lung)])
+
+    giorno, settimana, fascia = None, False, None
+    for rx, g in ((r"\bdopodomani\b", 2), (r"\bdomani\b", 1), (r"\boggi\b", 0)):
+        m = re.search(rx, tl)
+        if m:
+            giorno = g
+            spans.append(m.span())
+            break
+    for rx, wd in _GIORNI_SETT_RE:
+        m = re.search(r"\b(?:(?:il|di|questo|questa|prossimo|prossima)\s+)?" + rx + r"(?:\s+prossim[oa])?\b", tl)
+        if m:
+            giorno, settimana = (wd - ora.weekday()) % 7, True
+            spans.append(m.span())
+            break
+    for rx, hm in _FASCE:
+        m = re.search(r"\b(?:" + rx + r")\b", tl)
+        if m:
+            fascia = hm
+            spans.append(m.span())
+            break
+
+    m = re.search(r"\b(?:(?:alle|per le|verso le|entro le)(?:\s+ore)?|ore)\s+(\d{1,2})(?:[:.](\d{2}))?\b", tl)
+    mu = re.search(r"\ball'una(?:\s+e\s+mezza)?\b", tl)
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2) or 0)
+        spans.append(m.span())
+        if fascia and fascia[0] >= 12 and h < 12:
+            h += 12                              # "stasera alle 8" → 20:00
+        elif not fascia and 1 <= h <= 6:
+            h += 12                              # "alle 3" di solito è pomeriggio
+    elif mu:
+        h, mi = 13, (30 if "mezza" in mu.group(0) else 0)
+        spans.append(mu.span())
+    elif fascia:
+        h, mi = fascia
+        if fascia == (0, 0) and giorno is None:
+            giorno = 1
+    elif giorno:
+        h, mi = 9, 0                             # "domani" senza orario → alle 9
+    else:
+        return None, testo
+    if h > 23 or mi > 59:
+        return None, testo
+
+    d = (ora + datetime.timedelta(days=giorno or 0)).replace(hour=h, minute=mi, second=0, microsecond=0)
+    if d <= ora:
+        if giorno is None and not fascia and h < 12 and d.replace(hour=h + 12) > ora:
+            d = d.replace(hour=h + 12)           # "alle 8" detto alle 10 → le 20
+        else:
+            d += datetime.timedelta(days=7 if settimana else 1)
+    return d, _rimuovi_span(testo, spans)
+
+# città → (fuso IANA, offset standard in ore, regola ora legale) — fallback senza tzdata (Windows)
+CITTA_FUSI = {}
+for _nomi, _fuso in (
+    (("roma", "milano", "napoli", "torino", "italia", "parigi", "francia", "madrid", "barcellona", "spagna",
+      "berlino", "germania", "amsterdam", "olanda", "bruxelles", "vienna", "zurigo", "svizzera", "varsavia",
+      "praga", "stoccolma", "oslo", "copenaghen"), ("Europe/Rome", 1, "eu")),
+    (("londra", "inghilterra", "regno unito", "dublino", "irlanda", "lisbona", "portogallo"), ("Europe/London", 0, "eu")),
+    (("atene", "grecia", "kiev", "ucraina", "bucarest", "romania", "helsinki"), ("Europe/Athens", 2, "eu")),
+    (("istanbul", "turchia"), ("Europe/Istanbul", 3, None)),
+    (("mosca", "russia"), ("Europe/Moscow", 3, None)),
+    (("il cairo", "cairo", "egitto", "johannesburg", "sudafrica"), ("Africa/Johannesburg", 2, None)),
+    (("lagos", "nigeria", "casablanca", "marocco"), ("Africa/Lagos", 1, None)),
+    (("dubai", "emirati", "abu dhabi"), ("Asia/Dubai", 4, None)),
+    (("delhi", "nuova delhi", "mumbai", "india"), ("Asia/Kolkata", 5.5, None)),
+    (("bangkok", "thailandia", "giacarta", "indonesia"), ("Asia/Bangkok", 7, None)),
+    (("singapore", "hong kong", "pechino", "shanghai", "cina", "manila", "filippine"), ("Asia/Shanghai", 8, None)),
+    (("tokyo", "giappone", "seoul", "corea"), ("Asia/Tokyo", 9, None)),
+    (("sydney", "melbourne", "australia"), ("Australia/Sydney", 10, "au")),
+    (("new york", "nyc", "miami", "boston", "washington", "toronto", "canada", "america", "stati uniti", "usa",
+      "havana", "cuba"), ("America/New_York", -5, "us")),
+    (("chicago", "dallas", "houston"), ("America/Chicago", -6, "us")),
+    (("los angeles", "san francisco", "las vegas", "seattle", "california"), ("America/Los_Angeles", -8, "us")),
+    (("citta del messico", "messico"), ("America/Mexico_City", -6, None)),
+    (("bogota", "colombia", "lima", "peru", "panama", "ecuador", "quito"), ("America/Bogota", -5, None)),
+    (("caracas", "venezuela", "santo domingo", "repubblica dominicana", "puerto rico", "la paz", "bolivia"),
+     ("America/Caracas", -4, None)),
+    (("buenos aires", "argentina", "san paolo", "rio", "rio de janeiro", "brasile", "montevideo", "uruguay",
+      "santiago", "cile"), ("America/Sao_Paulo", -3, None)),
+):
+    for _n in _nomi:
+        CITTA_FUSI[_n] = _fuso
+
+def _domenica(anno, mese, n):
+    """n-esima domenica del mese (n=-1 → l'ultima)."""
+    if n > 0:
+        d = datetime.date(anno, mese, 1)
+        d += datetime.timedelta(days=(6 - d.weekday()) % 7 + 7 * (n - 1))
+        return d
+    d = (datetime.date(anno + (mese == 12), mese % 12 + 1, 1) - datetime.timedelta(days=1))
+    return d - datetime.timedelta(days=(d.weekday() - 6) % 7)
+
+def _ora_legale(regola, utc):
+    y = utc.year
+    if regola == "eu":
+        return (datetime.datetime.combine(_domenica(y, 3, -1), datetime.time(1)) <= utc <
+                datetime.datetime.combine(_domenica(y, 10, -1), datetime.time(1)))
+    if regola == "us":
+        return (datetime.datetime.combine(_domenica(y, 3, 2), datetime.time(7)) <= utc <
+                datetime.datetime.combine(_domenica(y, 11, 1), datetime.time(6)))
+    if regola == "au":
+        return not (datetime.datetime.combine(_domenica(y, 4, 1), datetime.time(16)) <= utc <
+                    datetime.datetime.combine(_domenica(y, 10, 1), datetime.time(16)))
+    return False
+
+def trova_citta(nome):
+    n = _normalizza(nome)
+    n = re.sub(r"^(?:a|ad|in|nel|nella|negli|nelle)\s+", "", n).strip()
+    if n in CITTA_FUSI:
+        return n
+    for k in sorted(CITTA_FUSI, key=len, reverse=True):   # "a new york adesso" → "new york"
+        if re.search(r"\b" + re.escape(k) + r"\b", n):
+            return k
+    return None
+
+def ora_in(chiave):
+    iana, off, regola = CITTA_FUSI[chiave]
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.datetime.now(ZoneInfo(iana)).replace(tzinfo=None)
+    except Exception:
+        utc = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        return utc + datetime.timedelta(hours=off + (1 if regola and _ora_legale(regola, utc) else 0))
+
+
+# ════════════════════════════════════════════════════════════
+# CALCOLATRICE SICURA (niente eval: albero sintattico controllato)
+# ════════════════════════════════════════════════════════════
+_OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+        ast.Div: operator.truediv, ast.Pow: operator.pow, ast.Mod: operator.mod}
+
+def _valuta(nodo):
+    if isinstance(nodo, ast.Expression):
+        return _valuta(nodo.body)
+    if isinstance(nodo, ast.Constant) and type(nodo.value) in (int, float):
+        return nodo.value
+    if isinstance(nodo, ast.BinOp) and type(nodo.op) in _OPS:
+        a, b = _valuta(nodo.left), _valuta(nodo.right)
+        if isinstance(nodo.op, ast.Pow) and (abs(b) > 100 or abs(a) > 1e6):
+            raise ValueError("numero troppo grande")
+        return _OPS[type(nodo.op)](a, b)
+    if isinstance(nodo, ast.UnaryOp) and isinstance(nodo.op, (ast.USub, ast.UAdd)):
+        v = _valuta(nodo.operand)
+        return -v if isinstance(nodo.op, ast.USub) else v
+    if (isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Name) and nodo.func.id == "sqrt"
+            and len(nodo.args) == 1 and not nodo.keywords):
+        return math.sqrt(_valuta(nodo.args[0]))
+    raise ValueError("espressione non valida")
+
+def calcola(espr):
+    """Valuta un'espressione scritta anche a parole ("15% di 230", "3 per 4", "radice di 144").
+    Ritorna il numero, oppure None se non è un calcolo. Solleva ZeroDivisionError."""
+    s = espr.lower().strip()
+    s = re.sub(r"(?<=\d)\.(?=\d{3}\b)", "", s)                 # 1.000 → 1000
+    s = s.replace(",", ".")
+    s = re.sub(r"(\d+(?:\.\d+)?)\s*%\s*(?:di|del|dello|della|dei|degli|delle|su)\s*(\d+(?:\.\d+)?)", r"(\1/100*\2)", s)
+    s = re.sub(r"radice(?:\s+quadrata)?(?:\s+di)?\s*(\d+(?:\.\d+)?)", r"sqrt(\1)", s)
+    s = re.sub(r"\bal\s+quadrato\b", "^2", s)
+    s = re.sub(r"\bal\s+cubo\b", "^3", s)
+    s = re.sub(r"\belevato\s+(?:alla|a)\b", "^", s)
+    s = re.sub(r"\bdiviso(?:\s+per)?\b", "/", s)
+    s = re.sub(r"\b(?:moltiplicato\s+)?per\b", "*", s)
+    s = re.sub(r"(?<=[\d)])\s*[x×]\s*(?=[\d(])", "*", s)
+    s = re.sub(r"\bpi[uù]\b", "+", s)
+    s = re.sub(r"\bmeno\b", "-", s)
+    s = s.replace("÷", "/").replace(":", "/").replace("^", "**")
+    if not re.fullmatch(r"(?:[\d\s.+\-*/()]|sqrt)+", s) or not re.search(r"[+\-*/]|sqrt", s):
+        return None
+    try:
+        return _valuta(ast.parse(s.strip(), mode="eval"))
+    except ZeroDivisionError:
+        raise
+    except Exception:
+        return None
+
+def fmt_num(v):
+    if isinstance(v, float) and v.is_integer() and abs(v) < 1e15:
+        v = int(v)
+    if isinstance(v, int):
+        return f"{v:,}".replace(",", ".")
+    s = f"{v:,.6f}".rstrip("0").rstrip(".")
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+# ════════════════════════════════════════════════════════════
+# AZIONI INTELLIGENTI — MAIK fa le cose (funziona anche offline)
+# ════════════════════════════════════════════════════════════
+FRASI_DEL_GIORNO = [
+    "Un piccolo passo oggi vale più di un grande piano rimandato.",
+    "Non serve essere perfetti: serve essere costanti.",
+    "Ogni giorno è una pagina nuova: scrivila a modo tuo.",
+    "Le cose difficili si fanno un pezzetto alla volta.",
+    "Sii gentile con te stesso: stai facendo del tuo meglio.",
+    "La fatica di oggi è la forza di domani.",
+    "Una giornata storta non è una vita storta.",
+    "Respira. Una cosa sola. Poi la prossima.",
+    "Il momento migliore per iniziare era ieri. Il secondo migliore è adesso.",
+    "Credi in te almeno quanto ci credo io. 💚",
+]
+
+AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
+- ⏱️ «metti un timer di 10 minuti» · «annulla il timer»
+- ⏰ «ricordami alle 18 di chiamare la mamma» · «…tra 20 minuti…» · «che promemoria ho?»
+- 🛒 «aggiungi latte e pane alla lista» · «cosa c'è nella lista?» · «svuota la lista»
+- 🧮 «quanto fa 15% di 230» · «radice di 144» · «3 per 4 più 2»
+- 🕒 «che ore sono a Tokyo?» · «che giorno è?»
+- 🌤️ «che tempo fa a Milano?»
+- ☀️ «briefing» — il riepilogo della tua giornata
+- 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
+- 📝 «prendi nota: …»
+- 🎭 «modalità coach / prof / comico / zen / genio / amico»
+Per tutto il resto, chiacchieriamo! 💚"""
+
+_RE_TRIGGER_PROMEMORIA = re.compile(
+    r"\b(?:per favore\s+)?(?:puoi\s+)?(?:ricordami|ricordarmi|avvisami|fammi ricordare|"
+    r"mettimi un promemoria|metti un promemoria|imposta un promemoria|crea un promemoria|promemoria)\b[:,]?", re.I)
+
+
+class Azioni:
+    """Router deterministico: capisce i comandi pratici e li esegue subito, senza LLM."""
+
+    @staticmethod
+    def prova(testo, memoria):
+        t = testo.strip()
+        tl = t.lower()
+        for gestore in (Azioni._aiuto, Azioni._personalita, Azioni._timer, Azioni._promemoria,
+                        Azioni._lista, Azioni._nota, Azioni._ora_data, Azioni._calcolo,
+                        Azioni._caso, Azioni._meteo, Azioni._briefing):
+            try:
+                r = gestore(t, tl, memoria)
+            except ZeroDivisionError:
+                return "🧮 Non si può dividere per zero! 😅"
+            if r:
+                return r
+        return None
+
+    @staticmethod
+    def _aiuto(t, tl, memoria):
+        if re.fullmatch(r"\s*(?:aiuto|help|comandi|cosa sai fare|che cosa sai fare|cosa puoi fare|"
+                        r"che cosa puoi fare)\s*[?!.]*\s*", tl):
+            return AIUTO
+
+    @staticmethod
+    def _personalita(t, tl, memoria):
+        m = re.search(r"\b(?:modalit[aà]|personalit[aà]|diventa|fai il|fai la|fai lo|sii|comportati da)\s+"
+                      r"(amico|coach|prof|professore|comico|zen|genio)\b", tl)
+        if not m:
+            return None
+        chiave = "prof" if m.group(1).startswith("prof") else m.group(1)
+        imposta_personalita(chiave, memoria)
+        em, nome, _ = PERSONALITA[chiave]
+        saluti = {
+            "amico": "Eccomi, sono di nuovo il tuo amico di sempre. Raccontami tutto!",
+            "coach": "Pronti? Oggi si fa sul serio: dimmi un obiettivo e lo spacchiamo in passi!",
+            "prof": "Lezione aperta: chiedimi qualunque cosa e te la spiego per bene.",
+            "comico": "Attenzione: da adesso le mie risposte potrebbero contenere tracce di battute.",
+            "zen": "Facciamo un bel respiro insieme… Ecco. Sono qui, con calma.",
+            "genio": "Cervello al massimo: fammi una domanda difficile e ragioniamo a fondo.",
+        }
+        return f"{em} Modalità **{nome}** attivata! {saluti[chiave]}"
+
+    @staticmethod
+    def _timer(t, tl, memoria):
+        if re.search(r"\b(?:ferma|annulla|cancella|stoppa|elimina)\b.*\b(?:timer|sveglia)\b", tl):
+            n = 0
+            for p in memoria.promemoria_attivi():
+                if p.get("tipo") == "timer":
+                    n += memoria.chiudi_promemoria(p["id"])
+            return "⏹️ Timer annullato." if n else "Non c'è nessun timer attivo."
+        # serve un comando vero: "sono sveglia da 3 ore" o "il timer del forno è rotto" non sono timer
+        comando = re.search(r"\b(?:metti|mettimi|imposta|avvia|fai partire|crea|setta|parti|punta)\b", tl)
+        breve = len(tl.split()) <= 8
+        if not ((re.search(r"\b(?:timer|countdown|conto alla rovescia)\b", tl) and (comando or breve))
+                or re.search(r"\bsvegliami\b", tl)
+                or (comando and re.search(r"\bsveglia\b", tl))):
+            return None
+        sec = parse_durata(tl)
+        if sec:
+            if sec > 2 * 86400:
+                return "⏱️ Massimo 48 ore per un timer: per cose più lontane usa un promemoria («ricordami…»)."
+            quando = datetime.datetime.now() + datetime.timedelta(seconds=sec)
+            durata = fmt_durata(sec)
+            memoria.aggiungi_promemoria(f"Timer di {durata}", quando, "timer")
+            return f"⏱️ Timer di **{durata}** avviato! Suonerà alle {quando.strftime('%H:%M:%S')}."
+        if re.search(r"\bsveglia|svegliami\b", tl):
+            quando, _ = parse_quando(t)
+            if quando:
+                memoria.aggiungi_promemoria("Sveglia! ☀️", quando, "timer")
+                return f"⏰ Sveglia impostata per **{fmt_quando(quando)}**."
+        if re.search(r"\b(?:metti|imposta|avvia|fai partire|crea|setta)\b", tl):
+            return "⏱️ Di quanto tempo? Dimmi per esempio «metti un timer di 10 minuti»."
+        return None
+
+    @staticmethod
+    def _promemoria(t, tl, memoria):
+        if not re.search(r"\b(?:ricordami|ricordarmi|avvisami|fammi ricordare|promemoria)\b", tl):
+            return None
+        if re.search(r"\b(?:cancella|elimina|togli|annulla|svuota)\b.*\bpromemoria\b", tl):
+            n = memoria.chiudi_promemoria(tutti=True)
+            return f"🗑️ Ho cancellato {n} promemoria." if n else "Non hai promemoria attivi."
+        if (re.search(r"\b(?:che|quali|quanti|i miei|elenca|mostra|leggi|dimmi)\b.*\bpromemoria\b", tl)
+                and not re.search(r"\b(?:ricordami|ricordarmi|avvisami)\b", tl)):
+            attivi = memoria.promemoria_attivi()
+            if not attivi:
+                return "📭 Non hai promemoria attivi."
+            righe = []
+            for p in attivi[:10]:
+                q = p.get("quando")
+                quando = fmt_quando(datetime.datetime.fromisoformat(q)) if q else "senza orario"
+                righe.append(f"- {p['testo']} — {quando}")
+            return "⏰ I tuoi promemoria:\n" + "\n".join(righe)
+        # per CREARE serve un comando esplicito ("ho perso il promemoria" non è un comando)
+        if not re.search(r"\b(?:ricordami|ricordarmi|avvisami|fammi ricordare|"
+                         r"(?:metti|mettimi|imposta|crea|aggiungi)\s+un\s+promemoria)\b", tl):
+            return None
+        quando, resto = parse_quando(t)
+        cosa = _RE_TRIGGER_PROMEMORIA.sub(" ", resto)
+        cosa = re.sub(r"^\s*(?:maik[,!]?\s*)?", "", cosa, flags=re.I)
+        cosa = re.sub(r"^\s*(?:di|che|per|:|,|-)\s+", "", cosa.strip(), flags=re.I).strip(" .,!?:;")
+        if len(cosa) < 2:
+            return "Certo! Cosa devo ricordarti, e quando? Es: «ricordami alle 18 di chiamare la mamma»."
+        memoria.aggiungi_promemoria(cosa, quando, "promemoria")
+        if quando:
+            return f"⏰ Fatto! Ti ricorderò di **{cosa}** {fmt_quando(quando)}."
+        return (f"📌 Segnato: **{cosa}**. Se vuoi che suoni, dimmi anche quando "
+                f"(«…alle 18» o «…tra 20 minuti»).")
+
+    @staticmethod
+    def _lista(t, tl, memoria):
+        if "lista" not in tl:
+            return None
+        def riepilogo():
+            aperte = [x["testo"] for x in memoria.lista if not x.get("fatto")]
+            return (f"Ora ci sono {len(aperte)} voci: {', '.join(aperte[:12])}{'…' if len(aperte) > 12 else ''}."
+                    if aperte else "La lista è vuota.")
+        if re.search(r"\b(?:svuota|azzera|cancella|elimina)\s+(?:tutta\s+)?(?:la\s+)?(?:mia\s+)?lista\b", tl):
+            memoria.lista_modifica("svuota")
+            return "🧹 Lista svuotata."
+        m = re.search(r"\b(?:togli|rimuovi|cancella|elimina|leva)\s+(.+?)\s+dalla\s+(?:mia\s+)?lista\b", tl)
+        if m:
+            n = memoria.lista_rimuovi(t[m.start(1):m.end(1)])
+            return (f"✂️ Tolto dalla lista. {riepilogo()}" if n else
+                    f"Non trovo «{t[m.start(1):m.end(1)]}» nella lista.")
+        m = re.search(r"\b(?:aggiungi|metti|segna|inserisci|scrivi)\s+(.+?)\s+(?:alla|nella|in)\s+(?:mia\s+)?lista\b", tl)
+        if m:
+            voci = re.split(r"\s*,\s*|\s+(?:e|ed)\s+", t[m.start(1):m.end(1)])
+            aggiunte = memoria.lista_aggiungi(voci)
+            if not aggiunte:
+                return f"Era già tutto in lista! {riepilogo()}"
+            return f"🛒 Aggiunto alla lista: **{', '.join(aggiunte)}**. {riepilogo()}"
+        # "dimmi una lista di 5 film" è per l'IA: qui solo "la/nella (mia) lista" a fine frase
+        if (re.search(r"\b(?:cosa c'?[eè]|che c'?[eè]|leggi(?:mi)?|mostra(?:mi)?|dimmi|com'?[eè]|vedi)\s+"
+                      r"(?:nella|la)\s+(?:mia\s+)?lista(?:\s+della\s+spesa)?\s*[?!.]*\s*$", tl)
+                or re.fullmatch(r"\s*(?:la\s+)?(?:mia\s+)?lista(?:\s+della\s+spesa)?\s*[?!.]*\s*", tl)):
+            aperte = [x["testo"] for x in memoria.lista if not x.get("fatto")]
+            if not aperte:
+                return "🛒 La tua lista è vuota. Dimmi «aggiungi … alla lista»!"
+            return "🛒 Nella tua lista:\n" + "\n".join(f"- {v}" for v in aperte)
+        return None
+
+    @staticmethod
+    def _nota(t, tl, memoria):
+        m = re.match(r"\s*(?:maik[,!]?\s*)?(?:prendi nota|prendi appunti|annota|annotati|segnati|scrivi una nota)"
+                     r"\s*(?:che|di|:|,|-)?\s*(.+)", t, re.I)
+        if not m or len(m.group(1).strip()) < 2:
+            return None
+        nota = m.group(1).strip(" .")
+        memoria.impara_cosa(nota, "nota")
+        return f"📝 Annotato: «{nota}». Me lo ricorderò."
+
+    @staticmethod
+    def _ora_data(t, tl, memoria):
+        m = re.search(r"\b(?:che ore sono|che ora [eè]|che ore fanno|dimmi l'ora|l'ora esatta)\b"
+                      r"(?:\s+(?:adesso|ora))?(?:\s+(.+))?", tl)
+        if m:
+            luogo = (m.group(1) or "").strip(" ?!.")
+            if luogo:
+                k = trova_citta(luogo)
+                if k:
+                    d = ora_in(k)
+                    return f"🕒 A **{k.title()}** sono le **{d.strftime('%H:%M')}** ({GIORNI_LUNGHI[d.weekday()]})."
+                return (f"🕒 Non conosco il fuso orario di «{luogo}», ma qui sono le "
+                        f"**{datetime.datetime.now().strftime('%H:%M')}**.")
+            return f"🕒 Sono le **{datetime.datetime.now().strftime('%H:%M')}**."
+        if re.search(r"\b(?:che giorno [eè]|che data [eè]|quanti ne abbiamo|in che giorno siamo)\b", tl):
+            return f"📅 Oggi è **{data_it(datetime.date.today())}**."
+        return None
+
+    @staticmethod
+    def _calcolo(t, tl, memoria):
+        m = re.match(r"\s*(?:maik[,!]?\s*)?(?:quanto fa|quanto vale|quanto viene|quant'?[eè]|calcola(?:mi)?|"
+                     r"risolvi|fammi il calcolo(?:\s+di)?)\s+(.+?)[\s?!.=]*$", tl)
+        if m:
+            espr = m.group(1)
+        elif re.fullmatch(r"[\d\s.,+\-*/x×÷:()^%=?]+", tl) and re.search(r"\d\s*[-+*/x×÷:^%]\s*\d", tl):
+            espr = tl.strip(" =?")
+        elif re.match(r"\s*(?:\d+(?:[.,]\d+)?\s*%\s*(?:di|del|della|su)|radice)\b", tl):
+            espr = tl.strip(" =?")
+        else:
+            return None
+        v = calcola(espr)
+        if v is None:
+            return None
+        return f"🧮 {espr.strip()} = **{fmt_num(v)}**"
+
+    @staticmethod
+    def _caso(t, tl, memoria):
+        m = re.search(r"\blancia(?:mi)?\s+(?:(un|il|due|2|tre|3)\s+)?dad[oi]\b", tl)
+        if m:
+            n = {"due": 2, "2": 2, "tre": 3, "3": 3}.get(m.group(1) or "", 1)
+            tiri = [random.randint(1, 6) for _ in range(n)]
+            return "🎲 " + " + ".join(map(str, tiri)) + (f" = **{sum(tiri)}**" if n > 1 else "")
+        if re.search(r"\b(?:testa o croce|lancia(?:mi)? (?:una|la) moneta)\b", tl):
+            return "🪙 " + random.choice(["**Testa!**", "**Croce!**"])
+        m = re.search(r"\bnumero\s+(?:casuale|a caso)\s+(?:tra|da|fra)\s+(-?\d+)\s+(?:e|a)\s+(-?\d+)", tl)
+        if m:
+            a, b = sorted((int(m.group(1)), int(m.group(2))))
+            return f"🎲 Il numero è **{random.randint(a, b)}**."
+        return None
+
+    @staticmethod
+    def _meteo(t, tl, memoria):
+        if len(tl.split()) > 9 or not re.search(
+                r"\b(?:che tempo fa|com'?[eè] il (?:meteo|tempo)|meteo|previsioni(?: del tempo)?|piove|nevica|"
+                r"fa freddo|fa caldo)\b", tl):
+            return None
+        citta = None
+        m = re.search(r"\b(?:a|ad|in|per)\s+([a-zà-ÿ' ]{2,30}?)\s*(?:oggi|domani|adesso|ora)?\s*[?!.]*$", tl)
+        if m:
+            citta = m.group(1).strip().title()
+        citta = citta or memoria.get_valore_profilo("citta") or "Roma"
+        d = ottieni_meteo(citta, timeout=5)
+        if d.get("errore"):
+            return f"🌥️ Non riesco a recuperare il meteo per {citta} in questo momento (sei offline?)."
+        testo = (f"{d['emoji']} A **{d['citta']}** ora: **{d['temp']}°C**, {d['descrizione'].lower()} "
+                 f"(percepiti {d['percepita']}°). Umidità {d['umidita']}%, vento {d['vento']} km/h.")
+        prev = d.get("previsioni") or []
+        if len(prev) > 1:
+            p = prev[1]
+            testo += f"\nDomani: {p['emoji']} {p['min']}° / {p['max']}°."
+        return testo
+
+    @staticmethod
+    def _briefing(t, tl, memoria):
+        if re.search(r"\b(?:briefing|riepilogo (?:della|di) (?:giornata|oggi)|com'?[eè] la mia giornata|"
+                     r"cosa ho (?:in programma )?oggi|buongiorno maik)\b", tl):
+            return Azioni.briefing(memoria)
+        return None
+
+    @staticmethod
+    def briefing(memoria, meteo=True):
+        ora = datetime.datetime.now()
+        nome = memoria.get_valore_profilo("nome")
+        saluto = "Buongiorno" if ora.hour < 12 else "Buon pomeriggio" if ora.hour < 18 else "Buonasera"
+        righe = [f"{saluto}{' ' + nome if nome else ''}! ☀️ Ecco il tuo briefing.",
+                 f"📅 Oggi è **{data_it(ora)}**, sono le {ora.strftime('%H:%M')}."]
+        if meteo:
+            citta = memoria.get_valore_profilo("citta") or "Roma"
+            d = ottieni_meteo(citta, timeout=4)
+            if not d.get("errore"):
+                righe.append(f"{d['emoji']} A {d['citta']}: {d['temp']}°C, {d['descrizione'].lower()}.")
+        oggi = memoria.promemoria_di_oggi()
+        if oggi:
+            righe.append("⏰ Oggi:\n" + "\n".join(
+                f"- {p['testo']} ({p['quando'][11:16]})" for p in oggi[:6]))
+        else:
+            righe.append("⏰ Nessun promemoria con orario per oggi.")
+        senza = [p for p in memoria.promemoria_attivi() if not p.get("quando")]
+        if senza:
+            righe.append("📌 Da non dimenticare: " + ", ".join(p["testo"] for p in senza[:4]) + ".")
+        ob = [o for o in memoria.obiettivi if o.get("stato", "attivo") == "attivo" and o.get("tipo") != "paura"]
+        if ob:
+            righe.append(f"🎯 Obiettivo da tenere a mente: *{random.choice(ob)['testo']}*")
+        lista = [x["testo"] for x in memoria.lista if not x.get("fatto")]
+        if lista:
+            righe.append(f"🛒 In lista: {', '.join(lista[:6])}{'…' if len(lista) > 6 else ''}")
+        u = memoria.ultimo_umore()
+        if u and valenza_umore(u.get("umore"), u.get("intensita", 5)) < 4:
+            righe.append("💙 L'ultima volta eri un po' giù: oggi andiamo con calma, ci sono io.")
+        righe.append("💬 " + random.choice(FRASI_DEL_GIORNO))
+        return "\n\n".join(righe)
+
+
+PROMPT_ESTRAZIONE = """Sei il modulo di memoria di un assistente personale.
+Leggi il MESSAGGIO dell'utente ed estrai SOLO informazioni NUOVE, personali e durature su di lui/lei
+(nome, età, città, lavoro/studio, gusti, abitudini, persone care con il loro ruolo, obiettivi, eventi importanti).
+Ignora saluti, domande generiche, opinioni passeggere e tutto ciò che è già noto.
+
+GIÀ NOTO: {noto}
+
+MESSAGGIO: {messaggio}
+
+Rispondi SOLO con un oggetto JSON con queste chiavi:
+{{"profilo": {{"chiave": "valore"}}, "fatti": ["frase breve in terza persona"], "persone": [{{"nome": "...", "ruolo": "..."}}], "obiettivi": ["..."]}}
+Se non c'è niente di nuovo usa oggetti e liste vuoti."""
+
+_RE_PERSONALE = re.compile(
+    r"\b(?:io|mi|mio|mia|miei|mie|ho|sono|sto|vivo|abito|lavoro|studio|voglio|vorrei|amo|adoro|odio|"
+    r"piace|piacciono|preferisco|faccio|mamma|pap[aà]|fratello|sorella|ragazz[oa]|moglie|marito|"
+    r"figli[oa]?|amic[oa]|cane|gatto|compleanno|nato|nata)\b", re.I)
+
+
+# ════════════════════════════════════════════════════════════
 # MOTORE AI
 # ════════════════════════════════════════════════════════════
 class MotoreAI:
     def __init__(self):
         self.memoria  = Memoria()
         self.cervello = Cervello()
+        self.appreso_log = []                 # cosa ha imparato l'IA (per i toast della GUI)
+        self._ia_lock = threading.Lock()      # una sola estrazione alla volta
+        p = self.memoria.ricordi.get("personalita")
+        if p in PERSONALITA:
+            imposta_personalita(p)
 
-    def _system_prompt(self):
-        oggi = datetime.datetime.now().strftime("%A %d %B %Y, ore %H:%M")
+    def _system_prompt(self, query=""):
+        ora = datetime.datetime.now()
+        oggi = f"{data_it(ora)}, ore {ora.strftime('%H:%M')}"
         return f"""{CONFIG['carattere']}
 
 Oggi è {oggi}.
 
 --- LA TUA MEMORIA DI QUESTA PERSONA ---
-{self.memoria.costruisci_contesto()}
+{self.memoria.costruisci_contesto(query)}
 --- FINE MEMORIA ---
 
 Usa questa memoria con naturalezza, senza elencarla meccanicamente.
 Se noti che la persona è di umore negativo, sii empatico e presente.
-Se ha obiettivi o sogni, tienili a mente e incoraggiala."""
+Se ha obiettivi o sogni, tienili a mente e incoraggiala.
+Sai anche fare azioni pratiche quando te le chiedono con frasi come «metti un timer di 10 minuti»,
+«ricordami alle 18 di…», «aggiungi latte alla lista», «quanto fa 15% di 80», «che ore sono a Tokyo»,
+«briefing». Se te le chiedono in modo vago, suggerisci la frase giusta. Non dire mai di aver
+impostato qualcosa se non è successo davvero."""
+
+    def _impara_con_ia(self, testo):
+        """Estrazione di fatti con il modello (JSON). Gira in background dopo la risposta."""
+        if not CONFIG["apprendimento_ia"] or len(testo.split()) < 4 or not _RE_PERSONALE.search(testo):
+            return []
+        if not self._ia_lock.acquire(blocking=False):
+            return []
+        try:
+            dati = self.cervello.pensa_json(PROMPT_ESTRAZIONE.format(noto=self.memoria.gia_noto(),
+                                                                     messaggio=testo[:800]))
+            appreso = self.memoria.impara_da_ia(dati) if dati else []
+            if appreso:
+                self.appreso_log.append({"ts": time.time(), "cosa": ", ".join(appreso[:3])})
+                self.appreso_log = self.appreso_log[-30:]
+            return appreso
+        finally:
+            self._ia_lock.release()
+
+    def _dopo_risposta(self, testo):
+        self._forse_riassumi()
+        self._impara_con_ia(testo)
+
+    def briefing(self, auto=False):
+        oggi = datetime.date.today().isoformat()
+        if auto and (self.memoria.ricordi.get("ultimo_briefing") == oggi
+                     or (not self.memoria.numero_scambi() and not self.memoria.profilo)):
+            return None                       # già fatto oggi, o primo incontro
+        self.memoria.imposta_ricordo("ultimo_briefing", oggi)
+        return Azioni.briefing(self.memoria)
 
     def _costruisci_messaggi(self, testo):
         messaggi = []
@@ -804,7 +1782,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala."""
                       "Scrivi un riassunto aggiornato e breve (max 10 righe) di chi è la persona, "
                       "includendo umore prevalente, obiettivi, relazioni importanti. "
                       "In italiano, terza persona. Solo il riassunto.")
-            nuovo = self.cervello.pensa("Riassumi.", [{"role": "user", "content": prompt}])
+            nuovo = pulisci_pensiero(self.cervello.pensa("Riassumi.", [{"role": "user", "content": prompt}]))
             if nuovo and not nuovo.startswith("__ERRORE"):
                 self.memoria.aggiorna_ricordi(nuovo)
 
@@ -832,40 +1810,46 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala."""
             return {"tipo": "esporta", "dati": self.memoria.esporta()}
         return None
 
+    def _meta(self, **extra):
+        return dict(giorni=self.memoria.ricordi.get("giorni_insieme", 1),
+                    scambi=self.memoria.numero_scambi(), **extra)
+
     def rispondi(self, testo):
         """Risposta classica (completa). Mantenuta per compatibilità."""
         cmd = self._gestisci_comando(testo)
         if cmd:
             return cmd
+        azione = Azioni.prova(testo, self.memoria)
+        if azione:
+            self.memoria.salva_scambio(testo, azione)
+            return self._meta(ok=True, risposta=azione, azione=True)
         imparato = Estrattore.analizza(testo, self.memoria)
-        risposta = self.cervello.pensa(self._system_prompt(), self._costruisci_messaggi(testo))
+        risposta = self.cervello.pensa(self._system_prompt(testo), self._costruisci_messaggi(testo))
         if risposta.startswith("__ERRORE"):
             return {"ok": False, "risposta": "Ollama non risponde. Controlla che sia acceso."}
-        self.memoria.salva_scambio(testo, risposta)
-        threading.Thread(target=self._forse_riassumi, daemon=True).start()
-        return {
-            "ok": True, "risposta": risposta, "imparato": imparato,
-            "giorni": self.memoria.ricordi.get("giorni_insieme", 1),
-            "scambi": self.memoria.numero_scambi(),
-        }
+        self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
+        threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
+        return self._meta(ok=True, risposta=risposta, imparato=imparato)
 
     def rispondi_stream(self, testo, on_token):
         """Versione in streaming: chiama on_token(chunk) e ritorna i metadati finali."""
         cmd = self._gestisci_comando(testo)
         if cmd:
             return {"done": True, "comando": cmd}
+        azione = Azioni.prova(testo, self.memoria)   # azioni pratiche: istantanee, anche offline
+        if azione:
+            on_token(azione)
+            self.memoria.salva_scambio(testo, azione)
+            return self._meta(done=True, ok=True, azione=True)
         imparato = Estrattore.analizza(testo, self.memoria)
-        risposta = self.cervello.pensa_stream(self._system_prompt(), self._costruisci_messaggi(testo), on_token)
+        risposta = self.cervello.pensa_stream(self._system_prompt(testo), self._costruisci_messaggi(testo), on_token)
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
-        self.memoria.salva_scambio(testo, risposta)
-        threading.Thread(target=self._forse_riassumi, daemon=True).start()
-        return {
-            "done": True, "ok": True, "imparato": imparato,
-            "giorni": self.memoria.ricordi.get("giorni_insieme", 1),
-            "scambi": self.memoria.numero_scambi(),
-        }
+        # in memoria va la risposta senza il "ragionamento" <think> (risparmia contesto)
+        self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
+        threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
+        return self._meta(done=True, ok=True, imparato=imparato)
 
     def stato(self):
         return {
@@ -877,6 +1861,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala."""
             "modello":     CONFIG["modello"],
             "modelli":     self.cervello.modelli(),
             "citta":       self.memoria.get_valore_profilo("citta") or "Roma",
+            "personalita": CONFIG["personalita"],
         }
 
 
@@ -956,7 +1941,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"nome": CONFIG["nome_ai"], "modello": CONFIG["modello"],
                             "modello_visione": CONFIG["modello_visione"],
                             "modelli": MOTORE.cervello.modelli(), "carattere": CONFIG["carattere"],
-                            "ollama": CONFIG["ollama_base"]})
+                            "ollama": CONFIG["ollama_base"],
+                            "apprendimento_ia": CONFIG["apprendimento_ia"],
+                            "personalita": CONFIG["personalita"],
+                            "personalita_disponibili": [{"chiave": k, "emoji": v[0], "nome": v[1]}
+                                                        for k, v in PERSONALITA.items()]})
+            elif base == "/promemoria":
+                self._json({"promemoria": MOTORE.memoria.promemoria_attivi()})
+            elif base == "/promemoria/scaduti":
+                self._json({"scaduti": MOTORE.memoria.promemoria_scaduti()})
+            elif base == "/lista":
+                self._json({"lista": MOTORE.memoria.lista})
+            elif base == "/briefing":
+                self._json({"testo": MOTORE.briefing(auto=qs.get("auto") == "1")})
+            elif base == "/appreso":
+                try:
+                    dopo = float(qs.get("dopo", "0"))
+                except ValueError:
+                    dopo = 0.0
+                self._json({"appreso": [x for x in MOTORE.appreso_log if x["ts"] > dopo], "ora": time.time()})
             elif base == "/meteo":
                 self._json(ottieni_meteo(qs.get("citta", "Roma")))
             elif base == "/statistiche":
@@ -1048,6 +2051,25 @@ class Handler(BaseHTTPRequestHandler):
                     CONFIG["carattere"] = c; self._json({"ok": True})
                 else:
                     self._json({"ok": False})
+
+            elif base == "/personalita":
+                k = self._read_json_body().get("chiave", "").strip()
+                ok = imposta_personalita(k, MOTORE.memoria)
+                self._json({"ok": ok, "personalita": CONFIG["personalita"],
+                            "nome": PERSONALITA[k][1] if ok else "", "emoji": PERSONALITA[k][0] if ok else ""})
+
+            elif base == "/lista":
+                c = self._read_json_body()
+                try:
+                    indice = int(c.get("indice", -1))
+                except (TypeError, ValueError):
+                    indice = -1
+                ok = MOTORE.memoria.lista_modifica(c.get("azione", ""), indice, str(c.get("testo", "")))
+                self._json({"ok": ok, "lista": MOTORE.memoria.lista})
+
+            elif base == "/promemoria/completa":
+                n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
+                self._json({"ok": bool(n)})
 
             elif base == "/vedi":
                 c = self._read_json_body()
@@ -1185,14 +2207,28 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #toast{position:fixed;top:58px;right:16px;z-index:2000;display:flex;flex-direction:column;gap:6px}
   .tst{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--cyan);padding:8px 14px;border-radius:4px;font-size:12px;max-width:280px}
   .tst.ok{border-left-color:var(--green)}.tst.err{border-left-color:var(--red)}
+  .m.ai{white-space:normal}.m b{color:#fff}.m ul{margin:4px 0 4px 18px}.m li{margin:2px 0}
+  .m code{background:rgba(0,245,255,.1);padding:1px 5px;border-radius:3px;font-family:'Share Tech Mono',monospace;font-size:.92em}
+  .think{background:rgba(168,85,247,.08);border:1px solid rgba(168,85,247,.3);border-radius:6px;padding:4px 8px;margin-bottom:6px;font-size:12px;color:#b9a3d9}
+  .think summary{cursor:pointer;color:var(--purple);font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+  .think div{white-space:pre-wrap;margin-top:4px;max-height:180px;overflow:auto}
+  .m.alarm{border-color:var(--green)!important;box-shadow:0 0 18px rgba(0,255,136,.25);animation:ring .25s ease 6}
+  @keyframes ring{0%,100%{transform:translateX(0)}25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
+  .pchips{display:flex;flex-wrap:wrap;gap:5px}
+  .pchip{background:rgba(0,245,255,.05);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:12px;font-size:11px;cursor:pointer;font-family:inherit}
+  .pchip:hover{border-color:var(--cyan)}.pchip.on{background:rgba(0,245,255,.18);border-color:var(--cyan);color:#fff}
+  .pr{display:flex;justify-content:space-between;gap:6px;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(0,245,255,.06);font-size:12px}
+  .pr small{display:block;color:var(--dim);font-size:10px}
+  @media(max-width:480px){header{padding:0 10px;gap:8px}.logo span,#stato,.hx{display:none}.hbtn{padding:5px 7px}}
+  header>div:last-child{flex-shrink:0}
   @media(max-width:760px){#side{position:absolute;top:48px;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}.logo{font-size:11px;letter-spacing:3px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// SERVER</span></div>
+  <div class="logo">M A I K <span>// V8</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico">🫂 AMICO</button>
+    <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
     <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam">👁️</button>
     <button class="hbtn" onclick="openTools()">🧰</button>
     <button class="hbtn" onclick="toggleSide()">≡</button>
@@ -1207,12 +2243,18 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div class="kv"><span>Giorni</span><span id="s-gg">—</span></div>
     <div class="kv"><span>Scambi</span><span id="s-sc">—</span></div>
     <div class="kv"><span>Utente</span><span id="s-ut">—</span></div>
+    <h3>🎭 Personalità</h3>
+    <div class="pchips" id="pers"></div>
+    <h3>⏰ Promemoria</h3>
+    <div id="prlist"><div class="note" style="margin:0">—</div></div>
+    <h3>💙 Umore</h3>
+    <div id="moodc"></div>
     <h3>Profilo</h3>
     <div id="profilo" style="color:var(--dim)">—</div>
     <h3>Cerca nella memoria</h3>
     <input class="sfield" id="memq" placeholder="Cerca un ricordo..." oninput="cercaMem()">
     <div id="memres"></div>
-    <div class="note">Memoria su disco dal server. <b>🫂 AMICO</b>: MAIK ti vede e ti parla. <b>👁️</b>: MAIK guarda la webcam (serve un modello visione).</div>
+    <div class="note">Memoria su disco. MAIK impara da solo mentre parlate 🧠 · scrivi <b>aiuto</b> per vedere le azioni (timer, promemoria, lista, calcoli…). <b>🫂 AMICO</b>: ti vede e ti parla. <b>👁️</b>: guarda la webcam.</div>
   </div>
   <div id="main">
     <div id="sphere-area">
@@ -1222,11 +2264,13 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     </div>
     <div id="msgs"></div>
     <div class="quick">
-      <button onclick="q('Ciao!')">ciao</button>
+      <button onclick="qs('briefing')">☀️ briefing</button>
+      <button onclick="q('Metti un timer di 5 minuti')">⏱️ timer</button>
+      <button onclick="q('Ricordami alle 18 di ')">⏰ ricordami…</button>
+      <button onclick="qs('Cosa c\'è nella lista?')">🛒 lista</button>
       <button onclick="guarda()">👁️ guardami</button>
-      <button onclick="q('Cosa sai di me?')">cosa sai di me</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
-      <button onclick="q('Voglio ')">voglio…</button>
+      <button onclick="qs('aiuto')">❓ aiuto</button>
     </div>
     <div id="bar">
       <button class="micbtn" id="mic" onclick="toggleMic()" title="Voce">🎤</button>
@@ -1254,8 +2298,57 @@ const $=s=>document.querySelector(s);
 function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function toast(m,t){const d=document.createElement('div');d.className='tst '+(t||'');d.textContent=m;$('#toast').appendChild(d);setTimeout(()=>d.remove(),3000);}
 function q(t){$('#inp').value=t;$('#inp').focus();}
+function qs(t){$('#inp').value=t;invia();}
 function toggleSide(){$('#side').classList.toggle('hidden');}
 let pName='';
+
+// ---------- MARKDOWN + RAGIONAMENTO (<think>) ----------
+function md(s){
+  s=esc(s||'');
+  s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  s=s.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+  s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>');
+  s=s.replace(/(?:^|\n)((?:- .+(?:\n|$))+)/g,(m,l)=>'\n<ul>'+l.trim().split('\n').map(x=>'<li>'+x.replace(/^- /,'')+'</li>').join('')+'</ul>');
+  return s.replace(/\n/g,'<br>').replace(/<br><ul>/g,'<ul>').replace(/<\/ul><br>/g,'</ul>');
+}
+function splitThink(t){const m=(t||'').match(/<think>([\s\S]*?)(<\/think>|$)/i);if(!m)return{think:'',ans:t||'',open:false};return{think:m[1].trim(),ans:m[2]?t.replace(m[0],'').trim():'',open:!m[2]};}
+function stripThink(t){return /<think>/i.test(t||'')?splitThink(t).ans:(t||'');}
+function renderAI(t){
+  if(!/<think>/i.test(t||''))return md(t);
+  const s=splitThink(t);
+  return '<details class="think"'+(s.open?' open':'')+'><summary>💭 '+(s.open?'Sto ragionando…':'Ragionamento')+'</summary><div>'+esc(s.think)+'</div></details>'+md(s.ans);
+}
+
+// ---------- PERSONALITÀ ----------
+let PERS=[],persCur='amico';
+function renderPers(){$('#pers').innerHTML=PERS.map(p=>'<button class="pchip'+(p.chiave===persCur?' on':'')+'" onclick="setPers(\''+p.chiave+'\')">'+p.emoji+' '+p.nome+'</button>').join('');}
+async function setPers(k){try{const r=await (await fetch('/personalita',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chiave:k})})).json();if(r.ok){persCur=k;renderPers();toast(r.emoji+' Modalità '+r.nome,'ok');}}catch(e){}}
+
+// ---------- UMORE (grafico) ----------
+function drawMood(arr){
+  const el=$('#moodc');if(!el)return;
+  if(!arr||arr.length<2){el.innerHTML='<div class="note" style="margin:0">Parlami di come stai: qui vedrai il tuo andamento 💙</div>';return;}
+  const W=220,H=56,n=arr.length,pts=arr.map((u,i)=>[(i/(n-1))*(W-8)+4,H-4-(u.v/10)*(H-8)]);
+  const last=arr[n-1],col=last.v>=6?'var(--green)':last.v>=4?'var(--cyan)':'#5a9bd4';
+  el.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" width="100%" height="'+H+'"><line x1="4" x2="'+(W-4)+'" y1="'+(H/2)+'" y2="'+(H/2)+'" stroke="rgba(0,245,255,.15)" stroke-dasharray="3 3"/><polyline points="'+pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round"/>'+pts.map(p=>'<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.2" fill="'+col+'"/>').join('')+'</svg><div class="note" style="margin:2px 0 0">Ultimo: <b>'+esc(last.umore||'')+'</b></div>';
+}
+
+// ---------- PROMEMORIA + ALLARMI ----------
+function fmtQ(iso){const d=new Date(iso),o=new Date(),hh=d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});if(d.toDateString()===o.toDateString())return 'oggi '+hh;const dm=new Date(o);dm.setDate(o.getDate()+1);if(d.toDateString()===dm.toDateString())return 'domani '+hh;return d.toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'short'})+' '+hh;}
+async function loadPr(){try{const r=await (await fetch('/promemoria')).json();const a=r.promemoria||[];$('#prlist').innerHTML=a.length?a.slice(0,8).map(p=>'<div class="pr"><span>'+(p.tipo==='timer'?'⏱️ ':'⏰ ')+esc(p.testo)+(p.quando?'<small>'+fmtQ(p.quando)+'</small>':'<small>senza orario</small>')+'</span><button class="nx" onclick="prDone(\''+p.id+'\')" title="Fatto">✓</button></div>').join(''):'<div class="note" style="margin:0">Nessun promemoria</div>';}catch(e){}}
+async function prDone(id){try{await fetch('/promemoria/completa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});}catch(e){}loadPr();}
+function notify(t,b){try{if('Notification' in window&&Notification.permission==='granted')new Notification(t,{body:b});}catch(e){}}
+function askNotify(){try{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission();}catch(e){}}
+function fireAlarm(p){
+  const msg=p.tipo==='timer'?'⏱️ '+p.testo+': tempo scaduto!':'⏰ Promemoria: **'+p.testo+'**';
+  add('ai',msg,'alarm');beep(3);toast(msg.replace(/\*\*/g,''),'ok');notify('MAIK',msg.replace(/\*\*/g,''));
+  const was=ttsOn;ttsOn=true;say(msg);ttsOn=was;
+}
+async function checkScaduti(){try{const r=await (await fetch('/promemoria/scaduti')).json();const s=r.scaduti||[];s.forEach(fireAlarm);if(s.length)loadPr();}catch(e){}}
+
+// ---------- COSA HA IMPARATO L'IA ----------
+let lastLearn=0;
+async function checkLearn(){try{const r=await (await fetch('/appreso?dopo='+lastLearn)).json();const a=r.appreso||[];if(lastLearn)a.forEach(x=>toast('🧠 Ho capito: '+x.cosa,'ok'));lastLearn=r.ora||lastLearn;if(a.length)profilo();}catch(e){}}
 
 // ---------- STATO / PROFILO / MEMORIA ----------
 async function stato(){
@@ -1264,12 +2357,14 @@ async function stato(){
     $('#stato').textContent=s.online?'ollama online':'ollama offline';
     $('#s-mod').textContent=s.modello;$('#s-gg').textContent=s.giorni;$('#s-sc').textContent=s.scambi;$('#s-ut').textContent=s.nome_utente||'—';
     pName=s.nome_utente||'';
+    if(s.personalita&&s.personalita!==persCur){persCur=s.personalita;renderPers();}
   }catch(e){$('#stato').textContent='server non raggiungibile';}
 }
-async function cfg(){try{const c=await (await fetch('/config')).json();$('#s-vis').textContent=c.modello_visione||'—';}catch(e){}}
+async function cfg(){try{const c=await (await fetch('/config')).json();$('#s-vis').textContent=c.modello_visione||'—';PERS=c.personalita_disponibili||[];persCur=c.personalita||'amico';renderPers();}catch(e){}}
 async function profilo(){
   try{const s=await (await fetch('/statistiche')).json();const p=s.profilo||{};const k=Object.keys(p);
     $('#profilo').innerHTML=k.length?k.map(x=>`<div class="kv"><span>${esc(x)}</span><span>${esc(String(p[x]))}</span></div>`).join(''):'nessun dato ancora';
+    drawMood(s.umore_grafico);
   }catch(e){}
 }
 let memT;
@@ -1282,11 +2377,12 @@ function cercaMem(){clearTimeout(memT);memT=setTimeout(async()=>{
 },250);}
 
 // ---------- CHAT (streaming SSE) ----------
-function add(role,txt){const d=document.createElement('div');d.className='m '+role;d.textContent=txt;$('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d;}
+function add(role,txt,extra){const d=document.createElement('div');d.className='m '+role+(extra?' '+extra:'');if(role==='ai')d.innerHTML=renderAI(txt);else d.textContent=txt;$('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d;}
 let busy=false;
 async function invia(){
   const t=$('#inp').value.trim();if(!t||busy)return;
   $('#inp').value='';$('#send').disabled=true;busy=true;lastAct=Date.now();
+  if(/ricordami|avvisami|timer|sveglia|svegliami|promemoria/i.test(t))askNotify();
   add('me',t);
   SPH.state='thinking';$('#dot').className='dot busy';
   const bubble=add('ai','');bubble.innerHTML='<span class="cursor"></span>';
@@ -1301,11 +2397,15 @@ async function invia(){
         const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
-        if(obj.t){full+=obj.t;SPH.state='speaking';bubble.innerHTML=esc(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
+        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';bubble.innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
         if(obj.done){
           if(obj.comando){bubble.textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){bubble.textContent=obj.risposta||'Errore.';}
-          else{bubble.textContent=full;if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');say(full);}
+          else{
+            bubble.innerHTML=renderAI(full);say(full);
+            if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');
+            if(obj.azione){loadPr();}else{setTimeout(checkLearn,4000);setTimeout(checkLearn,12000);}
+          }
           stato();profilo();
         }
       }
@@ -1410,14 +2510,14 @@ function toggleMic(){if(!reco){toast('Voce non supportata dal browser','err');re
 
 // ---------- TTS (voce di MAIK) ----------
 let ttsOn=false,speaking=false;
-function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=(t||'').replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
+function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=stripThink(t).replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
 
 // ---------- MODALITÀ AMICO ----------
 let friend=false,lastAct=Date.now(),proTimer=null,proGap=90000;
 function toggleFriend(){friend?exitFriend():enterFriend();}
 async function enterFriend(){
   friend=true;ttsOn=true;micFatal=false;
-  $('#fbtn').classList.add('on');$('#fbtn').textContent='🫂 AMICO ON';$('#fbadge').style.display='flex';
+  $('#fbtn').classList.add('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO ON</span>';$('#fbadge').style.display='flex';
   await startCam();
   if(reco){setTimeout(()=>{if(friend&&!speaking&&!busy)startReco();},1200);}else toast('Voce non supportata: potrai scrivere','err');
   const nm=pName?' '+pName:'';
@@ -1425,7 +2525,7 @@ async function enterFriend(){
   setTimeout(()=>{add('ai',hi);say(hi);},500);
   lastAct=Date.now();proGap=80000;startPro();toast('🫂 Modalità Amico attiva','ok');
 }
-function exitFriend(){friend=false;clearInterval(proTimer);if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').textContent='🫂 AMICO';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
+function exitFriend(){friend=false;clearInterval(proTimer);if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO</span>';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
 function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){if(camOn&&!visionBroken&&Math.random()<0.35)autoGlance();else sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
 function sayPro(){const nm=pName?' '+pName:'';const h=new Date().getHours();const pool=['Allora'+nm+', come va la giornata?','A cosa stai pensando'+nm+'?','Ti va di raccontarmi qualcosa?','Sono qui'+nm+', se vuoi parlare ci sono.','Hai fatto qualcosa di bello oggi?','Come ti senti'+nm+'?','Se potessi fare una cosa qualsiasi adesso, cosa faresti?'];if(h<11)pool.push('Buongiorno'+nm+'! Come hai dormito?');else if(h>=21)pool.push('Si è fatta sera'+nm+'… com\'è stata la giornata?');const line=pool[Math.floor(Math.random()*pool.length)];add('ai',line);say(line);}
 function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const line='Bentornato'+nm+'! Ti rivedo 😊';add('ai',line);say(line);}
@@ -1498,11 +2598,10 @@ function tDecide(p){p.innerHTML='<h4>Scegli per me</h4><textarea class="tfield" 
 function dGo(){const o=$('#di').value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean);$('#do').textContent=o.length?'👉 '+o[Math.floor(Math.random()*o.length)]:'Aggiungi opzioni';}
 
 function tCheck(p){p.innerHTML='<h4>Lista / Spesa</h4><div style="display:flex;gap:6px"><input class="tfield" id="cki" style="margin-top:0" placeholder="Aggiungi voce..." onkeydown="if(event.key===\'Enter\')ckAdd()"><button class="tbtn solid" style="flex:0 0 auto;min-width:60px;margin-top:0" onclick="ckAdd()">+</button></div><div id="ckl" style="margin-top:8px"></div><div class="trow"><button class="tbtn" onclick="ckClr()">Rimuovi completati</button></div>';ckRen();}
-function ckGet(){try{return JSON.parse(localStorage.getItem('maik_srv_check')||'[]');}catch(e){return[];}}
-function ckSet(a){localStorage.setItem('maik_srv_check',JSON.stringify(a));}
-function ckRen(){const l=$('#ckl');if(!l)return;const a=ckGet();l.innerHTML=a.length?'':'<div class="note">Lista vuota</div>';a.forEach((it,i)=>{const d=elx('<div class="nitem"><label style="display:flex;gap:8px;align-items:center;flex:1;'+(it.done?'opacity:.5;text-decoration:line-through':'')+'"><input type="checkbox" '+(it.done?'checked':'')+' style="accent-color:var(--cyan)"><span>'+esc(it.text)+'</span></label><button class="nx">✕</button></div>');d.querySelector('input').onchange=()=>{const x=ckGet();x[i].done=!x[i].done;ckSet(x);ckRen();};d.querySelector('.nx').onclick=()=>{const x=ckGet();x.splice(i,1);ckSet(x);ckRen();};l.appendChild(d);});}
-function ckAdd(){const v=$('#cki').value.trim();if(!v)return;const a=ckGet();a.push({text:v,done:false});ckSet(a);$('#cki').value='';ckRen();}
-function ckClr(){ckSet(ckGet().filter(x=>!x.done));ckRen();}
+async function ckApi(body){try{const r=await (await fetch('/lista',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:undefined)).json();return r.lista||[];}catch(e){return [];}}
+async function ckRen(a){const l=$('#ckl');if(!l)return;a=a||await ckApi();l.innerHTML=a.length?'':'<div class="note">Lista vuota (anche «aggiungi latte alla lista» in chat!)</div>';a.forEach((it,i)=>{const d=elx('<div class="nitem"><label style="display:flex;gap:8px;align-items:center;flex:1;'+(it.fatto?'opacity:.5;text-decoration:line-through':'')+'"><input type="checkbox" '+(it.fatto?'checked':'')+' style="accent-color:var(--cyan)"><span>'+esc(it.testo)+'</span></label><button class="nx">✕</button></div>');d.querySelector('input').onchange=async()=>ckRen(await ckApi({azione:'toggle',indice:i}));d.querySelector('.nx').onclick=async()=>ckRen(await ckApi({azione:'elimina',indice:i}));l.appendChild(d);});}
+async function ckAdd(){const v=$('#cki').value.trim();if(!v)return;$('#cki').value='';ckRen(await ckApi({azione:'aggiungi',testo:v}));}
+async function ckClr(){ckRen(await ckApi({azione:'pulisci'}));}
 
 function beep(n){try{const c=new (window.AudioContext||window.webkitAudioContext)();for(let i=0;i<(n||1);i++){const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;o.type='sine';const t=c.currentTime+i*.25;g.gain.setValueAtTime(.001,t);g.gain.exponentialRampToValueAtTime(.3,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.2);o.start(t);o.stop(t+.2);}}catch(e){}}
 
@@ -1511,8 +2610,10 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTools();});
 $('#tmodal').addEventListener('click',e=>{if(e.target.id==='tmodal')closeTools();});
 window.addEventListener('resize',()=>{sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(SPH.x,a.width-SPH.size));SPH.y=Math.max(0,Math.min(SPH.y,a.height-SPH.size));sphPos();});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
-initReco();sphInit();sphLoop();stato();cfg();profilo();setInterval(stato,15000);
-add('ai','Ciao! Sono Maik. La mia memoria è su disco dal server. Premi 🫂 AMICO per farmi vedere e parlare, o 👁️ per farmi guardare 💚');
+initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
+setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);
+(async()=>{try{const r=await (await fetch('/briefing?auto=1')).json();if(r.testo){add('ai',r.testo);return;}}catch(e){}
+  add('ai','Ciao! Sono **Maik**, versione 8 🧠 Imparo da solo mentre parliamo e so fare azioni vere: timer, promemoria che suonano, lista della spesa, calcoli… Scrivi **aiuto** per vederle tutte. Premi 🫂 AMICO per farmi vedere e parlare 💚');})();
 </script>
 </body></html>"""
 
@@ -1523,8 +2624,8 @@ add('ai','Ciao! Sono Maik. La mia memoria è su disco dal server. Premi 🫂 AMI
 def main():
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 6.0 — Server avviato             ║
-║   Streaming · memoria episodica + emotiva        ║
+║           MAIK 8.0 — Server avviato             ║
+║   Impara da solo · azioni · promemoria · voce    ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -1567,11 +2668,14 @@ def main():
     print(f"\n  GUI:  {gui}")
     print(f"  Pronto su:  {url}")
     print(f"  Premi Ctrl+C per chiudere\n")
+    print(f"  Apprendimento con l'IA: {'ATTIVO' if CONFIG['apprendimento_ia'] else 'spento'}"
+          f"  ·  personalità: {CONFIG['personalita']}")
     print(f"  Endpoint principali:")
-    print(f"    POST /chat/stream   — chat in streaming (token-per-token)")
-    print(f"    POST /vedi          — visione: descrive un frame webcam     [NUOVO]")
-    print(f"    GET  /salute /config — stato e configurazione del server")
-    print(f"    GET  /timeline /cerca?q=testo — memoria")
+    print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
+    print(f"    POST /vedi          — visione: descrive un frame webcam")
+    print(f"    GET  /promemoria /promemoria/scaduti · GET/POST /lista      [NUOVO]")
+    print(f"    GET  /briefing · POST /personalita · GET /appreso            [NUOVO]")
+    print(f"    GET  /salute /config /timeline /cerca?q=testo")
     print(f"    POST /episodio /obiettivo /relazione /reset /importa\n")
 
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()

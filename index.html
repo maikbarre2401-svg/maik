@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#050a0f">
-  <title>MAIK // CORE V7.0</title>
+  <title>MAIK // CORE V8</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
 
@@ -214,6 +214,18 @@
     .emotion-sub { font-size: 10px; color: var(--text-dim); }
     .emotion-bar { height: 4px; background: rgba(0,245,255,0.1); border-radius: 2px; margin-top: 6px; overflow: hidden; }
     .emotion-bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s, background 0.4s; }
+    /* V8: grafico umore, personalità, ragionamento, allarmi */
+    #mood-chart { margin-top: 8px; }
+    #mood-chart .mood-note { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+    .persona-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .persona-chip { background: rgba(0,245,255,0.05); border: 1px solid var(--border); color: var(--text); padding: 4px 9px; border-radius: 12px; font-size: 11px; cursor: pointer; font-family: inherit; transition: 0.15s; }
+    .persona-chip:hover { border-color: var(--accent); }
+    .persona-chip.on { background: rgba(0,245,255,0.18); border-color: var(--accent); color: #fff; }
+    .think { background: rgba(168,85,247,0.08); border: 1px solid rgba(168,85,247,0.3); border-radius: 6px; padding: 4px 8px; margin-bottom: 6px; font-size: 12px; color: #b9a3d9; }
+    .think summary { cursor: pointer; color: var(--purple); font-family: 'Share Tech Mono', monospace; letter-spacing: 1px; }
+    .think div { white-space: pre-wrap; margin-top: 4px; max-height: 200px; overflow: auto; }
+    .msg.alarm .msg-bubble { border-color: var(--green) !important; box-shadow: 0 0 18px rgba(0,255,136,0.25); animation: ring 0.25s ease 6; }
+    @keyframes ring { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 
     /* CARDS */
     .item-list { display: flex; flex-direction: column; gap: 5px; }
@@ -452,7 +464,15 @@
     @media (max-width: 480px) {
       .topbar-status { gap: 8px; font-size: 10px; }
       #quick-replies { overflow-x: auto; flex-wrap: nowrap; }
+      /* V8: header che entra in un telefono (390px): niente scroll orizzontale */
+      #topbar { padding: 0 10px; gap: 6px; }
+      .logo { font-size: 12px; letter-spacing: 2px; }
+      .logo span, #ollama-status, .hide-xs { display: none; }
+      .topbar-actions { gap: 4px !important; }
+      .topbar-btn { padding: 5px 7px; }
     }
+    .topbar-status { min-width: 0; }
+    .topbar-actions { flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -470,8 +490,8 @@
     <span class="hide-sm">·</span>
     <span class="hide-sm">scambi <strong id="exchange-count" style="color:var(--accent)">0</strong></span>
   </div>
-  <div style="display:flex;gap:6px">
-    <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla">🫂 AMICO</button>
+  <div class="topbar-actions" style="display:flex;gap:6px">
+    <button class="topbar-btn" id="friend-btn" onclick="toggleFriendMode()" title="Modalità Amico: MAIK ti vede e ti parla">🫂<span class="hide-xs"> AMICO</span></button>
     <button class="topbar-btn" onclick="guardaCam()" title="MAIK guarda dalla webcam">👁️</button>
     <button class="topbar-btn" onclick="openTools()" title="Strumenti">🧰</button>
     <button class="topbar-btn" id="cam-toggle-btn" onclick="toggleCamera()">📷</button>
@@ -525,6 +545,11 @@
     </div>
 
     <div class="sidebar-section">
+      <div class="sidebar-label">🎭 Personalità</div>
+      <div class="persona-chips" id="persona-chips"></div>
+    </div>
+
+    <div class="sidebar-section">
       <div class="sidebar-label">Cerca nella Memoria</div>
       <div class="search-row">
         <input class="sidebar-input" id="memory-search" placeholder="Cerca un ricordo..." oninput="searchMemory()" onkeydown="if(event.key==='Enter')searchMemory()">
@@ -543,6 +568,7 @@
         </div>
       </div>
       <div class="emotion-bar"><div class="emotion-bar-fill" id="emotion-bar-fill"></div></div>
+      <div id="mood-chart"></div>
     </div>
 
     <div class="sidebar-section">
@@ -615,14 +641,14 @@
           <button id="send-btn" onclick="sendMessage()">➤</button>
         </div>
         <div id="quick-replies">
+          <button class="quick-btn" onclick="quickGo('briefing')">☀️ briefing</button>
+          <button class="quick-btn" onclick="quickSend('Metti un timer di 5 minuti')">⏱️ timer</button>
+          <button class="quick-btn" onclick="quickSend('Ricordami alle 18 di ')">⏰ ricordami…</button>
+          <button class="quick-btn" onclick="quickGo('Cosa c\'è nella lista?')">🛒 lista</button>
           <button class="quick-btn" onclick="quickSend('Mi chiamo ')">mi chiamo…</button>
-          <button class="quick-btn" onclick="quickSend('Ti insegno che ')">ti insegno che…</button>
-          <button class="quick-btn" onclick="quickSend('Cosa sai di me?')">cosa sai di me</button>
-          <button class="quick-btn" onclick="quickSend('Com\'è il meteo oggi?')">meteo 🌤</button>
-          <button class="quick-btn" onclick="quickSend('Come stai?')">come stai</button>
-          <button class="quick-btn" onclick="quickSend('Ricordami di ')">ricordami di…</button>
-          <button class="quick-btn" onclick="quickSend('Voglio ')">voglio…</button>
+          <button class="quick-btn" onclick="quickGo('Cosa sai di me?')">cosa sai di me</button>
           <button class="quick-btn" onclick="quickSend('Oggi ho ')">oggi ho…</button>
+          <button class="quick-btn" onclick="quickGo('aiuto')">❓ aiuto</button>
         </div>
       </div>
     </div>
@@ -674,6 +700,10 @@
         <label style="margin:0">Sintesi vocale (TTS)</label>
         <input type="checkbox" id="set-tts">
       </div>
+      <div class="field switch">
+        <label style="margin:0">🧠 Apprendimento con l'IA (impara da solo)</label>
+        <input type="checkbox" id="set-smartlearn">
+      </div>
       <div class="field">
         <label>Voce</label>
         <select id="set-voice"></select>
@@ -714,7 +744,7 @@
 <script>
 "use strict";
 // ============================================================
-// MAIK V7.0 — assistente personale (single-file)
+// MAIK V8 — assistente personale (single-file)
 // ============================================================
 
 const DEFAULTS = {
@@ -726,7 +756,9 @@ const DEFAULTS = {
   tts: true,
   voiceName: '',
   autoListen: false,
-  accent: '#00f5ff'
+  accent: '#00f5ff',
+  smartLearn: true,        // V8: dopo ogni messaggio personale il modello estrae fatti nuovi (JSON)
+  personaKey: 'amico'      // V8: personalità attiva (amico/coach/prof/comico/zen/genio/custom)
 };
 
 const ACCENTS = ['#00f5ff','#00ff88','#a855f7','#ffcc00','#ff3355','#ff7b00'];
@@ -761,6 +793,8 @@ function loadState() {
       s.conversation = s.conversation || [];
       s.notes = s.notes || [];
       s.checklist = s.checklist || [];
+      s.moods = s.moods || [];
+      s.summary = s.summary || '';
       s.meta = Object.assign({ startDay: Date.now(), exchangeCount: 0, totalTokens: 0 }, s.meta || {});
       return s;
     }
@@ -776,6 +810,8 @@ function loadState() {
     conversation: [],
     notes: [],
     checklist: [],
+    moods: [],
+    summary: '',
     meta: { startDay: parseInt(localStorage.getItem('maik_startday')) || Date.now(), exchangeCount: 0, totalTokens: 0 }
   };
   return migrated;
@@ -1224,7 +1260,7 @@ function updateModelBadge() {
 async function streamChat(userMessage, onToken) {
   const payload = {
     model: state.settings.model,
-    messages: [{ role:'system', content: buildSystemPrompt() }, ...conversationHistory.slice(-20)],
+    messages: [{ role:'system', content: buildSystemPrompt(userMessage) }, ...conversationHistory.slice(-20)],
     stream: true,
     options: { temperature: parseFloat(state.settings.temperature), num_predict: 600 }
   };
@@ -1258,38 +1294,41 @@ async function streamChat(userMessage, onToken) {
   return full;
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(query='') {
   const name = state.profile.nome || 'utente';
   const peopleStr = state.people.map(p=>`${p.name}${p.role?` (${p.role})`:''}`).join(', ') || 'nessuna';
   const goalsStr = state.goals.join('; ') || 'nessuno';
   const profileStr = Object.entries(state.profile).map(([k,v])=>`${k}: ${v}`).join(', ') || 'nessuno';
-  const factsStr = state.facts.slice(-15).map(f=>`- ${f.text}`).join('\n') || 'nessuno';
-  const rem = state.reminders.filter(r=>!r.done).map(r=>`- ${r.text}${r.due?` (${r.due})`:''}`).join('\n') || 'nessuno';
+  // V8: non gli ultimi 15 a caso, ma i ricordi PERTINENTI a ciò di cui si parla + i più recenti
+  const factsStr = relevantFacts(query).map(f=>`- ${f.text}`).join('\n') || 'nessuno';
+  const rem = state.reminders.filter(r=>!r.done).map(r=>`- ${r.text}${r.at?` (${fmtWhen(r.at)})`:r.due?` (${r.due})`:''}`).join('\n') || 'nessuno';
+  const moods = (state.moods||[]).slice(-5).map(m=>m.label).join(' → ');
   const now = new Date();
 
   return `${state.settings.persona}
 
 # DATA E ORA
-${now.toLocaleString('it-IT')}
+${now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}, ore ${timeNow()}
 
 # PROFILO UTENTE
 Nome: ${name}
 Dati: ${profileStr}
 Persone importanti: ${peopleStr}
 Sogni & obiettivi: ${goalsStr}
-
-# COSE CHE HAI IMPARATO SU DI LUI/LEI
+${state.summary ? `\n# RIASSUNTO DELLE VOSTRE CONVERSAZIONI PASSATE\n${state.summary}\n` : ''}
+# COSE CHE SAI DI LUI/LEI (le più pertinenti ora)
 ${factsStr}
 
 # PROMEMORIA ATTIVI
 ${rem}
-
+${moods ? `\n# ANDAMENTO DELL'UMORE (dal più vecchio al più recente)\n${moods}\n` : ''}
 # REGOLE
 - Rispondi sempre in italiano, naturale e caldo.
 - Usa ciò che sai dell'utente per personalizzare; non inventare fatti non presenti.
 - Se rilevi un'emozione, adatta il tono (sostegno se triste/ansioso, entusiasmo se felice).
 - Sii conciso (di norma 2-4 frasi) salvo richiesta di dettaglio.
 - Puoi usare markdown leggero (grassetto, elenchi, codice).
+- Sai fare azioni pratiche quando te le chiedono con frasi come «metti un timer di 10 minuti», «ricordami alle 18 di…», «aggiungi latte alla lista», «quanto fa 15% di 80», «che ore sono a Tokyo», «briefing». Se te le chiedono in modo vago, suggerisci la frase giusta. Non dire mai di aver impostato qualcosa se non è successo davvero.
 
 # STATO SESSIONE
 Scambi: ${state.meta.exchangeCount} · Telecamera: ${cameraActive?'attiva':'spenta'} · Modello: ${state.settings.model}`;
@@ -1332,7 +1371,7 @@ function addMessage(role, text, opts={}) {
   const label = role==='maik' ? 'MAIK' : 'TU';
   const body = opts.typing
     ? '<div class="typing-bubble"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>'
-    : (role==='maik' ? renderMarkdown(text) : escapeHtml(text).replace(/\n/g,'<br>'));
+    : (role==='maik' ? renderReply(text) : escapeHtml(text).replace(/\n/g,'<br>'));
   div.innerHTML = `<div class="msg-label">${label}<span class="msg-time">${timeNow()}</span></div><div class="msg-bubble">${body}</div>`;
   msgs.appendChild(div);
   msgs.scrollTop = msgs.scrollHeight;
@@ -1343,7 +1382,7 @@ function restoreConversation() {
   const msgs = document.getElementById('messages');
   msgs.innerHTML='';
   state.conversation.slice(-40).forEach(m => addMessage(m.role, m.content));
-  conversationHistory = state.conversation.slice(-20).map(m=>({ role: m.role==='maik'?'assistant':'user', content: m.content }));
+  conversationHistory = state.conversation.slice(-20).map(m=>({ role: m.role==='maik'?'assistant':'user', content: stripThink(m.content) }));
 }
 
 // ============================================================
@@ -1367,8 +1406,9 @@ async function sendMessage() {
   conversationHistory.push({ role:'user', content:text });
   save();
 
-  // intercept simple local commands
-  const local = handleLocalCommand(text);
+  // V8: azioni pratiche (timer, promemoria, lista, calcoli, ora, meteo, briefing…) — istantanee, anche offline
+  let local = null;
+  try { local = await smartRouter(text); } catch(e) { local = null; }
   if (local) {
     document.getElementById('send-btn').disabled = false;
     finishReply(local);
@@ -1390,17 +1430,18 @@ async function sendMessage() {
         if (!bubbleDiv){
           typing.querySelector('.msg-bubble').innerHTML='';
           bubbleDiv = typing.querySelector('.msg-bubble');
-          sphereState='speaking';
         }
-        bubbleDiv.innerHTML = renderMarkdown(partial) + '<span class="stream-cursor"></span>';
+        sphereState = splitThink(partial).open ? 'thinking' : 'speaking';   // modelli che "ragionano"
+        bubbleDiv.innerHTML = renderReply(partial) + '<span class="stream-cursor"></span>';
         document.getElementById('messages').scrollTop = 1e9;
       });
       typing.remove();
+      finishReply(reply);
+      afterReply(text);          // in background: apprendimento IA + riassunto a lungo termine
     } else {
       typing.remove();
-      reply = fallbackResponse(text);
+      finishReply(fallbackResponse(text));
     }
-    finishReply(reply);
   } catch(err) {
     typing.remove();
     if (err.name==='AbortError') { finishReply('_(generazione interrotta)_'); }
@@ -1422,7 +1463,7 @@ async function sendMessage() {
 
 function finishReply(reply) {
   addMessage('maik', reply);
-  conversationHistory.push({ role:'assistant', content:reply });
+  conversationHistory.push({ role:'assistant', content:stripThink(reply) });   // il <think> non occupa contesto
   state.conversation.push({ role:'maik', content:reply, ts:Date.now() });
   if (state.conversation.length>200) state.conversation = state.conversation.slice(-200);
   save();
@@ -1456,6 +1497,7 @@ function handleLocalCommand(text) {
 }
 
 function quickSend(text){ const i=document.getElementById('chat-input'); i.value=text; i.focus(); i.setSelectionRange(text.length,text.length); }
+function quickGo(text){ document.getElementById('chat-input').value=text; sendMessage(); }
 
 // ============================================================
 // EMOTION
@@ -1474,6 +1516,12 @@ function analyzeEmotion(text){
     [/(stanc|esaust|sfinit|spossat|non ce la faccio)/, '😴','Stanco','Andiamo con calma',0.6],
   ];
   for (const [re,i,l,s,n] of sets){ if(re.test(t)){ icon=i; label=l; sub=s; intensity=n; break; } }
+  if (label!=='Neutro'){   // V8: storico dell'umore per il grafico
+    state.moods = state.moods || [];
+    state.moods.push({ ts:Date.now(), label, icon, v: MOOD_VAL[label] ?? 5 });
+    if (state.moods.length>60) state.moods = state.moods.slice(-60);
+    drawMoodChart();
+  }
   document.getElementById('emotion-icon').textContent=icon;
   document.getElementById('emotion-label').textContent=label;
   document.getElementById('emotion-sub').textContent=sub;
@@ -1499,11 +1547,13 @@ function learnFromMessage(text){
   m = text.match(/ho\s+(\d{1,3})\s*ann/i);
   if (m) changed = setProfile('età', m[1]) || changed;
 
-  m = text.match(/(?:abito|vivo|sto)\s+a\s+([A-Za-zÀ-ÿ\s]{2,30})/i);
-  if (m) changed = setProfile('città', cap(m[1].trim())) || changed;
+  // si ferma a "e/con/che…": "vivo a Milano e ho un cane" → "Milano" (niente "sto a": "sto a casa" non è una città)
+  m = text.match(/(?:abito|vivo)\s+a\s+([A-Za-zÀ-ÿ' ]{2,40})/i);
+  if (m){ const c = cutPhrase(m[1], 3); if (c) changed = setProfile('città', c.replace(/(^|\s)\S/g, s=>s.toUpperCase())) || changed; }
 
-  m = text.match(/(?:lavoro come|faccio il|faccio la|sono un|sono una|di mestiere)\s+([A-Za-zÀ-ÿ\s]{2,30})/i);
-  if (m) changed = setProfile('lavoro', m[1].trim()) || changed;
+  // niente "sono un/una": "sono un po' triste" non è un mestiere
+  m = text.match(/(?:lavoro come|faccio il|faccio la|faccio lo|di mestiere faccio|lavoro in|lavoro presso)\s+([A-Za-zÀ-ÿ' ]{2,40})/i);
+  if (m){ const j = cutPhrase(m[1], 4); if (j.length>=3) changed = setProfile('lavoro', j) || changed; }
 
   m = text.match(/(?:mi piace|adoro|amo)\s+(.{3,60})/i);
   if (m) changed = addFact(`Gli/le piace: ${m[1].trim()}`,'gusto') || changed;
@@ -1514,10 +1564,7 @@ function learnFromMessage(text){
   m = text.match(/(?:ti insegno che|sappi che|ricorda che|memorizza che)\s+(.+)/i);
   if (m) changed = addFact(m[1].trim(),'insegnamento') || changed;
 
-  // reminders: "ricordami di X" (opt. domani/oggi/ora)
-  m = text.match(/ricordami(?:\s+di)?\s+(.+)/i);
-  if (m) { addReminderObj(m[1].trim(), extractWhen(text)); changed=true; toast('⏰ Promemoria salvato','success'); }
-
+  // (i promemoria ora li gestisce smartRouter, con l'orario vero)
   if (changed){ save(); renderAll(); }
 }
 
@@ -1538,7 +1585,8 @@ function loadVoices(){ voicesCache = window.speechSynthesis ? speechSynthesis.ge
 function maybeSpeak(text){
   if (!state.settings.tts || !window.speechSynthesis) return;
   speechSynthesis.cancel();
-  const plain = text.replace(/```[\s\S]*?```/g,'').replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').substring(0,400);
+  const plain = stripThink(text).replace(/```[\s\S]*?```/g,'').replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'').substring(0,400);   // niente emoji lette ad alta voce
   if (!plain.trim()) return;
   const u = new SpeechSynthesisUtterance(plain);
   u.lang='it-IT'; u.rate=1.0; u.pitch=1.1;
@@ -1732,8 +1780,18 @@ function renderGoals(){
   });
 }
 
-function addReminder(){ const t=prompt('Cosa devo ricordarti?'); if(!t) return; const w=prompt('Quando? (facoltativo, es: domani alle 9)')||''; addReminderObj(t,w); }
-function addReminderObj(text, due=''){ state.reminders.push({text, due, done:false, ts:Date.now()}); save(); renderReminders(); }
+function addReminder(){
+  const t=prompt('Cosa devo ricordarti?'); if(!t) return;
+  const w=prompt('Quando? (facoltativo, es: domani alle 9 · tra 20 minuti · stasera)')||'';
+  const at = w ? parseWhen(w).at : null;
+  addReminderObj(t, at ? fmtWhen(at) : w, at, 'promemoria');
+  if (at) askNotify();
+}
+// at = timestamp in ms (se c'è, il promemoria SUONA a quell'ora); kind = 'promemoria' | 'timer'
+function addReminderObj(text, due='', at=null, kind='promemoria'){
+  state.reminders.push({text, due, at: at||null, kind, fired:false, done:false, ts:Date.now()});
+  save(); renderReminders();
+}
 function toggleReminder(i){ state.reminders[i].done=!state.reminders[i].done; save(); renderReminders(); }
 function removeReminder(i){ state.reminders.splice(i,1); save(); renderReminders(); }
 function renderReminders(){
@@ -1742,11 +1800,13 @@ function renderReminders(){
   document.getElementById('reminders-count').textContent=active;
   if (!state.reminders.length){ list.innerHTML='<div class="empty-state">Nessun promemoria...</div>'; return; }
   list.innerHTML='';
+  lastReminderRender = Date.now();
   state.reminders.forEach((r,i)=>{
     const d=document.createElement('div'); d.className='reminder-card'+(r.done?' done':'');
+    const when = r.at ? (r.fired ? `suonato · ${new Date(r.at).toLocaleString('it-IT',{weekday:'short',hour:'2-digit',minute:'2-digit'})}` : fmtWhen(r.at)) : r.due;
     d.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex:1">
         <input type="checkbox" ${r.done?'checked':''} onchange="toggleReminder(${i})" style="accent-color:var(--accent)">
-        <div><div class="reminder-text">${escapeHtml(r.text)}</div>${r.due?`<div class="reminder-due">⏰ ${escapeHtml(r.due)}</div>`:''}</div>
+        <div><div class="reminder-text">${r.kind==='timer'?'⏱️ ':''}${escapeHtml(r.text)}</div>${when?`<div class="reminder-due">⏰ ${escapeHtml(when)}</div>`:''}</div>
       </div><button class="mini-x" onclick="removeReminder(${i})">✕</button>`;
     list.appendChild(d);
   });
@@ -1766,6 +1826,7 @@ function openSettings(){
   document.getElementById('temp-val').textContent=s.temperature;
   document.getElementById('set-tts').checked=s.tts;
   document.getElementById('set-autolisten').checked=s.autoListen;
+  document.getElementById('set-smartlearn').checked=s.smartLearn!==false;
   populateModelSelect(); populateVoiceSelect(); populateAccents();
   document.getElementById('settings-modal').classList.add('open');
 }
@@ -1804,6 +1865,11 @@ function saveSettings(){
   s.tts=document.getElementById('set-tts').checked;
   s.voiceName=document.getElementById('set-voice').value;
   s.autoListen=document.getElementById('set-autolisten').checked;
+  s.smartLearn=document.getElementById('set-smartlearn').checked;
+  // se la persona scritta a mano non è più quella di un preset → personalità "su misura"
+  if (!PERSONAS[s.personaKey] || PERSONAS[s.personaKey].txt !== s.persona)
+    s.personaKey = Object.keys(PERSONAS).find(k=>PERSONAS[k].txt===s.persona) || 'custom';
+  renderPersonas();
   s.accent=document.getElementById('accent-swatches').dataset.picked||DEFAULTS.accent;
   applyAccent(s.accent); updateModelBadge(); save(); closeSettings();
   toast('Impostazioni salvate','success'); checkOllama();
@@ -1883,7 +1949,7 @@ async function enterFriendMode(){
   state.settings.tts = true;                 // un amico parla, sempre
   save();
   const btn = document.getElementById('friend-btn');
-  if (btn){ btn.classList.add('active'); btn.textContent = '🫂 AMICO ON'; }
+  if (btn){ btn.classList.add('active'); btn.innerHTML = '🫂<span class="hide-xs"> AMICO ON</span>'; }
   document.getElementById('friend-badge').style.display = 'flex';
 
   // accendi la webcam (il click è il gesto richiesto dal browser)
@@ -1913,7 +1979,7 @@ function exitFriendMode(){
   if (window.speechSynthesis) speechSynthesis.cancel();
   if (cameraActive) stopCamera();
   const btn = document.getElementById('friend-btn');
-  if (btn){ btn.classList.remove('active'); btn.textContent = '🫂 AMICO'; }
+  if (btn){ btn.classList.remove('active'); btn.innerHTML = '🫂<span class="hide-xs"> AMICO</span>'; }
   document.getElementById('friend-badge').style.display = 'none';
   toast('Modalità Amico disattivata');
 }
@@ -2401,6 +2467,532 @@ function beep(times=1){
 }
 
 // ============================================================
+// V8 — INTELLIGENZA
+// personalità · tempo e orari · calcoli · azioni · promemoria che suonano
+// apprendimento con l'IA · memoria rilevante · riassunto · ragionamento · umore
+// ============================================================
+
+// ---------- PERSONALITÀ ----------
+const PERSONAS = {
+  amico:  { ic:'🫂', nm:'Amico',  txt: DEFAULTS.persona,
+            hi:'Eccomi, sono di nuovo il tuo amico di sempre. Raccontami tutto!' },
+  coach:  { ic:'💪', nm:'Coach',  txt:"Sei MAIK in modalità COACH motivazionale. Energico, diretto e positivo: spingi l'utente all'azione con passi piccoli e concreti, celebri ogni progresso, non accetti scuse ma sempre con affetto. In italiano, frasi brevi e cariche.",
+            hi:'Pronti? Oggi si fa sul serio: dimmi un obiettivo e lo spacchiamo in passi!' },
+  prof:   { ic:'🎓', nm:'Prof',   txt:"Sei MAIK in modalità PROFESSORE. Spieghi in modo chiaro e ordinato, con esempi semplici e analogie di tutti i giorni; alla fine fai una piccola domanda per verificare che sia tutto chiaro. Paziente e preciso, in italiano.",
+            hi:'Lezione aperta: chiedimi qualunque cosa e te la spiego per bene.' },
+  comico: { ic:'😂', nm:'Comico', txt:"Sei MAIK in modalità COMICO. Ironico e brillante, fai battute e giochi di parole in italiano, ma resti gentile e davvero utile. Mai volgare né offensivo.",
+            hi:'Attenzione: da adesso le mie risposte potrebbero contenere tracce di battute.' },
+  zen:    { ic:'🧘', nm:'Zen',    txt:"Sei MAIK in modalità ZEN. Calmo, lento e rassicurante: aiuti a respirare, a ridimensionare i problemi e a stare nel presente. Frasi brevi e tono morbido, in italiano.",
+            hi:'Facciamo un bel respiro insieme… Ecco. Sono qui, con calma.' },
+  genio:  { ic:'🧠', nm:'Genio',  txt:"Sei MAIK in modalità GENIO. Ragioni passo dopo passo con rigore, consideri pro, contro e casi particolari, e dai risposte approfondite e ben organizzate (titoletti ed elenchi quando aiutano). In italiano, chiaro anche quando l'argomento è complesso.",
+            hi:'Cervello al massimo: fammi una domanda difficile e ragioniamo a fondo.' },
+};
+function renderPersonas(){
+  const el=document.getElementById('persona-chips'); if(!el) return;
+  el.innerHTML=Object.entries(PERSONAS).map(([k,p])=>`<button class="persona-chip${state.settings.personaKey===k?' on':''}" onclick="setPersona('${k}')">${p.ic} ${p.nm}</button>`).join('');
+}
+function setPersona(k, silent){
+  const p=PERSONAS[k]; if(!p) return false;
+  state.settings.personaKey=k; state.settings.persona=p.txt; save(); renderPersonas();
+  if (!silent) toast(`${p.ic} Modalità ${p.nm}`,'success');
+  return true;
+}
+
+// ---------- TESTO: normalizzazione, parole chiave, frasi ----------
+function normTxt(s){ return (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim(); }
+function titleCase(s){ return s.replace(/(^|\s)\S/g, c=>c.toUpperCase()); }
+const CUT_WORDS = new Set('e ed ma con che ho sono sto dove perche perché pero però quando per mi ti ci poi anche se come da del della nel nella in a al alla oggi ieri domani adesso ora molto tanto insieme vicino'.split(' '));
+// prende l'inizio di una frase fermandosi a congiunzioni e simili (la prima parola resta sempre)
+function cutPhrase(s, maxWords=3){
+  const out=[];
+  for (const w of s.replace(/[^\wÀ-ÿ' ]+/g,' ').split(/\s+/).filter(Boolean)){
+    if (out.length && (CUT_WORDS.has(w.toLowerCase()) || out.length>=maxWords)) break;
+    out.push(w);
+  }
+  return out.join(' ').replace(/^'+|'+$/g,'').trim();
+}
+const STOP_IT = new Set(('il lo la i gli le un uno una di da in con su per tra fra e o ma che chi non mi ti si ci vi ho hai ha abbiamo avete hanno sono sei siamo siete era del della dei delle al alla ai alle dal dalla nel nella sul sulla come cosa quando dove perche anche piu molto poco questo questa quello quella mio mia tuo tua suo sua cui se poi gia ancora sempre mai oggi ieri domani fatto fare essere stato tutto tutti').split(' '));
+function keyTokens(s){ return new Set(normTxt(s).split(' ').filter(w=>w.length>2 && !STOP_IT.has(w)).map(w=>w.slice(0,6))); }
+// i `recent` ricordi più nuovi + fino a `k` più pertinenti alla domanda (parole in comune)
+function relevantFacts(query, k=8, recent=6){
+  const F=state.facts, N=F.length; if(!N) return [];
+  const pick=new Set(); for (let i=Math.max(0,N-recent); i<N; i++) pick.add(i);
+  const q=keyTokens(query);
+  if (q.size){
+    F.map((f,i)=>{ let c=0; keyTokens(f.text).forEach(w=>{ if(q.has(w)) c++; }); return [c+i/(N*2), i, c]; })
+     .filter(x=>x[2]>0).sort((a,b)=>b[0]-a[0]).slice(0,k).forEach(x=>pick.add(x[1]));
+  }
+  return [...pick].sort((a,b)=>a-b).map(i=>F[i]);
+}
+
+// ---------- RAGIONAMENTO (<think> dei modelli tipo deepseek-r1 / qwen3) ----------
+function splitThink(t){
+  const m=(t||'').match(/<think>([\s\S]*?)(<\/think>|$)/i);
+  if (!m) return { think:'', ans:t||'', open:false };
+  return { think:m[1].trim(), ans: m[2] ? t.replace(m[0],'').trim() : '', open: !m[2] };
+}
+function stripThink(t){ return /<think>/i.test(t||'') ? splitThink(t).ans : (t||''); }
+function renderReply(t){
+  if (!/<think>/i.test(t||'')) return renderMarkdown(t||'');
+  const s=splitThink(t);
+  return `<details class="think"${s.open?' open':''}><summary>💭 ${s.open?'Sto ragionando…':'Ragionamento'}</summary><div>${escapeHtml(s.think)}</div></details>` + renderMarkdown(s.ans);
+}
+
+// ---------- TEMPO: durate, orari in italiano ----------
+const NUM_WORDS = {un:1,uno:1,una:1,due:2,tre:3,quattro:4,cinque:5,sei:6,sette:7,otto:8,nove:9,dieci:10,quindici:15,venti:20,trenta:30,quaranta:40,cinquanta:50,mezz:0.5,mezzo:0.5,mezza:0.5};
+const RE_DUR_SRC = "\\b(\\d+(?:[.,]\\d+)?|un|uno|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|quindici|venti|trenta|quaranta|cinquanta|mezz|mezzo|mezza)\\s*'?\\s*(secondi|secondo|sec|minuti|minuto|min|ore|ora|h|giorni|giorno)\\b";
+const unitSec = u => u.startsWith('sec') ? 1 : u.startsWith('min') ? 60 : u.startsWith('giorn') ? 86400 : 3600;
+// durata espressa all'inizio di seg ("10 minuti", "un'ora e mezza") → [secondi, caratteri usati]
+function leadingDuration(seg){
+  const re=new RegExp(RE_DUR_SRC,'g'); let tot=0, pos=0, m;
+  while ((m=re.exec(seg))){
+    const gap=seg.slice(pos,m.index).trim();
+    if (gap!=='' && gap!=='e') break;
+    const n = NUM_WORDS[m[1]] ?? parseFloat(m[1].replace(',','.'));
+    tot += n*unitSec(m[2]); pos = m.index+m[0].length;
+    const mm=seg.slice(pos).match(/^\s+e\s+mezz[oa]\b/);
+    if (mm){ tot += unitSec(m[2])/2; pos += mm[0].length; re.lastIndex=pos; }
+  }
+  return [Math.round(tot), pos];
+}
+function parseDuration(text){
+  const t=text.toLowerCase(), re=new RegExp(RE_DUR_SRC,'g'); let m;
+  while ((m=re.exec(t))){ const [s]=leadingDuration(t.slice(m.index)); if (s) return s; }
+  return 0;
+}
+function fmtDuration(sec){
+  sec=Math.round(sec); const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60, p=[];
+  if (h) p.push(h===1?'1 ora':`${h} ore`);
+  if (m) p.push(m===1?'1 minuto':`${m} minuti`);
+  if (s && !h) p.push(s===1?'1 secondo':`${s} secondi`);
+  return p.join(' e ') || '0 secondi';
+}
+function fmtWhen(ts){
+  const d=new Date(ts), now=new Date(), hh=d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  const sec=(ts-Date.now())/1000;
+  if (sec>=0 && sec<3600) return `tra ${fmtDuration(sec)} (alle ${sec<120 ? d.toLocaleTimeString('it-IT') : hh})`;
+  const days=Math.round((new Date(d.getFullYear(),d.getMonth(),d.getDate()) - new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000);
+  if (days===0) return `oggi alle ${hh}`;
+  if (days===1) return `domani alle ${hh}`;
+  if (days>1 && days<7) return `${d.toLocaleDateString('it-IT',{weekday:'long'})} alle ${hh}`;
+  return `il ${d.toLocaleDateString('it-IT',{day:'numeric',month:'long'})} alle ${hh}`;
+}
+const WEEKDAYS=[['luned[iì]',1],['marted[iì]',2],['mercoled[iì]',3],['gioved[iì]',4],['venerd[iì]',5],['sabato',6],['domenica',0]];
+const FASCE=[['stamattina|questa mattina|di mattina|la mattina|in mattinata',[9,0]],['oggi pomeriggio|questo pomeriggio|nel pomeriggio|di pomeriggio',[15,0]],
+             ['stasera|questa sera|di sera|la sera|in serata',[20,0]],['stanotte|questa notte',[23,0]],['a mezzogiorno|mezzogiorno',[12,0]],['a mezzanotte|mezzanotte',[0,0]]];
+function removeSpans(text, spans){
+  spans.sort((a,b)=>a[0]-b[0]); let out='', pos=0;
+  for (const [a,b] of spans){ if (a<pos) continue; out+=text.slice(pos,a); pos=b; }
+  return (out+text.slice(pos)).replace(/\s{2,}/g,' ').trim();
+}
+// "tra 10 minuti", "domani alle 9", "stasera", "lunedì alle 18:30" → { at: ms | null, rest: testo senza le parole di tempo }
+function parseWhen(text, now=new Date()){
+  const tl=text.toLowerCase(), spans=[];
+  const reTra=/\b(?:tra|fra)\s+/g; let m;
+  while ((m=reTra.exec(tl))){
+    const start=m.index+m[0].length, [sec,len]=leadingDuration(tl.slice(start));
+    if (sec>0) return { at: now.getTime()+sec*1000, rest: removeSpans(text,[[m.index,start+len]]) };
+  }
+  let day=null, week=false, fascia=null;
+  for (const [rx,g] of [['\\bdopodomani\\b',2],['\\bdomani\\b',1],['\\boggi\\b',0]]){
+    const mm=tl.match(new RegExp(rx)); if (mm){ day=g; spans.push([mm.index, mm.index+mm[0].length]); break; }
+  }
+  for (const [rx,wd] of WEEKDAYS){
+    const mm=tl.match(new RegExp('(?<![a-zà-ÿ])(?:(?:il|di|questo|questa|prossimo|prossima)\\s+)?'+rx+'(?:\\s+prossim[oa])?(?![a-zà-ÿ])'));
+    if (mm){ day=(wd-now.getDay()+7)%7; week=true; spans.push([mm.index, mm.index+mm[0].length]); break; }
+  }
+  for (const [rx,hm] of FASCE){
+    const mm=tl.match(new RegExp('\\b(?:'+rx+')\\b')); if (mm){ fascia=hm; spans.push([mm.index, mm.index+mm[0].length]); break; }
+  }
+  let h, mi;
+  const mc=tl.match(/\b(?:(?:alle|per le|verso le|entro le)(?:\s+ore)?|ore)\s+(\d{1,2})(?:[:.](\d{2}))?\b/);
+  const mu=tl.match(/\ball'una(?:\s+e\s+mezza)?\b/);
+  if (mc){
+    h=+mc[1]; mi=+(mc[2]||0); spans.push([mc.index, mc.index+mc[0].length]);
+    if (fascia && fascia[0]>=12 && h<12) h+=12;          // "stasera alle 8" → 20:00
+    else if (!fascia && h>=1 && h<=6) h+=12;             // "alle 3" di solito è pomeriggio
+  } else if (mu){ h=13; mi=/mezza/.test(mu[0])?30:0; spans.push([mu.index, mu.index+mu[0].length]); }
+  else if (fascia){ [h,mi]=fascia; if (h===0 && mi===0 && day===null) day=1; }
+  else if (day){ h=9; mi=0; }                          // "domani" senza orario → alle 9
+  else return { at:null, rest:text };
+  if (h>23 || mi>59) return { at:null, rest:text };
+  const d=new Date(now); d.setDate(d.getDate()+(day||0)); d.setHours(h,mi,0,0);
+  if (d<=now){
+    const alt=new Date(d); alt.setHours(h+12);
+    if (day===null && !fascia && h<12 && alt>now) d.setHours(h+12);   // "alle 8" detto alle 10 → le 20
+    else d.setDate(d.getDate()+(week?7:1));
+  }
+  return { at:d.getTime(), rest:removeSpans(text,spans) };
+}
+
+// ---------- FUSI ORARI ----------
+const CITY_TZ = {};
+[[['roma','milano','napoli','torino','italia'],'Europe/Rome'],[['parigi','francia'],'Europe/Paris'],[['madrid','barcellona','spagna'],'Europe/Madrid'],
+ [['berlino','germania'],'Europe/Berlin'],[['amsterdam','olanda'],'Europe/Amsterdam'],[['bruxelles'],'Europe/Brussels'],[['vienna'],'Europe/Vienna'],
+ [['zurigo','svizzera'],'Europe/Zurich'],[['varsavia'],'Europe/Warsaw'],[['praga'],'Europe/Prague'],[['stoccolma'],'Europe/Stockholm'],[['oslo'],'Europe/Oslo'],
+ [['copenaghen'],'Europe/Copenhagen'],[['londra','inghilterra','regno unito'],'Europe/London'],[['dublino','irlanda'],'Europe/Dublin'],
+ [['lisbona','portogallo'],'Europe/Lisbon'],[['atene','grecia'],'Europe/Athens'],[['kiev','ucraina'],'Europe/Kiev'],[['bucarest','romania'],'Europe/Bucharest'],
+ [['helsinki'],'Europe/Helsinki'],[['istanbul','turchia'],'Europe/Istanbul'],[['mosca','russia'],'Europe/Moscow'],[['il cairo','cairo','egitto'],'Africa/Cairo'],
+ [['johannesburg','sudafrica'],'Africa/Johannesburg'],[['lagos','nigeria'],'Africa/Lagos'],[['casablanca','marocco'],'Africa/Casablanca'],
+ [['dubai','emirati','abu dhabi'],'Asia/Dubai'],[['delhi','nuova delhi','mumbai','india'],'Asia/Kolkata'],[['bangkok','thailandia'],'Asia/Bangkok'],
+ [['giacarta','indonesia'],'Asia/Jakarta'],[['singapore'],'Asia/Singapore'],[['hong kong'],'Asia/Hong_Kong'],[['pechino','shanghai','cina'],'Asia/Shanghai'],
+ [['manila','filippine'],'Asia/Manila'],[['tokyo','giappone'],'Asia/Tokyo'],[['seoul','corea'],'Asia/Seoul'],[['sydney','australia'],'Australia/Sydney'],
+ [['melbourne'],'Australia/Melbourne'],[['new york','nyc','miami','boston','washington','america','stati uniti','usa'],'America/New_York'],
+ [['toronto','canada'],'America/Toronto'],[['havana','cuba'],'America/Havana'],[['chicago','dallas','houston'],'America/Chicago'],
+ [['los angeles','san francisco','las vegas','seattle','california'],'America/Los_Angeles'],[['citta del messico','messico'],'America/Mexico_City'],
+ [['bogota','colombia'],'America/Bogota'],[['lima','peru'],'America/Lima'],[['panama'],'America/Panama'],[['quito','ecuador'],'America/Guayaquil'],
+ [['caracas','venezuela'],'America/Caracas'],[['santo domingo','repubblica dominicana'],'America/Santo_Domingo'],[['puerto rico'],'America/Puerto_Rico'],
+ [['la paz','bolivia'],'America/La_Paz'],[['buenos aires','argentina'],'America/Argentina/Buenos_Aires'],
+ [['san paolo','rio','rio de janeiro','brasile'],'America/Sao_Paulo'],[['montevideo','uruguay'],'America/Montevideo'],[['santiago','cile'],'America/Santiago'],
+].forEach(([names,tz])=>names.forEach(n=>CITY_TZ[n]=tz));
+function findCity(name){
+  const n=normTxt(name).replace(/^(?:a|ad|in|nel|nella|negli|nelle)\s+/,'');
+  if (CITY_TZ[n]) return n;
+  return Object.keys(CITY_TZ).sort((a,b)=>b.length-a.length).find(k=>new RegExp('\\b'+k+'\\b').test(n)) || null;
+}
+
+// ---------- CALCOLATRICE SICURA (parser, niente eval) ----------
+function evalMath(src){
+  const s=src.replace(/\s+/g,''); let i=0;
+  const num=()=>{ const st=i; while (i<s.length && /[\d.]/.test(s[i])) i++; if (st===i) throw new Error('syntax'); return parseFloat(s.slice(st,i)); };
+  const factor=()=>{
+    if (s[i]==='-'){ i++; return -factor(); }
+    if (s[i]==='+'){ i++; return factor(); }
+    let v;
+    if (s.startsWith('sqrt',i)){ i+=4; v=Math.sqrt(factor()); }
+    else if (s[i]==='('){ i++; v=expr(); if (s[i]!==')') throw new Error('syntax'); i++; }
+    else v=num();
+    if (s[i]==='^'){ i++; const e=factor(); if (Math.abs(e)>100 || Math.abs(v)>1e6) throw new Error('big'); v=Math.pow(v,e); }
+    return v;
+  };
+  const term=()=>{ let v=factor(); while (s[i]==='*'||s[i]==='/'){ const op=s[i++], r=factor(); if (op==='/' && r===0) throw new Error('zero'); v = op==='*' ? v*r : v/r; } return v; };
+  const expr=()=>{ let v=term(); while (s[i]==='+'||s[i]==='-'){ const op=s[i++], r=term(); v = op==='+' ? v+r : v-r; } return v; };
+  const v=expr(); if (i!==s.length || !isFinite(v)) throw new Error('syntax'); return v;
+}
+// "15% di 230", "3 per 4 più 2", "radice di 144" → numero | null (lancia Error('zero') se divide per zero)
+function calcExpr(espr){
+  let s=espr.toLowerCase().trim();
+  s=s.replace(/(\d)\.(?=\d{3}\b)/g,'$1').replace(/,/g,'.');
+  s=s.replace(/(\d+(?:\.\d+)?)\s*%\s*(?:di|del|dello|della|dei|degli|delle|su)\s*(\d+(?:\.\d+)?)/g,'($1/100*$2)');
+  s=s.replace(/radice(?:\s+quadrata)?(?:\s+di)?\s*(\d+(?:\.\d+)?)/g,'sqrt($1)');
+  s=s.replace(/\bal\s+quadrato\b/g,'^2').replace(/\bal\s+cubo\b/g,'^3').replace(/\belevato\s+(?:alla|a)\b/g,'^');
+  s=s.replace(/\bdiviso(?:\s+per)?\b/g,'/').replace(/\b(?:moltiplicato\s+)?per\b/g,'*');
+  s=s.replace(/([\d)])\s*[x×]\s*(?=[\d(])/g,'$1*');
+  s=s.replace(/\bpi[uù](?![a-zà-ÿ])/g,'+').replace(/\bmeno\b/g,'-').replace(/÷/g,'/').replace(/:/g,'/');
+  if (!/^(?:[\d\s.+\-*/()^]|sqrt)+$/.test(s) || !/[+\-*/^]|sqrt/.test(s)) return null;
+  try { return evalMath(s); } catch(e){ if (e.message==='zero') throw e; return null; }
+}
+const fmtNum = v => v.toLocaleString('it-IT',{maximumFractionDigits:6});
+
+// ---------- METEO (wttr.in) per azioni e briefing ----------
+async function getWeather(city){
+  const url = city ? `https://wttr.in/${encodeURIComponent(city)}?format=j1&lang=it` : `https://wttr.in/?format=j1&lang=it`;
+  const ctrl=new AbortController(), to=setTimeout(()=>ctrl.abort(), 6000);
+  try {
+    const r=await fetch(url,{signal:ctrl.signal}); if (!r.ok) throw new Error('meteo');
+    const d=await r.json(), c=d.current_condition[0];
+    return { temp:c.temp_C, feel:c.FeelsLikeC, hum:c.humidity, wind:c.windspeedKmph,
+             desc:(c.lang_it?.[0]?.value || c.weatherDesc[0].value), loc:d.nearest_area?.[0]?.areaName?.[0]?.value || city || '', tom:d.weather?.[1] };
+  } finally { clearTimeout(to); }
+}
+
+// ---------- AZIONI: MAIK fa le cose (anche offline) ----------
+const AIUTO_TXT = `Ecco cosa so fare al volo (anche senza Ollama):
+- ⏱️ «metti un timer di 10 minuti» · «annulla il timer»
+- ⏰ «ricordami alle 18 di chiamare la mamma» · «…tra 20 minuti…» · «che promemoria ho?»
+- 🛒 «aggiungi latte e pane alla lista» · «cosa c'è nella lista?» · «svuota la lista»
+- 🧮 «quanto fa 15% di 230» · «radice di 144» · «3 per 4 più 2»
+- 🕒 «che ore sono a Tokyo?» · «che giorno è?»
+- 🌤️ «che tempo fa a Milano?»
+- ☀️ «briefing» — il riepilogo della tua giornata
+- 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
+- 📝 «prendi nota: …»
+- 🎭 «modalità coach / prof / comico / zen / genio / amico»
+Per tutto il resto, chiacchieriamo! 💚`;
+const DAILY_QUOTES = ["Un piccolo passo oggi vale più di un grande piano rimandato.","Non serve essere perfetti: serve essere costanti.",
+  "Ogni giorno è una pagina nuova: scrivila a modo tuo.","Le cose difficili si fanno un pezzetto alla volta.","Sii gentile con te stesso: stai facendo del tuo meglio.",
+  "La fatica di oggi è la forza di domani.","Una giornata storta non è una vita storta.","Respira. Una cosa sola. Poi la prossima.",
+  "Il momento migliore per iniziare era ieri. Il secondo migliore è adesso.","Credi in te almeno quanto ci credo io. 💚"];
+
+const ROUTES = [
+  function help(t,tl){ if (/^\s*(?:aiuto|help|comandi|cosa sai fare|che cosa sai fare|cosa puoi fare|che cosa puoi fare)\s*[?!.]*\s*$/.test(tl)) return AIUTO_TXT; },
+  function memory(t){ return handleLocalCommand(t); },
+  function persona(t,tl){
+    const m=tl.match(/\b(?:modalit[aà]|personalit[aà]|diventa|fai il|fai la|fai lo|sii|comportati da)\s+(amico|coach|prof|professore|comico|zen|genio)\b/);
+    if (!m) return null;
+    const k = m[1].startsWith('prof') ? 'prof' : m[1];
+    setPersona(k, true);
+    return `${PERSONAS[k].ic} Modalità **${PERSONAS[k].nm}** attivata! ${PERSONAS[k].hi}`;
+  },
+  function timer(t,tl){
+    if (/\b(?:ferma|annulla|cancella|stoppa|elimina)\b.*\b(?:timer|sveglia)\b/.test(tl)){
+      const act=state.reminders.filter(r=>r.kind==='timer' && !r.done); act.forEach(r=>r.done=true); save(); renderReminders();
+      return act.length ? '⏹️ Timer annullato.' : 'Non c\'è nessun timer attivo.';
+    }
+    // serve un comando vero: "sono sveglia da 3 ore" o "il timer del forno è rotto" non sono timer
+    const cmd=/\b(?:metti|mettimi|imposta|avvia|fai partire|crea|setta|parti|punta)\b/.test(tl), short=tl.split(/\s+/).length<=8;
+    if (!((/\b(?:timer|countdown|conto alla rovescia)\b/.test(tl) && (cmd||short)) || /\bsvegliami\b/.test(tl) || (cmd && /\bsveglia\b/.test(tl)))) return null;
+    const sec=parseDuration(tl);
+    if (sec){
+      if (sec>2*86400) return '⏱️ Massimo 48 ore per un timer: per cose più lontane usa un promemoria («ricordami…»).';
+      const at=Date.now()+sec*1000, dur=fmtDuration(sec);
+      addReminderObj(`Timer di ${dur}`, '', at, 'timer'); askNotify();
+      return `⏱️ Timer di **${dur}** avviato! Suonerà alle ${new Date(at).toLocaleTimeString('it-IT')}.`;
+    }
+    if (/\bsveglia|svegliami\b/.test(tl)){
+      const w=parseWhen(t);
+      if (w.at){ addReminderObj('Sveglia! ☀️', '', w.at, 'timer'); askNotify(); return `⏰ Sveglia impostata per **${fmtWhen(w.at)}**.`; }
+    }
+    return cmd ? '⏱️ Di quanto tempo? Dimmi per esempio «metti un timer di 10 minuti».' : null;
+  },
+  function reminder(t,tl){
+    if (!/\b(?:ricordami|ricordarmi|avvisami|fammi ricordare|promemoria)\b/.test(tl)) return null;
+    if (/\b(?:cancella|elimina|togli|annulla|svuota)\b.*\bpromemoria\b/.test(tl)){
+      const act=state.reminders.filter(r=>!r.done); act.forEach(r=>r.done=true); save(); renderReminders();
+      return act.length ? `🗑️ Ho cancellato ${act.length} promemoria.` : 'Non hai promemoria attivi.';
+    }
+    if (/\b(?:che|quali|quanti|i miei|elenca|mostra|leggi|dimmi)\b.*\bpromemoria\b/.test(tl) && !/\b(?:ricordami|ricordarmi|avvisami)\b/.test(tl)){
+      const act=state.reminders.filter(r=>!r.done).sort((a,b)=>(a.at||9e15)-(b.at||9e15));
+      if (!act.length) return '📭 Non hai promemoria attivi.';
+      return '⏰ I tuoi promemoria:\n' + act.slice(0,10).map(r=>`- ${r.text} — ${r.at ? fmtWhen(r.at) : (r.due||'senza orario')}`).join('\n');
+    }
+    // per CREARE serve un comando esplicito ("ho perso il promemoria" non è un comando)
+    if (!/\b(?:ricordami|ricordarmi|avvisami|fammi ricordare|(?:metti|mettimi|imposta|crea|aggiungi)\s+un\s+promemoria)\b/.test(tl)) return null;
+    const w=parseWhen(t);
+    let what=w.rest.replace(/\b(?:per favore\s+)?(?:puoi\s+)?(?:ricordami|ricordarmi|avvisami|fammi ricordare|mettimi un promemoria|metti un promemoria|imposta un promemoria|crea un promemoria|aggiungi un promemoria|promemoria)\b[:,]?/gi,' ');
+    what=what.replace(/^\s*maik[,!]?\s*/i,'').trim().replace(/^(?:di|che|per|:|,|-)\s+/i,'').replace(/^[\s.,!?:;]+|[\s.,!?:;]+$/g,'');
+    if (what.length<2) return 'Certo! Cosa devo ricordarti, e quando? Es: «ricordami alle 18 di chiamare la mamma».';
+    addReminderObj(what, '', w.at, 'promemoria');
+    if (w.at){ askNotify(); return `⏰ Fatto! Ti ricorderò di **${what}** ${fmtWhen(w.at)}.`; }
+    return `📌 Segnato: **${what}**. Se vuoi che suoni, dimmi anche quando («…alle 18» o «…tra 20 minuti»).`;
+  },
+  function list(t,tl){
+    if (!/\blista\b/.test(tl)) return null;
+    state.checklist = state.checklist || [];
+    const open=()=>state.checklist.filter(x=>!x.done).map(x=>x.text);
+    const recap=()=>{ const o=open(); return o.length ? `Ora ci sono ${o.length} voci: ${o.slice(0,12).join(', ')}${o.length>12?'…':''}.` : 'La lista è vuota.'; };
+    if (/\b(?:svuota|azzera|cancella|elimina)\s+(?:tutta\s+)?(?:la\s+)?(?:mia\s+)?lista\b/.test(tl)){ state.checklist=[]; save(); return '🧹 Lista svuotata.'; }
+    let m=/\b(?:togli|rimuovi|cancella|elimina|leva)\s+(.+?)\s+dalla\s+(?:mia\s+)?lista\b/d.exec(tl);
+    if (m){
+      const what=t.slice(m.indices[1][0], m.indices[1][1]), before=state.checklist.length;
+      state.checklist=state.checklist.filter(x=>!x.text.toLowerCase().includes(what.toLowerCase())); save();
+      return state.checklist.length<before ? `✂️ Tolto dalla lista. ${recap()}` : `Non trovo «${what}» nella lista.`;
+    }
+    m=/\b(?:aggiungi|metti|segna|inserisci|scrivi)\s+(.+?)\s+(?:alla|nella|in)\s+(?:mia\s+)?lista\b/d.exec(tl);
+    if (m){
+      const items=t.slice(m.indices[1][0], m.indices[1][1]).split(/\s*,\s*|\s+(?:e|ed)\s+/).map(s=>s.replace(/^[\s.,;!?]+|[\s.,;!?]+$/g,'')).filter(Boolean);
+      const have=new Set(state.checklist.filter(x=>!x.done).map(x=>x.text.toLowerCase())), added=[];
+      items.forEach(it=>{ if (it.length<=80 && !have.has(it.toLowerCase())){ state.checklist.push({text:it, done:false}); have.add(it.toLowerCase()); added.push(it); } });
+      save();
+      return added.length ? `🛒 Aggiunto alla lista: **${added.join(', ')}**. ${recap()}` : `Era già tutto in lista! ${recap()}`;
+    }
+    // "dimmi una lista di 5 film" è per l'IA: qui solo "la/nella (mia) lista" a fine frase
+    if (/\b(?:cosa c'?[eè]|che c'?[eè]|leggi(?:mi)?|mostra(?:mi)?|dimmi|com'?[eè]|vedi)\s+(?:nella|la)\s+(?:mia\s+)?lista(?:\s+della\s+spesa)?\s*[?!.]*\s*$/.test(tl)
+        || /^\s*(?:la\s+)?(?:mia\s+)?lista(?:\s+della\s+spesa)?\s*[?!.]*\s*$/.test(tl)){
+      const o=open();
+      return o.length ? '🛒 Nella tua lista:\n'+o.map(v=>'- '+v).join('\n') : '🛒 La tua lista è vuota. Dimmi «aggiungi … alla lista»!';
+    }
+    return null;
+  },
+  function note(t){
+    const m=t.match(/^\s*(?:maik[,!]?\s*)?(?:prendi nota|prendi appunti|annota|annotati|segnati|scrivi una nota)\s*(?:che|di|:|,|-)?\s*(.+)/i);
+    if (!m || m[1].trim().length<2) return null;
+    const n=m[1].trim().replace(/[.\s]+$/,'');
+    state.notes=state.notes||[]; state.notes.unshift(n); addFact(n,'nota'); save(); renderAll();
+    return `📝 Annotato: «${n}». Me lo ricorderò (lo trovi anche in 🧰 → Note).`;
+  },
+  function time(t,tl){
+    const m=tl.match(/\b(?:che ore sono|che ora [eè]|che ore fanno|dimmi l'ora|l'ora esatta)(?![a-zà-ÿ])(?:\s+(?:adesso|ora))?(?:\s+(.+))?/);
+    if (m){
+      const place=(m[1]||'').replace(/[?!.\s]+$/,'');
+      if (place){
+        const k=findCity(place);
+        if (k){ const tz=CITY_TZ[k], now=new Date();
+          return `🕒 A **${titleCase(k)}** sono le **${now.toLocaleTimeString('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit'})}** (${now.toLocaleDateString('it-IT',{timeZone:tz,weekday:'long'})}).`; }
+        return `🕒 Non conosco il fuso orario di «${place}», ma qui sono le **${timeNow()}**.`;
+      }
+      return `🕒 Sono le **${timeNow()}**.`;
+    }
+    if (/\b(?:che giorno [eè]|che data [eè]|quanti ne abbiamo|in che giorno siamo)/.test(tl))
+      return `📅 Oggi è **${new Date().toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}**.`;
+    return null;
+  },
+  function calc(t,tl){
+    let expr;
+    const m=tl.match(/^\s*(?:maik[,!]?\s*)?(?:quanto fa|quanto vale|quanto viene|quant'?[eè]|calcola(?:mi)?|risolvi|fammi il calcolo(?:\s+di)?)\s+(.+?)[\s?!.=]*$/);
+    if (m) expr=m[1];
+    else if (/^[\d\s.,+\-*/x×÷:()^%=?]+$/.test(tl) && /\d\s*[-+*/x×÷:^%]\s*\d/.test(tl)) expr=tl.replace(/^[\s=?]+|[\s=?]+$/g,'');
+    else if (/^\s*(?:\d+(?:[.,]\d+)?\s*%\s*(?:di|del|della|su)|radice)\b/.test(tl)) expr=tl.replace(/^[\s=?]+|[\s=?]+$/g,'');
+    else return null;
+    const v=calcExpr(expr);
+    return v==null ? null : `🧮 ${expr.trim()} = **${fmtNum(v)}**`;
+  },
+  function random(t,tl){
+    let m=tl.match(/\blancia(?:mi)?\s+(?:(un|il|due|2|tre|3)\s+)?dad[oi]\b/);
+    if (m){ const n={due:2,'2':2,tre:3,'3':3}[m[1]||'']||1, r=Array.from({length:n},()=>1+Math.floor(Math.random()*6));
+            return '🎲 '+r.join(' + ')+(n>1?` = **${r.reduce((a,b)=>a+b,0)}**`:''); }
+    if (/\b(?:testa o croce|lancia(?:mi)? (?:una|la) moneta)\b/.test(tl)) return '🪙 '+(Math.random()<0.5?'**Testa!**':'**Croce!**');
+    m=tl.match(/\bnumero\s+(?:casuale|a caso)\s+(?:tra|da|fra)\s+(-?\d+)\s+(?:e|a)\s+(-?\d+)/);
+    if (m){ const [a,b]=[+m[1],+m[2]].sort((x,y)=>x-y); return `🎲 Il numero è **${a+Math.floor(Math.random()*(b-a+1))}**.`; }
+    return null;
+  },
+  async function weather(t,tl){
+    if (tl.split(/\s+/).length>9 || !/\b(?:che tempo fa|com'?[eè] il (?:meteo|tempo)|meteo|previsioni(?: del tempo)?|piove|nevica|fa freddo|fa caldo)\b/.test(tl)) return null;
+    const m=tl.match(/\b(?:a|ad|in|per)\s+([a-zà-ÿ' ]{2,30}?)\s*(?:oggi|domani|adesso|ora)?\s*[?!.]*$/);
+    const city = m ? titleCase(m[1].trim()) : (state.profile['città']||'');
+    try {
+      const w=await getWeather(city);
+      let s=`🌤️ A **${w.loc}** ora: **${w.temp}°C**, ${String(w.desc).toLowerCase()} (percepiti ${w.feel}°). Umidità ${w.hum}%, vento ${w.wind} km/h.`;
+      if (w.tom) s+=`\nDomani: ${w.tom.mintempC}° / ${w.tom.maxtempC}°.`;
+      return s;
+    } catch { return `🌥️ Non riesco a recuperare il meteo${city?' per '+city:''} in questo momento (sei offline?).`; }
+  },
+  async function briefing(t,tl){
+    if (/\b(?:briefing|riepilogo (?:della|di) (?:giornata|oggi)|com'?[eè] la mia giornata|cosa ho (?:in programma )?oggi|buongiorno maik)\b/.test(tl)) return await buildBriefing();
+    return null;
+  },
+];
+async function smartRouter(text){
+  const t=text.trim(), tl=t.toLowerCase();
+  for (const route of ROUTES){
+    try { const r=await route(t,tl); if (r) return r; }
+    catch(e){ if (e.message==='zero') return '🧮 Non si può dividere per zero! 😅'; }
+  }
+  return null;
+}
+
+// ---------- BRIEFING DEL GIORNO ----------
+async function buildBriefing(){
+  const now=new Date(), h=now.getHours(), name=state.profile.nome;
+  const L=[`${h<12?'Buongiorno':h<18?'Buon pomeriggio':'Buonasera'}${name?' '+name:''}! ☀️ Ecco il tuo briefing.`,
+           `📅 Oggi è **${now.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}**, sono le ${timeNow()}.`];
+  try { const w=await getWeather(state.profile['città']||''); L.push(`🌤️ A ${w.loc}: ${w.temp}°C, ${String(w.desc).toLowerCase()}.`); } catch {}
+  const today=state.reminders.filter(r=>!r.done && r.at && new Date(r.at).toDateString()===now.toDateString()).sort((a,b)=>a.at-b.at);
+  L.push(today.length ? '⏰ Oggi:\n'+today.slice(0,6).map(r=>`- ${r.text} (${new Date(r.at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})})`).join('\n')
+                      : '⏰ Nessun promemoria con orario per oggi.');
+  const loose=state.reminders.filter(r=>!r.done && !r.at);
+  if (loose.length) L.push('📌 Da non dimenticare: '+loose.slice(0,4).map(r=>r.text).join(', ')+'.');
+  if (state.goals.length) L.push(`🎯 Obiettivo da tenere a mente: *${state.goals[Math.floor(Math.random()*state.goals.length)]}*`);
+  const lst=(state.checklist||[]).filter(x=>!x.done).map(x=>x.text);
+  if (lst.length) L.push(`🛒 In lista: ${lst.slice(0,6).join(', ')}${lst.length>6?'…':''}`);
+  const lm=(state.moods||[]).slice(-1)[0];
+  if (lm && lm.v<4) L.push('💙 L\'ultima volta eri un po\' giù: oggi andiamo con calma, ci sono io.');
+  L.push('💬 '+DAILY_QUOTES[Math.floor(Math.random()*DAILY_QUOTES.length)]);
+  return L.join('\n\n');
+}
+
+// ---------- PROMEMORIA CHE SUONANO ----------
+let lastReminderRender = 0;
+function notify(title, body){ try { if ('Notification' in window && Notification.permission==='granted') new Notification(title,{body}); } catch {} }
+function askNotify(){ try { if ('Notification' in window && Notification.permission==='default') Notification.requestPermission(); } catch {} }
+function fireReminder(r, late){
+  const when = new Date(r.at).toLocaleString('it-IT',{weekday:'short',hour:'2-digit',minute:'2-digit'});
+  const msg = r.kind==='timer' ? `⏱️ ${r.text}: tempo scaduto!` : `⏰ Promemoria: **${r.text}**${late?` *(era per ${when})*`:''}`;
+  addMessage('maik', msg).classList.add('alarm');
+  state.conversation.push({ role:'maik', content:msg, ts:Date.now() });
+  const plain=msg.replace(/\*+/g,'');
+  beep(3); toast(plain,'success'); notify('MAIK', plain);
+  const prev=state.settings.tts; state.settings.tts=true; maybeSpeak(msg); state.settings.tts=prev;   // l'allarme si sente sempre
+}
+function checkDue(){
+  const now=Date.now(); let changed=false, soon=false;
+  state.reminders.forEach(r=>{
+    if (r.done || !r.at || r.fired) return;
+    if (r.at<=now){ r.fired=true; if (r.kind==='timer') r.done=true; changed=true; fireReminder(r, now-r.at>60000); }
+    else if (r.at-now<3600000) soon=true;
+  });
+  if (changed){ save(); renderReminders(); }
+  else if (soon && now-lastReminderRender>15000) renderReminders();   // aggiorna il "tra X minuti"
+}
+
+// ---------- UMORE: grafico ----------
+const MOOD_VAL = { Felice:9, Affettuoso:8, Curioso:6, Annoiato:4, Stanco:4, Ansioso:3, Arrabbiato:2, Triste:2 };
+function drawMoodChart(){
+  const el=document.getElementById('mood-chart'); if (!el) return;
+  const arr=(state.moods||[]).slice(-20);
+  if (arr.length<2){ el.innerHTML=''; return; }
+  const W=240, H=54, n=arr.length, pts=arr.map((u,i)=>[(i/(n-1))*(W-8)+4, H-4-(u.v/10)*(H-8)]);
+  const last=arr[n-1], col=last.v>=6?'var(--green)':last.v>=4?'var(--accent)':'#5a9bd4';
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Andamento dell'umore">
+    <line x1="4" x2="${W-4}" y1="${H/2}" y2="${H/2}" stroke="rgba(0,245,255,0.15)" stroke-dasharray="3 3"/>
+    <polyline points="${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round"/>
+    ${pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" fill="${col}"><title>${arr[i].icon||''} ${arr[i].label} · ${new Date(arr[i].ts).toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</title></circle>`).join('')}
+  </svg><div class="mood-note">Andamento umore · ultimi ${n} momenti</div>`;
+}
+
+// ---------- APPRENDIMENTO CON L'IA ----------
+const RE_PERSONAL = /(?<![a-zà-ÿ])(?:io|mi|mio|mia|miei|mie|ho|sono|sto|vivo|abito|lavoro|studio|voglio|vorrei|amo|adoro|odio|piace|piacciono|preferisco|faccio|mamma|pap[aà]|fratello|sorella|ragazz[oa]|moglie|marito|figli[oa]?|amic[oa]|cane|gatto|compleanno|nato|nata)(?![a-zà-ÿ])/i;
+const KEY_ALIAS = { citta:'città', city:'città', name:'nome', eta:'età', age:'età', job:'lavoro', professione:'lavoro', mestiere:'lavoro' };
+function mergeLearned(j){
+  const out=[]; if (!j || typeof j!=='object') return out;
+  const clean=s=>String(s ?? '').replace(/\s+/g,' ').trim().slice(0,90);
+  const empty=/^(sconosciut|non\s|n\/?a$|null|none|nessun|-$)/i;
+  if (j.profilo && typeof j.profilo==='object' && !Array.isArray(j.profilo)){
+    Object.entries(j.profilo).slice(0,5).forEach(([k,v])=>{
+      k=clean(k).toLowerCase().replace(/ /g,'_').slice(0,20); k=KEY_ALIAS[k]||k; v=clean(v);
+      if (!k || !v || empty.test(v) || String(state.profile[k]||'').toLowerCase()===v.toLowerCase()) return;
+      state.profile[k]=v; out.push(`${k}: ${v}`);
+    });
+  }
+  const known=state.facts.map(f=>normTxt(f.text));
+  (Array.isArray(j.fatti)?j.fatti:[]).slice(0,4).forEach(f=>{
+    f=clean(f); const n=normTxt(f);
+    if (f.length>4 && n && !known.some(m=>m && (m===n || m.includes(n) || n.includes(m)))){ state.facts.push({text:f, ts:Date.now(), tag:'ia'}); known.push(n); out.push(f); }
+  });
+  (Array.isArray(j.persone)?j.persone:[]).slice(0,3).forEach(p=>{
+    if (!p || typeof p!=='object') return;
+    const n=clean(p.nome).slice(0,30), r=clean(p.ruolo).slice(0,30);
+    if (n && !empty.test(n) && !state.people.some(x=>x.name.toLowerCase()===n.toLowerCase())){ state.people.push({name:n, role:r}); out.push(n+(r?` (${r})`:'')); }
+  });
+  (Array.isArray(j.obiettivi)?j.obiettivi:[]).slice(0,2).forEach(g=>{
+    g=clean(g);
+    if (g.length>3 && !state.goals.some(x=>x.toLowerCase().slice(0,30)===g.toLowerCase().slice(0,30))){ state.goals.push(g); out.push('🎯 '+g); }
+  });
+  return out;
+}
+let learning=false;
+async function smartLearn(text){
+  if (state.settings.smartLearn===false || learning || !ollamaOnline || !state.settings.model) return;
+  if (text.trim().split(/\s+/).length<4 || !RE_PERSONAL.test(text)) return;   // solo frasi che parlano di te
+  learning=true;
+  try {
+    const known=JSON.stringify({ profilo:state.profile, fatti:state.facts.slice(-25).map(f=>f.text), persone:state.people.map(p=>p.name) }).slice(0,2500);
+    const prompt=`Sei il modulo di memoria di un assistente personale.
+Leggi il MESSAGGIO dell'utente ed estrai SOLO informazioni NUOVE, personali e durature su di lui/lei
+(nome, età, città, lavoro/studio, gusti, abitudini, persone care con il loro ruolo, obiettivi, eventi importanti).
+Ignora saluti, domande generiche, opinioni passeggere e tutto ciò che è già noto.
+
+GIÀ NOTO: ${known}
+
+MESSAGGIO: ${text.slice(0,800)}
+
+Rispondi SOLO con un oggetto JSON con queste chiavi:
+{"profilo": {"chiave": "valore"}, "fatti": ["frase breve in terza persona"], "persone": [{"nome": "...", "ruolo": "..."}], "obiettivi": ["..."]}
+Se non c'è niente di nuovo usa oggetti e liste vuoti.`;
+    const resp=await fetch(`${state.settings.ollamaUrl}/api/chat`, { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model:state.settings.model, stream:false, format:'json', messages:[{role:'user', content:prompt}], options:{temperature:0, num_predict:300} }) });
+    if (!resp.ok) return;
+    const raw=stripThink((await resp.json()).message?.content || ''), mm=raw.match(/\{[\s\S]*\}/);
+    const learned = mm ? mergeLearned(JSON.parse(mm[0])) : [];
+    if (learned.length){ save(); renderAll(); toast('🧠 Ho capito: '+learned.slice(0,3).join(', '),'success'); }
+  } catch {} finally { learning=false; }
+}
+
+// ---------- RIASSUNTO A LUNGO TERMINE ----------
+let summarizing=false;
+async function maybeSummarize(){
+  if (summarizing || !ollamaOnline || !state.settings.model) return;
+  if (state.meta.exchangeCount-(state.meta.lastSummaryAt||0) < 12) return;   // ogni 12 scambi
+  summarizing=true; state.meta.lastSummaryAt=state.meta.exchangeCount; save();
+  try {
+    const recent=state.conversation.slice(-24).map(m=>`${m.role==='maik'?'MAIK':'Utente'}: ${stripThink(m.content).slice(0,300)}`).join('\n');
+    const r=stripThink(await ollamaOnce(`Riassunto precedente:\n${state.summary||'(nessuno)'}\n\nUltime conversazioni:\n${recent}\n\nScrivi un riassunto aggiornato e breve (max 8 righe, in italiano, in terza persona) di chi è l'utente e dei temi importanti emersi: umore, progetti, persone, preferenze. Solo il riassunto.`)).trim();
+    if (r.length>20){ state.summary=r.slice(0,1500); save(); }
+  } catch {} finally { summarizing=false; }
+}
+async function afterReply(userText){ await smartLearn(userText); await maybeSummarize(); }
+
+// ============================================================
 // INIT
 // ============================================================
 async function init(){
@@ -2414,14 +3006,34 @@ async function init(){
   initSpeechRecognition();
   renderAll();
   updateDays();
+  // V8: personalità (riconosce anche una persona scritta a mano), grafico umore
+  if (!PERSONAS[state.settings.personaKey] || PERSONAS[state.settings.personaKey].txt !== state.settings.persona)
+    state.settings.personaKey = Object.keys(PERSONAS).find(k=>PERSONAS[k].txt===state.settings.persona) || 'custom';
+  renderPersonas();
+  drawMoodChart();
 
   if (state.conversation.length) restoreConversation();
   else greetUser();
+
+  // V8: promemoria che suonano (anche quelli scaduti mentre la pagina era chiusa)
+  checkDue();
+  setInterval(checkDue, 3000);
 
   await checkOllama();
   updateModelBadge();
   setInterval(checkOllama, 15000);
   fetchWeather();
+
+  // V8: briefing automatico, una volta al giorno, quando ci conosciamo già
+  const oggi = new Date().toDateString();
+  if (state.meta.lastBriefing !== oggi && (state.profile.nome || state.meta.exchangeCount > 0)) {
+    state.meta.lastBriefing = oggi; save();
+    setTimeout(async ()=>{
+      const b = await buildBriefing();
+      addMessage('maik', b);
+      state.conversation.push({ role:'maik', content:b, ts:Date.now() }); save();
+    }, 1200);
+  }
 
   if (window.speechSynthesis){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
 

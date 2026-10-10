@@ -37,9 +37,46 @@ ollama pull llava        # visione (per far "vedere" MAIK) — compatibile ovunq
 >
 > `llava` e `moondream` funzionano su praticamente tutte le versioni di Ollama.
 
+**Modelli che "ragionano"** (opzionale, serve un Ollama aggiornato): `deepseek-r1:8b` o `qwen3:8b`.
+Pensano prima di rispondere: MAIK V8 mostra il loro ragionamento in un riquadro **💭 Ragionamento** a parte,
+e non lo legge ad alta voce né lo salva in memoria.
+
 ---
 
-## MAIK // CORE V7.0 — `index.html`
+## 🧠 Novità V8 — più intelligente (client e server)
+
+| | Cosa fa |
+|---|---|
+| 🧠 **Impara da solo con l'IA** | Dopo ogni frase in cui parli di te, il modello estrae i fatti nuovi (città, lavoro, persone, gusti, obiettivi…) in JSON e li aggiunge alla memoria, senza doppioni. Vedi un avviso *«🧠 Ho capito: …»*. Funziona con frasi normali, non solo con «mi chiamo…». Si spegne in ⚙ Impostazioni (client) o con `MAIK_APPRENDIMENTO_IA=0` (server). |
+| 🔎 **Memoria rilevante** | Nel prompt non finiscono più "gli ultimi 15 ricordi" a caso, ma quelli **pertinenti a ciò di cui stai parlando** + i più recenti. Anche un ricordo di mesi fa torna fuori al momento giusto. |
+| 📜 **Riassunto a lungo termine** | Ogni 12 scambi il client aggiorna un riassunto di chi sei e dei temi importanti (il server lo faceva già): MAIK non dimentica le conversazioni lunghe. |
+| ⚡ **Azioni vere, anche offline** | Timer, **promemoria con orario che suonano davvero** (suono + voce + notifica di sistema, anche quelli scaduti mentre la pagina era chiusa), calcoli, ora nel mondo, lista della spesa, note, dado/moneta, meteo. Scrivi **aiuto** per l'elenco. |
+| ☀️ **Briefing del giorno** | Data, meteo, promemoria di oggi, un obiettivo, la lista, una frase del giorno. Parte da solo la prima volta che apri MAIK nella giornata, o scrivi **briefing**. |
+| 🎭 **6 personalità** | 🫂 Amico · 💪 Coach · 🎓 Prof · 😂 Comico · 🧘 Zen · 🧠 Genio — con un click nella barra laterale o scrivendo «modalità coach». |
+| 💙 **Grafico dell'umore** | L'andamento di come ti senti, nella barra laterale. |
+| 💭 **Ragionamento separato** | Supporto ai modelli che pensano (`<think>`), vedi sopra. |
+| 🐛 **Bug corretti** | «vivo a Milano e ho un cane…» salvava la città *"Milano E Ho Un Cane Che"*; «sono un po' triste» salvava il lavoro *"po triste"*; «sto a casa…» diventava una città. Ora le frasi si fermano alle congiunzioni. Su telefono l'intestazione non esce più dallo schermo. |
+
+### Cosa puoi dire a MAIK (azioni istantanee)
+
+```text
+metti un timer di 10 minuti          · annulla il timer · svegliami domani alle 7
+ricordami alle 18 di chiamare la mamma · ricordami tra 20 minuti di girare la pasta
+che promemoria ho?                   · cancella i promemoria
+aggiungi latte, pane e uova alla lista · cosa c'è nella lista? · togli pane dalla lista
+quanto fa 15% di 230                 · radice di 144 · 3 per 4 più 2
+che ore sono a Tokyo?                · che giorno è?
+che tempo fa a Milano?               · briefing
+lancia due dadi · testa o croce · numero a caso tra 1 e 50
+prendi nota: il wifi è Casa123
+modalità coach / prof / comico / zen / genio / amico
+```
+
+Il riconoscimento è prudente: frasi normali come *«sono sveglia da 3 ore»*, *«ho perso il promemoria»* o *«dimmi una lista di 5 film»* vanno all'IA, non diventano comandi.
+
+---
+
+## MAIK // CORE V8 — `index.html`
 
 Assistente AI personale in un **singolo file HTML**. Nessuna installazione, nessun build: apri `index.html` nel browser e funziona. Si connette a un modello locale tramite **Ollama** e ricorda tutto in `localStorage`.
 
@@ -102,7 +139,7 @@ Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di ret
 
 ---
 
-## MAIK — Server V6.0 — `maik_server.py`
+## MAIK — Server V8 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
@@ -114,6 +151,13 @@ python maik_server.py     # si apre da solo nel browser su :8137
 Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **sfera 3D animata + chat in streaming + pannello 🧰 strumenti + 🫂 Modalità Amico + 👁️ visione webcam** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
 
 Anche il server ha la **🫂 Modalità Amico** (ti vede, ti ascolta e ti parla) e il pulsante **👁️ Guarda**: cattura un fotogramma dalla webcam e lo manda al modello multimodale (`MAIK_MODELLO_VISIONE`) tramite il nuovo endpoint `POST /vedi`, e MAIK descrive cosa vede.
+
+### Nuovi endpoint V8
+
+`GET /promemoria` · `GET /promemoria/scaduti` (la GUI li controlla ogni 4 s e fa suonare l'allarme) · `POST /promemoria/completa` ·
+`GET`/`POST /lista` · `GET /briefing` · `POST /personalita` · `GET /appreso` (cosa ha imparato l'IA).
+Promemoria e lista sono salvati su disco in `dati_maik/promemoria.json` e `dati_maik/lista.json`.
+L'ora nelle altre città funziona anche su Windows senza il pacchetto `tzdata` (regole dell'ora legale integrate).
 
 ### Novità V6.0 rispetto a v5.0
 
@@ -130,13 +174,16 @@ Eredita da v5.0: profilo ricco, memoria episodica, timeline, umore tracker, rice
 
 ```bash
 MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maik_server.py
+MAIK_APPRENDIMENTO_IA=0 python maik_server.py     # spegne l'apprendimento con l'IA
 ```
 
 ## Frasi che MAIK impara da solo
+
+Con la V8 l'IA estrae i fatti da **qualsiasi** frase in cui parli di te. Queste vengono riconosciute anche senza IA:
 
 - `Mi chiamo Maik` → salva il nome
 - `Ho 28 anni` → salva l'età
 - `Vivo a Roma` → salva la città
 - `Mi piace la pizza` / `Odio il traffico` → salva i gusti
 - `Ti insegno che ...` → memorizza un fatto
-- `Ricordami di chiamare il dottore domani alle 9` → crea un promemoria
+- `Ricordami di chiamare il dottore domani alle 9` → crea un promemoria **che suona domani alle 9**

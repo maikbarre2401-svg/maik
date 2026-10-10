@@ -1992,7 +1992,8 @@ async function sendMessage(override, opts={}) {
   const lastUser = [...state.conversation].reverse().find(m=>m.role==='user');
   if (!att && !(regen && lastUser && lastUser.attach)) {
     let local = null;
-    try { local = await smartRouter(text); } catch(e) { local = null; }
+    const toAgent = state.settings.agent!==false && multiIntent(text) && ollamaOnline && state.settings.model;
+    if (!toAgent) { try { local = await smartRouter(text); } catch(e) { local = null; } }
     if (local) {
       document.getElementById('send-btn').disabled = false;
       finishReply(local);
@@ -3576,6 +3577,11 @@ const ROUTES = [
     return null;
   },
 ];
+// V10: più richieste nella stessa frase («mettimi in lista… e ricordami tra 20 minuti…»): il router a regole
+// ne capirebbe una sola (e male), quindi se l'agente è acceso e Ollama risponde ci pensa il modello, a tutte.
+const RE_INTENTS = ['ricordami|ricordarmi|avvisami|promemoria', 'lista', 'timer|sveglia|svegliami', 'meteo|che tempo fa|previsioni',
+  'quanto fa|calcola|calcolami', 'prendi nota|annota|annotati|segnati', 'che ore sono'].map(x=>new RegExp('(?<![a-zà-ÿ])(?:'+x+')(?![a-zà-ÿ])','i'));
+function multiIntent(t){ return RE_INTENTS.filter(rx=>rx.test(t||'')).length>=2; }
 async function smartRouter(text){
   const t=text.trim(), tl=t.toLowerCase();
   for (const route of ROUTES){

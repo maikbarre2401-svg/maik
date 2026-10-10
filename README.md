@@ -41,6 +41,31 @@ ollama pull llava        # visione (per far "vedere" MAIK) — compatibile ovunq
 Pensano prima di rispondere: MAIK V8 mostra il loro ragionamento in un riquadro **💭 Ragionamento** a parte,
 e non lo legge ad alta voce né lo salva in memoria.
 
+**Per l'agente (V10)** vanno meglio i modelli che seguono bene le istruzioni: `qwen2.5:7b` / `qwen2.5:14b` o `llama3.1`.
+I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strumenti: MAIK funziona lo stesso, solo che agisce meno da solo.
+
+---
+
+## 🤖 Novità V10 — agente, documenti, chat, amico vero, app (client e server)
+
+| | Cosa cambia |
+|---|---|
+| 🤖 **MAIK agisce da solo** | Non servono più le frasi esatte: chiedi le cose **a parole tue** («stasera pasta, metti in lista gli ingredienti e avvisami tra 20 minuti di buttarla») e il modello usa i suoi **strumenti**: promemoria, timer, lista, note, obiettivi, personalità, **meteo**, **ora nel mondo**, **calcoli**, **ricerca nei documenti** e **nella memoria**. Per i dati che non sa (meteo, calcoli, ricerche) fa un **secondo giro**: riceve i risultati veri e finisce la risposta. Sotto la risposta vedi i **chip** di cosa ha fatto (✓ verde, ✗ rosso se qualcosa non va), anche **in diretta**. Ogni richiesta è controllata prima di essere eseguita (niente codice, calcolatrice sicura, timer max 48 ore, niente doppioni dopo «rigenera»). Si spegne in ⚙ Impostazioni (client) o con `MAIK_AGENTE=0` (server). |
+| 📚 **I tuoi documenti** | Carica appunti, ricette, contratti, manuali, codice… (trascina, scegli o incolla il testo; dal 📎 c'è anche «salva nei documenti»). MAIK li divide in pezzi e, quando gli fai una domanda, mette nel prompt **solo i pezzi pertinenti** (ricerca BM25) e **cita la fonte** `[nome file]`, che vedi come badge e come chip 📄 (passa sopra per l'anteprima). Nel client restano nel browser (IndexedDB), nel server su disco. |
+| 💬 **Più chat** | Nuova chat, rinomina, elimina, dalla barra laterale o con **Ctrl+K**. Ogni chat ha la sua cronologia e il suo contesto, ma **la memoria su di te è una sola**. Prendono il nome dalla prima domanda e alla riapertura ritrovi la chat dov'eri rimasto. La vecchia conversazione diventa la **⭐ Chat principale** (anche dai backup V9). |
+| 🔁 **Follow-up da amico vero** | Se dici «domani ho l'esame di storia», «giovedì vado dal dentista alle 15» o «stasera esco con Giulia», MAIK se lo segna (chip 🔁) e **al momento giusto te lo chiede da solo**: «Ehi! 🤞 Com'è andato l'esame di storia?» — con notifica, voce e suono. Nel frattempo ti fa il tifo, e quando rispondi sa di averti appena chiesto. Le regole capiscono le frasi tipiche anche offline; l'IA migliora la domanda e trova gli eventi detti in altri modi. Non scatta con «domani ho fame», «domani non ho niente», «oggi ho avuto l'esame» o con le domande. |
+| 📲 **App installabile** (server) | `maik_server.py` ora è una **PWA**: icona generata dal server (nucleo + M), manifest, service worker. In Chrome/Edge: **📲 Installa MAIK come app** nella barra laterale (o dal menu del browser) → si apre in una finestra sua, come un programma. |
+| 🐛 **Bug corretti** | Sul telefono la barra laterale partiva 48 px sotto la barra in alto (client e server); «sabato alle 9» detto di sabato non veniva capito; nel client, con il browser pieno il salvataggio poteva bloccarsi (ora accorcia le chat vecchie e avvisa). |
+
+Esempi da provare:
+
+```text
+stasera pasta al pomodoro: mettimi in lista gli ingredienti e ricordami tra 20 minuti di buttarla
+mi fai il conto di 1200 più il 22% di IVA?            che ore sono adesso a New York e a Tokyo?
+cosa dice il mio contratto sul deposito?              (dopo averlo caricato in 📚)
+domani ho l'esame di storia                           → il giorno dopo: «com'è andato?»
+```
+
 ---
 
 ## ✨ Novità V9 — grafica e sistema (client e server)
@@ -93,7 +118,7 @@ Il riconoscimento è prudente: frasi normali come *«sono sveglia da 3 ore»*, *
 
 ---
 
-## MAIK // CORE V9 — `index.html`
+## MAIK // CORE V10 — `index.html`
 
 Assistente AI personale in un **singolo file HTML**. Nessuna installazione, nessun build: apri `index.html` nel browser e funziona. Si connette a un modello locale tramite **Ollama** e ricorda tutto in `localStorage`.
 
@@ -152,11 +177,11 @@ Pulsante **🫂 AMICO** in alto: trasforma MAIK in un compagno che **ti vede e t
 
 ## Privacy
 
-Tutti i dati restano nel tuo browser (`localStorage`). Le uniche chiamate di rete sono: Ollama (in locale) e `wttr.in` per il meteo.
+Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB). Le uniche chiamate di rete sono: Ollama (in locale) e `wttr.in` per il meteo.
 
 ---
 
-## MAIK — Server V9 — `maik_server.py`
+## MAIK — Server V10 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
@@ -168,6 +193,19 @@ python maik_server.py     # si apre da solo nel browser su :8137
 Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **sfera 3D animata + chat in streaming + pannello 🧰 strumenti + 🫂 Modalità Amico + 👁️ visione webcam** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
 
 Anche il server ha la **🫂 Modalità Amico** (ti vede, ti ascolta e ti parla) e il pulsante **👁️ Guarda**: cattura un fotogramma dalla webcam e lo manda al modello multimodale (`MAIK_MODELLO_VISIONE`) tramite il nuovo endpoint `POST /vedi`, e MAIK descrive cosa vede.
+
+### Nuovi endpoint V10
+
+| | |
+|---|---|
+| Chat | `GET /sessioni` · `GET /sessioni/storia?id=` · `POST /sessioni/nuova` `{titolo?}` · `POST /sessioni/rinomina` `{id, titolo}` · `POST /sessioni/elimina` `{id}` |
+| Documenti | `GET /documenti` · `POST /documenti` `{nome, contenuto}` · `POST /documenti/elimina` `{id}` · `GET /documenti/cerca?q=` |
+| Follow-up | `GET /seguiti` (in attesa) · `GET /seguiti/scaduti?sessione=` (quelli da chiedere ora: diventano messaggi di MAIK) · `POST /seguiti/elimina` `{id}` |
+| App | `GET /manifest.webmanifest` · `GET /sw.js` · `GET /icona-192.png` · `GET /icona-512.png` |
+
+`POST /chat/stream` accetta `"sessione"`; durante la risposta può mandare eventi `{"strumento": {...}}` (l'agente sta usando uno strumento)
+e alla fine restituisce anche `"azioni"`, `"fonti"`, `"seguito"`, `"sessione"` e `"titolo"`.
+Nuovi file in `dati_maik/`: `sessioni.json`, `documenti.json`, `seguiti.json` (inclusi in esporta/importa).
 
 ### Nuovi endpoint V9
 
@@ -199,7 +237,14 @@ Eredita da v5.0: profilo ricco, memoria episodica, timeline, umore tracker, rice
 ```bash
 MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maik_server.py
 MAIK_APPRENDIMENTO_IA=0 python maik_server.py     # spegne l'apprendimento con l'IA
+MAIK_AGENTE=0 python maik_server.py               # spegne gli strumenti dell'agente
+MAIK_SEGUITI_RITARDO=30 python maik_server.py     # demo: chiede «com'è andata?» dopo 30 secondi
 ```
+
+> 📲 Per installarlo sul **telefono** come app serve HTTPS (i browser lo chiedono per i service worker); sul computer
+> con `localhost` funziona subito. Per usarlo dal telefono in casa: `MAIK_HOST=0.0.0.0 python maik_server.py`
+> e apri `http://IP-DEL-PC:8137`: chat, documenti e memoria funzionano; microfono, webcam e installazione
+> invece vogliono HTTPS (regola dei browser).
 
 ## Frasi che MAIK impara da solo
 

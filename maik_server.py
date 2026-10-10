@@ -1808,6 +1808,18 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 💬 Più chat separate, una sola memoria · 🔁 se mi dici «domani ho l'esame», dopo ti chiedo com'è andata.
 Per tutto il resto, chiacchieriamo! 💚"""
 
+# Più richieste nella stessa frase («mettimi in lista… e ricordami tra 20 minuti…»): il router a regole
+# ne capirebbe una sola (e male), quindi se l'agente è acceso ci pensa il modello, a tutte.
+_RE_INTENTI = [re.compile(x, re.I) for x in (
+    r"\b(?:ricordami|ricordarmi|avvisami|promemoria)\b", r"\blista\b", r"\b(?:timer|sveglia|svegliami)\b",
+    r"\b(?:meteo|che tempo fa|previsioni)\b", r"\b(?:quanto fa|calcola|calcolami)\b",
+    r"\b(?:prendi nota|annota|annotati|segnati)\b", r"\bche ore sono\b")]
+
+
+def multi_intento(testo):
+    return sum(1 for rx in _RE_INTENTI if rx.search(testo or "")) >= 2
+
+
 _RE_TRIGGER_PROMEMORIA = re.compile(
     r"\b(?:per favore\s+)?(?:puoi\s+)?(?:ricordami|ricordarmi|avvisami|fammi ricordare|"
     r"mettimi un promemoria|metti un promemoria|imposta un promemoria|crea un promemoria|promemoria)\b[:,]?", re.I)
@@ -2602,7 +2614,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         cmd = self._gestisci_comando(testo)
         if cmd:
             return cmd
-        azione = Azioni.prova(testo, self.memoria)
+        azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
         if azione:
             self.memoria.salva_scambio(testo, azione)
             return self._meta(ok=True, risposta=azione, azione=True)
@@ -2617,6 +2629,9 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
         threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         return self._meta(ok=True, risposta=risposta, imparato=imparato, azioni=azioni)
+
+    def _lascia_all_agente(self, testo):
+        return CONFIG["agente"] and multi_intento(testo) and self.cervello.disponibile()
 
     def _nota_seguito(self, testo):
         """Regole veloci: se racconti un evento futuro, Maik si segna di chiederti com'è andata."""
@@ -2639,7 +2654,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             cmd = self._gestisci_comando(testo)
             if cmd:
                 return {"done": True, "comando": cmd}
-            azione = Azioni.prova(testo, self.memoria)   # azioni pratiche: istantanee, anche offline
+            # azioni pratiche: istantanee, anche offline (più richieste insieme → l'agente)
+            azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
             if azione:
                 on_token(azione)
                 self.memoria.salva_scambio(testo, azione, sid)

@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v9.0                      ║
+║                  MAIK — Server v10.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,20 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v10.0 — AGENTE, DOCUMENTI, CHAT, AMICO VERO, APP:
+  • 🤖 Agente: il modello decide da solo di usare gli strumenti (promemoria, timer,
+    lista, note, obiettivi, meteo, ora nel mondo, calcoli, ricerca nei documenti e
+    nella memoria). Tag invisibili [[azione:{...}]] controllati ed eseguiti dal server;
+    per meteo/calcoli/ricerche c'è un secondo giro con i dati veri.
+  • 📚 I tuoi documenti: carichi file di testo, Maik li spezza e li cerca (BM25) e
+    risponde citando la fonte [nome file].
+  • 💬 Più conversazioni separate (nuova, rinomina, elimina), con la stessa memoria.
+  • 🔁 Follow-up da amico: «domani ho l'esame» → il giorno dopo «com'è andato?».
+  • 📲 App installabile (manifest + service worker + icone generate dal server).
+  • Nuovi endpoint: /sessioni*, /documenti*, /seguiti*, /manifest.webmanifest, /sw.js;
+    /chat/stream accetta "sessione" e restituisce "azioni", "fonti", "seguito".
+  • Variabili: MAIK_AGENTE=0 spegne l'agente · MAIK_SEGUITI_RITARDO=secondi (demo)
 
 NOVITÀ v9.0 — GRAFICA E SISTEMA:
   • Nucleo neurale 3D nitido su ogni schermo (sinapsi, impulsi, anelli HUD,
@@ -60,6 +74,8 @@ import time
 import uuid
 import random
 import shutil
+import struct
+import zlib
 import operator
 import datetime
 import threading
@@ -108,6 +124,13 @@ che avete vissuto insieme, citalo con calore.""",
     "file_relazioni": "relazioni.json",
     "file_promemoria": "promemoria.json",
     "file_lista":     "lista.json",
+    "file_sessioni":  "sessioni.json",     # v10: più conversazioni, stessa memoria
+    "file_documenti": "documenti.json",    # v10: i tuoi documenti (ricerca con fonti)
+    "file_seguiti":   "seguiti.json",      # v10: "com'è andato l'esame?"
+    # agente: il modello può usare gli strumenti (promemoria, lista, meteo, calcoli…) da solo
+    "agente": _env("MAIK_AGENTE", "1") not in ("0", "no", "false"),
+    # follow-up: dopo quanti secondi richiedere com'è andata (0 = automatico, dopo l'evento)
+    "seguiti_ritardo": int(_env("MAIK_SEGUITI_RITARDO", "0")),
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -117,6 +140,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
+VERSIONE  = "10.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -164,6 +188,22 @@ _STOP = set(("il lo la i gli le un uno una di da in con su per tra fra e o ma ch
 def _token(s):
     """Parole significative (senza accenti, senza stop-word, troncate per gestire plurali/verbi)."""
     return {w[:6] for w in _normalizza(s).split() if len(w) > 2 and w not in _STOP}
+
+_STOP_DOMANDE = set(("quanto quanta quanti quante quale quali qual dimmi sai sapere puoi potresti vorrei voglio "
+                     "posso devo fammi spiegami ciao grazie maik dire detto cosa cose qualcosa ecco allora "
+                     "nostro nostra loro essere avere").split())
+
+def _parole(s):
+    """Come _token ma in lista (con le ripetizioni) e con i numeri: serve alla ricerca BM25."""
+    return [w[:6] for w in _normalizza(s).split()
+            if (len(w) > 2 or w.isdigit()) and w not in _STOP and w not in _STOP_DOMANDE]
+
+def _titolo_chat(testo):
+    """Titolo automatico di una chat dalla prima domanda: corto e tagliato a parola intera."""
+    t = re.sub(r"\s+", " ", re.sub(r"\[📎[^\]]*\]", "", testo)).strip(" ?!.,")
+    if len(t) > 42:
+        t = t[:42].rsplit(" ", 1)[0] + "…"
+    return (t[:1].upper() + t[1:]) if t else "Nuova chat"
 
 _PAROLE_TAGLIO = set(("e ed ma con che ho sono sto dove perche perché pero però quando per mi ti ci poi anche "
                       "se come da del della nel nella in a al alla oggi ieri domani adesso ora molto tanto "
@@ -271,7 +311,12 @@ class Memoria:
         self.relazioni = self._carica(CONFIG["file_relazioni"], {})
         self.promemoria = self._carica(CONFIG["file_promemoria"], [])
         self.lista     = self._carica(CONFIG["file_lista"],     [])
+        self.sessioni  = self._carica(CONFIG["file_sessioni"],  [])
+        self.documenti = self._carica(CONFIG["file_documenti"], [])
+        self.seguiti   = self._carica(CONFIG["file_seguiti"],   [])
         self._segna_giorno()
+        self._assicura_principale()
+        self._indicizza_documenti()
 
     # ── I/O ─────────────────────────────────────────────────
     def _percorso(self, filename):
@@ -413,24 +458,42 @@ class Memoria:
             self._salva(CONFIG["file_relazioni"], self.relazioni)
 
     # ── Diario conversazioni ─────────────────────────────────
-    def salva_scambio(self, tu, ai):
+    def salva_scambio(self, tu, ai, sessione=None, extra=None):
+        """Salva uno scambio nel diario. `sessione` = la chat a cui appartiene (v10);
+        `extra` = azioni/fonti da mostrare di nuovo quando riapri la chat."""
         with self._lock:
-            self.diario.append({
+            sid = sessione or self.PRINCIPALE
+            voce = {
                 "quando": datetime.datetime.now().isoformat(timespec="seconds"),
                 "tu": tu[:4000],      # niente file interi nel diario: resta leggero e veloce
                 "ai": ai[:6000],
-            })
+                "sessione": sid,
+            }
+            if extra:
+                voce.update({k: v for k, v in extra.items() if v})
+            self.diario.append(voce)
             if len(self.diario) > 2000:
                 self.diario = self.diario[-2000:]
             self._salva(CONFIG["file_diario"], self.diario)
+            s = self._sessione(sid)
+            if s:
+                s["aggiornata"] = datetime.datetime.now().isoformat(timespec="milliseconds")
+                if s.get("auto") and tu.strip():          # la chat prende il nome dalla prima domanda
+                    s["titolo"], s["auto"] = _titolo_chat(tu), False
+                self._salva(CONFIG["file_sessioni"], self.sessioni)
 
-    def rimuovi_ultimo_scambio(self, tu=None):
-        """Per «rigenera»: toglie l'ultimo scambio se è proprio quella domanda."""
+    def rimuovi_ultimo_scambio(self, tu=None, sessione=None):
+        """Per «rigenera»: toglie l'ultimo scambio della chat se è proprio quella domanda."""
         with self._lock:
-            if self.diario and (tu is None or self.diario[-1].get("tu", "").strip() == tu.strip()[:4000].strip()):
-                self.diario.pop()
-                self._salva(CONFIG["file_diario"], self.diario)
-                return True
+            sid = sessione or self.PRINCIPALE
+            for i in range(len(self.diario) - 1, -1, -1):
+                if (self.diario[i].get("sessione") or self.PRINCIPALE) != sid:
+                    continue
+                if tu is None or self.diario[i].get("tu", "").strip() == tu.strip()[:4000].strip():
+                    self.diario.pop(i)
+                    self._salva(CONFIG["file_diario"], self.diario)
+                    return True
+                return False
             return False
 
     def dimentica_elemento(self, tipo, indice):
@@ -443,9 +506,268 @@ class Memoria:
             self._salva(CONFIG[file_], lista)
             return True
 
-    def ultimi_scambi(self, n=6):
+    def ultimi_scambi(self, n=6, sessione=None):
         with self._lock:
-            return list(self.diario[-n:])
+            if sessione is None:
+                return list(self.diario[-n:])
+            return [x for x in self.diario if (x.get("sessione") or self.PRINCIPALE) == sessione][-n:]
+
+    # ── Conversazioni (v10): più chat, una sola memoria ──────
+    PRINCIPALE = "principale"
+
+    def _sessione(self, sid):
+        for s in self.sessioni:
+            if s.get("id") == sid:
+                return s
+        return None
+
+    def _assicura_principale(self):
+        with self._lock:
+            if not self._sessione(self.PRINCIPALE):
+                ultimo = self.diario[-1]["quando"] if self.diario else datetime.datetime.now().isoformat(timespec="seconds")
+                self.sessioni.insert(0, {"id": self.PRINCIPALE, "titolo": "Chat principale",
+                                         "creata": ultimo, "aggiornata": ultimo})
+                self._salva(CONFIG["file_sessioni"], self.sessioni)
+
+    def sessione_valida(self, sid):
+        with self._lock:
+            return sid if sid and self._sessione(sid) else self.PRINCIPALE
+
+    def sessioni_elenco(self):
+        with self._lock:
+            self._assicura_principale()
+            conta, ultima = {}, {}
+            for sc in self.diario:
+                sid = sc.get("sessione") or self.PRINCIPALE
+                conta[sid] = conta.get(sid, 0) + 1
+                if sc.get("tu"):
+                    ultima[sid] = sc["tu"][:70]
+            out = [dict(s, n=conta.get(s["id"], 0), anteprima=ultima.get(s["id"], "")) for s in self.sessioni]
+        return sorted(out, key=lambda s: s.get("aggiornata") or "", reverse=True)
+
+    def crea_sessione(self, titolo=""):
+        titolo = re.sub(r"\s+", " ", str(titolo or "")).strip()[:60]
+        ora = datetime.datetime.now().isoformat(timespec="milliseconds")
+        with self._lock:
+            s = {"id": uuid.uuid4().hex[:10], "titolo": titolo or "Nuova chat",
+                 "creata": ora, "aggiornata": ora, "auto": not titolo}
+            self.sessioni.append(s)
+            if len(self.sessioni) > 200:             # tiene le 200 chat più recenti
+                vecchie = sorted((x for x in self.sessioni if x["id"] != self.PRINCIPALE),
+                                 key=lambda x: x.get("aggiornata") or "")[:len(self.sessioni) - 200]
+                via = {x["id"] for x in vecchie}
+                self.sessioni = [x for x in self.sessioni if x["id"] not in via]
+                self.diario = [x for x in self.diario if x.get("sessione") not in via]
+                self._salva(CONFIG["file_diario"], self.diario)
+            self._salva(CONFIG["file_sessioni"], self.sessioni)
+            return dict(s, n=0, anteprima="")
+
+    def rinomina_sessione(self, sid, titolo):
+        titolo = re.sub(r"\s+", " ", str(titolo or "")).strip()[:60]
+        with self._lock:
+            s = self._sessione(sid)
+            if not s or not titolo:
+                return False
+            s["titolo"], s["auto"] = titolo, False
+            self._salva(CONFIG["file_sessioni"], self.sessioni)
+            return True
+
+    def elimina_sessione(self, sid):
+        """Cancella una chat e i suoi messaggi (la memoria su di te resta). La principale si svuota soltanto."""
+        with self._lock:
+            if not self._sessione(sid):
+                return False
+            prima = len(self.diario)
+            self.diario = [x for x in self.diario if (x.get("sessione") or self.PRINCIPALE) != sid]
+            if len(self.diario) != prima:
+                self._salva(CONFIG["file_diario"], self.diario)
+            if sid == self.PRINCIPALE:
+                self._sessione(sid)["aggiornata"] = datetime.datetime.now().isoformat(timespec="seconds")
+            else:
+                self.sessioni = [x for x in self.sessioni if x["id"] != sid]
+            self._salva(CONFIG["file_sessioni"], self.sessioni)
+            return True
+
+    def storia_sessione(self, sid, n=150):
+        with self._lock:
+            sid = sid if self._sessione(sid) else self.PRINCIPALE
+            voci = [x for x in self.diario if (x.get("sessione") or self.PRINCIPALE) == sid][-n:]
+            return [{k: x[k] for k in ("quando", "tu", "ai", "azioni", "fonti", "seguito") if k in x} for x in voci]
+
+    # ── Documenti (v10): la tua base di conoscenza, con fonti ─
+    MAX_DOC_CARATTERI = 400_000
+    MAX_DOC_TOTALE = 4_000_000
+
+    @staticmethod
+    def _spezza(testo, dim=900, sovrapp=150):
+        """Divide un testo in pezzi di ~dim caratteri, tagliando a fine paragrafo/frase quando si può."""
+        testo = re.sub(r"\r\n?", "\n", testo)
+        testo = re.sub(r"[ \t]+", " ", testo)
+        testo = re.sub(r"\n{3,}", "\n\n", testo).strip()
+        pezzi, i, n = [], 0, len(testo)
+        while i < n:
+            fine = min(n, i + dim)
+            if fine < n:
+                fin = testo[i:fine]
+                taglio = max(fin.rfind("\n\n"), fin.rfind(". "), fin.rfind("\n"), fin.rfind("? "), fin.rfind("! "))
+                if taglio > dim * 0.5:
+                    fine = i + taglio + 1
+            pezzo = testo[i:fine].strip()
+            if pezzo:
+                pezzi.append(pezzo)
+            if fine >= n:
+                break
+            nuovo = max(fine - sovrapp, i + 1)
+            spazio = testo.find(" ", nuovo, fine)
+            i = spazio + 1 if spazio >= 0 else nuovo
+        return pezzi
+
+    def _indicizza_documenti(self):
+        """Indice BM25 in memoria (si ricostruisce in un attimo: niente da salvare)."""
+        with self._lock:
+            indice, df = [], {}
+            for d in self.documenti:
+                nome_tok = _parole(re.sub(r"\.\w{1,5}$", "", d.get("nome", "")).replace("_", " ").replace("-", " "))
+                for j, p in enumerate(d.get("pezzi", [])):
+                    tf = {}
+                    for w in _parole(p) + nome_tok:
+                        tf[w] = tf.get(w, 0) + 1
+                    indice.append((d["id"], d.get("nome", ""), j, tf, sum(tf.values()) or 1, p))
+                    for w in tf:
+                        df[w] = df.get(w, 0) + 1
+            self._doc_indice, self._doc_df = indice, df
+            self._doc_media = (sum(x[4] for x in indice) / len(indice)) if indice else 1
+
+    def cerca_documenti(self, query, k=3, rigida=True):
+        """I pezzi di documento più pertinenti (BM25). `rigida`: solo quelli davvero legati alla domanda."""
+        q = set(_parole(query))
+        with self._lock:
+            indice, df, media = self._doc_indice, self._doc_df, self._doc_media
+        if not q or not indice:
+            return []
+        N, k1, b = len(indice), 1.4, 0.75
+        punti = []
+        for did, nome, j, tf, lung, testo in indice:
+            s, comuni = 0.0, 0
+            for w in q:
+                f = tf.get(w)
+                if f:
+                    comuni += 1
+                    n = df[w]
+                    s += math.log(1 + (N - n + 0.5) / (n + 0.5)) * f * (k1 + 1) / (f + k1 * (1 - b + b * lung / media))
+            # rigida: conta QUANTE parole della domanda ci sono (l'IDF da solo inganna con pochi documenti)
+            if s > 0 and (not rigida or (comuni >= min(2, len(q)) and comuni / len(q) >= 0.3)):
+                punti.append((s, comuni, did, nome, j, testo))
+        punti.sort(key=lambda x: (-x[0], x[3], x[4]))
+        return [{"doc": did, "nome": nome, "pezzo": j + 1, "testo": testo, "punteggio": round(s, 2)}
+                for s, comuni, did, nome, j, testo in punti[:k]]
+
+    @staticmethod
+    def _info_doc(d):
+        pezzi = d.get("pezzi", [])
+        return {"id": d["id"], "nome": d.get("nome", ""), "aggiunto": d.get("aggiunto", ""),
+                "caratteri": d.get("caratteri", 0), "n_pezzi": len(pezzi),
+                "anteprima": (pezzi[0][:160] if pezzi else "")}
+
+    def documenti_elenco(self):
+        with self._lock:
+            return [self._info_doc(d) for d in reversed(self.documenti)]
+
+    def aggiungi_documento(self, nome, contenuto):
+        """Ritorna (info, errore). Stesso nome = nuova versione dello stesso documento."""
+        nome = re.sub(r"[\r\n\t]+", " ", str(nome or "")).strip()[:80] or "documento.txt"
+        contenuto = str(contenuto or "").replace("\x00", "")
+        if len(contenuto.strip()) < 2:
+            return None, "Il documento è vuoto."
+        tagliato = len(contenuto) > self.MAX_DOC_CARATTERI
+        contenuto = contenuto[:self.MAX_DOC_CARATTERI]
+        with self._lock:
+            altri = [d for d in self.documenti if d.get("nome") != nome]
+            if sum(d.get("caratteri", 0) for d in altri) + len(contenuto) > self.MAX_DOC_TOTALE:
+                return None, "Spazio documenti esaurito: elimina qualche documento vecchio."
+            doc = {"id": uuid.uuid4().hex[:10], "nome": nome,
+                   "aggiunto": datetime.datetime.now().isoformat(timespec="seconds"),
+                   "caratteri": len(contenuto), "pezzi": self._spezza(contenuto)}
+            self.documenti = altri + [doc]
+            self._salva(CONFIG["file_documenti"], self.documenti)
+            self._indicizza_documenti()
+            return dict(self._info_doc(doc), tagliato=tagliato), None
+
+    def elimina_documento(self, did):
+        with self._lock:
+            prima = len(self.documenti)
+            self.documenti = [d for d in self.documenti if d.get("id") != did]
+            if len(self.documenti) == prima:
+                return False
+            self._salva(CONFIG["file_documenti"], self.documenti)
+            self._indicizza_documenti()
+            return True
+
+    # ── Follow-up (v10): «com'è andato l'esame?» ─────────────
+    def aggiungi_seguito(self, evento, quando, chiedi, domanda, fonte=""):
+        with self._lock:
+            chiave = _normalizza(evento)
+            for s in self.seguiti:      # stesso evento già in attesa (o stesso messaggio) → aggiorna
+                if not s.get("chiesto") and (_normalizza(s.get("evento", "")) == chiave
+                                             or (fonte and s.get("fonte") == fonte[:300])):
+                    s.update(evento=evento, quando=quando.isoformat(timespec="minutes"),
+                             chiedi=chiedi.isoformat(timespec="seconds"), domanda=domanda or s.get("domanda", ""))
+                    self._salva(CONFIG["file_seguiti"], self.seguiti)
+                    return dict(s)
+            s = {"id": uuid.uuid4().hex[:8], "evento": evento[:90], "domanda": domanda[:160],
+                 "quando": quando.isoformat(timespec="minutes"), "chiedi": chiedi.isoformat(timespec="seconds"),
+                 "fonte": fonte[:300], "creato": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "chiesto": None}
+            self.seguiti.append(s)
+            if len(self.seguiti) > 200:
+                self.seguiti = self.seguiti[-200:]
+            self._salva(CONFIG["file_seguiti"], self.seguiti)
+            return dict(s)
+
+    def aggiorna_seguito_da_fonte(self, fonte, domanda):
+        with self._lock:
+            for s in reversed(self.seguiti):
+                if not s.get("chiesto") and s.get("fonte") == fonte[:300]:
+                    s["domanda"] = domanda[:160]
+                    self._salva(CONFIG["file_seguiti"], self.seguiti)
+                    return True
+            return False
+
+    def seguiti_in_attesa(self):
+        with self._lock:
+            return sorted((dict(s) for s in self.seguiti if not s.get("chiesto")), key=lambda s: s["chiedi"])
+
+    def seguiti_scaduti(self):
+        """I follow-up arrivati al momento giusto: li segna come chiesti e li ritorna.
+        Se sono passati più di 4 giorni li lascia perdere (sarebbe strano chiederlo ora)."""
+        ora = datetime.datetime.now()
+        out = []
+        with self._lock:
+            cambiato = False
+            for s in self.seguiti:
+                if s.get("chiesto"):
+                    continue
+                try:
+                    chiedi = datetime.datetime.fromisoformat(s["chiedi"])
+                except (KeyError, ValueError):
+                    chiedi = ora
+                if chiedi <= ora:
+                    s["chiesto"] = ora.isoformat(timespec="seconds")
+                    cambiato = True
+                    if (ora - chiedi).days < 4:
+                        out.append(dict(s))
+            if cambiato:
+                self._salva(CONFIG["file_seguiti"], self.seguiti)
+        return out
+
+    def elimina_seguito(self, sid):
+        with self._lock:
+            prima = len(self.seguiti)
+            self.seguiti = [s for s in self.seguiti if s.get("id") != sid]
+            if len(self.seguiti) != prima:
+                self._salva(CONFIG["file_seguiti"], self.seguiti)
+                return True
+            return False
 
     def numero_scambi(self):
         return len(self.diario)
@@ -724,6 +1046,18 @@ class Memoria:
                 pr = "\n".join(f"- {p['testo']}" + (f" ({p['quando'].replace('T', ' ')[:16]})" if p.get("quando") else "")
                                for p in attivi)
                 parti.append(f"PROMEMORIA ATTIVI:\n{pr}")
+            ora = datetime.datetime.now()
+            arrivo = [s for s in self.seguiti if not s.get("chiesto")][-5:]
+            if arrivo:
+                ev = "\n".join(f"- {s['evento']} ({fmt_quando(datetime.datetime.fromisoformat(s['quando']), ora)})"
+                               for s in arrivo)
+                parti.append(f"EVENTI IN ARRIVO NELLA SUA VITA (fai il tifo, chiedi come si sente):\n{ev}")
+            appena = [s for s in self.seguiti if s.get("chiesto") and
+                      (ora - datetime.datetime.fromisoformat(s["chiesto"])).total_seconds() < 6 * 3600][-2:]
+            if appena:
+                ev = "\n".join(f"- {s['evento']}" for s in appena)
+                parti.append("GLI HAI APPENA CHIESTO COM'È ANDATA (se ne parla, reagisci davvero: "
+                             f"festeggia o consola):\n{ev}")
             giorni = self.ricordi.get("giorni_insieme", 1)
             parti.append(f"Vi conoscete da {giorni} giorni diversi di chiacchierate.")
             if not parti:
@@ -744,6 +1078,9 @@ class Memoria:
                 "diario":    self.diario[-200:],
                 "promemoria": self.promemoria,
                 "lista":     self.lista,
+                "sessioni":  self.sessioni,
+                "documenti": self.documenti,
+                "seguiti":   self.seguiti,
                 "esportato_il": datetime.datetime.now().isoformat(timespec="seconds"),
             }
 
@@ -759,12 +1096,17 @@ class Memoria:
             "diario":    ("file_diario",    "diario"),
             "promemoria": ("file_promemoria", "promemoria"),
             "lista":     ("file_lista",     "lista"),
+            "sessioni":  ("file_sessioni",  "sessioni"),
+            "documenti": ("file_documenti", "documenti"),
+            "seguiti":   ("file_seguiti",   "seguiti"),
         }
         with self._lock:
             for chiave, (cfg_key, attr) in mapping.items():
                 if chiave in dati:
                     setattr(self, attr, dati[chiave])
                     self._salva(CONFIG[cfg_key], dati[chiave])
+            self._assicura_principale()
+            self._indicizza_documenti()
 
     def reset_categoria(self, categoria):
         mapping = {
@@ -777,6 +1119,8 @@ class Memoria:
             "diario":    ("file_diario",    "diario",    []),
             "promemoria": ("file_promemoria", "promemoria", []),
             "lista":     ("file_lista",     "lista",     []),
+            "documenti": ("file_documenti", "documenti", []),
+            "seguiti":   ("file_seguiti",   "seguiti",   []),
         }
         with self._lock:
             if categoria in mapping:
@@ -784,6 +1128,8 @@ class Memoria:
                 nuovo = json.loads(json.dumps(default))
                 setattr(self, attr, nuovo)
                 self._salva(CONFIG[cfg_key], nuovo)
+                if categoria == "documenti":
+                    self._indicizza_documenti()
                 return True
             return False
 
@@ -817,6 +1163,9 @@ class Memoria:
                 "riassunto":         self.ricordi.get("riassunto", ""),
                 "n_promemoria":      len([p for p in self.promemoria if not p.get("fatto")]),
                 "n_lista":           len([x for x in self.lista if not x.get("fatto")]),
+                "n_documenti":       len(self.documenti),
+                "n_sessioni":        len(self.sessioni),
+                "n_seguiti":         len([s for s in self.seguiti if not s.get("chiesto")]),
             }
 
 
@@ -1278,7 +1627,7 @@ def parse_quando(testo, ora=None):
         h, mi = fascia
         if fascia == (0, 0) and giorno is None:
             giorno = 1
-    elif giorno:
+    elif giorno or settimana:                    # (settimana: "sabato" detto di sabato → quello dopo)
         h, mi = 9, 0                             # "domani" senza orario → alle 9
     else:
         return None, testo
@@ -1725,6 +2074,336 @@ class Azioni:
         return "\n\n".join(righe)
 
 
+# ════════════════════════════════════════════════════════════
+# FOLLOW-UP (v10) — "domani ho l'esame" → il giorno dopo: "com'è andato?"
+# ════════════════════════════════════════════════════════════
+_QUANDO_EV = (r"dopodomani|domani(?:\s+mattina|\s+pomeriggio|\s+sera)?|stasera|stamattina|stanotte|"
+              r"oggi\s+pomeriggio|questo\s+pomeriggio|oggi|"
+              r"(?:questo\s+|questa\s+|il\s+prossimo\s+|prossimo\s+)?(?:luned[iì]|marted[iì]|mercoled[iì]|"
+              r"gioved[iì]|venerd[iì]|sabato|domenica)")
+_VERBI_EV = (r"ho|avr[oò]|c'[eè]|ci\s+sar[aà]|devo|dovr[oò]|faccio|far[oò]|vado|andr[oò]|parto|partir[oò]|"
+             r"inizio|comincio|esco|uscir[oò]|gioco|giocher[oò]|sostengo|discuto|incontro|vedo|vedr[oò]|"
+             r"mi\s+sposo|mi\s+laureo|mi\s+opero|torno|cambio")
+_RE_EVENTO = re.compile(r"\b(?P<quando>" + _QUANDO_EV + r")\b(?P<mezzo>[^.!?\n]{0,30}?)\s*\b(?P<verbo>" + _VERBI_EV +
+                        r")\b(?:\s+(?P<cosa>[^.!?\n]{2,90}))?", re.I)
+_RE_EVENTO_DOPO = re.compile(r"\b(?P<verbo>ho|avr[oò]|c'[eè])\s+(?P<cosa>[^.!?\n]{3,60}?)\s+(?P<quando>" + _QUANDO_EV +
+                             r")\b(?P<orario>\s+(?:alle|verso le|ore)\s+\d{1,2}(?:[:.]\d{2})?)?", re.I)
+_NON_EVENTI = re.compile(r"^(?:fame|sete|sonno|freddo|caldo|voglia|paura|tempo|bisogno|ragione|torto|niente|nulla|"
+                         r"da fare|mal di|un po|poco|tanto|troppo|sempre|ancora|gia|già|deciso|capito|"
+                         r"(?:\w+(?:ato|uto|ito|ata|uta|ita))\b)", re.I)
+_SOLO_VERBO = {"mi sposo", "mi laureo", "mi opero", "parto", "partiro", "partirò", "torno"}
+
+
+def _domanda_seguito(verbo, cosa):
+    """La domanda da amico, giusta per il tipo di evento."""
+    v = re.sub(r"\s+", " ", verbo.lower())
+    c = re.sub(r"^(?:fare|sostenere|avere)\s+", "", cosa).strip()
+    if v == "mi sposo":
+        return "Allora, com'è andato il matrimonio?! 💍"
+    if v == "mi laureo":
+        return "Allora, com'è andata la laurea?! 🎓"
+    if v == "mi opero":
+        return "Come stai dopo l'operazione? Com'è andata?"
+    if v.startswith(("vado", "andr")):
+        return f"Com'è andata {c}?" if c else "Com'è andata?"
+    if v.startswith("part"):
+        return f"Com'è andato il viaggio{' ' + c if c else ''}?"
+    if v.startswith(("esco", "uscir")):
+        return f"Com'è andata l'uscita{' ' + c if c else ''}?"
+    if v.startswith("gioc"):
+        return "Com'è andata la partita?"
+    if v.startswith(("incontro", "vedo", "vedr")):
+        return f"Com'è andato l'incontro con {c}?" if c else "Com'è andato l'incontro?"
+    if v.startswith("torno"):
+        return f"Com'è andato il ritorno{' ' + c if c else ''}?"
+    return f"Com'è andata con {c}?" if c else "Com'è andata?"
+
+
+def calcola_chiedi(quando, con_orario, ora=None):
+    """Quando chiedere com'è andata: un paio d'ore dopo l'evento, o la sera/la mattina dopo."""
+    ora = ora or datetime.datetime.now()
+    if CONFIG["seguiti_ritardo"] > 0:                     # per demo/test: dopo N secondi
+        return ora + datetime.timedelta(seconds=CONFIG["seguiti_ritardo"])
+    if con_orario:
+        chiedi = quando + datetime.timedelta(hours=2)
+    elif quando.hour < 15:
+        chiedi = quando.replace(hour=18, minute=0)
+    elif quando.hour < 18:
+        chiedi = quando.replace(hour=21, minute=0)
+    else:
+        chiedi = (quando + datetime.timedelta(days=1)).replace(hour=10, minute=0)
+    return max(chiedi, ora + datetime.timedelta(hours=1))
+
+
+def rileva_evento(testo, ora=None):
+    """Trova un evento futuro della persona ("domani ho l'esame di storia", "giovedì vado dal dentista").
+    Ritorna {"evento", "domanda", "quando", "chiedi"} oppure None. Niente LLM: funziona anche offline."""
+    t = (testo or "").strip()
+    if not t or t.endswith("?") or len(t) > 400:
+        return None
+    for rx in (_RE_EVENTO, _RE_EVENTO_DOPO):
+        for m in rx.finditer(t):
+            verbo = re.sub(r"\s+", " ", m.group("verbo")).lower()
+            cosa = (m.group("cosa") or "").strip()
+            if re.search(r"\bnon\b", (m.groupdict().get("mezzo") or "") + " " + t[max(0, m.start("verbo") - 5):m.start("verbo")], re.I):
+                continue
+            cosa = re.split(r"\s+(?:e poi|ma|però|pero|perch[eé]|quindi|cos[iì]|anche se|e\s+(?:sono|ho|mi|non|sto|spero|poi|devo))\b|[,;:()]",
+                            cosa, maxsplit=1, flags=re.I)[0].strip(" '\"")
+            cosa = re.sub(r"\s+(?:alle|verso le|ore|entro le)\s+\d{1,2}(?:[:.]\d{2})?\s*$", "", cosa, flags=re.I)
+            cosa = re.sub(r"\s+(?:" + _QUANDO_EV + r")\s*$", "", cosa, flags=re.I).strip()
+            if not cosa and verbo not in _SOLO_VERBO:
+                continue
+            if cosa and (_NON_EVENTI.search(_senza_accenti(cosa).lower()) or len(cosa) < 3):
+                continue
+            if verbo in ("devo", "dovro", "dovrò") and re.match(r"(?:ricordar|dir|chieder|pensar|capir|andare a dormire)", cosa, re.I):
+                continue
+            cosa = cosa[:70]
+            pezzo = m.group(0)
+            ora_ = ora or datetime.datetime.now()
+            quando, _ = parse_quando(pezzo, ora_)
+            if re.match(r"oggi|stamattina|stasera|stanotte|questo\s+pomeriggio", m.group("quando"), re.I) \
+                    and (not quando or quando.date() != ora_.date()):
+                quando = max(quando.replace(day=ora_.day, month=ora_.month, year=ora_.year) if quando else ora_, ora_)
+            if not quando:
+                continue
+            con_orario = bool(re.search(r"\b(?:alle|ore|verso le)\s+\d", t[m.start():m.end() + 25], re.I))
+            if con_orario:
+                q2, _ = parse_quando(t[m.start():m.end() + 25], ora)
+                quando = q2 or quando
+            evento = cosa if verbo in ("ho", "avrò", "avro", "c'è", "c'e", "ci sarà", "ci sara", "devo", "dovrò", "dovro") \
+                else (verbo + (" " + cosa if cosa else ""))
+            evento = re.sub(r"^(?:fare|sostenere)\s+", "", evento).strip()
+            return {"evento": evento, "domanda": _domanda_seguito(verbo, cosa), "quando": quando,
+                    "chiedi": calcola_chiedi(quando, con_orario, ora)}
+    return None
+
+
+# ════════════════════════════════════════════════════════════
+# AGENTE (v10) — il modello usa gli strumenti da solo
+# ════════════════════════════════════════════════════════════
+# Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
+# Il server lo toglie dal testo, lo controlla e lo esegue davvero. Per gli strumenti
+# "informativi" (meteo, calcoli, documenti…) c'è un secondo giro: il modello riceve i
+# risultati e finisce la risposta con i dati veri.
+_RE_TAG = re.compile(r"\[\[\s*(?:azione|action|tool|strumento)\s*:?\s*(\{.*?\})\s*\]\]", re.S | re.I)
+_RE_TAG_APERTO = re.compile(r"\[\[\s*(?:azione|action|tool|strumento)\b.*\Z", re.S | re.I)
+
+PROMPT_AGENTE = """STRUMENTI — puoi AGIRE davvero, non solo parlare.
+Quando la persona ti chiede (anche in modo indiretto) di fare qualcosa, scrivi in fondo alla risposta,
+ognuno su una riga, uno o più tag come questi (la persona NON li vede, li esegue il sistema):
+[[azione:{"tipo":"promemoria","testo":"chiamare Luca","quando":"domani alle 9"}]]
+[[azione:{"tipo":"timer","durata":"10 minuti"}]]
+[[azione:{"tipo":"lista","aggiungi":["latte","pane"]}]]   ·   [[azione:{"tipo":"lista","togli":"latte"}]]
+[[azione:{"tipo":"nota","testo":"il codice del cancello è 4521"}]]
+[[azione:{"tipo":"obiettivo","testo":"correre 5 km"}]]
+Se ti servono dati che non sai, scrivi SOLO il tag e fermati: riceverai i risultati e poi risponderai.
+[[azione:{"tipo":"meteo","citta":"Milano"}]]   [[azione:{"tipo":"ora","citta":"Tokyo"}]]
+[[azione:{"tipo":"calcola","espressione":"(1200*0.22)+35"}]]
+[[azione:{"tipo":"cerca_documenti","q":"parole chiave"}]]   [[azione:{"tipo":"cerca_memoria","q":"parole chiave"}]]
+Regole: usa i tag solo quando servono; JSON valido su una riga; "quando" in italiano semplice
+(«tra 20 minuti», «domani alle 9», «venerdì alle 18:30»). Non dire mai di aver fatto qualcosa senza il tag."""
+
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria"}
+ICONE_STRUMENTI = {"promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
+                   "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠"}
+
+
+class FiltroTag:
+    """Avvolge on_token: lascia passare il testo e trattiene i tag [[azione:…]] (anche spezzati tra chunk)."""
+
+    def __init__(self, on_token):
+        self.out, self.buf = on_token, ""
+
+    PAROLE = ("azione", "action", "tool", "strumento")
+
+    def __call__(self, chunk):
+        self.buf += chunk
+        while self.buf:
+            i = self.buf.find("[[")
+            if i < 0:
+                tieni = 1 if self.buf.endswith("[") else 0          # forse è l'inizio di "[["
+                if len(self.buf) > tieni:
+                    self.out(self.buf[:len(self.buf) - tieni])
+                self.buf = self.buf[len(self.buf) - tieni:]
+                return
+            if i:
+                self.out(self.buf[:i])
+                self.buf = self.buf[i:]
+            testa = self.buf[2:].lstrip()[:12].lower()
+            if not any(testa.startswith(p) for p in self.PAROLE):
+                if any(p.startswith(testa) for p in self.PAROLE) and len(self.buf) < 40:
+                    return                                          # ancora non si capisce: aspetta
+                self.out(self.buf[:2])                              # non è un tag: mostralo
+                self.buf = self.buf[2:]
+                continue
+            j = self.buf.find("]]")
+            if j < 0:
+                if len(self.buf) > 1500:                            # tag mai chiuso: lascia perdere
+                    self.buf = ""
+                return
+            self.buf = self.buf[j + 2:]
+
+    def fine(self):
+        if self.buf and not _RE_TAG_APERTO.match(self.buf):
+            self.out(self.buf)
+        self.buf = ""
+
+
+class Agente:
+
+    @staticmethod
+    def estrai(testo):
+        """Ritorna (testo senza tag, [richieste]). Tollera JSON con apici singoli e tag lasciati aperti."""
+        richieste, viste = [], set()
+        corpi = [m.group(1) for m in _RE_TAG.finditer(testo)]
+        aperto = _RE_TAG_APERTO.search(_RE_TAG.sub("", testo))
+        if aperto:
+            m = re.search(r"\{.*\}", aperto.group(0), re.S)
+            if m:
+                corpi.append(m.group(0))
+        for corpo in corpi:
+            a = None
+            for prova in (corpo, corpo.replace("'", '"')):
+                try:
+                    a = json.loads(prova)
+                    break
+                except Exception:
+                    continue
+            if isinstance(a, dict) and isinstance(a.get("tipo"), str):
+                chiave = json.dumps(a, sort_keys=True, ensure_ascii=False)
+                if chiave not in viste:
+                    viste.add(chiave)
+                    richieste.append(a)
+        pulito = _RE_TAG_APERTO.sub("", _RE_TAG.sub("", testo))
+        pulito = re.sub(r"[ \t]+\n", "\n", pulito)
+        pulito = re.sub(r"\n{3,}", "\n\n", pulito).strip()
+        return pulito, richieste[:6]
+
+    @staticmethod
+    def esegui(a, memoria):
+        """Esegue una richiesta dopo averla controllata. Ritorna {tipo, ok, icona, esito, [dati], [fonti]}."""
+        tipo = str(a.get("tipo", "")).strip().lower().replace("-", "_")
+        tipo = {"reminder": "promemoria", "spesa": "lista", "calcolo": "calcola", "calc": "calcola",
+                "documenti": "cerca_documenti", "memoria": "cerca_memoria", "orario": "ora"}.get(tipo, tipo)
+        s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
+        r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
+        try:
+            if tipo == "promemoria":
+                testo, qt = s("testo", 120) or s("cosa", 120), s("quando", 60)
+                if len(testo) < 2:
+                    return dict(r, esito="promemoria senza testo")
+                quando = None
+                if qt:
+                    quando, _ = parse_quando(qt)
+                    if not quando and re.fullmatch(r"\d{1,2}(?:[:.]\d{2})?", qt):
+                        quando, _ = parse_quando("alle " + qt)
+                q_iso = quando.isoformat(timespec="seconds") if quando else None
+                poco_fa = (datetime.datetime.now() - datetime.timedelta(minutes=10)).isoformat(timespec="seconds")
+                if any(p["testo"].lower() == testo.lower() and (p.get("quando") == q_iso or p.get("creato", "") >= poco_fa)
+                       for p in memoria.promemoria_attivi()):
+                    return dict(r, ok=True, esito=f"«{testo}» era già impostato")
+                memoria.aggiungi_promemoria(testo, quando, "promemoria")
+                return dict(r, ok=True, esito=f"«{testo}» " + (fmt_quando(quando) if quando else "(senza orario)"))
+            if tipo == "timer":
+                sec = parse_durata(s("durata", 40))
+                if not sec and isinstance(a.get("secondi"), (int, float)):
+                    sec = int(a["secondi"])
+                if not 0 < sec <= 2 * 86400:
+                    return dict(r, esito="durata del timer non valida")
+                quando = datetime.datetime.now() + datetime.timedelta(seconds=sec)
+                memoria.aggiungi_promemoria(f"Timer di {fmt_durata(sec)}", quando, "timer")
+                return dict(r, ok=True, esito=f"timer di {fmt_durata(sec)} (suona alle {quando.strftime('%H:%M:%S')})")
+            if tipo == "lista":
+                agg = a.get("aggiungi", a.get("voci", a.get("voce")))
+                agg = [agg] if isinstance(agg, str) else (agg if isinstance(agg, list) else [])
+                agg = [re.sub(r"\s+", " ", str(v)).strip()[:80] for v in agg[:12] if str(v).strip()]
+                togli = a.get("togli", a.get("rimuovi"))
+                togli = [togli] if isinstance(togli, str) else (togli if isinstance(togli, list) else [])
+                fatto = []
+                if agg:
+                    nuove = memoria.lista_aggiungi(agg)
+                    fatto.append("aggiunto " + ", ".join(nuove) if nuove else "era già tutto in lista")
+                for v in togli[:6]:
+                    if memoria.lista_rimuovi(str(v)):
+                        fatto.append(f"tolto {v}")
+                if not fatto:
+                    return dict(r, esito="niente da cambiare nella lista")
+                return dict(r, ok=True, esito="; ".join(fatto))
+            if tipo == "nota":
+                testo = s("testo", 300)
+                if len(testo) < 2:
+                    return dict(r, esito="nota vuota")
+                if not any(x.get("cosa", "").lower() == testo.lower() for x in memoria.imparato[-50:]):
+                    memoria.impara_cosa(testo, "nota")
+                return dict(r, ok=True, esito=f"annotato «{testo[:60]}»")
+            if tipo == "obiettivo":
+                testo = s("testo", 120)
+                if len(testo) < 3:
+                    return dict(r, esito="obiettivo vuoto")
+                memoria.aggiungi_obiettivo(testo, "obiettivo")
+                return dict(r, ok=True, esito=f"nuovo obiettivo: {testo}")
+            if tipo == "personalita":
+                k = s("chiave", 20).lower() or s("modalita", 20).lower()
+                k = "prof" if k.startswith("prof") else k
+                if not imposta_personalita(k, memoria):
+                    return dict(r, esito=f"personalità «{k}» sconosciuta")
+                return dict(r, ok=True, esito=f"modalità {PERSONALITA[k][1]}")
+            if tipo == "meteo":
+                citta = s("citta", 40) or s("città", 40) or memoria.get_valore_profilo("citta") or "Roma"
+                d = ottieni_meteo(citta, timeout=6)
+                if d.get("errore"):
+                    return dict(r, esito=f"meteo di {citta} non disponibile", dati=f"meteo di {citta}: non disponibile (offline?)")
+                prev = "; ".join(f"{p['giorno']}: {p['min']}°/{p['max']}° {p['emoji']}"
+                                 for p in (d.get("previsioni") or [])[:3])
+                dati = (f"meteo a {d['citta']} adesso: {d['temp']}°C, {d['descrizione'].lower()}, percepiti {d['percepita']}°, "
+                        f"umidità {d['umidita']}%, vento {d['vento']} km/h. Prossimi giorni: {prev}")
+                return dict(r, ok=True, esito=f"{d['citta']} {d['temp']}°C {d['emoji']}", dati=dati)
+            if tipo == "ora":
+                citta = s("citta", 40) or s("città", 40)
+                k = trova_citta(citta) if citta else None
+                if citta and not k:
+                    d = datetime.datetime.now()
+                    return dict(r, esito=f"fuso di {citta} sconosciuto",
+                                dati=f"fuso orario di {citta} sconosciuto; qui sono le {d.strftime('%H:%M')}")
+                d = ora_in(k) if k else datetime.datetime.now()
+                dove = k.title() if k else "qui"
+                return dict(r, ok=True, esito=f"{dove} {d.strftime('%H:%M')}",
+                            dati=f"ora a {dove}: {d.strftime('%H:%M')} di {GIORNI_LUNGHI[d.weekday()]} {d.day} {MESI_IT[d.month-1]}")
+            if tipo == "calcola":
+                espr = s("espressione", 120) or s("expr", 120)
+                v = calcola(espr)
+                if v is None:
+                    return dict(r, esito="calcolo non valido", dati=f"«{espr}» non è un calcolo valido")
+                return dict(r, ok=True, esito=f"{espr} = {fmt_num(v)}", dati=f"{espr} = {fmt_num(v)}")
+            if tipo == "cerca_documenti":
+                q = s("q", 120) or s("query", 120)
+                trovati = memoria.cerca_documenti(q, k=4, rigida=False)
+                if not trovati:
+                    return dict(r, ok=True, esito=f"«{q}»: niente nei documenti", dati=f"nei documenti non c'è niente su «{q}»")
+                dati = "\n".join(f"[{x['nome']} · parte {x['pezzo']}] {x['testo'][:900]}" for x in trovati)
+                return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} risultati", dati=dati,
+                            fonti=[{"nome": x["nome"], "pezzo": x["pezzo"], "anteprima": x["testo"][:200]} for x in trovati])
+            if tipo == "cerca_memoria":
+                q = s("q", 80) or s("query", 80)
+                trovati = memoria.cerca(q)
+                if not trovati:
+                    for w in sorted(_token(q), key=len, reverse=True)[:3]:   # riprova parola per parola
+                        trovati = memoria.cerca(w)
+                        if trovati:
+                            break
+                righe = []
+                for x in trovati[:8]:
+                    righe.append(" · ".join(str(v)[:120] for k, v in x.items() if k != "tipo"))
+                return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} ricordi",
+                            dati=("\n".join(righe) if righe else f"nessun ricordo su «{q}»"))
+            return dict(r, esito=f"strumento «{tipo}» sconosciuto")
+        except ZeroDivisionError:
+            return dict(r, esito="divisione per zero", dati="divisione per zero: impossibile")
+        except Exception as e:
+            return dict(r, esito=f"errore: {e}"[:120])
+
+
 PROMPT_ESTRAZIONE = """Sei il modulo di memoria di un assistente personale.
 Leggi il MESSAGGIO dell'utente ed estrai SOLO informazioni NUOVE, personali e durature su di lui/lei
 (nome, età, città, lavoro/studio, gusti, abitudini, persone care con il loro ruolo, obiettivi, eventi importanti).
@@ -1735,7 +2414,9 @@ GIÀ NOTO: {noto}
 MESSAGGIO: {messaggio}
 
 Rispondi SOLO con un oggetto JSON con queste chiavi:
-{{"profilo": {{"chiave": "valore"}}, "fatti": ["frase breve in terza persona"], "persone": [{{"nome": "...", "ruolo": "..."}}], "obiettivi": ["..."]}}
+{{"profilo": {{"chiave": "valore"}}, "fatti": ["frase breve in terza persona"], "persone": [{{"nome": "...", "ruolo": "..."}}], "obiettivi": ["..."], "eventi": [{{"cosa": "esame di storia", "quando": "domani alle 9", "domanda": "Com'è andato l'esame di storia?"}}]}}
+"eventi" = solo cose FUTURE che la persona deve fare o vivere (esami, colloqui, visite, viaggi, partite,
+appuntamenti), con "quando" in italiano semplice e la domanda che un amico le farebbe DOPO.
 Se non c'è niente di nuovo usa oggetti e liste vuoti."""
 
 _RE_PERSONALE = re.compile(
@@ -1757,24 +2438,35 @@ class MotoreAI:
         if p in PERSONALITA:
             imposta_personalita(p)
 
-    def _system_prompt(self, query=""):
+    def _system_prompt(self, query="", fonti=None):
         ora = datetime.datetime.now()
         oggi = f"{data_it(ora)}, ore {ora.strftime('%H:%M')}"
+        documenti = ""
+        if fonti:
+            blocchi = "\n\n".join(f"[{f['nome']} · parte {f['pezzo']}]\n{f['testo']}" for f in fonti)
+            documenti = (f"\n\n--- DAI DOCUMENTI DELLA PERSONA (usali solo se c'entrano con la domanda; quando li usi "
+                         f"cita la fonte tra parentesi quadre, es. [{fonti[0]['nome']}]) ---\n{blocchi}\n--- FINE DOCUMENTI ---")
+        if CONFIG["agente"]:
+            nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
+            strumenti = PROMPT_AGENTE + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
+        else:
+            strumenti = ("Le azioni pratiche (timer, promemoria, lista, calcoli, ora nel mondo, briefing) le fai quando "
+                         "te le chiedono con frasi come «metti un timer di 10 minuti» o «ricordami alle 18 di…»: "
+                         "se te le chiedono in modo vago, suggerisci la frase giusta. "
+                         "Non dire mai di aver impostato qualcosa se non è successo davvero.")
         return f"""{CONFIG['carattere']}
 
 Oggi è {oggi}.
 
 --- LA TUA MEMORIA DI QUESTA PERSONA ---
 {self.memoria.costruisci_contesto(query)}
---- FINE MEMORIA ---
+--- FINE MEMORIA ---{documenti}
 
 Usa questa memoria con naturalezza, senza elencarla meccanicamente.
 Se noti che la persona è di umore negativo, sii empatico e presente.
 Se ha obiettivi o sogni, tienili a mente e incoraggiala.
-Sai anche fare azioni pratiche quando te le chiedono con frasi come «metti un timer di 10 minuti»,
-«ricordami alle 18 di…», «aggiungi latte alla lista», «quanto fa 15% di 80», «che ore sono a Tokyo»,
-«briefing». Se te le chiedono in modo vago, suggerisci la frase giusta. Non dire mai di aver
-impostato qualcosa se non è successo davvero."""
+
+{strumenti}"""
 
     def _impara_con_ia(self, testo):
         """Estrazione di fatti con il modello (JSON). Gira in background dopo la risposta."""
@@ -1786,12 +2478,55 @@ impostato qualcosa se non è successo davvero."""
             dati = self.cervello.pensa_json(PROMPT_ESTRAZIONE.format(noto=self.memoria.gia_noto(),
                                                                      messaggio=testo[:800]))
             appreso = self.memoria.impara_da_ia(dati) if dati else []
+            for e in ((dati or {}).get("eventi") or [])[:2]:
+                s = self._seguito_da_ia(e, testo)
+                if s:
+                    appreso.append("🔁 " + s["evento"])
             if appreso:
                 self.appreso_log.append({"ts": time.time(), "cosa": ", ".join(appreso[:3])})
                 self.appreso_log = self.appreso_log[-30:]
             return appreso
         finally:
             self._ia_lock.release()
+
+    def _seguito_da_ia(self, e, fonte):
+        """Un evento trovato dal modello: migliora la domanda del follow-up già creato
+        dalle regole, oppure ne crea uno nuovo. Ritorna il follow-up nuovo (o None)."""
+        if not isinstance(e, dict):
+            return None
+        pulisci = lambda x, n: re.sub(r"\s+", " ", str(x or "")).strip()[:n]
+        cosa, domanda, qt = pulisci(e.get("cosa"), 70), pulisci(e.get("domanda"), 160), pulisci(e.get("quando"), 60)
+        if not domanda.endswith("?"):
+            domanda = ""
+        if any(s.get("fonte") == fonte[:300] for s in self.memoria.seguiti_in_attesa()):
+            if domanda:
+                self.memoria.aggiorna_seguito_da_fonte(fonte, domanda)
+            return None
+        if len(cosa) < 3 or not qt:
+            return None
+        ora = datetime.datetime.now()
+        quando, _ = parse_quando(qt, ora)
+        if not quando or not (ora < quando < ora + datetime.timedelta(days=15)):
+            return None
+        chiedi = calcola_chiedi(quando, bool(re.search(r"\d", qt)), ora)
+        return self.memoria.aggiungi_seguito(cosa, quando, chiedi, domanda or f"Com'è andata con {cosa}?", fonte)
+
+    def messaggio_seguito(self, s):
+        """Il messaggio che Maik manda da solo quando è il momento di chiedere com'è andata."""
+        nome = self.memoria.get_valore_profilo("nome")
+        apertura = random.choice(["Ehi", "Ciao", "Allora"]) + (f" {nome}" if nome else "")
+        domanda = s.get("domanda") or "Com'è andata?"
+        return f"{apertura}! 🤞 {domanda} Raccontami tutto!"
+
+    def seguiti_da_chiedere(self, sessione=None):
+        """Follow-up arrivati: diventano messaggi di Maik nella chat (e nel diario)."""
+        sid = self.memoria.sessione_valida(sessione)
+        out = []
+        for s in self.memoria.seguiti_scaduti():
+            testo = self.messaggio_seguito(s)
+            self.memoria.salva_scambio("", testo, sid, extra={"seguito": s["evento"]})
+            out.append({"id": s["id"], "evento": s["evento"], "testo": testo})
+        return out
 
     def _dopo_risposta(self, testo):
         self._forse_riassumi()
@@ -1805,10 +2540,11 @@ impostato qualcosa se non è successo davvero."""
         self.memoria.imposta_ricordo("ultimo_briefing", oggi)
         return Azioni.briefing(self.memoria)
 
-    def _costruisci_messaggi(self, testo):
+    def _costruisci_messaggi(self, testo, sessione=None):
         messaggi = []
-        for s in self.memoria.ultimi_scambi(6):
-            messaggi.append({"role": "user",      "content": s["tu"]})
+        for s in self.memoria.ultimi_scambi(6, sessione or Memoria.PRINCIPALE):
+            if s.get("tu"):                       # i follow-up di Maik non hanno una domanda
+                messaggi.append({"role": "user", "content": s["tu"]})
             messaggi.append({"role": "assistant", "content": s["ai"]})
         messaggi.append({"role": "user", "content": testo})
         return messaggi
@@ -1869,16 +2605,31 @@ impostato qualcosa se non è successo davvero."""
         risposta = self.cervello.pensa(self._system_prompt(testo), self._costruisci_messaggi(testo))
         if risposta.startswith("__ERRORE"):
             return {"ok": False, "risposta": "Ollama non risponde. Controlla che sia acceso."}
+        azioni = []
+        if CONFIG["agente"]:
+            risposta, richieste = Agente.estrai(risposta)
+            azioni = [Agente.esegui(a, self.memoria) for a in richieste if a.get("tipo") not in STRUMENTI_INFO]
         self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
         threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
-        return self._meta(ok=True, risposta=risposta, imparato=imparato)
+        return self._meta(ok=True, risposta=risposta, imparato=imparato, azioni=azioni)
 
-    def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False):
+    def _nota_seguito(self, testo):
+        """Regole veloci: se racconti un evento futuro, Maik si segna di chiederti com'è andata."""
+        ev = rileva_evento(testo)
+        if not ev:
+            return None
+        s = self.memoria.aggiungi_seguito(ev["evento"], ev["quando"], ev["chiedi"], ev["domanda"], testo)
+        return {"evento": s["evento"], "quando": fmt_quando(ev["quando"]), "chiedi": s["chiedi"]}
+
+    def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None):
         """Versione in streaming: chiama on_token(chunk) e ritorna i metadati finali.
         allegato = {"nome", "contenuto"}: un file di testo che va al modello ma NON alle azioni/estrattori.
-        rigenera = True: rifà l'ultima risposta (toglie lo scambio precedente dal diario)."""
+        rigenera = True: rifà l'ultima risposta (toglie lo scambio precedente dal diario).
+        sessione = la chat (v10). on_evento(dict) = avvisi in diretta (es. strumento usato dall'agente)."""
+        sid = self.memoria.sessione_valida(sessione)
+        avvisa = on_evento or (lambda e: None)
         if rigenera:
-            self.memoria.rimuovi_ultimo_scambio(testo)
+            self.memoria.rimuovi_ultimo_scambio(testo, sid)
         if not allegato:
             cmd = self._gestisci_comando(testo)
             if cmd:
@@ -1886,25 +2637,84 @@ impostato qualcosa se non è successo davvero."""
             azione = Azioni.prova(testo, self.memoria)   # azioni pratiche: istantanee, anche offline
             if azione:
                 on_token(azione)
-                self.memoria.salva_scambio(testo, azione)
-                return self._meta(done=True, ok=True, azione=True)
-        imparato = Estrattore.analizza(testo, self.memoria) if testo and not rigenera else None
+                self.memoria.salva_scambio(testo, azione, sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid)
+        nuovo = bool(testo) and not rigenera
+        imparato = Estrattore.analizza(testo, self.memoria) if nuovo else None
+        seguito = self._nota_seguito(testo) if nuovo and not allegato else None
         msg, nome = testo, ""
         if allegato:
             nome = str(allegato.get("nome") or "file")[:80]
             contenuto = str(allegato.get("contenuto") or "")[:12000]
             msg = (f"{testo or 'Analizza questo file e dimmi cosa contiene.'}\n\n"
                    f"📎 File «{nome}»:\n```\n{contenuto}\n```")
+        fonti = self.memoria.cerca_documenti(testo, k=3) if testo and not allegato else []
+        system = self._system_prompt(testo or nome, fonti)
+        messaggi = self._costruisci_messaggi(msg, sid)
         stat = {}
-        risposta = self.cervello.pensa_stream(self._system_prompt(testo or nome), self._costruisci_messaggi(msg), on_token, stat)
+        agente = CONFIG["agente"]
+        filtro = FiltroTag(on_token) if agente else on_token
+        risposta = self.cervello.pensa_stream(system, messaggi, filtro, stat)
+        if agente:
+            filtro.fine()
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
-        # in memoria va la risposta senza il "ragionamento" <think> (risparmia contesto)
-        self.memoria.salva_scambio(testo + (f" [📎 {nome}]" if allegato else ""), pulisci_pensiero(risposta) or risposta)
-        if testo and not rigenera:
+        finale, azioni = pulisci_pensiero(risposta) or risposta, []
+        if agente:
+            finale, richieste = Agente.estrai(pulisci_pensiero(risposta))
+            info = [a for a in richieste if str(a.get("tipo", "")).lower() in STRUMENTI_INFO][:3]
+            for a in richieste:
+                if a not in info:
+                    azioni.append(Agente.esegui(a, self.memoria))
+            if info:
+                # secondo giro: il modello riceve i risultati veri e finisce la risposta
+                risultati = []
+                for a in info:
+                    r = Agente.esegui(a, self.memoria)
+                    risultati.append(r)
+                    azioni.append(r)
+                    avvisa({"strumento": {k: r.get(k) for k in ("tipo", "ok", "icona", "esito")}})
+                    for f in r.get("fonti") or []:
+                        if not any(f["nome"] == x["nome"] and f["pezzo"] == x["pezzo"] for x in fonti):
+                            fonti.append(dict(f, testo=f.get("anteprima", "")))
+                dati = "\n".join(f"- {r['tipo']}: {r.get('dati') or r['esito']}" for r in risultati)
+                seguito_msg = messaggi + [
+                    {"role": "assistant", "content": finale or "(controllo…)"},
+                    {"role": "user", "content": "[RISULTATI DEGLI STRUMENTI — la persona non li vede]\n" + dati +
+                     "\n\nOra continua la risposta alla persona usando questi dati, in modo naturale e senza "
+                     "ripetere quello che hai già scritto. Non scrivere altri tag per meteo/ora/calcoli/ricerche."}]
+                if finale:
+                    on_token("\n\n")
+                filtro2, stat2 = FiltroTag(on_token), {}
+                r2 = self.cervello.pensa_stream(system, seguito_msg, filtro2, stat2)
+                filtro2.fine()
+                if r2 and not r2.startswith("__ERRORE"):
+                    testo2, rich2 = Agente.estrai(pulisci_pensiero(r2))
+                    for a in rich2:
+                        if str(a.get("tipo", "")).lower() not in STRUMENTI_INFO:
+                            azioni.append(Agente.esegui(a, self.memoria))
+                    finale = (finale + "\n\n" + testo2).strip()
+                    if stat2.get("tps"):
+                        stat.update(tps=stat2["tps"], token=(stat.get("token") or 0) + (stat2.get("token") or 0),
+                                    totale_ms=(stat.get("totale_ms") or 0) + (stat2.get("totale_ms") or 0))
+                elif not finale:
+                    finale = "Ecco cosa ho trovato:\n" + "\n".join(f"- {r['icona']} {r['esito']}" for r in risultati)
+                    on_token(finale)
+            if not finale and azioni:
+                finale = "Fatto! ✅"
+                on_token(finale)
+        chip = [{k: a.get(k) for k in ("tipo", "ok", "icona", "esito")} for a in azioni]
+        fonti_meta = [{"nome": f["nome"], "pezzo": f["pezzo"], "anteprima": f.get("testo", "")[:200],
+                       "citata": f["nome"].lower() in finale.lower()} for f in fonti]
+        # in memoria va la risposta senza il "ragionamento" <think> e senza tag (risparmia contesto)
+        self.memoria.salva_scambio(testo + (f" [📎 {nome}]" if allegato else ""), finale, sid,
+                                   extra={"azioni": chip, "fonti": [{"nome": f["nome"], "pezzo": f["pezzo"]} for f in fonti_meta]})
+        if nuovo:
             threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
-        return self._meta(done=True, ok=True, imparato=imparato, stat=stat)
+        titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
+        return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
+                          seguito=seguito, sessione=sid, titolo=titolo)
 
     def stato(self):
         return {
@@ -1917,7 +2727,105 @@ impostato qualcosa se non è successo davvero."""
             "modelli":     self.cervello.modelli(),
             "citta":       self.memoria.get_valore_profilo("citta") or "Roma",
             "personalita": CONFIG["personalita"],
+            "agente":      CONFIG["agente"],
+            "versione":    VERSIONE,
         }
+
+
+# ════════════════════════════════════════════════════════════
+# APP INSTALLABILE (v10) — manifest, service worker, icone PNG generate
+# ════════════════════════════════════════════════════════════
+MANIFEST = {
+    "name": "MAIK — la tua AI personale", "short_name": "MAIK", "lang": "it",
+    "description": "Assistente personale locale con memoria, voce e strumenti.",
+    "start_url": "/", "scope": "/", "display": "standalone", "orientation": "any",
+    "background_color": "#050a0f", "theme_color": "#050a0f",
+    "icons": [{"src": f"/icona-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": p}
+              for n in (192, 512) for p in ("any", "maskable")],
+}
+
+SERVICE_WORKER = """// MAIK service worker: l'interfaccia si apre anche quando la rete fa i capricci.
+// Le API (chat, memoria…) vanno SEMPRE al server: in cache c'è solo il guscio dell'app.
+const CACHE = 'maik-v""" + VERSIONE + """';
+const GUSCIO = ['/', '/manifest.webmanifest', '/icona-192.png', '/icona-512.png'];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(GUSCIO)).then(() => self.skipWaiting()));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    .then(() => self.clients.claim()));
+});
+self.addEventListener('fetch', e => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.origin !== location.origin) return;
+  if (!GUSCIO.includes(u.pathname) && u.pathname !== '/index.html') return;
+  e.respondWith(fetch(e.request).then(r => {
+    if (r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copia)); }
+    return r;
+  }).catch(() => caches.match(e.request).then(r => r || caches.match('/'))));
+});
+"""
+
+_ICONE, _ICONE_LOCK = {}, threading.Lock()
+
+
+def _png(w, h, righe):
+    """PNG RGB minimale con la sola libreria standard (zlib + struct)."""
+    def blocco(tipo, dati):
+        return struct.pack(">I", len(dati)) + tipo + dati + struct.pack(">I", zlib.crc32(tipo + dati) & 0xFFFFFFFF)
+    grezzo = b"".join(b"\x00" + bytes(r) for r in righe)
+    return (b"\x89PNG\r\n\x1a\n" + blocco(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + blocco(b"IDAT", zlib.compress(grezzo, 9)) + blocco(b"IEND", b""))
+
+
+def icona_png(n):
+    """L'icona dell'app: nucleo neurale con la M luminosa, disegnata pixel per pixel (poi resta in cache)."""
+    with _ICONE_LOCK:
+        if n in _ICONE:
+            return _ICONE[n]
+        c = (n - 1) / 2
+        punti = [(c + x * n, c + y * n) for x, y in ((-0.15, 0.11), (-0.15, -0.11), (0.0, 0.045), (0.15, -0.11), (0.15, 0.11))]
+        tratti = [(ax, ay, bx - ax, by - ay, (bx - ax) ** 2 + (by - ay) ** 2) for (ax, ay), (bx, by) in zip(punti, punti[1:])]
+        spessore, alone, margine = 0.03 * n, 0.035 * n, 0.12 * n   # oltre il margine l'alone è ~0: niente "riquadro"
+        x0, x1 = int(c - 0.15 * n - margine), int(c + 0.15 * n + margine) + 1
+        y0, y1 = int(c - 0.11 * n - margine), int(c + 0.11 * n + margine) + 1
+        righe = []
+        for y in range(n):
+            riga = bytearray(3 * n)
+            dy = y - c
+            for x in range(n):
+                dx = x - c
+                d = math.sqrt(dx * dx + dy * dy) / n                     # 0 al centro, ~0.7 negli angoli
+                t = min(1.0, d / 0.7)
+                r, g, b = 12 - 8 * t, 28 - 19 * t, 44 - 31 * t           # sfondo blu notte
+                if d < 0.30:                                            # sfera del nucleo
+                    k = d / 0.30
+                    r, g, b = 8 + 40 * k * k, 34 - 10 * k, 56 + 60 * k * k
+                orbita = math.exp(-((d - 0.405) / 0.006) ** 2) * 0.55   # orbita viola sottile
+                bordo = math.exp(-((d - 0.30) / 0.011) ** 2)            # luce sul bordo
+                aura = math.exp(-((d - 0.30) / 0.055) ** 2) * 0.38
+                r += 124 * orbita + 60 * bordo
+                g += 58 * orbita + 245 * (bordo + aura)
+                b += 237 * orbita + 255 * (bordo + aura)
+                if x0 <= x <= x1 and y0 <= y <= y1:                     # la M (distanza dai segmenti)
+                    dist = 1e9
+                    for ax, ay, vx, vy, l2 in tratti:
+                        u = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / l2))
+                        ex, ey = x - ax - u * vx, y - ay - u * vy
+                        dist = min(dist, ex * ex + ey * ey)
+                    dist = math.sqrt(dist)
+                    pieno = max(0.0, min(1.0, spessore - dist + 0.5))
+                    luce = math.exp(-((dist - spessore) / alone) ** 2) * 0.45 if dist > spessore else 0.45
+                    g += 245 * luce
+                    b += 255 * luce
+                    r = r * (1 - pieno) + 225 * pieno
+                    g = g * (1 - pieno) + 255 * pieno
+                    b = b * (1 - pieno) + 255 * pieno
+                i = 3 * x
+                riga[i], riga[i + 1], riga[i + 2] = min(255, int(r)), min(255, int(g)), min(255, int(b))
+            righe.append(riga)
+        _ICONE[n] = _png(n, n, righe)
+        return _ICONE[n]
 
 
 # ════════════════════════════════════════════════════════════
@@ -1953,6 +2861,17 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _invia(self, corpo, tipo, cache=None):
+        if isinstance(corpo, str):
+            corpo = corpo.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(len(corpo)))
+        if cache:
+            self.send_header("Cache-Control", cache)
+        self.end_headers()
+        self.wfile.write(corpo)
+
     def _servi_gui(self):
         # Preferisci aria.html (la tua GUI completa); altrimenti usa quella integrata.
         if os.path.exists(HTML_FILE):
@@ -1966,7 +2885,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _read_json_body(self):
         lung = int(self.headers.get("Content-Length", 0))
-        if lung <= 0:
+        if lung <= 0 or lung > 12_000_000:        # niente corpi giganti
             return {}
         try:
             return json.loads(self.rfile.read(lung).decode("utf-8"))
@@ -2026,6 +2945,31 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/cerca":
                 q = qs.get("q", "").strip()
                 self._json({"risultati": MOTORE.memoria.cerca(q) if q else []})
+            # ── v10: conversazioni, documenti, follow-up ──
+            elif base == "/sessioni":
+                self._json({"sessioni": MOTORE.memoria.sessioni_elenco()})
+            elif base == "/sessioni/storia":
+                sid = MOTORE.memoria.sessione_valida(qs.get("id", ""))
+                self._json({"sessione": sid, "scambi": MOTORE.memoria.storia_sessione(sid)})
+            elif base == "/documenti":
+                docs = MOTORE.memoria.documenti_elenco()
+                self._json({"documenti": docs, "caratteri": sum(d["caratteri"] for d in docs),
+                            "limite": Memoria.MAX_DOC_TOTALE})
+            elif base == "/documenti/cerca":
+                q = qs.get("q", "").strip()
+                self._json({"risultati": MOTORE.memoria.cerca_documenti(q, k=6, rigida=False) if q else []})
+            elif base == "/seguiti":
+                self._json({"seguiti": MOTORE.memoria.seguiti_in_attesa()})
+            elif base == "/seguiti/scaduti":
+                self._json({"seguiti": MOTORE.seguiti_da_chiedere(qs.get("sessione"))})
+            # ── v10: app installabile ──
+            elif base == "/manifest.webmanifest":
+                self._invia(json.dumps(MANIFEST, ensure_ascii=False), "application/manifest+json; charset=utf-8")
+            elif base == "/sw.js":
+                self._invia(SERVICE_WORKER, "application/javascript; charset=utf-8", "no-cache")
+            elif base in ("/icona-192.png", "/icona-512.png", "/favicon.ico", "/apple-touch-icon.png"):
+                n = 512 if "512" in base else 192
+                self._invia(icona_png(n), "image/png", "public, max-age=86400")
             else:
                 self.send_error(404)
         except (BrokenPipeError, ConnectionResetError):
@@ -2132,6 +3076,27 @@ class Handler(BaseHTTPRequestHandler):
                 ok = MOTORE.memoria.lista_modifica(c.get("azione", ""), indice, str(c.get("testo", "")))
                 self._json({"ok": ok, "lista": MOTORE.memoria.lista})
 
+            elif base == "/sessioni/nuova":
+                self._json({"ok": True, "sessione": MOTORE.memoria.crea_sessione(self._read_json_body().get("titolo", ""))})
+
+            elif base == "/sessioni/rinomina":
+                c = self._read_json_body()
+                self._json({"ok": MOTORE.memoria.rinomina_sessione(str(c.get("id", "")), c.get("titolo", ""))})
+
+            elif base == "/sessioni/elimina":
+                self._json({"ok": MOTORE.memoria.elimina_sessione(str(self._read_json_body().get("id", "")))})
+
+            elif base == "/documenti":
+                c = self._read_json_body()
+                info, errore = MOTORE.memoria.aggiungi_documento(c.get("nome", ""), c.get("contenuto", ""))
+                self._json({"ok": bool(info), "documento": info, "errore": errore})
+
+            elif base == "/documenti/elimina":
+                self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
+
+            elif base == "/seguiti/elimina":
+                self._json({"ok": MOTORE.memoria.elimina_seguito(str(self._read_json_body().get("id", "")))})
+
             elif base == "/promemoria/completa":
                 n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
                 self._json({"ok": bool(n)})
@@ -2169,6 +3134,7 @@ class Handler(BaseHTTPRequestHandler):
         testo = str(corpo.get("testo", "")).strip()
         allegato = corpo.get("allegato") if isinstance(corpo.get("allegato"), dict) else None
         rigenera = bool(corpo.get("rigenera"))
+        sessione = str(corpo.get("sessione") or "")[:40] or None
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
@@ -2187,7 +3153,8 @@ class Handler(BaseHTTPRequestHandler):
             invia({"done": True, "ok": False, "risposta": "..."})
             return
         try:
-            meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}), allegato=allegato, rigenera=rigenera)
+            meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}), allegato=allegato,
+                                          rigenera=rigenera, sessione=sessione, on_evento=invia)
             invia(meta)
         except (BrokenPipeError, ConnectionResetError):
             pass  # il client ha chiuso, niente da fare
@@ -3214,8 +4181,8 @@ setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,2
 def main():
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 9.0 — Server avviato             ║
-║   Impara da solo · azioni · promemoria · voce    ║
+║           MAIK 10.0 — Server avviato            ║
+║  Agente · documenti · chat · follow-up · app     ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -3259,15 +4226,19 @@ def main():
     print(f"  Pronto su:  {url}")
     print(f"  Premi Ctrl+C per chiudere\n")
     print(f"  Apprendimento con l'IA: {'ATTIVO' if CONFIG['apprendimento_ia'] else 'spento'}"
+          f"  ·  agente: {'ATTIVO' if CONFIG['agente'] else 'spento'}"
           f"  ·  personalità: {CONFIG['personalita']}")
     print(f"  Endpoint principali:")
     print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
     print(f"    POST /vedi          — visione: descrive un frame webcam")
-    print(f"    GET  /promemoria /promemoria/scaduti · GET/POST /lista      [NUOVO]")
-    print(f"    GET  /briefing · POST /personalita · GET /appreso            [NUOVO]")
+    print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina   [NUOVO v10]")
+    print(f"    GET/POST /documenti · GET /documenti/cerca?q= · /seguiti   [NUOVO v10]")
+    print(f"    GET  /promemoria /promemoria/scaduti · GET/POST /lista")
+    print(f"    GET  /briefing · POST /personalita · GET /appreso")
     print(f"    GET  /salute /config /timeline /cerca?q=testo")
     print(f"    POST /episodio /obiettivo /relazione /reset /importa\n")
 
+    threading.Thread(target=lambda: [icona_png(n) for n in (192, 512)], daemon=True).start()   # icone pronte
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()
 
     server = ThreadingHTTPServer((CONFIG["host"], CONFIG["porta"]), Handler)

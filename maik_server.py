@@ -1802,6 +1802,10 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 - 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
 - 📝 «prendi nota: …»
 - 🎭 «modalità coach / prof / comico / zen / genio / amico»
+🤖 E puoi chiedermelo anche a parole tue: «stasera pasta, metti in lista gli ingredienti»,
+   «mi fai il conto di 23 per 17?», «che tempo fa a Napoli?» — uso i miei strumenti da solo.
+📚 Carica i tuoi documenti (barra laterale) e chiedimi cosa c'è dentro: ti cito la fonte.
+💬 Più chat separate, una sola memoria · 🔁 se mi dici «domani ho l'esame», dopo ti chiedo com'è andata.
 Per tutto il resto, chiacchieriamo! 💚"""
 
 _RE_TRIGGER_PROMEMORIA = re.compile(
@@ -3169,8 +3173,13 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Server V9</title>
+<title>MAIK // Server V10</title>
 <meta name="theme-color" content="#050a0f">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/icona-192.png">
+<link rel="apple-touch-icon" href="/icona-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@700;900&display=swap');
   :root{--accent:#00f5ff;--accent-rgb:0,245,255;--accent2:#7c3aed;--accent2-rgb:124,58,237;--bg-rgb:5,10,15;--cyan:var(--accent);--bg:#050a0f;--bg2:#080d14;--panel:rgba(var(--bg-rgb),.78);--border:rgba(var(--accent-rgb),.18);--text:#c8e8f0;--dim:#5a7a8a;--green:#00ff88;--red:#ff3355;--purple:#a855f7;}
@@ -3298,11 +3307,44 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
   @media(max-width:760px){#side{background:rgba(var(--bg-rgb),.97)}.m.ai{margin-left:28px}.m.ai::before{left:-28px;width:20px;height:20px}.m{max-width:90%}}
-  @media(max-width:760px){#side{position:absolute;top:48px;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}.logo{font-size:11px;letter-spacing:3px}}
+  @media(max-width:760px){#side{position:absolute;top:0;bottom:0;left:0;z-index:200;box-shadow:4px 0 20px rgba(0,0,0,.5)}.tgrid{grid-template-columns:repeat(2,1fr)}.logo{font-size:11px;letter-spacing:3px}}
+  /* ===== V10: chat, documenti, agente, follow-up, installa ===== */
+  .sideh{display:flex;align-items:center;justify-content:space-between;margin:0 0 6px}
+  #side .sideh h3{margin:0}
+  .newchat{background:rgba(var(--accent-rgb),.1);border:1px solid var(--border);color:var(--accent);border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;font-family:inherit;font-weight:600}
+  .newchat:hover{background:rgba(var(--accent-rgb),.2)}
+  #chats{display:flex;flex-direction:column;gap:3px;max-height:230px;overflow:auto}
+  .chat{display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:7px;cursor:pointer;border:1px solid transparent;font-size:12.5px;transition:background .15s}
+  .chat:hover{background:rgba(var(--accent-rgb),.06)}
+  .chat.on{background:rgba(var(--accent-rgb),.13);border-color:rgba(var(--accent-rgb),.35);color:#fff}
+  .chat .ct{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chat small{color:var(--dim);font-size:10px;font-family:'Share Tech Mono',monospace}
+  .chat .cb{visibility:hidden;background:none;border:none;color:var(--dim);cursor:pointer;font-size:12px;padding:0 2px}
+  .chat:hover .cb,.chat.on .cb,.chat .cb:focus-visible{visibility:visible}
+  .chat .cb:hover{color:var(--accent)}.chat .cb.del:hover{color:var(--red)}
+  @media(hover:none){.chat .cb{visibility:visible}}
+  .ag{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+  .ag:empty{display:none}
+  .agc{display:inline-flex;align-items:center;gap:4px;max-width:100%;font-size:11.5px;line-height:1.3;padding:3px 9px;border-radius:999px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.35);color:#c9ffe6;animation:in .25s ease;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .agc.ko{background:rgba(255,51,85,.08);border-color:rgba(255,51,85,.4);color:#ffc9d2}
+  .agc.src{background:rgba(var(--accent2-rgb),.12);border-color:rgba(var(--accent2-rgb),.45);color:#e3d8ff;cursor:help}
+  .agc.src.cit{border-color:rgba(var(--accent2-rgb),.9);box-shadow:0 0 10px rgba(var(--accent2-rgb),.3)}
+  .agc.fu{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.45);color:#ffe2a8}
+  .m.seguito{border-color:rgba(255,176,32,.55)!important;box-shadow:0 0 18px rgba(255,176,32,.16)}
+  .m.seguito .mc::before{content:'🔁 COME PROMESSO';display:block;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1.5px;color:#ffb020;margin-bottom:4px}
+  .ddrop{border:1.5px dashed rgba(var(--accent-rgb),.4);border-radius:10px;padding:16px;text-align:center;font-size:13px;color:var(--dim);display:flex;flex-direction:column;align-items:center;gap:10px;transition:.15s}
+  .ddrop.on{background:rgba(var(--accent-rgb),.08);border-color:var(--accent);color:var(--text)}
+  .ddrop .tbtn{flex:0 0 auto}
+  .dpaste{margin-top:10px;font-size:13px}.dpaste summary{cursor:pointer;color:var(--accent)}
+  .dmeta{display:block;color:var(--dim);font-size:10.5px;font-family:'Share Tech Mono',monospace;margin-top:2px}
+  .dhit{background:rgba(var(--accent2-rgb),.07);border-left:2px solid rgba(var(--accent2-rgb),.7);padding:6px 9px;border-radius:0 6px 6px 0;margin-top:6px;font-size:12px;line-height:1.45}
+  .dhit b{color:#e3d8ff}.dhit mark{background:rgba(var(--accent-rgb),.25);color:#fff;border-radius:2px}
+  #instbtn{display:none}
+  .cite{display:inline-block;font-size:.82em;font-family:'Share Tech Mono',monospace;padding:0 6px;border-radius:6px;background:rgba(var(--accent2-rgb),.16);border:1px solid rgba(var(--accent2-rgb),.45);color:#e3d8ff;white-space:nowrap}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V9</span></div>
+  <div class="logo">M A I K <span>// V10</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -3315,12 +3357,15 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 <div id="toast"></div>
 <div id="wrap">
   <div id="side">
+    <div class="sideh"><h3>💬 Chat</h3><button class="newchat" onclick="newChat()" title="Nuova chat" aria-label="Nuova chat">＋ Nuova</button></div>
+    <div id="chats"></div>
     <h3>Stato</h3>
     <div class="kv"><span>Modello</span><span id="s-mod">—</span></div>
     <div class="kv"><span>Visione</span><span id="s-vis">—</span></div>
     <div class="kv"><span>Giorni</span><span id="s-gg">—</span></div>
     <div class="kv"><span>Scambi</span><span id="s-sc">—</span></div>
     <div class="kv"><span>Utente</span><span id="s-ut">—</span></div>
+    <div class="kv"><span>Agente</span><span id="s-ag">—</span></div>
     <h3>🎭 Personalità</h3>
     <div class="pchips" id="pers"></div>
     <h3>⏰ Promemoria</h3>
@@ -3333,12 +3378,14 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <input class="sfield" id="memq" placeholder="Cerca un ricordo..." oninput="cercaMem()">
     <div id="memres"></div>
     <button class="tbtn" style="width:100%;margin-top:8px" onclick="openMem()">🧠 Memoria completa</button>
+    <button class="tbtn" style="width:100%;margin-top:6px" onclick="openDocs()">📚 I tuoi documenti<span id="doccount"></span></button>
     <h3>🎨 Tema</h3>
     <div class="thsw" id="themes"></div>
     <h3>⚙ Opzioni</h3>
     <label class="opt">👂 Modalità Amico: solo se dico «Maik»<input type="checkbox" id="optwake" onchange="setOpt('wake',this.checked)"></label>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
-    <div class="note">Memoria su disco. MAIK impara da solo mentre parlate 🧠 · scrivi <b>aiuto</b> per vedere le azioni (timer, promemoria, lista, calcoli…). <b>🫂 AMICO</b>: ti vede e ti parla. <b>👁️</b>: guarda la webcam.</div>
+    <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
+    <div class="note">Memoria su disco, condivisa da tutte le chat. MAIK impara da solo 🧠 e <b>agisce da solo</b> 🤖: chiedigli le cose a parole tue («stasera pasta, metti in lista gli ingredienti»). <b>📚</b> legge i tuoi documenti e cita la fonte · <b>🔁</b> si ricorda di chiederti com'è andata · <b>🫂 AMICO</b>: ti vede e ti parla.</div>
   </div>
   <div id="main">
     <div id="sphere-area">
@@ -3348,10 +3395,12 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     </div>
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="newChat()">💬 nuova chat</button>
       <button onclick="qs('briefing')">☀️ briefing</button>
       <button onclick="q('Metti un timer di 5 minuti')">⏱️ timer</button>
       <button onclick="q('Ricordami alle 18 di ')">⏰ ricordami…</button>
       <button onclick="qs('Cosa c\'è nella lista?')">🛒 lista</button>
+      <button onclick="openDocs()">📚 documenti</button>
       <button onclick="guarda()">👁️ guardami</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -3372,6 +3421,26 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   <div class="mod" style="max-width:560px">
     <div class="modh"><div class="modt">🧠 MEMORIA DI MAIK</div><button class="ib" onclick="closeMem()" aria-label="Chiudi">✕</button></div>
     <div class="modb"><input class="sfield" id="memf" placeholder="Filtra i ricordi…" oninput="renderMem()" style="margin-bottom:10px"><div id="membody"></div></div>
+  </div>
+</div>
+
+<div class="ov" id="dmodal">
+  <div class="mod" style="max-width:600px">
+    <div class="modh"><div class="modt">📚 I TUOI DOCUMENTI</div><button class="ib" onclick="closeDocs()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="ddrop" id="ddrop"><span>⬆️ Trascina qui i tuoi file di testo (appunti, ricette, contratti, manuali, codice…)</span>
+        <button class="tbtn solid" type="button" onclick="$('#docin').click()">📂 Scegli i file</button>
+        <input type="file" id="docin" multiple accept=".txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r,.srt,.tex,.rtf,text/*" style="display:none" onchange="docFiles(this.files);this.value=''"></div>
+      <details class="dpaste"><summary>✍️ oppure incolla un testo</summary>
+        <input class="tfield" id="dpn" placeholder="Titolo (es. appunti di biologia)">
+        <textarea class="tfield" id="dpt" style="min-height:90px" placeholder="Incolla qui il testo…"></textarea>
+        <div class="trow"><button class="tbtn solid" type="button" onclick="docPaste()">📚 Salva nei documenti</button></div></details>
+      <div class="note" style="margin-top:10px">MAIK li divide in pezzi e, quando gli fai una domanda, usa i pezzi giusti e <b>cita la fonte</b>. Restano sul tuo computer.</div>
+      <input class="sfield" id="docq" placeholder="🔎 Prova a cercare nei documenti…" oninput="docSearch()" style="margin-top:10px">
+      <div id="docres"></div>
+      <div id="doclist"></div>
+      <div id="docspace" class="note"></div>
+    </div>
   </div>
 </div>
 
@@ -3764,7 +3833,9 @@ const MaikKit = (() => {
 </script>
 <script>
 const $=s=>document.querySelector(s);
-function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function escA(s){return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+const postJ=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
 function toast(m,t){const d=document.createElement('div');d.className='tst '+(t||'');d.textContent=m;$('#toast').appendChild(d);setTimeout(()=>d.remove(),3000);}
 function q(t){$('#inp').value=t;$('#inp').focus();}
 function qs(t){$('#inp').value=t;invia();}
@@ -3778,6 +3849,7 @@ function md(s){
   s=esc(s);
   s=s.replace(/^#{1,3}\s+(.+)$/gm,'<b class="md-h">$1</b>');
   s=s.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+  s=s.replace(/\[([^\[\]\n]{1,80}\.[A-Za-z0-9]{1,5})(?: · parte \d+)?\]/g,'<span class="cite">📄 $1</span>');   // fonti citate [nome.txt]
   s=s.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
   s=s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>');
   s=s.replace(/(?:^|\n)((?:- .+(?:\n|$))+)/g,(m,l)=>'\n<ul>'+l.trim().split('\n').map(x=>'<li>'+x.replace(/^- /,'')+'</li>').join('')+'</ul>');
@@ -3830,7 +3902,7 @@ async function stato(){
     $('#dot').className='dot'+(s.online?' on':'');
     $('#stato').textContent=s.online?'ollama online':'ollama offline';
     $('#s-mod').textContent=s.modello;$('#s-gg').textContent=s.giorni;$('#s-sc').textContent=s.scambi;$('#s-ut').textContent=s.nome_utente||'—';
-    pName=s.nome_utente||'';
+    pName=s.nome_utente||'';$('#s-ag').textContent=s.agente?'🤖 attivo':'spento';
     if(s.personalita&&s.personalita!==persCur){persCur=s.personalita;renderPers();}
   }catch(e){$('#stato').textContent='server non raggiungibile';}
 }
@@ -3838,7 +3910,7 @@ async function cfg(){try{const c=await (await fetch('/config')).json();$('#s-vis
 async function profilo(){
   try{const s=await (await fetch('/statistiche')).json();const p=s.profilo||{};const k=Object.keys(p);
     $('#profilo').innerHTML=k.length?k.map(x=>`<div class="kv"><span>${esc(x)}</span><span>${esc(String(p[x]))}</span></div>`).join(''):'nessun dato ancora';
-    drawMood(s.umore_grafico);
+    drawMood(s.umore_grafico);$('#doccount').textContent=s.n_documenti?' ('+s.n_documenti+')':'';
   }catch(e){}
 }
 let memT;
@@ -3883,7 +3955,7 @@ async function invia(opt){
   }
   let full='';ctl=new AbortController();$('#stopbtn').style.display='inline-block';
   try{
-    const body={testo:t};if(regen)body.rigenera=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
+    const body={testo:t,sessione:CUR};if(regen)body.rigenera=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
     const resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
     const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
@@ -3894,11 +3966,17 @@ async function invia(opt){
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
         if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
+        if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
             mc(bubble).innerHTML=renderAI(full);say(full);finalize(bubble,full,obj.stat,A?null:t);
+            addChips(bubble,obj.azioni,obj.fonti,obj.seguito);
+            if(obj.azioni&&obj.azioni.length)loadPr();
+            if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
+            if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
+            loadChats();
             if(obj.stat&&obj.stat.tps)$('#speed').textContent='⚡ '+obj.stat.tps.toLocaleString('it-IT')+' tok/s';
             if(obj.imparato)toast('💡 Ho imparato: '+obj.imparato,'ok');
             if(obj.azione){loadPr();}else{setTimeout(checkLearn,4000);setTimeout(checkLearn,12000);}
@@ -3921,12 +3999,12 @@ function regen(d){if(busy)return;const q=d.dataset.q;if(q==null){toast('Questa r
 // ---------- ALLEGATI (📎, trascina e rilascia, incolla) ----------
 async function attachFile(f){if(!f)return;try{
   if(/^image\//.test(f.type))att={kind:'image',name:f.name||'immagine',dataUrl:await MaikKit.shrinkImage(f)};
-  else if(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type)){if(f.size>400000){toast('File troppo grande (massimo 400 KB)','err');return;}const raw=await f.text();att={kind:'text',name:f.name,content:raw.slice(0,12000),cut:raw.length>12000};}
+  else if(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type)){if(f.size>400000){toast('File troppo grande (massimo 400 KB)','err');return;}const raw=await f.text();att={kind:'text',name:f.name,content:raw.slice(0,12000),cut:raw.length>12000,full:raw};}
   else{toast('Posso leggere immagini e file di testo (txt, md, csv, codice…)','err');return;}
   renderAtt();$('#inp').focus();}catch(e){toast('Non riesco a leggere il file','err');}}
 function onAttIn(e){attachFile(e.target.files[0]);e.target.value='';}
 function renderAtt(){const el=$('#attprev');if(!att){el.classList.remove('on');el.innerHTML='';return;}el.classList.add('on');
-  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span><button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato">✕</button>';}
+  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span>'+(att.kind==='text'?'<button class="tbtn" type="button" id="att2doc" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="attToDocs()" title="Così MAIK lo ricorda sempre e lo cita">📚 salva nei documenti</button>':'')+'<button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato"'+(att.kind==='text'?' style="margin-left:4px"':'')+'>✕</button>';}
 function clearAtt(){att=null;renderAtt();}
 
 // ---------- NUCLEO NEURALE (MaikKit.core: nitido su ogni schermo, reagisce a voce e stati) ----------
@@ -4133,21 +4211,104 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('❓','Cosa sai fare?',go('aiuto'),'azione','aiuto help'),c('🫂',friend?'Esci dalla Modalità Amico':'Modalità Amico',()=>toggleFriend(),'webcam + voce'),
     c('👁️','Guarda dalla webcam',()=>guarda(),'visione'),c('📎','Allega immagine o file',()=>$('#attin').click(),'allegato'),
     c('🧠','Memoria completa',()=>openMem(),'ricordi'),c('🧰','Strumenti',()=>openTools(),'calcolatrice, timer…'),
-    c('🎤','Parla con MAIK',()=>toggleMic(),'microfono'),c('≡','Mostra / nascondi la barra laterale',()=>toggleSide(),'')];
+    c('🎤','Parla con MAIK',()=>toggleMic(),'microfono'),c('≡','Mostra / nascondi la barra laterale',()=>toggleSide(),''),
+    c('💬','Nuova chat',()=>newChat(),'conversazione'),c('📚','I tuoi documenti',()=>openDocs(),'fonti, file, carica'),
+    c('📲','Installa MAIK come app',()=>installa(),'pwa','installa app telefono')];
+  CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
   Object.entries(MaikKit.THEMES).forEach(([k,t])=>L.push(c('🎨','Tema: '+t.nm,()=>{setTheme(k);toast('🎨 Tema '+t.nm,'ok');},'tema','colore')));
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  MaikKit.boot({version:'V9 · SERVER',checks:[
+  MaikKit.boot({version:'V10 · SERVER',key:'maik_boot_v10',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 10 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
     {label:'Nucleo neurale',run:async()=>({ok:true,text:'pronto · tema '+(MaikKit.THEMES[OPT.theme]||MaikKit.THEMES.neon).nm})}]});}
 
+// ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
+let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
+const WELCOME='Ciao! Sono **Maik**, versione 10 🤖 Ora **agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
+async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
+  if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
+  $('#chats').innerHTML=CHATS.map(c=>'<div class="chat'+(c.id===CUR?' on':'')+'" data-id="'+escA(c.id)+'" title="'+escA(c.anteprima||c.titolo)+'" role="button" tabindex="0"><span class="ct">'+(c.id==='principale'?'⭐ ':'💬 ')+esc(c.titolo)+'</span><small>'+(c.n||0)+'</small><button class="cb" data-a="ren" title="Rinomina" aria-label="Rinomina la chat">✎</button><button class="cb del" data-a="del" title="'+(c.id==='principale'?'Svuota':'Elimina')+'" aria-label="'+(c.id==='principale'?'Svuota':'Elimina')+' la chat">✕</button></div>').join('');}
+async function loadHistory(){let r;try{r=await (await fetch('/sessioni/storia?id='+encodeURIComponent(CUR))).json();}catch(e){return 0;}
+  const sc=r.scambi||[];
+  sc.forEach(x=>{if(x.tu){const m=x.tu.match(/^([\s\S]*?)\s*\[📎 ([^\]]+)\]$/);add('me',m?m[1]:x.tu,null,{file:m?m[2]:null});}
+    const d=add('ai',x.ai,x.seguito?'seguito':null);finalize(d,x.ai,null,x.tu&&!/\[📎/.test(x.tu)?x.tu:null);addChips(d,x.azioni,x.fonti);});
+  $('#msgs').scrollTop=1e9;return sc.length;}
+async function switchChat(id,force){if(busy){toast('Aspetta che finisca di rispondere','err');return;}if(id===CUR&&!force)return;
+  CUR=id;LS.set('maik_srv_chat',id);$('#msgs').innerHTML='';loadChats();
+  if(!(await loadHistory()))add('ai',CUR==='principale'?WELCOME:NUOVA);
+  if(innerWidth<=760)$('#side').classList.add('hidden');if(!friend)$('#inp').focus();}
+async function newChat(){if(busy)return;const cur=CHATS.find(c=>c.id===CUR);
+  if(cur&&cur.id!=='principale'&&!cur.n){toast('Sei già in una chat nuova ✨');$('#inp').focus();return;}
+  try{const r=await postJ('/sessioni/nuova');await switchChat(r.sessione.id);}catch(e){toast('Non riesco a creare la chat','err');}}
+async function renameChat(id){const c=CHATS.find(x=>x.id===id);const t=prompt('Nuovo nome della chat:',c?c.titolo:'');if(!t||!t.trim())return;
+  try{await postJ('/sessioni/rinomina',{id,titolo:t.trim()});}catch(e){}loadChats();}
+async function delChat(id){const c=CHATS.find(x=>x.id===id),pr=id==='principale';
+  if(!confirm((pr?'Svuotare':'Eliminare')+' la chat «'+(c?c.titolo:'')+'»?\nI messaggi spariscono, la memoria su di te resta.'))return;
+  try{await postJ('/sessioni/elimina',{id});}catch(e){toast('Errore','err');return;}
+  toast('🗑️ Chat '+(pr?'svuotata':'eliminata'),'ok');if(id===CUR)await switchChat('principale',true);else loadChats();}
+
+// ---------- V10: AGENTE · FONTI · FOLLOW-UP (chip sotto la risposta) ----------
+function agEl(d){let g=d.querySelector('.ag');if(!g){g=document.createElement('div');g.className='ag';d.insertBefore(g,d.querySelector('.acts'));}return g;}
+function chipH(a){return '<span class="agc'+(a.ok===false?' ko':'')+'" title="'+escA((a.tipo||'')+': '+(a.esito||''))+'">'+(a.icona||'🔧')+' '+esc(a.esito||a.tipo||'')+'</span>';}
+function addChips(d,az,fo,fu){let h='';(az||[]).forEach(a=>h+=chipH(a));
+  (fo||[]).forEach(f=>h+='<span class="agc src'+(f.citata?' cit':'')+'" title="'+escA(f.anteprima||f.nome)+'">📄 '+esc(f.nome)+' · parte '+f.pezzo+'</span>');
+  if(fu)h+='<span class="agc fu" title="'+escA('Evento: '+fu.evento+' ('+fu.quando+')')+'">🔁 ti chiederò com\'è andata</span>';
+  if(h||d.querySelector('.ag'))agEl(d).innerHTML=h;}
+async function checkSeguiti(){if(busy)return;try{const r=await (await fetch('/seguiti/scaduti?sessione='+encodeURIComponent(CUR))).json();const a=r.seguiti||[];
+  a.forEach(x=>{const d=add('ai',x.testo,'seguito');finalize(d,x.testo,null,null);toast('🔁 '+x.evento,'ok');notify('MAIK',x.testo);if(core)core.pulse(1.5);say(x.testo);});
+  if(a.length){beep(1);loadChats();}}catch(e){}}
+
+// ---------- V10: I TUOI DOCUMENTI ----------
+function fmtD(iso){try{return new Date(iso).toLocaleDateString('it-IT',{day:'numeric',month:'short'});}catch(e){return '';}}
+async function openDocs(){$('#dmodal').classList.add('open');$('#docq').value='';$('#docres').innerHTML='';await loadDocs();}
+function closeDocs(){$('#dmodal').classList.remove('open');}
+async function loadDocs(){let r;try{r=await (await fetch('/documenti')).json();}catch(e){$('#doclist').innerHTML='<div class="note">Server non raggiungibile</div>';return;}
+  const D=r.documenti||[];$('#doccount').textContent=D.length?' ('+D.length+')':'';
+  $('#doclist').innerHTML=D.length?'<h4 style="margin:14px 0 4px">Documenti ('+D.length+')</h4>'+D.map(d=>'<div class="memrow doc" data-id="'+escA(d.id)+'"><span class="tag">'+esc(((/\.(\w{1,4})$/.exec(d.nome)||[])[1]||'txt'))+'</span><span class="txt"><b>'+esc(d.nome)+'</b><small class="dmeta">'+d.caratteri.toLocaleString('it-IT')+' caratteri · '+d.n_pezzi+' pezz'+(d.n_pezzi===1?'o':'i')+' · '+fmtD(d.aggiunto)+'</small></span><button class="nx" onclick="docDel(\''+escA(d.id)+'\')" title="Elimina" aria-label="Elimina il documento">✕</button></div>').join(''):'<div class="note">Ancora nessun documento: caricane uno e poi chiedi a MAIK di quello che c\'è dentro.</div>';
+  $('#docspace').textContent=r.caratteri?'Spazio usato: '+Math.max(1,Math.round(100*r.caratteri/r.limite))+'%':'';}
+async function docSave(nome,contenuto){try{const r=await postJ('/documenti',{nome,contenuto});
+  if(r.ok){toast('📚 '+r.documento.nome+': '+r.documento.n_pezzi+' pezz'+(r.documento.n_pezzi===1?'o':'i')+(r.documento.tagliato?' (tagliato)':''),'ok');return true;}
+  toast(r.errore||'Documento non salvato','err');}catch(e){toast('Errore di rete','err');}return false;}
+async function docFiles(files){const L=[...(files||[])].slice(0,10);for(const f of L){
+  if(!(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type))){toast('«'+f.name+'»: solo file di testo','err');continue;}
+  if(f.size>2000000){toast('«'+f.name+'» è troppo grande (max 2 MB)','err');continue;}
+  await docSave(f.name,await f.text());}loadDocs();}
+async function docPaste(){const t=$('#dpt').value.trim();if(!t){toast('Incolla prima un testo','err');return;}
+  let n=$('#dpn').value.trim()||('appunti '+new Date().toLocaleDateString('it-IT'));if(!/\.\w{1,5}$/.test(n))n+='.txt';
+  if(await docSave(n,t)){$('#dpt').value='';$('#dpn').value='';$('.dpaste').open=false;loadDocs();}}
+async function docDel(id){if(!confirm('Eliminare questo documento?'))return;try{await postJ('/documenti/elimina',{id});}catch(e){}loadDocs();}
+let docT;
+function docSearch(){clearTimeout(docT);docT=setTimeout(async()=>{const v=$('#docq').value.trim(),box=$('#docres');if(!v){box.innerHTML='';return;}
+  try{const r=await (await fetch('/documenti/cerca?q='+encodeURIComponent(v))).json();const h=r.risultati||[];
+    const words=v.split(/\s+/).filter(w=>w.length>2).map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));const rx=words.length?new RegExp('('+words.join('|')+')','gi'):null;
+    box.innerHTML=h.length?h.slice(0,4).map(x=>{let t=esc(x.testo.slice(0,260))+(x.testo.length>260?'…':'');if(rx)t=t.replace(rx,'<mark>$1</mark>');return '<div class="dhit"><b>📄 '+esc(x.nome)+' · parte '+x.pezzo+'</b><br>'+t+'</div>';}).join(''):'<div class="note">Nessun risultato</div>';}catch(e){}},250);}
+async function attToDocs(){if(!att||att.kind!=='text')return;if(await docSave(att.name,att.full||att.content)){const b=$('#att2doc');if(b){b.textContent='✓ nei documenti';b.disabled=true;}profilo();}}
+
+// ---------- V10: APP INSTALLABILE ----------
+let instEv=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();instEv=e;$('#instbtn').style.display='block';});
+window.addEventListener('appinstalled',()=>{instEv=null;$('#instbtn').style.display='none';toast('📲 MAIK installato! Lo trovi tra le tue app','ok');});
+async function installa(){if(!instEv){toast(matchMedia('(display-mode: standalone)').matches?'MAIK è già installato ✓':'Dal menu del browser scegli «Installa app» oppure «Aggiungi a schermata Home» 📲');return;}
+  instEv.prompt();try{await instEv.userChoice;}catch(e){}instEv=null;$('#instbtn').style.display='none';}
+if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('/sw.js').catch(()=>{});
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();}});
+$('#dmodal').addEventListener('click',e=>{if(e.target.id==='dmodal')closeDocs();});
+['dragenter','dragover'].forEach(ev=>$('#ddrop').addEventListener(ev,e=>{e.preventDefault();$('#ddrop').classList.add('on');}));
+['dragleave','drop'].forEach(ev=>$('#ddrop').addEventListener(ev,()=>$('#ddrop').classList.remove('on')));
+$('#ddrop').addEventListener('drop',e=>{e.preventDefault();docFiles(e.dataTransfer.files);});
+$('#chats').addEventListener('click',e=>{const row=e.target.closest('.chat');if(!row)return;e.stopPropagation();const b=e.target.closest('.cb'),id=row.dataset.id;
+  if(b){if(b.dataset.a==='ren')renameChat(id);else delChat(id);return;}switchChat(id);});
+$('#chats').addEventListener('keydown',e=>{const row=e.target.closest('.chat');if(row&&e.key==='Enter'&&!e.target.closest('.cb'))switchChat(row.dataset.id);});
 $('#tmodal').addEventListener('click',e=>{if(e.target.id==='tmodal')closeTools();});
 $('#mmodal').addEventListener('click',e=>{if(e.target.id==='mmodal')closeMem();});
 window.addEventListener('resize',()=>{sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(SPH.x,a.width-SPH.size));SPH.y=Math.max(0,Math.min(SPH.y,a.height-SPH.size));sphPos();});
@@ -4168,9 +4329,12 @@ $('#main').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer
 $('#inp').addEventListener('paste',e=>{const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(x=>x.type.startsWith('image/'));if(it){e.preventDefault();attachFile(it.getAsFile());}});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
-setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);
-(async()=>{try{const r=await (await fetch('/briefing?auto=1')).json();if(r.testo){add('ai',r.testo);return;}}catch(e){}
-  add('ai','Ciao! Sono **Maik**, versione 9 🧠 Imparo da solo mentre parliamo, so fare azioni vere (timer, promemoria che suonano, lista, calcoli…) e posso guardare le immagini che mi mandi con 📎. Scrivi **aiuto** per vedere tutto, oppure premi **Ctrl+K** 💚');})();
+setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);setInterval(checkSeguiti,20000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSeguiti();});
+(async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
+  let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
+  if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
+  setTimeout(checkSeguiti,2500);})();
 </script>
 </body></html>"""
 

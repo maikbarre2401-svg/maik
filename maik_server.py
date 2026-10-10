@@ -2094,7 +2094,8 @@ _RE_EVENTO_DOPO = re.compile(r"\b(?P<verbo>ho|avr[oò]|c'[eè])\s+(?P<cosa>[^.!?
                              r")\b(?P<orario>\s+(?:alle|verso le|ore)\s+\d{1,2}(?:[:.]\d{2})?)?", re.I)
 _NON_EVENTI = re.compile(r"^(?:fame|sete|sonno|freddo|caldo|voglia|paura|tempo|bisogno|ragione|torto|niente|nulla|"
                          r"da fare|mal di|un po|poco|tanto|troppo|sempre|ancora|gia|già|deciso|capito|"
-                         r"(?:\w+(?:ato|uto|ito|ata|uta|ita))\b)", re.I)
+                         r"(?:\w+(?:ato|uto|ito)|fatto|preso|visto|detto|messo|scritto|letto|perso|vinto|chiuso|aperto|rotto)\b)",
+                         re.I)   # participi passati: «oggi ho avuto l'esame» è già successo
 _SOLO_VERBO = {"mi sposo", "mi laureo", "mi opero", "parto", "partiro", "partirò", "torno"}
 
 

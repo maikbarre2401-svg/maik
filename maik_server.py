@@ -2276,7 +2276,8 @@ CARTELLE_PC = {"desktop": ("Desktop", "Scrivania"), "scrivania": ("Desktop", "Sc
                "documenti": ("Documents", "Documenti"), "download": ("Downloads", "Scaricati"),
                "scaricati": ("Downloads", "Scaricati"), "immagini": ("Pictures", "Immagini"), "foto": ("Pictures", "Immagini"),
                "musica": ("Music", "Musica"), "video": ("Videos", "Video", "Movies"), "home": ("",), "utente": ("",)}
-ICONE_PC = {"sito": "🌐", "cerca": "🔎", "app": "🖥️", "cartella": "📁", "info": "💻"}
+ICONE_PC = {"sito": "🌐", "cerca": "🔎", "app": "🖥️", "cartella": "📁", "info": "💻",
+            "volume": "🔊", "media": "⏯️", "screenshot": "📸", "file": "📄", "scrivi": "⌨️", "blocca": "🔒"}
 
 
 def _sistema():
@@ -2380,15 +2381,393 @@ def info_pc():
     return out
 
 
+# ── v12: volume, musica, screenshot, i tuoi file, scrivere al posto tuo, blocco del PC ──
+# Ogni sistema ha il suo modo: su Windows tasti multimediali "veri" (ctypes), su macOS AppleScript,
+# su Linux il primo programma installato tra quelli elencati. Sempre senza shell.
+VK = {"vol_su": 0xAF, "vol_giu": 0xAE, "muto": 0xAD, "play_pausa": 0xB3, "successivo": 0xB0, "precedente": 0xB1, "stop": 0xB2}
+RITARDO_SCRIVI = 5            # secondi per cliccare nella finestra dove vuoi il testo
+SENZA_FIDUCIA = {"scrivi"}    # scrivere nel PC: chiede SEMPRE (niente «sì, sempre»)
+CARTELLE_RICERCA = ("desktop", "documenti", "download", "immagini", "musica", "video")
+SALTA_CARTELLE = {"node_modules", "__pycache__", "appdata", "library", "venv", ".venv", "site-packages", "$recycle.bin",
+                  "system volume information", "cache", "caches", "temp", "tmp", "windows", "program files"}
+# niente programmi, script o collegamenti: si aprono solo documenti, foto, musica, video, cartelle
+EST_BLOCCATE = {".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".pif", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse",
+                ".wsf", ".wsh", ".hta", ".cpl", ".msc", ".lnk", ".url", ".reg", ".inf", ".scf", ".jar", ".sh", ".bash",
+                ".command", ".app", ".apk", ".dmg", ".pkg", ".desktop", ".appimage", ".run", ".py", ".pyw", ".gadget",
+                ".application", ".workflow", ".action", ".csh", ".ksh", ".bin", ".elf", ".deb", ".rpm"}
+_EST = {"img": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".bmp", ".tif", ".tiff", ".svg"},
+        "vid": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".wmv"},
+        "aud": {".mp3", ".m4a", ".flac", ".wav", ".ogg", ".aac", ".wma", ".opus"},
+        "doc": {".doc", ".docx", ".odt", ".pdf", ".txt", ".rtf", ".md", ".pages"},
+        "xls": {".xls", ".xlsx", ".ods", ".csv", ".numbers"}, "ppt": {".ppt", ".pptx", ".odp", ".key"}}
+SUGGERIMENTI_FILE = {"foto": "img", "fotografia": "img", "fotografie": "img", "immagine": "img", "immagini": "img",
+                     "screenshot": "img", "video": "vid", "filmato": "vid", "filmati": "vid", "canzone": "aud",
+                     "canzoni": "aud", "brano": "aud", "brani": "aud", "audio": "aud", "musica": "aud",
+                     "pdf": {".pdf"}, "documento": "doc", "documenti": "doc", "lettera": "doc", "foglio": "xls",
+                     "tabella": "xls", "excel": "xls", "presentazione": "ppt", "slide": "ppt", "powerpoint": "ppt",
+                     "word": {".doc", ".docx"}, "cartella": "dir", "cartelle": "dir"}
+_STOP_FILE = set("il lo la i gli le l un uno una di del dello della dei degli delle da dal dalla in nel nella con su sul "
+                 "sulla per mio mia miei mie tuo tua file che ho dove quel quella quello quei e o a al alla ultimo ultima "
+                 "ultimi ultime nuovo nuova".split())
+ICONE_FILE = {"img": "🖼️", "vid": "🎬", "aud": "🎵", "doc": "📄", "xls": "📊", "ppt": "📽️"}
+FILE_EST_RE = r"\.(?:pdf|docx?|odt|txt|rtf|md|xlsx?|ods|csv|pptx?|odp|jpe?g|png|gif|webp|heic|mp3|m4a|flac|wav|ogg|mp4|mov|mkv|avi|zip)$"
+
+SCRIPT_SCREENSHOT_WIN = r"""
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+Add-Type -Namespace MaikW -Name U -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();'
+[MaikW.U]::SetProcessDPIAware() | Out-Null
+$b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+$bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+$g = [System.Drawing.Graphics]::FromImage($bmp)
+$g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+$bmp.Save($env:MAIK_SHOT, [System.Drawing.Imaging.ImageFormat]::Png)
+$g.Dispose(); $bmp.Dispose()
+"""
+
+
+def piano_volume(s, azione, valore=None, passo=10):
+    """Come cambiare il volume su questo sistema → ("tasti", [vk…]) su Windows, ("cmd", [comandi da provare]) altrove."""
+    passo = max(2, min(50, int(passo or 10)))
+    valore = max(0, min(100, int(valore or 0)))
+    if s == "win":                                   # ogni tasto del volume = 2%
+        su, giu, muto = VK["vol_su"], VK["vol_giu"], VK["muto"]
+        return "tasti", {"su": [su] * (passo // 2), "giu": [giu] * (passo // 2),
+                         "imposta": [giu] * 50 + [su] * round(valore / 2),
+                         "smuto": [su, giu],          # un tasto del volume toglie sempre il muto
+                         "muto": [su, giu, muto]}[azione]   # muto: prima lo tolgo, così il tasto lo mette di sicuro
+    if s == "mac":
+        attuale = "(output volume of (get volume settings))"
+        return "cmd", [["osascript", "-e", {"su": f"set volume output volume ({attuale} + {passo})",
+                                             "giu": f"set volume output volume ({attuale} - {passo})",
+                                             "imposta": f"set volume output volume {valore}",
+                                             "muto": "set volume output muted true",
+                                             "smuto": "set volume output muted false"}[azione]]]
+    pa = {"su": ["set-sink-volume", "@DEFAULT_SINK@", f"+{passo}%"], "giu": ["set-sink-volume", "@DEFAULT_SINK@", f"-{passo}%"],
+          "imposta": ["set-sink-volume", "@DEFAULT_SINK@", f"{valore}%"], "muto": ["set-sink-mute", "@DEFAULT_SINK@", "1"],
+          "smuto": ["set-sink-mute", "@DEFAULT_SINK@", "0"]}[azione]
+    wp = {"su": ["set-volume", "-l", "1.0", "@DEFAULT_AUDIO_SINK@", f"{passo}%+"],
+          "giu": ["set-volume", "@DEFAULT_AUDIO_SINK@", f"{passo}%-"], "imposta": ["set-volume", "@DEFAULT_AUDIO_SINK@", f"{valore}%"],
+          "muto": ["set-mute", "@DEFAULT_AUDIO_SINK@", "1"], "smuto": ["set-mute", "@DEFAULT_AUDIO_SINK@", "0"]}[azione]
+    am = {"su": [f"{passo}%+"], "giu": [f"{passo}%-"], "imposta": [f"{valore}%"], "muto": ["mute"], "smuto": ["unmute"]}[azione]
+    return "cmd", [["pactl"] + pa, ["wpctl"] + wp, ["amixer", "-q", "sset", "Master"] + am]
+
+
+def piano_media(s, azione):
+    """Play/pausa, brano successivo/precedente: va con Spotify, YouTube nel browser, lettori multimediali…"""
+    if s == "win":
+        return "tasti", [{"play_pausa": VK["play_pausa"], "pausa": VK["play_pausa"], "play": VK["play_pausa"],
+                          "successivo": VK["successivo"], "precedente": VK["precedente"], "stop": VK["stop"]}[azione]]
+    if s == "mac":
+        cmd = {"play_pausa": "playpause", "pausa": "pause", "play": "play", "successivo": "next track",
+               "precedente": "previous track", "stop": "pause"}[azione]
+        return "cmd", [["osascript", "-e", f'if application "Spotify" is running then\ntell application "Spotify" to {cmd}\n'
+                        f'else if application "Music" is running then\ntell application "Music" to {cmd}\n'
+                        'else\nerror "non c\'è un lettore aperto (Spotify o Musica)"\nend if']]
+    pc = {"play_pausa": "play-pause", "pausa": "pause", "play": "play", "successivo": "next", "precedente": "previous", "stop": "stop"}[azione]
+    xk = {"play_pausa": "XF86AudioPlay", "pausa": "XF86AudioPause", "play": "XF86AudioPlay", "successivo": "XF86AudioNext",
+          "precedente": "XF86AudioPrev", "stop": "XF86AudioStop"}[azione]
+    return "cmd", [["playerctl", pc], ["xdotool", "key", xk]]
+
+
+def piano_blocca(s):
+    if s == "win":
+        return "blocca", None
+    if s == "mac":
+        return "cmd", [["pmset", "displaysleepnow"]]
+    return "cmd", [["loginctl", "lock-session"], ["xdg-screensaver", "lock"], ["gnome-screensaver-command", "-l"], ["dm-tool", "lock"]]
+
+
+def piano_screenshot(s, percorso):
+    if s == "win":
+        return "ps", SCRIPT_SCREENSHOT_WIN
+    if s == "mac":
+        return "cmd", [["screencapture", "-x", percorso]]
+    return "cmd", [["gnome-screenshot", "-f", percorso], ["spectacle", "-b", "-n", "-f", "-o", percorso], ["grim", percorso],
+                   ["maim", percorso], ["scrot", percorso], ["import", "-window", "root", percorso]]
+
+
+def piano_scrivi(s, testo):
+    """Scrive il testo nella finestra attiva, come se lo battessi tu."""
+    if s == "win":
+        return "unicode", testo
+    if s == "mac":
+        parti, righe = [], testo.split("\n")
+        for i, r in enumerate(righe):
+            if r:
+                parti.append('keystroke "' + r.replace("\\", "\\\\").replace('"', '\\"') + '"')
+            if i < len(righe) - 1:
+                parti.append("key code 36")                   # Invio
+        return "cmd", [["osascript", "-e", 'tell application "System Events"\n' + "\n".join(parti) + "\nend tell"]]
+    return "cmd", [["xdotool", "type", "--delay", "12", "--", testo], ["wtype", "--", testo], ["ydotool", "type", "--", testo]]
+
+
+# SendInput (Windows): strutture con le dimensioni giuste anche a 64 bit (INPUT = 40 byte)
+class _TASTO(ctypes.Structure):
+    _fields_ = [("wVk", ctypes.c_uint16), ("wScan", ctypes.c_uint16), ("dwFlags", ctypes.c_uint32),
+                ("time", ctypes.c_uint32), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _MOUSE(ctypes.Structure):
+    _fields_ = [("dx", ctypes.c_int32), ("dy", ctypes.c_int32), ("mouseData", ctypes.c_uint32),
+                ("dwFlags", ctypes.c_uint32), ("time", ctypes.c_uint32), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _HW(ctypes.Structure):
+    _fields_ = [("uMsg", ctypes.c_uint32), ("wParamL", ctypes.c_uint16), ("wParamH", ctypes.c_uint16)]
+
+
+class _INPUT_U(ctypes.Union):
+    _fields_ = [("ki", _TASTO), ("mi", _MOUSE), ("hi", _HW)]
+
+
+class _INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_uint32), ("u", _INPUT_U)]
+
+
+def _user32():
+    u = ctypes.windll.user32
+    u.keybd_event.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, ctypes.c_uint32, ctypes.c_size_t]
+    u.keybd_event.restype = None
+    u.SendInput.argtypes = [ctypes.c_uint, ctypes.POINTER(_INPUT), ctypes.c_int]
+    u.SendInput.restype = ctypes.c_uint
+    return u
+
+
+def _tasti_win(vks):
+    u = _user32()
+    for vk in vks:
+        u.keybd_event(vk, 0, 0, 0)
+        u.keybd_event(vk, 0, 2, 0)                            # KEYEVENTF_KEYUP
+        time.sleep(0.015)
+
+
+def eventi_scrivi(testo):
+    """Eventi per SendInput: (vk, scan, flag). Lettere come Unicode (anche accenti ed emoji), Invio e Tab come tasti."""
+    ev = []
+    for ch in testo.replace("\r\n", "\n").replace("\r", "\n"):
+        if ch in "\n\t":
+            vk = 0x0D if ch == "\n" else 0x09
+            ev += [(vk, 0, 0), (vk, 0, 2)]
+            continue
+        b = ch.encode("utf-16-le")
+        for i in range(0, len(b), 2):
+            cu = int.from_bytes(b[i:i + 2], "little")
+            ev += [(0, cu, 4), (0, cu, 4 | 2)]                # KEYEVENTF_UNICODE (+ KEYUP)
+    return ev
+
+
+def _scrivi_win(testo):
+    u, ev = _user32(), eventi_scrivi(testo)
+    for i in range(0, len(ev), 40):
+        blocco = ev[i:i + 40]
+        arr = (_INPUT * len(blocco))()
+        for j, (vk, sc, fl) in enumerate(blocco):
+            arr[j].type = 1                                   # INPUT_KEYBOARD
+            arr[j].u.ki = _TASTO(vk, sc, fl, 0, 0)
+        if u.SendInput(len(blocco), arr, ctypes.sizeof(_INPUT)) != len(blocco):
+            raise OSError("Windows ha bloccato la digitazione (la finestra è di un programma protetto?)")
+        time.sleep(0.012)
+
+
+def _powershell(script, env_extra=None):
+    r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+                       capture_output=True, timeout=40, env=dict(os.environ, **(env_extra or {})),
+                       **({"creationflags": 0x08000000} if os.name == "nt" else {}))   # CREATE_NO_WINDOW
+    if r.returncode != 0:
+        raise OSError((r.stderr or b"").decode("utf-8", "replace").strip()[:120] or "PowerShell non ha funzionato")
+
+
+def esegui_piano(piano):
+    genere, val = piano
+    if genere == "tasti":
+        return _tasti_win(val)
+    if genere == "unicode":
+        return _scrivi_win(val)
+    if genere == "blocca":
+        if not ctypes.windll.user32.LockWorkStation():
+            raise OSError("Windows non ha bloccato il PC")
+        return
+    if genere == "ps":
+        raise ValueError("lo script PowerShell va eseguito con _powershell")
+    errori = []
+    for cmd in val:
+        if not shutil.which(cmd[0]):
+            continue
+        r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=25)
+        if r.returncode == 0:
+            return
+        errori.append(f"{cmd[0]}: " + ((r.stderr or b"").decode("utf-8", "replace").strip()[:90] or f"errore {r.returncode}"))
+    if errori:
+        raise OSError("; ".join(errori))
+    raise FileNotFoundError("su questo computer serve uno di questi programmi: " + ", ".join(dict.fromkeys(c[0] for c in val)))
+
+
+def _norm_file(s):
+    return re.sub(r"[\s_.\-–()\[\]]+", " ", _senza_accenti(str(s or "").lower())).strip()
+
+
+def radici_file():
+    """Dove cercare i tuoi file: le cartelle personali (anche quelle spostate in OneDrive)."""
+    home, out = Path.home(), []
+    candidati = [ComandiPC._cartella(k)[1] for k in CARTELLE_RICERCA]
+    for od in sorted(home.glob("OneDrive*"))[:3]:
+        candidati += [str(od / x) for x in ("Desktop", "Documenti", "Documents", "Immagini", "Pictures")]
+    for c in candidati:
+        if c and os.path.isdir(c):
+            p = os.path.realpath(c)
+            if p not in out and p != os.path.realpath(str(home)):
+                out.append(p)
+    return out
+
+
+def _dentro(percorso, radici):
+    p = os.path.realpath(percorso)
+    for r in radici:
+        try:
+            if os.path.commonpath([p, r]) == r:
+                return True
+        except ValueError:                                    # dischi diversi su Windows
+            continue
+    return False
+
+
+def _dim_umana(n):
+    if n < 1024:
+        return f"{n} byte"
+    for u in ("KB", "MB", "GB"):
+        n /= 1024
+        if n < 1024 or u == "GB":
+            return f"{n:.1f} {u}".replace(".", ",")
+
+
+def _info_file(p, radici, home):
+    try:
+        st = os.stat(p)
+    except OSError:
+        return None
+    est = os.path.splitext(p)[1].lower()
+    gen = next((k for k, v in _EST.items() if est in v), "")
+    d = datetime.datetime.fromtimestamp(st.st_mtime)
+    cartella = os.path.dirname(p)
+    try:
+        vis = os.path.relpath(cartella, home)
+    except ValueError:
+        vis = cartella
+    return {"nome": os.path.basename(p), "percorso": p, "cartella": vis.replace("\\", "/"),
+            "tipo": "cartella" if os.path.isdir(p) else "file", "icona": "📁" if os.path.isdir(p) else ICONE_FILE.get(gen, "📄"),
+            "dimensione": "" if os.path.isdir(p) else _dim_umana(st.st_size),
+            "modificato": f"{d.day} {MESI_IT[d.month - 1][:3]}" + (f" {d.year}" if d.year != datetime.date.today().year else ""),
+            "mtime": int(st.st_mtime)}
+
+
+def cerca_file(q, limite=8, tempo_max=3.0):
+    """Cerca per nome nelle cartelle personali (senza leggere i file). «foto del mare», «il pdf del contratto»…"""
+    q = str(q or "")
+    est = {"." + e.lower() for e in re.findall(r"\.([A-Za-z0-9]{2,5})\b", q)}          # «carbonara.txt» → solo .txt
+    q = re.sub(r"\.[A-Za-z0-9]{2,5}\b", " ", q)
+    parole = _norm_file(q).split()
+    solo_cartelle = False
+    for w in parole:
+        g = SUGGERIMENTI_FILE.get(w)
+        if g == "dir":
+            solo_cartelle = True
+        elif isinstance(g, set):
+            est |= g
+        elif g:
+            est |= _EST[g]
+    token = [w for w in parole if w not in _STOP_FILE and w not in SUGGERIMENTI_FILE and len(w) > 1][:6]
+    if not token and not est:
+        return []
+    radici, home = radici_file(), os.path.realpath(str(Path.home()))
+    fine, visti, trovati = time.time() + tempo_max, 0, []
+    pila = [(r, 0) for r in radici]
+    while pila and visti < 60000 and time.time() < fine:
+        cartella, prof = pila.pop()
+        try:
+            voci = list(os.scandir(cartella))
+        except OSError:
+            continue
+        for e in voci:
+            visti += 1
+            if e.name.startswith((".", "~$")):
+                continue
+            try:
+                is_dir = e.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir and prof < 6 and e.name.lower() not in SALTA_CARTELLE:
+                pila.append((e.path, prof + 1))
+            if solo_cartelle and not is_dir:
+                continue
+            ext = os.path.splitext(e.name)[1].lower()
+            if est and (is_dir or ext not in est):
+                continue
+            if not is_dir and ext in EST_BLOCCATE:
+                continue
+            nome = _norm_file(os.path.splitext(e.name)[0] if not is_dir else e.name)
+            punti = 0.0
+            for t in token:
+                if t in nome:
+                    punti += len(t) + (2 if re.search(r"(?:^| )" + re.escape(t), nome) else 0)
+                elif len(t) >= 5 and t[:-1] in nome:          # contratti ~ contratto
+                    punti += len(t) * 0.7
+                else:
+                    punti = -1
+                    break
+            if punti < 0:
+                continue
+            try:
+                mt = e.stat(follow_symlinks=False).st_mtime
+            except OSError:
+                mt = 0
+            giorni = max(0.0, (time.time() - mt) / 86400)
+            punti += (2.0 if giorni < 7 else 1.0 if giorni < 60 else 0) - 0.15 * prof + (1 if nome == " ".join(token) else 0)
+            trovati.append((punti, mt, e.path))
+    trovati.sort(key=lambda x: (-x[0], -x[1]))
+    out = []
+    for punti, _, p in trovati[:limite]:
+        i = _info_file(p, radici, home)
+        if i:
+            out.append(dict(i, punti=round(punti, 2)))
+    return out
+
+
+def _cartella_screenshot():
+    _, imm = ComandiPC._cartella("immagini")
+    base = os.path.join(imm, "MAIK") if imm and os.path.isdir(imm) else os.path.join(DATA_DIR, "screenshot")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _png_finto(w=320, h=180):
+    """Uno «schermo» finto per le prove (MAIK_PC_FINTO=1): sfondo, barra e due finestre."""
+    righe = []
+    for y in range(h):
+        r = []
+        for x in range(w):
+            if y < 14:
+                c = (30, 32, 40)
+            elif 30 < x < 170 and 30 < y < 120:
+                c = (240, 240, 245) if y > 42 else (0, 120, 215)
+            elif 190 < x < 300 and 60 < y < 160:
+                c = (250, 250, 250) if y > 72 else (124, 58, 237)
+            else:
+                c = (10 + x * 40 // w, 20 + y * 60 // h, 60 + x * 80 // w)
+            r += c
+        righe.append(r)
+    return _png(w, h, righe)
+
+
 class ComandiPC:
     """Prepara le azioni sul PC, aspetta la conferma, poi le esegue (o le simula con MAIK_PC_FINTO=1)."""
 
-    TIPI = ("sito", "cerca", "app", "cartella")
+    TIPI = ("sito", "cerca", "app", "cartella", "volume", "media", "screenshot", "file", "scrivi", "blocca")
 
     def __init__(self):
         self._lock = threading.Lock()
         self.attesa = {}           # id → azione da confermare
         self.registro = []         # ultime azioni eseguite (anche simulate)
+        self.schermate = {}        # v12: nome → percorso degli screenshot fatti da MAIK (solo questi si possono vedere)
 
     # ── capire cosa aprire ─────────────────────────────────
     @staticmethod
@@ -2427,7 +2806,7 @@ class ComandiPC:
     @staticmethod
     def _cartella(nome):
         n = re.sub(r"\s+", " ", str(nome or "")).strip().lower().strip(" .!?\"'«»")
-        n = re.sub(r"^(?:la\s+)?(?:cartella\s+)?(?:dei|degli|delle|di|del|della|i|gli|le)?\s*", "", n).strip()
+        n = re.sub(r"^(?:la\s+)?(?:cartella\s+)?(?:(?:dei|degli|delle|di|del|della|i|gli|le)\s+)?", "", n).strip()
         nomi = CARTELLE_PC.get(n)
         if not nomi:
             return n, None
@@ -2462,24 +2841,113 @@ class ComandiPC:
             n, percorso = self._cartella(args.get("nome"))
             return (f"aprire la cartella {n.title()}", {"percorso": percorso}) if percorso else \
                 (None, f"non so quale cartella sia «{n}» (prova: desktop, documenti, download, immagini, musica, video)")
+        # ── v12 ──
+        if tipo == "volume":
+            azione, valore = self._azione_volume(args)
+            if not azione:
+                return None, "come cambio il volume? (su, giù, muto, oppure un numero da 0 a 100)"
+            try:
+                passo = max(2, min(50, int(args.get("passo") or 10)))
+            except (TypeError, ValueError):
+                passo = 10
+            return ({"su": "alzare il volume", "giu": "abbassare il volume", "muto": "togliere l'audio",
+                     "smuto": "rimettere l'audio", "imposta": f"mettere il volume al {valore}%"}[azione],
+                    {"azione": azione, "valore": valore, "passo": passo})
+        if tipo == "media":
+            azione = self._azione_media(args.get("azione") or args.get("comando"))
+            return ({"play_pausa": "mettere in pausa o far ripartire la musica", "pausa": "mettere in pausa la musica",
+                     "play": "far ripartire la musica", "successivo": "passare al brano successivo",
+                     "precedente": "tornare al brano precedente", "stop": "fermare la musica"}[azione], {"azione": azione})
+        if tipo == "screenshot":
+            an = str(args.get("analizza", "")).lower() in ("1", "true", "si", "sì", "yes")
+            return ("fare uno screenshot dello schermo" + (" e dirti cosa vedo" if an else ""), {"analizza": an})
+        if tipo == "file":
+            p, errore = self._file_valido(args.get("percorso"))
+            nome = str(args.get("nome") or args.get("q") or "").strip()[:80]
+            if not p and errore == "dove" and (nome or args.get("percorso")):
+                trovati = cerca_file(nome or os.path.basename(str(args.get("percorso"))), 1)
+                if trovati:
+                    p, errore = self._file_valido(trovati[0]["percorso"])
+            if not p:
+                return None, {"bloccato": "per sicurezza non apro programmi, script o collegamenti: solo documenti, foto, musica, video e cartelle",
+                              "fuori": "apro solo i file nelle tue cartelle personali (desktop, documenti, download, immagini, musica, video)"
+                              }.get(errore, f"non trovo «{nome or args.get('percorso') or '?'}» nelle tue cartelle")
+            cosa = "la cartella" if os.path.isdir(p) else "il file"
+            return f"aprire {cosa} «{os.path.basename(p)}»", {"percorso": p}
+        if tipo == "scrivi":
+            testo = str(args.get("testo") or "").replace("\r\n", "\n").strip("\n")
+            if not testo.strip():
+                return None, "cosa devo scrivere?"
+            if len(testo) > 2000:
+                return None, "è un testo troppo lungo da scrivere (massimo 2000 caratteri): copialo e incollalo"
+            anteprima = re.sub(r"\s+", " ", testo)[:60] + ("…" if len(testo) > 60 else "")
+            return (f"scrivere «{anteprima}» nella finestra che scegli tu (dopo il sì hai {RITARDO_SCRIVI} secondi per cliccarci dentro)",
+                    {"testo": testo})
+        if tipo == "blocca":
+            return "bloccare il PC (per rientrare servirà la tua password)", {}
         return None, f"azione sul PC «{tipo}» sconosciuta"
 
-    def prepara(self, tipo, args, memoria=None):
-        """Azione valida → da confermare (o subito, se ti fidi già per quel tipo)."""
+    @staticmethod
+    def _azione_volume(args):
+        a = _senza_accenti(str(args.get("azione") or args.get("come") or "").strip().lower())
+        v = args.get("valore", args.get("livello"))
+        try:
+            if v is not None and str(v).strip() != "":
+                return "imposta", max(0, min(100, int(float(str(v).strip().rstrip("%")))))
+        except ValueError:
+            pass
+        for k, parole in (("smuto", ("smuto", "unmute", "riattiva", "rimetti", "togli muto", "audio")),
+                          ("muto", ("muto", "mute", "silenzio", "disattiva", "zitto")),
+                          ("su", ("su", "alza", "aumenta", "piu", "+", "forte", "up")),
+                          ("giu", ("giu", "abbassa", "diminuisci", "riduci", "meno", "-", "piano", "down"))):
+            if any(a == p or a.startswith(p + " ") for p in parole):
+                return k, None
+        return None, None
+
+    @staticmethod
+    def _azione_media(a):
+        a = _senza_accenti(str(a or "").strip().lower())
+        for k, parole in (("successivo", ("successiv", "avanti", "prossim", "next", "salta")),
+                          ("precedente", ("precedent", "indietro", "prima", "previous", "prev")),
+                          ("pausa", ("pausa", "ferma", "pause")), ("stop", ("stop",)),
+                          ("play", ("play", "riprendi", "ripart", "avvia", "suona", "continua"))):
+            if any(a.startswith(p) for p in parole):
+                return k
+        return "play_pausa"
+
+    @staticmethod
+    def _file_valido(percorso):
+        """→ (percorso reale, None) se si può aprire; altrimenti (None, "dove" | "fuori" | "bloccato")."""
+        if not percorso or not isinstance(percorso, str):
+            return None, "dove"
+        p = os.path.realpath(os.path.expanduser(percorso.strip().strip("\"'«»")))
+        if not os.path.exists(p):
+            return None, "dove"
+        if not _dentro(p, radici_file()):
+            return None, "fuori"
+        if os.path.isfile(p) and os.path.splitext(p)[1].lower() in EST_BLOCCATE:
+            return None, "bloccato"
+        return p, None
+
+    def prepara(self, tipo, args, memoria=None, subito=True):
+        """Azione valida → da confermare (o subito, se ti fidi già per quel tipo).
+        subito=False: chiedi comunque (es. un elenco di file: non si aprono tutti da soli)."""
         desc, det = self.descrivi(tipo, args or {})
         if not desc:
             return {"ok": False, "esito": det}
         fiducia = set((memoria.ricordi.get("pc_fiducia") if memoria else None) or [])
-        if tipo in fiducia:
-            return {"ok": True, "esito": self.esegui(tipo, det, desc)}
+        if subito and tipo in fiducia and tipo not in SENZA_FIDUCIA:
+            return self.esegui_dettagli(tipo, det, desc)
         pid = uuid.uuid4().hex[:10]
         with self._lock:
             ora = time.time()
             self.attesa = {k: v for k, v in self.attesa.items() if ora - v["creato"] < 600}   # scadono dopo 10 minuti
+            if len(self.attesa) >= 60:
+                del self.attesa[min(self.attesa, key=lambda k: self.attesa[k]["creato"])]
             self.attesa[pid] = {"id": pid, "tipo": tipo, "descrizione": desc, "dettagli": det, "creato": ora,
                                 "icona": ICONE_PC.get(tipo, "🖥️")}
         return {"ok": True, "esito": f"{desc}: aspetto il tuo ok", "conferma": {"id": pid, "tipo": tipo,
-                "descrizione": desc, "icona": ICONE_PC.get(tipo, "🖥️")}}
+                "descrizione": desc, "icona": ICONE_PC.get(tipo, "🖥️"), "sempre": tipo not in SENZA_FIDUCIA}}
 
     def conferma(self, pid, si=True, sempre=False, memoria=None):
         with self._lock:
@@ -2487,17 +2955,38 @@ class ComandiPC:
         if not az:
             return {"ok": False, "esito": "Questa richiesta è scaduta o è già stata gestita."}
         if not si:
-            return {"ok": True, "esito": f"Ok, non lo faccio ({az['descrizione']})."}
-        if sempre and memoria is not None:
+            return {"ok": True, "esito": f"Ok, non lo faccio ({az['descrizione']}).", "annullata": True}
+        if sempre and memoria is not None and az["tipo"] not in SENZA_FIDUCIA:
             fid = sorted(set(memoria.ricordi.get("pc_fiducia") or []) | {az["tipo"]})
             memoria.imposta_ricordo("pc_fiducia", fid)
-        return {"ok": True, "esito": self.esegui(az["tipo"], az["dettagli"], az["descrizione"])}
+        return self.esegui_dettagli(az["tipo"], az["dettagli"], az["descrizione"])
 
     def esegui(self, tipo, det, desc):
+        return self.esegui_dettagli(tipo, det, desc)["esito"]
+
+    def esegui_dettagli(self, tipo, det, desc):
+        """Esegue davvero. → {ok, esito, [immagine, analizza], [tra]}"""
         voce = {"quando": datetime.datetime.now().isoformat(timespec="seconds"), "tipo": tipo, "descrizione": desc}
+        extra, esito = {}, None
         try:
-            if CONFIG["pc_finto"]:
+            finto = CONFIG["pc_finto"]
+            if finto:
                 voce["finto"] = True                        # test/demo: non apre niente davvero
+            if tipo == "screenshot":                        # (anche per finta: un'immagine di prova, così si vede il giro completo)
+                nome, percorso = self._screenshot(finto)
+                extra = {"immagine": "/pc/screenshot/" + nome, "analizza": bool(det.get("analizza"))}
+                cartella = os.path.dirname(percorso)
+                if _dentro(cartella, [os.path.realpath(str(Path.home()))]):
+                    cartella = os.path.relpath(cartella, str(Path.home()))
+                esito = f"📸 Fatto: screenshot salvato in {cartella.replace(os.sep, '/')}."
+            elif tipo == "scrivi":
+                voce["caratteri"] = len(det["testo"])
+                if not finto:
+                    threading.Timer(RITARDO_SCRIVI, self._scrivi_dopo, args=(det["testo"], voce)).start()
+                extra = {"tra": RITARDO_SCRIVI}
+                esito = f"⌨️ Clicca nella finestra dove vuoi il testo: comincio a scrivere tra {RITARDO_SCRIVI} secondi."
+            elif finto:
+                pass
             elif tipo in ("sito", "cerca"):
                 webbrowser.open(det["url"])
             elif tipo == "cartella":
@@ -2518,13 +3007,54 @@ class ComandiPC:
                         if not cmd:
                             raise FileNotFoundError(f"{det['nome']} non sembra installata")
                         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-            esito = f"✅ Fatto: {desc}."
+            elif tipo == "file":
+                self._apri(det["percorso"])
+            elif tipo == "volume":
+                esegui_piano(piano_volume(_sistema(), det["azione"], det.get("valore"), det.get("passo")))
+            elif tipo == "media":
+                esegui_piano(piano_media(_sistema(), det["azione"]))
+            elif tipo == "blocca":
+                esegui_piano(piano_blocca(_sistema()))
+            esito = esito or f"✅ Fatto: {desc}."
+            ok = True
         except Exception as e:
             voce["errore"] = str(e)[:120]
-            esito = f"⚠️ Non ci sono riuscito ({desc}): {str(e)[:100]}"
+            esito, ok, extra = f"⚠️ Non ci sono riuscito ({desc}): {str(e)[:100]}", False, {}
         with self._lock:
             self.registro = (self.registro + [voce])[-50:]
-        return esito
+        return dict(extra, ok=ok, esito=esito, eseguita=True)
+
+    def _screenshot(self, finto=False):
+        cartella = _cartella_screenshot()
+        base = "schermo_" + datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        nome, n = base + ".png", 1
+        while os.path.exists(os.path.join(cartella, nome)):
+            n += 1
+            nome = f"{base}_{n}.png"
+        percorso = os.path.join(cartella, nome)
+        if finto:
+            with open(percorso, "wb") as f:
+                f.write(_png_finto())
+        else:
+            s = _sistema()
+            if s == "win":
+                _powershell(SCRIPT_SCREENSHOT_WIN, {"MAIK_SHOT": percorso})
+            else:
+                esegui_piano(piano_screenshot(s, percorso))
+            if not os.path.isfile(percorso) or os.path.getsize(percorso) < 100:
+                raise OSError("lo screenshot non è stato salvato" + (" (su macOS dai il permesso «Registrazione schermo» al Terminale)" if s == "mac" else ""))
+        with self._lock:
+            self.schermate[nome] = percorso
+            while len(self.schermate) > 40:
+                self.schermate.pop(next(iter(self.schermate)))
+        return nome, percorso
+
+    def _scrivi_dopo(self, testo, voce):
+        try:
+            esegui_piano(piano_scrivi(_sistema(), testo))
+            voce["scritto"] = True
+        except Exception as e:
+            voce["errore"] = str(e)[:120]
 
     @staticmethod
     def _apri(percorso):
@@ -2545,11 +3075,13 @@ class ComandiPC:
                              stderr=subprocess.DEVNULL, start_new_session=_sistema() != "win")
 
     # ── frasi dirette (anche senza Ollama): «apri youtube», «cerca X su google», «come sta il pc?» ──
+    _PREFISSI = (r"^(?:ehi |ok |hey )?(?:maik|zep)[,!]?\s+", r"^(?:per favore |puoi |potresti |mi puoi |riesci a )")
+
     def router(self, testo, memoria=None):
         t = re.sub(r"\s+", " ", (testo or "").strip())
+        for p in self._PREFISSI:                              # il testo originale (con le maiuscole) serve per «digita …»
+            t = re.sub(p, "", t, flags=re.I)
         tl = t.lower().rstrip(" .!?")
-        tl = re.sub(r"^(?:ehi |ok |hey )?(?:maik|zep)[,!]?\s+", "", tl)
-        tl = re.sub(r"^(?:per favore |puoi |potresti |mi puoi |riesci a )", "", tl)
         if re.search(r"\b(?:come sta il (?:pc|computer)|stato del (?:pc|computer)|quanta (?:ram|memoria)|"
                      r"(?:uso|carico) della cpu|quanta batteria|batteria del (?:pc|computer)|spazio (?:libero|su disco|sul disco))\b", tl):
             return {"testo": info_pc()["testo"]}
@@ -2560,6 +3092,9 @@ class ComandiPC:
         m = re.match(r"^(?:cerca(?:mi)?|trova(?:mi)?)\s+(.+?)\s+su\s+" + dovi + r"$", tl)       # «cerca X su google»
         if m:
             return self._risposta("cerca", {"q": m.group(1), "dove": m.group(2)}, memoria)
+        r = self._router_v12(t, tl, memoria)
+        if r:
+            return r
         m = re.match(r"^(?:apri|aprimi|avvia|lancia|fai partire|vai su|vai a|portami su|mostrami)\s+(.{2,60})$", tl)
         if not m or len(tl.split()) > 8:
             return None
@@ -2570,18 +3105,103 @@ class ComandiPC:
             return None
         if self._app(cosa)[1]:
             return self._risposta("app", {"nome": cosa}, memoria)
+        if re.search(FILE_EST_RE, cosa) and not cosa.startswith(("http", "www.")):      # «apri contratto.pdf»
+            r = self._risposta_file(cosa, memoria, apri=True, silenzioso=True)
+            if r:
+                return r
         if self._url_sito(cosa):
             return self._risposta("sito", {"sito": cosa}, memoria)
         return None
 
+    def _router_v12(self, t, tl, memoria):
+        """v12: volume, musica, screenshot, i tuoi file, scrivere al posto tuo, blocco del PC."""
+        # 🔊 volume
+        m = re.match(r"^(?:metti|imposta|porta|regola|setta)\s+(?:il\s+)?volume\s+(?:a|al|allo)\s+(\d{1,3})\s*(?:%|per\s*cento)?$", tl) \
+            or re.match(r"^volume\s+(?:a|al)\s+(\d{1,3})\s*(?:%|per\s*cento)?$", tl)
+        if m:
+            return self._risposta("volume", {"valore": m.group(1)}, memoria)
+        m = re.match(r"^(alza|aumenta|abbassa|diminuisci|riduci)(?:mi)?\s+(?:un po['’]?\s+)?(?:il\s+)?volume(?:\s+di\s+(\d{1,2}))?$", tl)
+        if m:
+            return self._risposta("volume", {"azione": "su" if m.group(1) in ("alza", "aumenta") else "giu",
+                                             "passo": m.group(2) or 10}, memoria)
+        if re.match(r"^(?:volume\s+(?:più\s+)?(?:su|alto)|più\s+volume|alza|alza\s+(?:la\s+musica|l['’]audio))$", tl):
+            return self._risposta("volume", {"azione": "su"}, memoria)
+        if re.match(r"^(?:volume\s+(?:più\s+)?(?:giù|basso)|meno\s+volume|abbassa|abbassa\s+(?:la\s+musica|l['’]audio))$", tl):
+            return self._risposta("volume", {"azione": "giu"}, memoria)
+        if re.match(r"^(?:togli\s+(?:il\s+)?muto|rimetti\s+(?:l['’]audio|il\s+volume)|riattiva\s+(?:l['’]audio|il\s+volume)|smuta)$", tl):
+            return self._risposta("volume", {"azione": "smuto"}, memoria)
+        if re.match(r"^(?:metti\s+(?:in\s+|il\s+)?muto|muto|silenzia(?:\s+(?:il\s+)?(?:pc|computer|audio))?|"
+                    r"togli\s+l['’]audio|disattiva\s+(?:l['’]audio|il\s+volume)|azzera\s+il\s+volume)$", tl):
+            return self._risposta("volume", {"azione": "muto"}, memoria)
+        # ⏯️ musica e video
+        cosa = r"(?:\s+(?:la\s+|il\s+|questa\s+|questo\s+)?(?:musica|canzone|brano|video|spotify|youtube|film|podcast))"
+        if re.match(r"^(?:metti\s+(?:in\s+)?pausa|pausa)" + cosa + r"?$|^(?:ferma|stoppa)" + cosa + "$", tl):
+            return self._risposta("media", {"azione": "pausa"}, memoria)
+        if re.match(r"^(?:riprendi|fai\s+ripartire|rimetti|riavvia|continua)" + cosa + r"$|^(?:play|metti\s+play)$", tl):
+            return self._risposta("media", {"azione": "play"}, memoria)
+        pezzo = r"(?:canzone|brano|traccia|pezzo)"
+        if re.match(r"^(?:(?:metti|passa|vai)\s+(?:alla\s+|al\s+|la\s+|il\s+)?)?(?:" + pezzo + r"\s+successiv[ao]|prossim[ao]\s+" + pezzo +
+                    r")$|^salta\s+(?:questa\s+|questo\s+|la\s+|il\s+)?" + pezzo + r"$|^(?:avanti\s+con\s+la\s+musica|next)$", tl):
+            return self._risposta("media", {"azione": "successivo"}, memoria)
+        if re.match(r"^(?:(?:metti|passa|vai|torna)\s+(?:alla\s+|al\s+|la\s+|il\s+)?)?" + pezzo + r"\s+precedente$|"
+                    r"^rimetti\s+(?:la\s+canzone|il\s+brano|il\s+pezzo)\s+di\s+prima$", tl):
+            return self._risposta("media", {"azione": "precedente"}, memoria)
+        # 📸 screenshot (e, se chiedi cosa c'è, lo guardo)
+        if re.search(r"\b(?:cosa\s+(?:vedi|c['’]è|ce)\s+sul(?:lo)?\s+(?:mio\s+)?schermo|guarda\s+(?:il\s+|lo\s+)?(?:mio\s+)?schermo|"
+                     r"leggi(?:mi)?\s+(?:il\s+|lo\s+)?(?:mio\s+)?schermo|descrivi(?:mi)?\s+(?:il\s+|lo\s+)?(?:mio\s+)?schermo)\b", tl):
+            return self._risposta("screenshot", {"analizza": True}, memoria)
+        if re.match(r"^(?:fai|fammi|cattura|scatta)\s+(?:uno\s+|lo\s+|un\s+|una\s+)?(?:screenshot|screen|schermata|foto\s+(?:allo|dello)\s+schermo)\b|"
+                    r"^(?:cattura|fotografa)\s+(?:lo\s+)?schermo$|^screenshot$", tl):
+            return self._risposta("screenshot", {}, memoria)
+        # 📄 i tuoi file
+        tipi = r"(file|documento|documenti|pdf|foto|fotografi[ae]|immagin[ei]|video|canzon[ei]|bran[oi]|presentazion[ei]|fogli[o]?|cartella)"
+        m = re.match(r"^(?:apri|aprimi|mostrami|fammi\s+vedere)\s+(?:il\s+|la\s+|l['’]|i\s+|le\s+|gli\s+)?(?:mio\s+|mia\s+|miei\s+|mie\s+)?"
+                     + tipi + r"\s+(.{2,80})$", tl)
+        if m and m.group(1) != "cartella":
+            return self._risposta_file(m.group(1) + " " + m.group(2), memoria, apri=True)
+        m = re.match(r"^(?:trova(?:mi)?|cerca(?:mi)?|dov['’]è|dove\s+(?:sta|è|si\s+trova)|dove\s+ho\s+messo)\s+(?:il\s+|la\s+|l['’]|i\s+|le\s+|gli\s+)?"
+                     r"(?:mio\s+|mia\s+|miei\s+|mie\s+)?(?:ultim[aeio]\s+)?" + tipi + r"\b\s*(.{0,80})$", tl)
+        if m:
+            return self._risposta_file(m.group(1) + " " + m.group(2), memoria)
+        # ⌨️ scrivere al posto tuo (il testo resta com'è, maiuscole comprese)
+        m = re.match(r"^(?:digita|scrivi\s+(?:per\s+me\s+|al\s+posto\s+mio\s+)?(?:sul\s+(?:pc|computer)|nella\s+finestra(?:\s+aperta)?|"
+                     r"dove\s+(?:ti\s+)?dico(?:\s+io)?|in\s+un['’]altra\s+finestra|con\s+la\s+tastiera))\s*[:,]?\s*(.+)$", t, re.I | re.S)
+        if m:
+            testo = m.group(1).strip()
+            if len(testo) >= 2 and testo[0] in "«\"“'" and testo[-1] in "»\"”'":
+                testo = testo[1:-1].strip()
+            return self._risposta("scrivi", {"testo": testo}, memoria)
+        # 🔒 blocca il PC
+        if re.match(r"^(?:blocca|chiudi\s+a\s+chiave)\s+(?:il\s+|lo\s+)?(?:pc|computer|schermo)$", tl):
+            return self._risposta("blocca", {}, memoria)
+        return None
+
+    def _risposta_file(self, q, memoria, apri=False, silenzioso=False):
+        q = re.sub(r"\s+", " ", q).strip()
+        trovati = cerca_file(q)
+        if not trovati:
+            return None if silenzioso else {"testo": f"🔎 Non ho trovato niente per «{q}» nelle tue cartelle "
+                                                      "(desktop, documenti, download, immagini, musica, video)."}
+        if apri and (len(trovati) == 1 or trovati[0]["punti"] >= trovati[1]["punti"] + 3):
+            r = self._risposta("file", {"percorso": trovati[0]["percorso"]}, memoria)
+            if r.get("conferma"):
+                r["testo"] = r["testo"].replace("? Confermi", f" ({trovati[0]['cartella']})? Confermi", 1)
+            return r
+        nomi = [f["nome"] + (" (cartella)" if f["tipo"] == "cartella" else "") for f in trovati[:3]]
+        elenco = ", ".join(nomi[:-1]) + " e " + nomi[-1] if len(nomi) > 1 else nomi[0]
+        altri = f" e altri {len(trovati) - 3}" if len(trovati) > 3 else ""
+        return {"testo": f"📄 Ho trovato {len(trovati)} {'risultato' if len(trovati) == 1 else 'risultati'} per «{q}»: "
+                         f"{elenco}{altri}. Quale apro? 👇", "file": trovati}
+
     def _risposta(self, tipo, args, memoria):
         r = self.prepara(tipo, args, memoria)
+        if r.get("eseguita"):                                 # ti fidi già: fatto subito
+            return {"testo": r["esito"], **({"schermata": {"immagine": r["immagine"], "analizza": r.get("analizza")}}
+                                           if r.get("immagine") else {})}
         if not r["ok"]:
-            return {"testo": "🤔 " + r["esito"].capitalize() + "."}
-        if r.get("conferma"):
-            return {"testo": f"{ICONE_PC.get(tipo, '🖥️')} Posso {r['conferma']['descrizione']}? Confermi qui sotto 👇",
-                    "conferma": r["conferma"]}
-        return {"testo": r["esito"]}
+            return {"testo": "🤔 " + r["esito"][:1].upper() + r["esito"][1:] + "."}
+        return {"testo": f"{ICONE_PC.get(tipo, '🖥️')} Posso {r['conferma']['descrizione']}? Confermi qui sotto 👇",
+                "conferma": r["conferma"]}
 
 
 PC = ComandiPC()
@@ -2612,15 +3232,26 @@ Se ti servono dati che non sai, scrivi SOLO il tag e fermati: riceverai i risult
 Regole: usa i tag solo quando servono; JSON valido su una riga; "quando" in italiano semplice
 («tra 20 minuti», «domani alle 9», «venerdì alle 18:30»). Non dire mai di aver fatto qualcosa senza il tag."""
 
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc"}
-STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella"}
-PROMPT_AGENTE_PC = """COMPUTER — puoi usare il PC della persona. Aprire qualcosa chiede SEMPRE la sua conferma con un pulsante:
-tu proponilo con il tag e dillo in modo naturale («te lo apro, conferma qui sotto»).
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file"}
+STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
+                "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
+                "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca"}
+PROMPT_AGENTE_PC = """COMPUTER — puoi usare il PC della persona. Ogni azione chiede SEMPRE la sua conferma con un pulsante:
+tu proponila con il tag e dillo in modo naturale («te lo apro, conferma qui sotto»).
 [[azione:{"tipo":"apri_sito","sito":"youtube"}]]   [[azione:{"tipo":"cerca_web","q":"ricetta carbonara","dove":"youtube"}]]
 [[azione:{"tipo":"apri_app","nome":"calcolatrice"}]]   [[azione:{"tipo":"apri_cartella","nome":"download"}]]
-[[azione:{"tipo":"info_pc"}]]  ← CPU, RAM, disco, batteria: è un dato, scrivi solo il tag e aspetta il risultato
+[[azione:{"tipo":"imposta_volume","azione":"su"}]]  (azione: su, giu, muto, smuto — oppure "valore":40 per il 40%)
+[[azione:{"tipo":"controlla_musica","azione":"pausa"}]]  (pausa, play, play_pausa, successivo, precedente)
+[[azione:{"tipo":"screenshot","analizza":true}]]  ← per guardare lo schermo e dire cosa c'è
+[[azione:{"tipo":"apri_file","percorso":"percorso esatto preso dai risultati di cerca_file"}]]
+[[azione:{"tipo":"scrivi_testo","testo":"..."}]]  ← SOLO se la persona ti chiede di scrivere/digitare nel PC al posto suo
+[[azione:{"tipo":"blocca_pc"}]]
+Dati (scrivi solo il tag e aspetta il risultato):
+[[azione:{"tipo":"info_pc"}]] ← CPU, RAM, disco, batteria   [[azione:{"tipo":"cerca_file","q":"contratto affitto"}]] ← file per nome
 ("dove" per cerca_web: google, youtube, maps, wikipedia, amazon, immagini, spotify)"""
 ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥️", "apri_cartella": "📁", "info_pc": "💻",
+                   "imposta_volume": "🔊", "controlla_musica": "⏯️", "screenshot": "📸", "cerca_file": "🗂️",
+                   "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
                    "cerca_documenti": "📚", "cerca_memoria": "🧠"}
@@ -2704,7 +3335,10 @@ class Agente:
         tipo = {"reminder": "promemoria", "spesa": "lista", "calcolo": "calcola", "calc": "calcola",
                 "documenti": "cerca_documenti", "memoria": "cerca_memoria", "orario": "ora",
                 "sito": "apri_sito", "apri": "apri_sito", "url": "apri_sito", "app": "apri_app", "cartella": "apri_cartella",
-                "cerca": "cerca_web", "google": "cerca_web", "pc": "info_pc", "stato_pc": "info_pc"}.get(tipo, tipo)
+                "cerca": "cerca_web", "google": "cerca_web", "pc": "info_pc", "stato_pc": "info_pc",
+                "volume": "imposta_volume", "musica": "controlla_musica", "media": "controlla_musica",
+                "schermata": "screenshot", "file": "apri_file", "trova_file": "cerca_file", "digita": "scrivi_testo",
+                "scrivi": "scrivi_testo", "blocca": "blocca_pc"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -2816,14 +3450,24 @@ class Agente:
                     righe.append(" · ".join(str(v)[:120] for k, v in x.items() if k != "tipo"))
                 return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} ricordi",
                             dati=("\n".join(righe) if righe else f"nessun ricordo su «{q}»"))
-            if tipo in STRUMENTI_PC:                    # v11: il PC (sempre con conferma)
+            if tipo in STRUMENTI_PC or tipo == "cerca_file":
                 if not CONFIG["pc"]:
                     return dict(r, esito="i comandi del PC sono spenti (MAIK_PC=0)")
+            if tipo in STRUMENTI_PC:                    # v11-v12: il PC (sempre con conferma)
                 x = PC.prepara(STRUMENTI_PC[tipo], a, memoria)
-                return dict(r, ok=x["ok"], esito=x["esito"], conferma=x.get("conferma"))
+                return dict(r, ok=x["ok"], esito=x["esito"], conferma=x.get("conferma"),
+                            **({"schermata": {"immagine": x["immagine"], "analizza": x.get("analizza")}} if x.get("immagine") else {}))
             if tipo == "info_pc":
                 d = info_pc()
                 return dict(r, ok=True, esito=d["testo"].replace("💻 ", "")[:90], dati=d["testo"])
+            if tipo == "cerca_file":
+                q = s("q", 100) or s("nome", 100) or s("query", 100)
+                trovati = cerca_file(q)
+                if not trovati:
+                    return dict(r, ok=True, esito=f"«{q}»: nessun file", dati=f"nessun file per «{q}» nelle cartelle personali")
+                dati = "\n".join(f"- {f['nome']} ({f['tipo']}, in {f['cartella']}, modificato {f['modificato']}) percorso: {f['percorso']}"
+                                 for f in trovati)
+                return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} file", dati=dati, file=trovati)
             return dict(r, esito=f"strumento «{tipo}» sconosciuto")
         except ZeroDivisionError:
             return dict(r, esito="divisione per zero", dati="divisione per zero: impossibile")
@@ -3028,7 +3672,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         pc = PC.router(testo, self.memoria) if CONFIG["pc"] else None
         if pc:
             self.memoria.salva_scambio(testo, pc["testo"])
-            return self._meta(ok=True, risposta=pc["testo"], azione=True, conferme=[pc["conferma"]] if pc.get("conferma") else [])
+            return self._meta(ok=True, risposta=pc["testo"], azione=True, **self._meta_pc(pc))
         azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
         if azione:
             self.memoria.salva_scambio(testo, azione)
@@ -3044,6 +3688,12 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         self.memoria.salva_scambio(testo, pulisci_pensiero(risposta) or risposta)
         threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         return self._meta(ok=True, risposta=risposta, imparato=imparato, azioni=azioni)
+
+    @staticmethod
+    def _meta_pc(pc):
+        """Per la GUI: schede di conferma, file trovati (con «apri»), screenshot già fatti."""
+        return {"conferme": [pc["conferma"]] if pc.get("conferma") else [], "file": pc.get("file") or [],
+                "schermate": [pc["schermata"]] if pc.get("schermata") else []}
 
     def _lascia_all_agente(self, testo):
         return CONFIG["agente"] and multi_intento(testo) and self.cervello.disponibile()
@@ -3073,8 +3723,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if pc:
                 on_token(pc["testo"])
                 self.memoria.salva_scambio(testo, pc["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid,
-                                  conferme=[pc["conferma"]] if pc.get("conferma") else [])
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **self._meta_pc(pc))
             # azioni pratiche: istantanee, anche offline (più richieste insieme → l'agente)
             azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
             if azione:
@@ -3149,6 +3798,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         chip = [dict({k: a.get(k) for k in ("tipo", "ok", "icona", "esito")}, **({"attesa": True} if a.get("conferma") else {}))
                 for a in azioni]
         conferme = [a["conferma"] for a in azioni if a.get("conferma")]
+        file_trovati = [f for a in azioni for f in (a.get("file") or [])][:8]
+        schermate = [a["schermata"] for a in azioni if a.get("schermata")]
         fonti_meta = [{"nome": f["nome"], "pezzo": f["pezzo"], "anteprima": f.get("testo", "")[:200],
                        "citata": f["nome"].lower() in finale.lower()} for f in fonti]
         # in memoria va la risposta senza il "ragionamento" <think> e senza tag (risparmia contesto)
@@ -3158,7 +3809,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
         return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
-                          seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme)
+                          seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme, file=file_trovati,
+                          schermate=schermate)
 
     def stato(self):
         return {
@@ -3575,6 +4227,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"registro": PC.registro, "fiducia": MOTORE.memoria.ricordi.get("pc_fiducia") or [],
                             "attivo": CONFIG["pc"], "finto": CONFIG["pc_finto"],
                             "app": sorted(APP_PC) + sorted(ComandiPC.app_utente()), "siti": sorted(SITI_PC)})
+            elif base.startswith("/pc/screenshot/"):                 # v12: solo gli screenshot fatti da MAIK, solo da qui
+                p = PC.schermate.get(urllib.parse.unquote(base[len("/pc/screenshot/"):]))
+                if not self._richiesta_locale() or not p or not os.path.isfile(p):
+                    self.send_error(404)
+                else:
+                    self._servi_file(p, "image/png", "no-cache")
+            elif base == "/pc/file":
+                if not self._richiesta_locale():
+                    self._json({"file": [], "errore": "Solo da questo computer."}, 403)
+                else:
+                    self._json({"file": cerca_file(qs.get("q", "")) if CONFIG["pc"] else []})
             elif base == "/avatar/info":
                 info = _avatar_info()
                 self._json({"presente": bool(info), **(info or {})})
@@ -3728,7 +4391,7 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/documenti/elimina":
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
 
-            elif base in ("/pc/conferma", "/pc/fiducia", "/avatar/elimina"):
+            elif base in ("/pc/conferma", "/pc/fiducia", "/pc/prepara", "/avatar/elimina"):
                 c = self._read_json_body()
                 if not self._richiesta_locale():
                     self._json({"ok": False, "esito": "🔒 I comandi del PC si confermano solo da questo computer."}, 403)
@@ -3736,12 +4399,18 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": elimina_avatar()})
                 elif base == "/pc/conferma":
                     self._json(PC.conferma(str(c.get("id", "")), bool(c.get("si", True)), bool(c.get("sempre")), MOTORE.memoria))
+                elif base == "/pc/prepara":                          # v12: «apri» su un file trovato → di nuovo con conferma
+                    tipo = str(c.get("tipo", ""))
+                    if not CONFIG["pc"] or tipo not in ComandiPC.TIPI:
+                        self._json({"ok": False, "esito": "Azione non disponibile."})
+                    else:
+                        self._json(PC.prepara(tipo, {k: v for k, v in c.items() if k != "tipo"}, MOTORE.memoria))
                 else:
                     fid = set(MOTORE.memoria.ricordi.get("pc_fiducia") or [])
                     tipo = str(c.get("tipo", ""))
                     if c.get("azzera"):
                         fid = set()
-                    elif tipo in ComandiPC.TIPI:
+                    elif tipo in ComandiPC.TIPI and tipo not in SENZA_FIDUCIA:
                         (fid.add if c.get("attiva") else fid.discard)(tipo)
                     MOTORE.memoria.imposta_ricordo("pc_fiducia", sorted(fid))
                     self._json({"ok": True, "fiducia": sorted(fid)})

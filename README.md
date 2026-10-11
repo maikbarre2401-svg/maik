@@ -46,6 +46,38 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🌱 Novità V12 — Zep parla, gesticola e vive (sul PC, versione server)
+
+| | Cosa fa |
+|---|---|
+| 👄 **Bocca vera** | Il labiale nasce dal **testo italiano**: ogni suono ha la sua forma — labbra **chiuse** per m/b/p, **denti sul labbro** per f/v, **lingua** per l/n/t/d, labbra **tonde** per o/u, denti per s/z, la «i» muta di *ciao*, le doppie più lunghe, l'accento. I suoni si fondono tra loro (coarticolazione) come in una persona vera. Si **riallinea parola per parola** con la voce del browser e **impara quanto è veloce** la tua voce (anche quelle che non dicono dove sono le parole). |
+| 🙌 **Gesti mentre parla** | Sceglie i gesti dalle parole: **saluta** («ciao»), **conta sulle dita** («primo, secondo», «1. 2. 3.»), **indica la chat** («ecco», «qui sotto»), mano sul **petto** («io», «secondo me»), **palmo verso di te** («tu»), braccia **larghe** («tutto», «enorme»), mani **vicine** («un pochino»), **spallucce** («forse», «non so»), **pollice in su** («ottimo»), **festeggia**, si **inchina** («grazie»), **mano al mento** («allora…», «vediamo»). Batte il tempo con la mano sulle parole importanti, alza le **sopracciglia** sulle domande, distoglie lo sguardo mentre "pensa" cosa dire. |
+| 🤖 **Zep rifatto** | Il viso è uno **schermo**: occhi che si chiudono, sorridono (^ ^), si arrabbiano, si stupiscono, dormono, vedono stelline o **cuori**, fanno l'occhiolino; **sopracciglia**; bocca con **denti e lingua**. Ha **mani con le dita** (conta, indica, pollice in su). |
+| 🧍 **Il tuo personaggio** | Con i tuoi .vrm/.glb muove anche **dita** e **gambe** (cammina); con i modelli **Ready Player Me** usa tutti i **15 visemi**, con i modelli **ARKit** mascella, labbra e sopracciglia. |
+| 🌱 **Una vita sua** | Da solo si **guarda attorno**, **canticchia** (♪), **passeggia**, sposta il peso, si guarda la mano. Se non lo usi per un po' **si annoia**, **sbadiglia**, si **stiracchia** e poi **si addormenta** (💤 Zzz). Quando torni (mouse, tastiera o webcam) **si sveglia**: salta, si stropiccia gli occhi e ti saluta. Di notte ha sonno prima. Si spegne con **🌱 Vivo da solo** nella barra laterale. |
+| 🕺 **Balla** | Scrivi o di' «**balla!**» (e «smetti di ballare»). Con **B** (o 🎵) **ascolta la tua musica dal microfono**, trova il ritmo e **balla a tempo**, con i colori che cambiano a ogni colpo. |
+| 👆 **Toccalo** | Un **clic** su Zep: sulla testa **ride** (solletico), sulla pancia fa un **salto**, sulla mano ti dà il **cinque**. Se esageri **si arrabbia**… e al settimo tocco **gli gira la testa** 😵‍💫. |
+| 🌅 **L'ora del giorno** | Luce **calda** la mattina (e si stiracchia quando apri MAIK), **arancione** la sera, **blu** di notte (e sbadiglia). «**Buonanotte**» → ti saluta e va a dormire. |
+| 💬 **Reazioni** | Mentre scrivi **guarda la tastiera**; pollice in su quando un'azione riesce, **mano in faccia** quando no; salta e indica quando suona un promemoria; cuori se gli dici che gli vuoi bene. |
+
+### 🖥️ Più comandi del PC (sempre con conferma)
+
+| Di' o scrivi | Cosa fa |
+|---|---|
+| «**alza il volume**» · «abbassa il volume di 20» · «**volume al 30**» · «**muto**» · «togli il muto» | volume del PC |
+| «**metti in pausa la musica**» · «riprendi la musica» · «**canzone successiva**» · «brano precedente» | Spotify, YouTube nel browser, lettori multimediali (tasti multimediali) |
+| «**fai uno screenshot**» · «**cosa c'è sul mio schermo?**» | salva lo schermo in *Immagini/MAIK*, lo vedi nella chat e, se chiedi cosa c'è, **lo guarda il modello visione** |
+| «**trova il file contratto**» · «dov'è la foto del gatto?» · «**apri il pdf della bolletta**» · «apri ricetta.txt» | cerca **per nome** nelle tue cartelle (desktop, documenti, download, immagini, musica, video, anche OneDrive) e ti mostra i risultati con **📂 Apri** |
+| «**digita: ciao a tutti, arrivo tra 5 minuti**» · «scrivi nella finestra «…»» | dopo il sì hai **5 secondi** per cliccare nella finestra giusta, poi scrive **al posto tuo** (anche accenti ed emoji) |
+| «**blocca il pc**» | blocca lo schermo (per rientrare serve la tua password) |
+
+- Anche a parole tue: l'agente usa `imposta_volume`, `controlla_musica`, `screenshot`, `cerca_file`, `apri_file`, `scrivi_testo`, `blocca_pc`.
+- **Sicurezza**: si aprono solo **file delle tue cartelle personali** e mai **programmi, script o collegamenti** (.exe, .bat, .ps1, .lnk, .sh…). Per **scrivere al posto tuo** non esiste «Sì, sempre»: chiede **ogni volta**. Gli screenshot si vedono solo da questo PC.
+- **Come funziona sotto**: su **Windows** tasti multimediali veri e digitazione Unicode (nessun programma da installare; lo screenshot usa PowerShell); su **macOS** AppleScript (`screencapture` per lo screenshot: dai il permesso «Registrazione schermo»; per «digita» il permesso «Accessibilità»); su **Linux** il primo programma installato tra `pactl`/`wpctl`/`amixer` (volume), `playerctl` (musica), `gnome-screenshot`/`spectacle`/`grim`/`scrot` (screenshot), `xdotool`/`wtype` (digitare), `loginctl` (blocco). Se manca, MAIK ti dice quale installare.
+- Nuovi endpoint: `GET /pc/file?q=…` · `GET /pc/screenshot/<nome>` · `POST /pc/prepara {tipo, …}` (solo da questo PC). `/chat/stream` restituisce anche `"file"` e `"schermate"`.
+
+---
+
 ## 🧍 Novità V11 — Zep, il tuo personaggio 3D (sul PC, versione server)
 
 Al posto della sfera c'è un **personaggio 3D animato** nel browser: il tuo, oppure **Zep**, il robottino integrato.
@@ -230,7 +262,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V11 — `maik_server.py`
+## MAIK — Server V12 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

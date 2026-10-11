@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v12.0                     ║
+║                  MAIK — Server v13.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,26 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v13.0 — ZEP TI VEDE, PARLA COME UNA PERSONA, È TUO E FA LE COSE DA SOLO:
+  • 🖐️ Gesti delle mani dalla webcam (MediaPipe, sul tuo PC): 👋 ti risaluta, 👍 👎 ✌️ 🤟 ✊ ☝️
+    hanno la loro risposta, ✋ ferma lo zittisce, «conta le mie dita» e lui conta con le sue.
+  • 🪞 Specchio (tasto I): copia come giri la testa, il sorriso, la bocca, le sopracciglia,
+    l'occhiolino · ✊✋✌️ sasso, carta, forbici (tasto J) con la mano, coi bottoni o scrivendo.
+  • 🔊 Voce neurale Piper, gratis e offline (pip install piper-tts, la voce si scarica una volta
+    sola da 🎨): la bocca segue i fonemi veri con i loro tempi e si chiude nelle pause dell'audio.
+    Senza Piper resta la voce del browser.
+  • 🎨 Personalizza: nome, colore del corpo e delle luci, accessori (cilindro, berretto, cappellino,
+    cuffie, occhiali, occhiali da sole, papillon, sciarpa), voce, tono e velocità, animazioni .vrma
+    per il tuo VRM.
+  • ⚡ Routine e modalità: più comandi in uno («crea la modalità lavoro: apri gmail, volume al 30»),
+    anche a orario e nei giorni che vuoi. Sempre con conferma (e «Sì, sempre» mai se scrivono testo).
+  • ⚠️ Avvisi del PC: batteria scarica, disco quasi pieno, RAM o CPU al massimo.
+  • Nuovi endpoint: GET /routine, /routine/notizie, /pc/avvisi, /voce/info, /animazioni[/<file>];
+    POST /routine, /routine/elimina, /routine/esegui, /routine/analizza, /voce, /voce/scarica,
+    /voce/imposta, /animazioni, /animazioni/elimina
+  • Variabili: MAIK_PIPER · MAIK_VOCE · MAIK_VOCI_URL · MAIK_AVVISI=0 · MAIK_AVVISI_OGNI ·
+    MAIK_ROUTINE_OGNI · MAIK_MODELLO_MANI_URL
 
 NOVITÀ v12.0 — ZEP PIÙ VIVO E PIÙ BRAVO COL PC:
   • 👄 Labiale vero dall'italiano scritto: ogni suono ha la sua forma (labbra chiuse per m/b/p,
@@ -197,7 +217,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "12.0"
+VERSIONE  = "13.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1862,7 +1882,11 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 🖥️ Sul PC (sempre con la tua conferma): «apri youtube» · «alza il volume» · «volume al 30» · «muto»
    «metti in pausa la musica» · «canzone successiva» · «fai uno screenshot» · «cosa c'è sul mio schermo?»
    «trova il file contratto» · «apri il pdf della bolletta» · «digita: ciao a tutti» · «blocca il pc» · «come sta il pc?»
+⚡ Routine: «crea la modalità lavoro: apri gmail, volume al 30» · «modalità lavoro» · «che routine ho?»
+   «ogni giorno alle 7:30 fai la routine buongiorno» · «elimina la routine lavoro» (sempre con conferma)
 🧍 Zep: «balla!» (o tasto B con la tua musica) · «buonanotte» · cliccalo e reagisce 😄
+🖐️ Con la webcam (👀): 👋 👍 👎 ✌️ 🤟 ✊ ☝️ · ✋ per zittirlo · «conta le mie dita» · «fammi da specchio»
+   «giochiamo a sasso carta forbici» · 🎨 personalizza nome, colori, accessori e voce (anche neurale)
 🤖 E puoi chiedermelo anche a parole tue: «stasera pasta, metti in lista gli ingredienti»,
    «mi fai il conto di 23 per 17?», «che tempo fa a Napoli?» — uso i miei strumenti da solo.
 📚 Carica i tuoi documenti (barra laterale) e chiedimi cosa c'è dentro: ti cito la fonte.
@@ -2269,7 +2293,8 @@ SITI_PC = {
     "google maps": "https://www.google.com/maps", "instagram": "https://www.instagram.com", "facebook": "https://www.facebook.com",
     "tiktok": "https://www.tiktok.com", "twitch": "https://www.twitch.tv", "github": "https://github.com",
     "traduttore": "https://translate.google.com", "google traduttore": "https://translate.google.com",
-    "calendario": "https://calendar.google.com", "drive": "https://drive.google.com", "google drive": "https://drive.google.com",
+    "calendario": "https://calendar.google.com", "calendar": "https://calendar.google.com",
+    "google calendar": "https://calendar.google.com", "drive": "https://drive.google.com", "google drive": "https://drive.google.com",
     "outlook": "https://outlook.live.com", "x": "https://x.com", "twitter": "https://x.com", "reddit": "https://www.reddit.com",
     "linkedin": "https://www.linkedin.com", "meteo": "https://www.ilmeteo.it", "repubblica": "https://www.repubblica.it",
     "corriere": "https://www.corriere.it", "gazzetta": "https://www.gazzetta.it", "chatgpt": "https://chatgpt.com",
@@ -3296,6 +3321,8 @@ _RE_PASSO_MAIK = re.compile(r"\b(?:briefing|meteo|che tempo fa|timer|ricordami|a
 _RE_PASSO_DI = re.compile(r"^(?:di['’]|dimmi|d[iì]|saluta(?:mi)?|annuncia)\s*[:,]?\s+(.+)$", re.I)
 _VERBI_PASSO = (r"apri|avvia|lancia|metti|alza|abbassa|cerca|fai|dimmi|di['’]|blocca|trova|muto|togli|riprendi|canzone|"
                 r"pausa|ricordami|avvisami|briefing|meteo|timer|digita|scrivi|vai|mostrami|prossima|controlla|come")
+# passi con un testo libero dentro: le virgole che seguono fanno parte del testo («digita Cordiali saluti, Marco»)
+_RE_PASSO_TESTO = re.compile(r"^(?:di['’]|dimmi|d[iì]|saluta(?:mi)?|annuncia|digita|scrivi|batti|prendi nota|annota)(?=[\s:,]|$)", re.I)
 
 
 class Routines:
@@ -3341,7 +3368,25 @@ class Routines:
         """«apri gmail, apri la calcolatrice e metti il volume al 30» → 3 passi."""
         t = re.sub(r"[ \t]+", " ", str(testo or "")).strip()
         parti = re.split(r"\s*(?:[,;\n]|\be poi\b|\bpoi\b|(?<=\w)\s+e\s+(?=(?:" + _VERBI_PASSO + r")\b))\s*", t, flags=re.I)
-        return [p.strip(" .") for p in parti if p and p.strip(" .")][:12]
+        out = []
+        for p in (x.strip(" .") for x in parti if x and x.strip(" .")):
+            verbo = re.match(r"(?:" + _VERBI_PASSO + r")\b", p, re.I)
+            if out and _RE_PASSO_TESTO.match(out[-1]) and (not verbo or (verbo.group(0).lower() == "come" and not Routines.analizza(p)["ok"])):
+                out[-1] += ", " + p                          # «di' ciao, come stai» resta una frase sola
+            else:
+                out.append(p)
+        return out[:12]
+
+    @classmethod
+    def passi_da(cls, x):
+        """Passi dalla GUI: uno per riga (una riga «di' …» resta intera, le altre si dividono come a voce)."""
+        righe = x.split("\n") if isinstance(x, str) else x if isinstance(x, list) else []
+        out = []
+        for r in righe:
+            r = re.sub(r"\s+", " ", str(r)).strip()
+            if r:
+                out += [r] if _RE_PASSO_DI.match(r) else cls.dividi(r)
+        return out[:12]
 
     @staticmethod
     def analizza(passo):
@@ -5033,19 +5078,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
 
             elif base in ("/pc/conferma", "/pc/fiducia", "/pc/prepara", "/avatar/elimina", "/routine", "/routine/elimina",
-                          "/routine/esegui", "/voce", "/voce/scarica", "/voce/imposta", "/animazioni/elimina"):
+                          "/routine/esegui", "/routine/analizza", "/voce", "/voce/scarica", "/voce/imposta", "/animazioni/elimina"):
                 c = self._read_json_body()
                 if not self._richiesta_locale():
                     self._json({"ok": False, "esito": "🔒 I comandi del PC si confermano solo da questo computer."}, 403)
                 elif base == "/avatar/elimina":
                     self._json({"ok": elimina_avatar()})
                 elif base == "/routine":
-                    passi = c.get("passi")
-                    passi = ROUTINE.dividi(passi) if isinstance(passi, str) else passi if isinstance(passi, list) else []
+                    passi = ROUTINE.passi_da(c.get("passi"))
                     r, errore = ROUTINE.salva(c.get("nome"), passi, c.get("orario") or None, c.get("giorni"), c.get("id"),
                                               "modalità" if c.get("tipo") == "modalità" else "routine")
                     self._json({"ok": bool(r), "routine": r, "errore": errore,
                                 "analisi": [ROUTINE.analizza(p) for p in r["passi"]] if r else []})
+                elif base == "/routine/analizza":                     # v13: cosa farà ogni passo (senza farlo)
+                    self._json({"analisi": [ROUTINE.analizza(p) for p in ROUTINE.passi_da(c.get("passi"))]})
                 elif base == "/routine/elimina":
                     self._json({"ok": ROUTINE.elimina(str(c.get("id", "")))})
                 elif base == "/routine/esegui":
@@ -5161,10 +5207,10 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V12</title>
+<title>MAIK // Zep V13</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
-<script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js"}}</script>
+<script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
 <link rel="icon" type="image/png" href="/icona-192.png">
 <link rel="apple-touch-icon" href="/icona-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -5383,10 +5429,51 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .pcconf .cd{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
   .agc.wait{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.5);color:#ffe2a8}
   .cite{display:inline-block;font-size:.82em;font-family:'Share Tech Mono',monospace;padding:0 6px;border-radius:6px;background:rgba(var(--accent2-rgb),.16);border:1px solid rgba(var(--accent2-rgb),.45);color:#e3d8ff;white-space:nowrap}
+
+  /* ===== V13: gesti, specchio, sasso-carta-forbici, personalizza, routine, avvisi ===== */
+  body.has-avatar #cambox{top:auto;bottom:84px;right:auto;left:14px;width:176px}
+  #gesto{position:absolute;left:204px;bottom:96px;z-index:22;font-size:44px;opacity:0;transform:scale(.6);transition:opacity .25s,transform .25s;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,.5))}
+  #gesto.on{opacity:1;transform:scale(1)}
+  body:not(.has-avatar) #gesto{display:none}
+  #rps{display:none;position:absolute;left:14px;top:52px;z-index:22;align-items:center;gap:8px;padding:7px 12px;border-radius:18px;background:rgba(var(--bg-rgb),.62);border:1px solid var(--border);backdrop-filter:blur(10px);box-shadow:0 8px 26px rgba(0,0,0,.35)}
+  body.gioco.has-avatar #rps{display:flex}
+  #rps .sc{font-family:'Orbitron',monospace;font-size:14px;color:#fff;letter-spacing:1px;padding:0 6px;white-space:nowrap}
+  #rps button{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);font-size:18px;cursor:pointer;color:var(--text);transition:.15s}
+  #rps button:hover{border-color:var(--accent);transform:translateY(-1px)}#rps button.sel{background:rgba(var(--accent-rgb),.32);border-color:var(--accent);box-shadow:0 0 12px rgba(var(--accent-rgb),.4)}
+  #rps .x{width:28px;height:28px;font-size:12px;color:var(--dim)}
+  #lmodal{justify-content:flex-end;align-items:stretch;background:transparent;backdrop-filter:none;pointer-events:none;padding:12px}
+  #lmodal .mod{pointer-events:auto;max-width:430px;max-height:none;height:100%;box-shadow:-10px 0 40px rgba(0,0,0,.45)}
+  .lsec{margin-top:14px}.lsec:first-child{margin-top:0}
+  .lsec h4{margin:0 0 7px;font-size:11px;letter-spacing:1.5px;color:var(--accent);font-family:'Share Tech Mono',monospace;text-transform:uppercase;font-weight:400}
+  .sw{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+  .sw button{width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.18);cursor:pointer;padding:0;transition:.15s}
+  .sw button:hover{transform:scale(1.1)}.sw button.on{border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+  .sw input[type=color]{width:34px;height:30px;border:1px dashed var(--border);border-radius:8px;background:none;padding:1px;cursor:pointer}
+  .accs{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .accs button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 4px;border-radius:10px;border:1px solid var(--border);background:rgba(var(--accent-rgb),.05);color:var(--text);cursor:pointer;font-size:11px;font-family:inherit}
+  .accs button i{font-style:normal;font-size:20px}.accs button.on{background:rgba(var(--accent-rgb),.2);border-color:var(--accent);color:#fff}
+  .lmut{opacity:.4;pointer-events:none}
+  .vbox{margin-top:6px;font-size:13px}.vbox small{color:var(--dim)}.vbox code{background:rgba(var(--accent-rgb),.12);padding:1px 5px;border-radius:4px;font-family:'Share Tech Mono',monospace;color:#fff}
+  .vrow{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(var(--accent-rgb),.07);font-size:13px}.vrow .vn{flex:1;min-width:0}.vrow small{color:var(--dim);font-size:11px}
+  .vrow .tbtn{flex:0 0 auto;min-width:0;padding:5px 10px;font-size:12px}.vrow .tbtn:disabled{opacity:.45;cursor:default}.vok{color:var(--green);font-size:12px;white-space:nowrap}
+  .bar{height:6px;border-radius:3px;background:rgba(var(--accent-rgb),.12);overflow:hidden;margin-top:5px}.bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+  .rng{display:flex;align-items:center;gap:8px;font-size:12.5px;margin-top:8px}.rng input{flex:1;accent-color:var(--accent)}.rng span{width:38px;text-align:right;font-family:'Share Tech Mono',monospace;color:var(--dim)}
+  .rcard{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-top:8px;background:rgba(var(--accent-rgb),.04)}
+  .rcard h5{margin:0;font-size:14px;color:#fff;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}.rcard h5 small{font-weight:400;color:var(--dim);font-size:11px;font-family:'Share Tech Mono',monospace}
+  .rpassi,.esiti{margin:6px 0 0;padding:0;list-style:none;font-size:12.5px;display:grid;gap:3px}.rpassi li,.esiti li{display:flex;gap:6px;align-items:baseline}
+  .rpassi .ok,.esiti .ok{color:var(--green)}.rpassi .ko,.esiti .ko{color:var(--red)}.rpassi small{color:var(--dim)}
+  .rcard .trow{margin-top:8px}.rcard .trow .tbtn{flex:0 0 auto;padding:5px 11px;font-size:12px;min-width:0}
+  #rform{border-style:dashed}
+  .giorni{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.giorni label{display:flex;align-items:center;justify-content:center;width:34px;height:30px;border-radius:8px;border:1px solid var(--border);cursor:pointer;font-size:12px;user-select:none}
+  .giorni input{display:none}.giorni label.on{background:rgba(var(--accent-rgb),.2);border-color:var(--accent);color:#fff}
+  .rmod{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.rmod button{background:rgba(var(--accent2-rgb),.12);border:1px solid rgba(var(--accent2-rgb),.45);color:#e3d8ff;border-radius:999px;padding:4px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  .rrow{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}.rrow .tfield{margin-top:0;width:auto;flex:1}
+  .m.avviso{border-color:rgba(255,176,32,.6)!important;box-shadow:0 0 18px rgba(255,176,32,.14)}
+  .m.avviso .mc::before{content:'⚠️ IL TUO PC';display:block;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1.5px;color:#ffb020;margin-bottom:4px}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V12</span></div>
+  <div class="logo">M A I K <span>// V13</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -5429,7 +5516,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div class="note" style="margin-top:6px">Crea il tuo gratis con <b>VRoid Studio</b> (esporta .vrm) o usa un .glb. Trascinalo sul personaggio per caricarlo.</div>
     <label class="opt">🎙️ Posso essere interrotto mentre parlo<input type="checkbox" id="optbarge" onchange="setOpt('barge',this.checked)"></label>
     <label class="opt">🌱 Vivo da solo (mi annoio, dormo, passeggio)<input type="checkbox" id="optvita" onchange="setOpt('vita',this.checked);if(AV)AV.setAlive({on:this.checked})"></label>
-    <div class="note">Cliccami e reagisco 😄 · «balla!» o <b>B</b> con la tua musica · «buonanotte» e vado a dormire.</div>
+    <label class="opt">🖐️ Vedo i gesti delle mani (con 👀)<input type="checkbox" id="optgesti" onchange="setOpt('gesti',this.checked);if(this.checked&&camOn)tryManiMP();updateStageBar()"></label>
+    <div class="trow" style="margin-top:6px"><button class="tbtn" type="button" onclick="openLook()">🎨 Personalizza</button><button class="tbtn" type="button" onclick="openRoutine()">⚡ Routine<span id="rcount"></span></button></div>
+    <div class="note">Cliccami e reagisco 😄 · «balla!» o <b>B</b> con la tua musica · «buonanotte» e vado a dormire · con 👀 vedo i gesti delle tue mani · <b>I</b> specchio · <b>J</b> sasso, carta, forbici.</div>
     <h3>🎨 Tema</h3>
     <div class="thsw" id="themes"></div>
     <h3>⚙ Opzioni</h3>
@@ -5454,9 +5543,16 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <button id="sbpip" onclick="miniWindow()" title="Mini-finestra sempre in primo piano (P)" aria-label="Mini-finestra">🗗</button>
         <button id="sbfocus" onclick="toggleFocus()" title="Solo Zep, a tutto schermo (F)" aria-label="Solo Zep">⛶</button>
         <button id="sbmusic" onclick="toggleMusic()" title="Balla con la tua musica (B): ascolto il microfono e ballo a tempo" aria-label="Balla con la musica">🎵</button>
+        <button id="sbgest" onclick="toggleGesti()" title="Vedo i gesti delle tue mani (G): 👋 👍 ✌️ 🤟 ✊ ✋" aria-label="Gesti delle mani">🖐️</button>
+        <button id="sbmirror" onclick="toggleSpecchio()" title="Specchio (I): copio la tua testa e le tue espressioni" aria-label="Specchio">🪞</button>
+        <button id="sbgame" onclick="toggleGioco()" title="Sasso, carta, forbici (J)" aria-label="Sasso, carta, forbici">✊</button>
+        <button id="sblook" onclick="openLook()" title="Personalizza (A): nome, colori, accessori, voce" aria-label="Personalizza">🎨</button>
+        <button id="sbroutine" onclick="openRoutine()" title="Routine e modalità (R)" aria-label="Routine e modalità">⚡</button>
         <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
       </div>
       <div id="caption" aria-live="polite"></div>
+      <div id="gesto" aria-hidden="true"></div>
+      <div id="rps" role="group" aria-label="Sasso, carta, forbici"><span class="sc" id="rpssc">Tu 0 – 0 Zep</span><button type="button" data-m="sasso" title="Sasso (1)">✊</button><button type="button" data-m="carta" title="Carta (2)">✋</button><button type="button" data-m="forbici" title="Forbici (3)">✌️</button><button type="button" id="rpsgo" title="Un altro giro" onclick="giocaRound()">▶</button><button type="button" class="x" title="Basta giocare" onclick="toggleGioco(false)">✕</button></div>
       <div id="stagedrop">📤 Lascia qui il tuo personaggio (.vrm o .glb)</div>
     </div>
     <div id="chatcol">
@@ -5471,6 +5567,8 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="guarda()">👁️ guardami</button>
       <button onclick="qs('come sta il pc?')">💻 stato del PC</button>
       <button onclick="q('Trova il file ')">🗂️ trova un file</button>
+      <button onclick="openRoutine()">⚡ routine</button>
+      <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
     </div>
@@ -5508,6 +5606,11 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>P</kbd> mini-finestra sempre in primo piano</div>
       <div><kbd>Z</kbd> inquadratura busto / intero</div>
       <div><kbd>B</kbd> balla con la tua musica (ascolto il microfono)</div>
+      <div><kbd>G</kbd> vedo i gesti delle tue mani (👋 👍 ✌️ 🤟 ✊ ✋)</div>
+      <div><kbd>I</kbd> specchio: copio la tua testa e le espressioni</div>
+      <div><kbd>J</kbd> sasso, carta, forbici · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> la tua mossa</div>
+      <div><kbd>A</kbd> personalizza: nome, colori, accessori, voce</div>
+      <div><kbd>R</kbd> routine e modalità</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
@@ -5532,6 +5635,36 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="docres"></div>
       <div id="doclist"></div>
       <div id="docspace" class="note"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="lmodal">
+  <div class="mod">
+    <div class="modh"><div class="modt">🎨 PERSONALIZZA</div><button class="ib" onclick="closeLook()" aria-label="Chiudi">✕</button></div>
+    <div class="modb" id="lbody"></div>
+    <input type="file" id="vrmain" accept=".vrma" style="display:none" onchange="uploadVrma(this.files[0]);this.value=''">
+  </div>
+</div>
+
+<div class="ov" id="rmodal">
+  <div class="mod" style="max-width:600px">
+    <div class="modh"><div class="modt">⚡ ROUTINE E MODALITÀ</div><button class="ib" onclick="closeRoutine()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="note" style="margin-top:0">Più comandi in uno: «<b>modalità lavoro</b>» apre le tue app, sistema il volume e ti saluta. Anche a orario (ogni mattina alle 7:30). <b>Prima di farla ti chiedo sempre conferma</b> (e se c'è da scrivere testo, ogni volta).</div>
+      <div id="rlist"></div>
+      <div class="rcard" id="rform">
+        <h5 id="rftitle">＋ Nuova routine</h5>
+        <div class="rmod">Esempi: <button type="button" onclick="rNuova('lavoro')">💼 lavoro</button><button type="button" onclick="rNuova('gioco')">🎮 gioco</button><button type="button" onclick="rNuova('buongiorno')">☀️ buongiorno</button><button type="button" onclick="rNuova('buonanotte')">🌙 buonanotte</button></div>
+        <div class="rrow"><input class="tfield" id="rnome" maxlength="40" placeholder="Nome (es. lavoro, buongiorno, gioco)"><select class="tfield" id="rtipo" style="flex:0 0 auto"><option value="routine">⚡ routine</option><option value="modalità">🎛️ modalità</option></select></div>
+        <textarea class="tfield" id="rpassi" style="min-height:96px" placeholder="Un comando per riga, come li diresti a me:&#10;apri gmail&#10;metti il volume al 30&#10;di' Buon lavoro!" oninput="rAnalizzaDopo()"></textarea>
+        <ul class="rpassi" id="ranal"></ul>
+        <div class="rrow">⏰ A orario <input class="tfield" type="time" id="rora" style="flex:0 0 auto"> <small style="color:var(--dim)">(vuoto = solo quando me lo chiedi)</small></div>
+        <div class="giorni" id="rgiorni"></div>
+        <div class="rmod"><button type="button" onclick="rPreset('ogni')">ogni giorno</button><button type="button" onclick="rPreset('feriali')">feriali</button><button type="button" onclick="rPreset('weekend')">weekend</button></div>
+        <div class="trow"><button class="tbtn solid" type="button" onclick="rSalva()">💾 Salva</button><button class="tbtn" type="button" onclick="rNuova()">Svuota</button></div>
+      </div>
+      <div class="note">Puoi anche dirlo a parole: «<b>crea la modalità lavoro: apri gmail, apri calendar e metti il volume al 30</b>», «<b>ogni giorno alle 7:30 fai la routine buongiorno</b>», «<b>che routine ho?</b>», «<b>modalità lavoro</b>».</div>
     </div>
   </div>
 </div>
@@ -5925,13 +6058,15 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V12 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V13 — il personaggio 3D di MAIK (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
    Labiale dall'italiano scritto (consonanti comprese, coarticolazione), gesti mentre parla scelti
    dalle parole, e una vita sua: si guarda attorno, si annoia, sbadiglia, si addormenta, balla,
-   passeggia, reagisce se lo tocchi. Stessa interfaccia per tutti i personaggi.
+   passeggia, reagisce se lo tocchi. V13: fa da specchio alle tue espressioni, gioca a sasso-carta-forbici,
+   si veste (colori e accessori), balla le tue animazioni .vrma e muove la bocca sull'audio vero (Piper).
+   Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
   let LIBS = null;
@@ -6063,6 +6198,28 @@ window.ZepKit = (() => {
     return segs;
   }
   const units = segs => segs.length ? (segs[segs.length - 1].t1 - segs[0].t0) : 0;
+  // fonemi IPA con i tempi veri (dalla voce neurale Piper) → segmenti; ogni suono sa a che parola appartiene
+  const IPA_VIS = { a: 'aa', 'ɑ': 'aa', 'æ': 'aa', 'ɐ': 'aa', e: 'E', 'ɛ': 'E', 'ə': 'E', i: 'I', 'ɪ': 'I', j: 'I', y: 'I', o: 'O', 'ɔ': 'O',
+    u: 'U', 'ʊ': 'U', w: 'U', p: 'PP', b: 'PP', m: 'PP', 'ɱ': 'PP', f: 'FF', v: 'FF', t: 'DD', d: 'DD', n: 'nn', 'ɲ': 'nn', 'ŋ': 'nn', l: 'nn',
+    'ʎ': 'nn', r: 'RR', 'ɾ': 'RR', 'ʁ': 'RR', s: 'SS', z: 'SS', 'ʃ': 'CH', 'ʒ': 'CH', 'ʧ': 'CH', 'ʤ': 'CH', k: 'kk', 'ɡ': 'kk', g: 'kk', x: 'kk',
+    h: 'kk', 'θ': 'TH', 'ð': 'TH' };
+  const VOC = new Set(['aa', 'E', 'I', 'O', 'U']);
+  function segsFromPhon(phon, text, t0) {
+    const parole = [...String(text || '').matchAll(/[\p{L}\p{N}']+/gu)].map(m => m.index);
+    const segs = []; let w = 0, accento = false;
+    const allunga = t => { if (segs.length) segs[segs.length - 1].t1 = t; };
+    for (const f of phon || []) {
+      const p = String(f[0] || ''), t = t0 + (+f[1] || 0), d = Math.max(15, +f[2] || 0), ci = parole[Math.min(w, parole.length - 1)] ?? 0;
+      if (p === ' ') { w++; segs.push({ v: 'sil', t0: t, t1: t + d, ci }); continue; }
+      if (p === 'ˈ' || p === 'ˌ') { accento = true; allunga(t + d); continue; }
+      if (p === 'ː') { allunga(t + d); continue; }
+      const v = IPA_VIS[p] || (/[ʃʒ]/.test(p) ? 'CH' : /^[td]?[sz]$/.test(p) ? 'SS' : null) || IPA_VIS[p.normalize('NFD')[0]] || (/^[.,;:!?^$_]$/.test(p) || !p ? 'sil' : null);
+      if (!v) { allunga(t + d); continue; }
+      segs.push({ v, t0: t, t1: t + d, ci, amp: VOC.has(v) ? (accento ? 1 : 0.85) : 1 });
+      if (VOC.has(v)) accento = false;
+    }
+    return segs;
+  }
 
   // ============================================================
   // GESTI MENTRE PARLA — dalle parole al piano dei gesti (posizione nel testo → gesto)
@@ -6181,6 +6338,14 @@ window.ZepKit = (() => {
     wink: { dur: 0.9, f(a, w, P) { P.face.mode.wink += w; P.face.smile += 0.7 * w; } },
     antenna: { dur: 1.5, f(a, w, P) { P.antenna += w; } },
     spin: { dur: 1.6, f(a, w, P) { P.root.yaw += Math.PI * 2 * smooth(a.p); } },
+    // v13: giochi e risposte ai tuoi gesti
+    rpsShake: { dur: 1.8, arms: 'R', f(a, w, P) { const b = Math.abs(Math.sin(a.t * Math.PI / 0.6)); armTo(P.armR, { sx: -0.95, sy: -0.2, sz: 0.25, ex: -1.25 - 0.4 * b, ey: -0.25, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.head.x += 0.06 * b * w; P.face.brow += 0.3 * w; } },
+    rpsShow: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -1.05, sy: -0.2, sz: 0.25, ex: -0.75, ey: -0.2, ez: 0, wr: a.shape === 'carta' ? 0 : 0.2 }, w); P.hand.R = [a.shape === 'carta' ? 'open' : a.shape === 'forbici' ? 'count2' : 'fist', w]; } },
+    fistbump: { dur: 1.5, arms: 'R', f(a, w, P) { const k = smooth(a.p / 0.4); armTo(P.armR, { sx: -1.2 * k - 0.3, sy: -0.15, sz: 0.2, ex: -1.5 + 1.1 * k, ey: -0.1, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.face.smile += 0.6 * w; } },
+    victory: { dur: 1.8, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.45, sz: 0.5, ex: -1.9, ey: -0.1, ez: 0, wr: 0.2 }, w); P.hand.R = ['count2', w]; P.face.mode.happy += 0.7 * w; P.face.smile += w; P.head.z += 0.08 * w; } },
+    highfive: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.95, sy: -0.1, sz: 0.65, ex: -1.45, ey: 0.15, ez: 0, wr: 1.5 }, w); P.hand.R = ['open', w]; P.face.smile += 0.7 * w; } },
+    thumbsdown: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.85, sz: 0.3, ex: -1.4, ey: -0.25, ez: 0, wr: 2.9 }, w); P.hand.R = ['thumb', w]; P.face.frown += 0.7 * w; } },
+    lookup: { dur: 1.8, f(a, w, P) { P.look = [0.1, 0.95, w]; P.head.x -= 0.15 * w; P.face.brow += 0.5 * w; } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
 
@@ -6399,6 +6564,7 @@ window.ZepKit = (() => {
       walk: { x: 0, target: 0, phase: 0, yaw: 0, speed: 0, back: 0 },
       poke: { n: 0, t: 0 },
       tod: null, camX: 0,
+      mir: null, alvl: 0, alvlT: 0, vrma: null,
     };
     const charRoot = new THREE.Group(); scene.add(charRoot);
     let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, baseY = 0, topY = 1.6;
@@ -6520,7 +6686,10 @@ window.ZepKit = (() => {
             F.b.quaternion.copy(F.rest).premultiply(qA.setFromAxisAngle(F.axis, c * max));
           }
         },
-        reset() { for (const k of Object.keys(rest)) bones[k].quaternion.copy(rest[k]); },
+        // (le ossa mosse dalle animazioni del file ripartono dall'ultimo valore dell'animazione: il mixer di three.js
+        //  riscrive un valore solo quando cambia, quindi tornare al riposo le bloccherebbe nei tratti fermi)
+        reset() { for (const k of Object.keys(rest)) bones[k].quaternion.copy(this.mixed && this.mixed[k] ? this.mixed[k] : rest[k]); },
+        capture(animato) { this.mixed = this.mixed || {}; for (const k of Object.keys(rest)) if (animato(bones[k])) (this.mixed[k] = this.mixed[k] || new THREE.Quaternion()).copy(bones[k].quaternion); },
       };
     }
 
@@ -6586,11 +6755,88 @@ window.ZepKit = (() => {
         return { sh, el, hand, fingers, s };
       };
       const Lf = arm(1), Rr = arm(-1);
-      const ROB = { R, body, neck, head, screen, faceTex, core, tip, antenna, L: Lf, Rr, glow, glow2 };
+      const ROB = { R, body, neck, head, screen, faceTex, core, tip, antenna, L: Lf, Rr, glow, glow2, white, dark, acc: {} };
       headY = 0.55 + 0.52 + 0.25;
       charRoot.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(R); height = bb.max.y; topY = bb.max.y;
       rig = { robot: ROB, bones: { head: head }, morphs: null };
       log('avatar integrato: Zep');
+    }
+
+    // ---------- v13: lettore delle animazioni .vrma (ogni fotogramma, sopra la posa di riposo, con dissolvenza) ----------
+    const qV = new THREE.Quaternion(), vV = new THREE.Vector3();
+    function suonaVrma(dt) {
+      const V = S.vrma; if (!V) return false;
+      V.t += dt;
+      if (V.t >= V.dur) { if (V.loop && performance.now() < V.until) V.t %= V.dur; else { S.vrma = null; return false; } }
+      const w = smooth(V.t / 0.25) * (V.loop ? 1 : smooth((V.dur - V.t) / 0.3)) * (V.stop ? clamp(1 - (performance.now() - V.stop) / 300, 0, 1) : 1);
+      if (V.stop && w <= 0) { S.vrma = null; return false; }
+      for (const p of V.piste) {
+        const v = p.it.evaluate(V.t);
+        if (p.prop === 'quaternion') p.obj.quaternion.slerp(qV.fromArray(v), w);
+        else if (p.prop === 'position') p.obj.position.lerp(vV.fromArray(v), w);
+        else if (p.prop === 'weight') p.obj.weight = v[0] * w;
+      }
+      return true;
+    }
+
+    // ---------- v13: aspetto di Zep (colore del corpo, luci, accessori) ----------
+    const LOOK = { corpo: null, luci: null, accessori: [] };
+    const ACCESSORI = ['cilindro', 'berretto', 'cappellino', 'occhiali', 'occhialiSole', 'cuffie', 'papillon', 'sciarpa'];
+    function costruisciAccessorio(B, k) {
+      const g = new THREE.Group(), add = (geo, mat, x, y, z, p = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); p.add(m); return m; };
+      const nero = new THREE.MeshPhysicalMaterial({ color: 0x15151c, roughness: 0.35, metalness: 0.2, clearcoat: 0.6 });
+      const colore = c => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.4, metalness: 0.05, clearcoat: 0.4 });
+      const luce = B.glow2;
+      if (k === 'cilindro') {                                    // 🎩
+        add(new THREE.CylinderGeometry(0.15, 0.16, 0.24, 40), nero, 0, 0.37, 0); add(new THREE.CylinderGeometry(0.27, 0.27, 0.014, 48), nero, 0, 0.255, 0);
+        add(new THREE.CylinderGeometry(0.161, 0.161, 0.04, 40), luce, 0, 0.29, 0); g.rotation.z = -0.12; B.head.add(g);
+      } else if (k === 'berretto') {                             // 🧢
+        const c = colore(0xd7263d);
+        add(new THREE.SphereGeometry(0.31, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.36), c, 0, 0.03, 0).scale.set(1.19, 0.95, 1.03);
+        const v = add(new THREE.CircleGeometry(0.2, 32, 0, Math.PI), c, 0, 0.19, 0.2); v.rotation.x = -Math.PI / 2 + 0.25; v.material = c.clone(); v.material.side = THREE.DoubleSide;
+        add(new THREE.SphereGeometry(0.028, 12, 10), c, 0, 0.29, 0); B.head.add(g);
+      } else if (k === 'cappellino') {                           // 🥳
+        add(new THREE.ConeGeometry(0.11, 0.3, 32), colore(0xffb020), 0, 0.42, 0); add(new THREE.SphereGeometry(0.035, 14, 10), luce, 0, 0.58, 0);
+        add(new THREE.TorusGeometry(0.105, 0.012, 8, 32), luce, 0, 0.29, 0).rotation.x = Math.PI / 2; g.rotation.z = 0.25; g.position.x = -0.06; B.head.add(g);
+      } else if (k === 'occhiali' || k === 'occhialiSole') {     // 👓 🕶️
+        const sole = k === 'occhialiSole', telaio = sole ? nero : new THREE.MeshPhysicalMaterial({ color: 0x8a5a2b, roughness: 0.3, metalness: 0.3 });
+        for (const sx of [-1, 1]) {
+          add(new THREE.TorusGeometry(0.075, 0.011, 10, 40), telaio, sx * 0.1, 0.04, 0.335);
+          if (sole) add(new THREE.CircleGeometry(0.073, 32), new THREE.MeshPhysicalMaterial({ color: 0x050508, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.86, clearcoat: 1 }), sx * 0.1, 0.04, 0.337);
+          const st = add(new THREE.BoxGeometry(0.012, 0.012, 0.3), telaio, sx * 0.178, 0.05, 0.19); st.rotation.y = sx * 0.18;
+        }
+        add(new THREE.CylinderGeometry(0.008, 0.008, 0.06, 8), telaio, 0, 0.05, 0.34).rotation.z = Math.PI / 2; B.head.add(g);
+      } else if (k === 'cuffie') {                               // 🎧
+        add(new THREE.TorusGeometry(0.36, 0.024, 12, 48, Math.PI), nero, 0, 0.02, 0).scale.set(1.04, 0.86, 1);
+        for (const sx of [-1, 1]) { add(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 32), nero, sx * 0.375, -0.01, 0).rotation.z = Math.PI / 2; add(new THREE.TorusGeometry(0.085, 0.012, 8, 32), luce, sx * 0.413, -0.01, 0).rotation.y = Math.PI / 2; }
+        B.head.add(g);
+      } else if (k === 'papillon') {                             // 🎀
+        const c = colore(0xd7263d);
+        for (const sx of [-1, 1]) { const ali = add(new THREE.ConeGeometry(0.05, 0.09, 4), c, sx * 0.05, 0, 0); ali.rotation.z = sx * Math.PI / 2; }
+        add(new THREE.SphereGeometry(0.025, 12, 10), c, 0, 0, 0.005); g.position.set(0, 0.47, 0.215); B.body.add(g);
+      } else if (k === 'sciarpa') {                              // 🧣
+        const c = colore(0xe8505b);
+        add(new THREE.TorusGeometry(0.17, 0.05, 14, 36), c, 0, 0, 0).rotation.x = Math.PI / 2;
+        const coda = add(new THREE.BoxGeometry(0.08, 0.2, 0.035), c, 0.08, -0.12, 0.17); coda.rotation.z = 0.15;
+        g.position.set(0, 0.5, 0); g.scale.set(1, 1, 0.9); B.body.add(g);
+      }
+      g.name = 'acc-' + k;
+      return g;
+    }
+    function setLook(o = {}) {
+      if (o.corpo !== undefined) LOOK.corpo = o.corpo || null;
+      if (o.luci !== undefined) LOOK.luci = o.luci || null;
+      if (Array.isArray(o.accessori)) LOOK.accessori = o.accessori.filter(k => ACCESSORI.includes(k));
+      S.luci = LOOK.luci ? new THREE.Color().setRGB(LOOK.luci[0] / 255, LOOK.luci[1] / 255, LOOK.luci[2] / 255, THREE.SRGBColorSpace) : null;
+      const B = rig && rig.robot; if (!B) return { ok: false, errore: 'colori e accessori sono per Zep (il robot)' };
+      B.white.color.set(LOOK.corpo || 0xeef3ff);
+      for (const k of ACCESSORI) {
+        const on = LOOK.accessori.includes(k);
+        if (on && !B.acc[k]) B.acc[k] = costruisciAccessorio(B, k);
+        if (B.acc[k]) B.acc[k].visible = on;
+      }
+      B.antenna.visible = !LOOK.accessori.some(k => k === 'cilindro' || k === 'cappellino');
+      return { ok: true };
     }
 
     // ============================================================
@@ -6685,7 +6931,7 @@ window.ZepKit = (() => {
       const def = ACT[k]; if (!def) return false;
       const arms = armsOf(k, o.side);
       for (const a of S.acts) if (a.k === k || (arms.length && a.arms.some(x => arms.includes(x)) && ACT[a.k].arms)) a.out = a.out ?? 0.25;   // il gesto vecchio sfuma
-      S.acts.push({ k, t: 0, p: 0, dur: o.dur || def.dur, amp: o.amp || 1, n: o.n, side: o.side, arm: 'arm' + (arms[0] || 'R'), arms });
+      S.acts.push({ k, t: 0, p: 0, dur: o.dur || def.dur, amp: o.amp || 1, n: o.n, side: o.side, shape: o.shape, arm: 'arm' + (arms[0] || 'R'), arms });
       if (S.acts.length > 12) S.acts.splice(0, S.acts.length - 12);
       if (k !== 'beat') S.alive.next = Math.max(S.alive.next, performance.now() + 6000);
       return true;
@@ -6767,11 +7013,13 @@ window.ZepKit = (() => {
       if (speaking && now > Lp.quietUntil && !Lp.segs.some(s => s.t1 > now)) babble(now);       // parla ma non sappiamo cosa: «borbotta» a tempo
       const MP = evalLips(now);
       if (S.level > 0.02) MP.open = Math.max(MP.open, S.level);
+      const gate = now - S.alvlT < 250 ? clamp(0.12 + S.alvl * 3.2, 0, 1.15) : 1;     // v13: audio vero (Piper)
+      MP.open *= gate;
       for (const k of MP_KEYS) S.mp[k] = damp(S.mp[k], MP[k], 30, dt);
       const tm = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
       for (const v of VIS) { const w = S.vis[v]; if (w > 0.001) for (const k in VRM5[v]) tm[k] += w * VRM5[v][k]; }
       if (S.level > 0.02) tm.aa = Math.max(tm.aa, S.level);
-      for (const k in S.mouth) S.mouth[k] = damp(S.mouth[k], clamp(tm[k], 0, 1), 26, dt);
+      for (const k in S.mouth) S.mouth[k] = damp(S.mouth[k], clamp(tm[k] * gate, 0, 1), 26, dt);
       fireEvents();
       // --- palpebre
       S.blinkT -= dt;
@@ -6882,6 +7130,16 @@ window.ZepKit = (() => {
       if (S.sleepW > 0.5) { lx = 0; ly = -0.2; }
       S.look.x = damp(S.look.x, clamp(lx, -1, 1), 5, dt); S.look.y = damp(S.look.y, clamp(ly, -1, 1), 5, dt);
       P.head.x += -S.look.y * 0.35; P.head.y += S.look.x * 0.55; P.spine.y += S.look.x * 0.1;
+      const mir = S.mir && now - S.mir.t < 600 ? S.mir : null;            // v13: modalità specchio (webcam)
+      if (mir) {
+        A.lastAct = now;
+        P.head.x = clamp(mir.pitch || 0, -0.6, 0.6) * 1.1; P.head.y = clamp(mir.yaw || 0, -0.9, 0.9) * 1.1; P.head.z = clamp(mir.roll || 0, -0.6, 0.6);
+        P.face.smile = Math.max(P.face.smile, mir.smile || 0); if ((mir.smile || 0) > 0.7) P.face.mode.happy += 0.7;
+        P.face.mouthOpen = Math.max(P.face.mouthOpen, clamp((mir.jaw || 0) * 1.2, 0, 1));
+        P.face.brow += clamp((mir.brow || 0) * 1.2, 0, 1.2);
+        const bl = mir.blinkL || 0, br = mir.blinkR || 0;
+        if ((bl > 0.55 && br < 0.3) || (br > 0.55 && bl < 0.3)) P.face.mode.wink += 1; else P.face.closed += Math.min(bl, br);
+      }
       S.yaw = damp(S.yaw, S.yawTarget, 6, dt);
       lookObj.position.set(S.look.x * height * 0.5 + W.x, headY + S.look.y * height * 0.3, cam.dist * 0.9);
       // viso: emozioni + gesti
@@ -6974,7 +7232,7 @@ window.ZepKit = (() => {
       // luci (nel ballo i colori girano a tempo)
       const pulse = S.state === 'thinking' ? 0.5 + 0.5 * Math.sin(t * 7) : S.state === 'listening' ? 1 : S.state === 'alarm' ? Math.abs(Math.sin(t * 9)) : 0.4 + 0.15 * Math.sin(t * 2);
       const k1 = (0.75 + 0.25 * (a.speaking ? clamp(open, 0, 1) : 0) + 0.15 * pulse) * (1 - 0.5 * S.sleepW), k2 = (0.55 + 0.45 * pulse) * (1 - 0.4 * S.sleepW) + 0.8 * P.antenna * Math.abs(Math.sin(t * 12));
-      tmpC.copy(accent); if (S.dance.w > 0.01) tmpC.offsetHSL(((S.dance.n % 6) / 6) * S.dance.w, 0, 0);
+      tmpC.copy(S.luci || accent); if (S.dance.w > 0.01) tmpC.offsetHSL(((S.dance.n % 6) / 6) * S.dance.w, 0, 0);
       B.glow.color.copy(tmpC).multiplyScalar(k1); B.glow2.color.copy(accent2).multiplyScalar(k2);
       B.tip.scale.setScalar(1 + 0.4 * pulse + 0.5 * P.antenna);
     }
@@ -6983,9 +7241,12 @@ window.ZepKit = (() => {
       const { dt, blinkV } = a;
       const anim = k => rig.hasClips && rig.animated && rig.animated(k);
       rig.reset();                                     // si riparte dalla posa di riposo…
-      if (mixer) mixer.update(dt);                     // …poi l'animazione del file (se c'è)…
+      if (mixer) { mixer.update(dt); if (rig.animatedBone) rig.capture(rig.animatedBone); }   // …poi l'animazione del file (se c'è)…
+      const balla = suonaVrma(dt);                     // …o la tua animazione .vrma (v13)
       charRoot.position.set(P.root.x, baseY + P.root.py * height, 0);
       charRoot.rotation.y = S.yaw + P.root.yaw;
+      if (balla) { rig.apply('head', P.head.x * 0.25, P.head.y * 0.25, 0); }
+      else {
       if (!anim('hips')) rig.apply('hips', P.hips.x, P.hips.y, P.hips.z);
       if (!anim('spine')) rig.apply('spine', P.spine.x * 0.6, P.spine.y * 0.6, P.spine.z * 0.6);
       else if (S.listen > 0.05) rig.apply('spine', S.listen * 0.05, 0, 0);
@@ -7006,6 +7267,7 @@ window.ZepKit = (() => {
       if (rig.bones.leftUpperLeg && !anim('leftUpperLeg')) {
         rig.apply('leftUpperLeg', -P.legs.l, 0, 0); rig.apply('rightUpperLeg', -P.legs.r, 0, 0);
         rig.apply('leftLowerLeg', P.legs.lk, 0, 0); rig.apply('rightLowerLeg', P.legs.rk, 0, 0);
+      }
       }
       if (clips.__wave && S.acts.some(x => x.k === 'wave' && x.t < dt * 1.5)) clips.__wave.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.2).play();
       if (clips.__talk) { const w = a.speaking ? 1 : 0; clips.__talk.enabled = true; if (!clips.__talk.isRunning() && w) clips.__talk.play(); clips.__talk.weight = damp(clips.__talk.weight || 0, w, 4, dt); }
@@ -7049,6 +7311,7 @@ window.ZepKit = (() => {
     } else buildRobot();
     resize();
     if (opts.hour != null) S.tod = todOf(opts.hour);
+    if (opts.look) setLook(opts.look);
 
     // ---------- ciclo (anche nella mini-finestra: usa il requestAnimationFrame della sua finestra) ----------
     let rafWin = window, last = performance.now(), raf = 0, alive = true, paused = false;
@@ -7087,7 +7350,11 @@ window.ZepKit = (() => {
         Lp.text = txt; Lp.line++; Lp.start = now; Lp.syncs = 0; Lp.curCi = -1; Lp.quietUntil = 0;
         Lp.segs = Lp.segs.filter(s => s.t1 < now);
         const unit = Lp.unit / clamp(o.rate || 1, 0.5, 2);
-        const segs = buildLine(txt, 0, now, unit);
+        let segs;
+        if (Array.isArray(o.phon) && o.phon.length) segs = segsFromPhon(o.phon, txt, now);            // tempi veri di ogni suono
+        else if (o.ms > 0) segs = buildLine(txt, 0, now, o.ms / Math.max(1, units(buildLine(txt, 0, 0, 1))));   // stretto sulla durata dell'audio
+        else segs = buildLine(txt, 0, now, unit);
+        Lp.audio = !!(o.ms > 0 || (o.phon && o.phon.length));
         Lp.segs.push(...segs);
         Lp.ciUnits = new Map(); for (const s of segs) if (!Lp.ciUnits.has(s.ci)) Lp.ciUnits.set(s.ci, (s.t0 - now) / unit);
         Lp.units = units(segs) / unit; Lp.rate = clamp(o.rate || 1, 0.5, 2);
@@ -7098,7 +7365,7 @@ window.ZepKit = (() => {
       },
       // il browser dice che sta iniziando la parola in posizione ci: si riallinea (e impara la velocità della voce)
       sync(ci) {
-        const now = performance.now(), Lp = S.lip; if (!Lp.text) return;
+        const now = performance.now(), Lp = S.lip; if (!Lp.text || Lp.audio) return;
         const u0 = Lp.ciUnits && Lp.ciUnits.get(ci);
         if (u0 != null && u0 > 3) { const est = (now - Lp.start) / u0 * Lp.rate; if (est > 30 && est < 220) Lp.unit = clamp(lerp(Lp.unit, est, 0.2), 45, 160); }
         Lp.syncs++;
@@ -7111,7 +7378,7 @@ window.ZepKit = (() => {
       lineEnd() {
         const now = performance.now(), Lp = S.lip; if (!Lp.text) return;
         const dur = now - Lp.start;
-        if (!Lp.syncs && Lp.units > 4 && dur > 200) { const est = dur / Lp.units * Lp.rate; if (est > 0.4 * Lp.unit && est < 2.5 * Lp.unit) Lp.unit = clamp(lerp(Lp.unit, est, 0.35), 45, 160); }
+        if (!Lp.syncs && !Lp.audio && Lp.units > 4 && dur > 200) { const est = dur / Lp.units * Lp.rate; if (est > 0.4 * Lp.unit && est < 2.5 * Lp.unit) Lp.unit = clamp(lerp(Lp.unit, est, 0.35), 45, 160); }
         Lp.segs = Lp.segs.filter(s => s.t1 < now); Lp.text = ''; Lp.ev = []; Lp.quietUntil = now + 300;
       },
       get lipUnit() { return S.lip.unit; }, set lipUnit(v) { S.lip.unit = clamp(+v || 82, 45, 160); },
@@ -7126,6 +7393,34 @@ window.ZepKit = (() => {
         if (S.lip.segs.length > 400) S.lip.segs.splice(0, S.lip.segs.length - 400);
       },
       level(v) { S.level = clamp(v || 0, 0, 1); },
+      // v13: volume dell'audio vero che sta suonando (0…1): nelle pause la bocca si chiude
+      audioLevel(v) { S.alvl = clamp(v || 0, 0, 1); S.alvlT = performance.now(); },
+      // v13: modalità specchio — {yaw, pitch, roll (rad), smile, jaw, brow, blinkL, blinkR} dalla webcam; null per smettere
+      mirror(d) { S.mir = d ? Object.assign({}, d, { t: performance.now() }) : null; },
+      get mirroring() { return !!(S.mir && performance.now() - S.mir.t < 600); },
+      // v13: aspetto di Zep — corpo (colore), luci (colore o null = tema), accessori
+      setLook(o = {}) { return setLook(o); },
+      get look() { return Object.assign({}, LOOK); },
+      // v13: le tue animazioni .vrma (solo personaggi VRM)
+      async playVrma(url, o = {}) {
+        if (!vrm) return { ok: false, errore: 'le animazioni .vrma funzionano con i personaggi .vrm' };
+        const VA = await import('@pixiv/three-vrm-animation');
+        const loader = new GLTFLoader(); loader.register(p => new VA.VRMAnimationLoaderPlugin(p));
+        const g = await loader.loadAsync(url);
+        const va = g.userData && g.userData.vrmAnimations && g.userData.vrmAnimations[0];
+        if (!va) return { ok: false, errore: 'nel file non c\'è un\'animazione VRM' };
+        const clip = VA.createVRMAnimationClip(va, vrm);
+        const piste = clip.tracks.map(tr => {
+          const i = tr.name.lastIndexOf('.'), nodo = tr.name.slice(0, i), prop = tr.name.slice(i + 1);
+          const obj = vrm.scene.getObjectByName(nodo) || (vrm.expressionManager && vrm.expressionManager.getExpression && vrm.expressionManager.getExpression(nodo));
+          return obj && ['quaternion', 'position', 'weight'].includes(prop) ? { obj, prop, it: tr.createInterpolant() } : null;
+        }).filter(Boolean);
+        S.vrma = { piste, tracks: clip.tracks.map(t => t.name), t: 0, dur: clip.duration, loop: !!o.loop, until: performance.now() + (o.loop ? (o.ms || 30000) : clip.duration * 1000) };
+        activity();
+        return { ok: true, durata: clip.duration };
+      },
+      stopVrma() { if (S.vrma && !S.vrma.stop) S.vrma.stop = performance.now(); },
+      get vrmaPlaying() { return !!S.vrma; },
       stopSpeaking() { const Lp = S.lip; Lp.segs.length = 0; Lp.text = ''; Lp.ev = []; Lp.quietUntil = performance.now() + 300; S.speakUntil = 0; S.level = 0; if (S.state === 'speaking') S.state = 'idle'; },
       emote(k, ms = 3500) { if (k === 'neutral' || !EMOS.includes(k)) { S.emoTarget = null; return; } S.emoTarget = k; S.emoUntil = performance.now() + ms; },
       gesture(k, o) { k = GESTURE_ALIAS[k] || k; if (act(k, o || {})) { S.gesture = k; activity(); return true; } return false; },
@@ -7147,6 +7442,14 @@ window.ZepKit = (() => {
           case 'goodnight': act('wave'); setTimeout(() => act('yawn'), 1800); setTimeout(() => sleepNow(), 4600); break;
           case 'morning': act('stretch'); setTimeout(() => { act('wave'); em('happy'); }, 2300); break;
           case 'think': act('think'); break;
+          case 'pollice_su': act('thumbsup'); em('happy', 3000); break;
+          case 'pollice_giu': act('thumbsdown'); em('sad', 2500); break;
+          case 'vittoria': act('victory'); em('happy'); break;
+          case 'pugno': act('fistbump'); em('happy'); break;
+          case 'ti_amo': act('heart'); em('happy', 3500); break;
+          case 'saluto_mano': act('wave'); em('happy'); break;
+          case 'cinque': act('highfive'); em('happy'); break;
+          case 'indica_su': act('lookup'); break;
           case 'listen': act('tilt'); break;
           default: return act(kind, o);
         }
@@ -7190,10 +7493,12 @@ window.ZepKit = (() => {
         rafWin = win; last = performance.now(); raf = rafWin.requestAnimationFrame(loop); resize();
       },
       pause(p) { paused = !!p; },
+      get paused() { return paused; },
       step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
       snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
       faceSnapshot() { return faceCanvas.toDataURL('image/png'); },
       // per i test e il debug: dove sono le ossa e dove guardano
+      boneQuat(k) { const b = rig && rig.bones && rig.bones[k]; return b && b.isObject3D ? b.quaternion.toArray().map(x => +x.toFixed(3)) : null; },
       bonePos(k) { const b = rig && rig.bones && rig.bones[k]; if (!b || !b.isObject3D) return null; const v = b.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z]; },
       boneForward(k) { const b = rig && rig.bones && rig.bones[k]; if (!b || !b.isObject3D) return null; const v = new THREE.Vector3(0, 0, 1).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())); return [v.x, v.y, v.z]; },
       fingerTip(side, f) {
@@ -7322,8 +7627,9 @@ async function invia(opt){
   const t=(opt.text!=null?opt.text:$('#inp').value).trim();const A=regen?null:att;
   if((!t&&!A)||busy)return;
   if(!regen&&!A&&t&&rispostaVeloce(t)){if(opt.text==null)$('#inp').value='';return;}   // «sì» / «no» alla conferma aperta
-  const loc=!regen&&!A&&t?comandoZep(t):null;                                                 // «balla!»: ci pensa Zep
-  if(loc){if(opt.text==null)$('#inp').value='';stopSpeech();add('me',t);const d=add('ai',loc);finalize(d,loc,null,null);say(loc);return;}
+  if(!regen&&!A&&t&&giocoTesto(t)){if(opt.text==null)$('#inp').value='';return;}          // ✊ «sasso», «ancora», «basta» durante il gioco
+  let loc=!regen&&!A&&t?comandoZep(t):null;                                                 // «balla!», «giochiamo», «conta le mie dita»: ci pensa Zep
+  if(loc){if(opt.text==null)$('#inp').value='';stopSpeech();add('me',t);if(loc.then)loc=await loc;const d=add('ai',loc);finalize(d,loc,null,null);say(loc);return;}
   stopSpeech();
   if(!regen){$('#inp').value='';clearAtt();}
   $('#send').disabled=true;busy=true;lastAct=Date.now();
@@ -7357,7 +7663,7 @@ async function invia(opt){
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
-            mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!window.speechSynthesis)captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
+            mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);
             if(obj.azioni&&obj.azioni.length)loadPr();
@@ -7380,7 +7686,7 @@ async function invia(opt){
   SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;
   if(!friend)$('#inp').focus();
 }
-function stopGen(){if(ctl)ctl.abort();if(window.speechSynthesis)speechSynthesis.cancel();}
+function stopGen(){if(ctl)ctl.abort();stopSpeech();}
 function regen(d){if(busy)return;const q=d.dataset.q;if(q==null){toast('Questa risposta non si può rigenerare','err');return;}d.remove();invia({text:q,regen:true});}
 
 // ---------- ALLEGATI (📎, trascina e rilascia, incolla) ----------
@@ -7420,7 +7726,7 @@ document.addEventListener('touchend',()=>{SPH.drag=false;});
 // ---------- WEBCAM + PRESENZA ----------
 let camOn=false,camStream=null,faceTimer=null,present=false,awaySince=Date.now();
 async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:true});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
-function stopCam(){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
+function stopCam(){if(SPECCHIO.on)toggleSpecchio(false);if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
 function onPresence(pr){const s=$('#fstat');if(pr){zepAttivo();if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(away>20000&&AV)AV.gesture('wave');if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
 
 // ---------- VISIONE (👁️ Guarda) ----------
@@ -7485,7 +7791,7 @@ async function enterFriend(){
   setTimeout(()=>{add('ai',hi);say(hi);},500);
   lastAct=Date.now();proGap=80000;startPro();toast('🫂 Modalità Amico attiva','ok');
 }
-function exitFriend(){friend=false;clearInterval(proTimer);micMeter.stop();if(listening){try{reco.stop();}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO</span>';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
+function exitFriend(){friend=false;clearInterval(proTimer);micMeter.stop();if(listening){try{reco.stop();}catch(e){}}stopSpeech();stopCam();$('#fbtn').classList.remove('on');$('#fbtn').innerHTML='🫂<span class="hx"> AMICO</span>';$('#fbadge').style.display='none';toast('Modalità Amico disattivata');}
 function startPro(){clearInterval(proTimer);proTimer=setInterval(()=>{if(!friend||busy||speaking||listening)return;if($('#tmodal').classList.contains('open'))return;if(Date.now()-lastAct>=proGap){if(camOn&&!visionBroken&&Math.random()<0.35)autoGlance();else sayPro();lastAct=Date.now();proGap=70000+Math.random()*80000;}},5000);}
 function sayPro(){const nm=pName?' '+pName:'';const h=new Date().getHours();const pool=['Allora'+nm+', come va la giornata?','A cosa stai pensando'+nm+'?','Ti va di raccontarmi qualcosa?','Sono qui'+nm+', se vuoi parlare ci sono.','Hai fatto qualcosa di bello oggi?','Come ti senti'+nm+'?','Se potessi fare una cosa qualsiasi adesso, cosa faresti?'];if(h<11)pool.push('Buongiorno'+nm+'! Come hai dormito?');else if(h>=21)pool.push('Si è fatta sera'+nm+'… com\'è stata la giornata?');const line=pool[Math.floor(Math.random()*pool.length)];add('ai',line);say(line);}
 function greetBack(){if(busy||speaking)return;const nm=pName?' '+pName:'';const line='Bentornato'+nm+'! Ti rivedo 😊';add('ai',line);say(line);}
@@ -7611,27 +7917,35 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('📸','Fai uno screenshot',()=>qs('fai uno screenshot'),'PC','schermata cattura'),c('🗂️','Trova un file…',()=>q('Trova il file '),'PC','cerca documento foto pdf'),
     c('🔊','Alza il volume',()=>qs('alza il volume'),'PC','audio'),c('🔉','Abbassa il volume',()=>qs('abbassa il volume'),'PC','audio'),
     c('⏯️','Pausa / riprendi la musica',()=>qs('pausa'),'PC','spotify youtube'),c('⏭️','Canzone successiva',()=>qs('canzone successiva'),'PC','brano'),
+    c('🖐️','Vedo i gesti delle tue mani',()=>toggleGesti(),'G','mani pollice ciao webcam'),c('🔢','Conta le mie dita',()=>qs('conta le mie dita'),'webcam','dita mano numeri'),
+    c('🪞',SPECCHIO.on?'Spegni lo specchio':'Specchio: copiami',()=>toggleSpecchio(),'I','imita espressioni testa webcam'),
+    c('✊',GIOCO.on?'Basta sasso, carta, forbici':'Giochiamo a sasso, carta, forbici',()=>toggleGioco(),'J','morra cinese gioco'),
+    c('🎨','Personalizza Zep',()=>openLook(),'A','colori accessori cappello occhiali nome voce'),c('🔊','Voce neurale (Piper)',()=>openLook(),'voce','piper naturale offline'),
+    c('⚡','Routine e modalità',()=>openRoutine(),'R','automazioni modalità lavoro orario'),c('➕','Nuova routine…',()=>{openRoutine();},'routine','crea'),
     c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
+  RUT.forEach(r=>L.push(c(r.tipo==='modalità'?'🎛️':'⚡','Avvia: '+r.nome,()=>rAvvia(r.id),r.quando||'routine','routine modalità')));
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
   Object.entries(MaikKit.THEMES).forEach(([k,t])=>L.push(c('🎨','Tema: '+t.nm,()=>{setTheme(k);toast('🎨 Tema '+t.nm,'ok');},'tema','colore')));
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V12 · ZEP',key:'maik_boot_v12',checks:[
+  return MaikKit.boot({version:'V13 · ZEP',key:'maik_boot_v13',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Personaggio 3D',run:async()=>{if(!PC_MODE)return{ok:true,text:'sfera (schermo piccolo)'};try{const r=await fetch('/lib/three.module.min.js');const a=await (await fetch('/avatar/info')).json();return r.ok?{ok:true,text:a.presente?'il tuo: '+a.nome:'Zep (robot integrato)'}:{ok:false,text:'serve internet la prima volta'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Comandi del PC',run:async()=>{try{const r=await (await fetch('/pc/registro')).json();return r.attivo?{ok:true,text:'attivi · sempre con conferma'+(r.finto?' (prova)':'')}:{ok:false,text:'spenti (MAIK_PC=0)'};}catch(e){return{ok:false,text:'errore'};}}},
-    {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 23 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 24 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Voce neurale',run:async()=>{const I=await voceInfo();return !I?{ok:false,text:'errore'}:I.pronta?{ok:true,text:'Piper · '+I.voce}:{ok:true,text:I.motore?'Piper c\'è: scarica una voce da 🎨':'voce del browser (Piper non installato)'};}},
+    {label:'Routine',run:async()=>{try{const r=await (await fetch('/routine')).json();const a=r.routine||[],o=a.filter(x=>x.orario).length;return{ok:true,text:a.length?a.length+' salvat'+(a.length===1?'a':'e')+(o?' · '+o+' a orario':''):'nessuna (⚡ per crearne)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Nucleo neurale',run:async()=>({ok:true,text:'pronto · tema '+(MaikKit.THEMES[OPT.theme]||MaikKit.THEMES.neon).nm})}]});}
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 12 🧍 Il mio **corpo 3D** ora parla davvero: **bocca suono per suono**, **gesti mentre parlo**, e una **vita mia** (mi annoio, sbadiglio, mi addormento, passeggio… e se mi **clicchi** reagisco!). Dimmi «**balla!**» o premi **B** e metti la tua musica. Uso il tuo **PC**, sempre chiedendoti conferma: «apri youtube», «**alza il volume**», «**metti in pausa la musica**», «**cosa c\'è sul mio schermo?**», «**trova il file contratto**», «**blocca il pc**». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 13 🧍 Ora **ti vedo**: accendi 👀 e riconosco i **gesti delle tue mani** (👋 ciao, 👍, ✌️, 🤟, ✊, ✋ ferma per zittirmi, «**conta le mie dita**»), faccio il tuo **specchio** 🪞 (tasto **I**) e giochiamo a **sasso, carta, forbici** ✊ (tasto **J**). **Personalizzami** 🎨: nome, colori, cappelli, occhiali, cuffie, voce… anche una **voce neurale** naturale e offline (Piper). Crea **routine e modalità** ⚡: «**crea la modalità lavoro: apri gmail, volume al 30**», anche a orario, sempre con la tua conferma. Se la **batteria** è scarica o il **disco** è pieno, ti avviso io. Uso il tuo **PC** chiedendoti conferma: «apri youtube», «**alza il volume**», «**cosa c\'è sul mio schermo?**», «**trova il file contratto**». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -7716,17 +8030,16 @@ async function avatarInit() {
     AV = await ZepKit.create($('#stage3d'), {
       modelUrl: inf.presente ? '/avatar?v=' + encodeURIComponent(inf.caricato || '') : null,
       accent: themeRGB.accent, accent2: themeRGB.accent2, framing: OPT.framing || 'busto',
-      lipUnit: +LS.get('maik_lip_unit', 0) || undefined, alive: OPT.vita !== false, hour: new Date().getHours(),
+      lipUnit: +LS.get('maik_lip_unit', 0) || undefined, alive: OPT.vita !== false, hour: new Date().getHours(), look: OPT.look || null,
       onPoke: onPokeZep, onSleep: () => { caption('💤 …zzz'); captionOff(2500); }, onWake: () => { caption('Eccomi! Mi ero appisolato 😅'); captionOff(2600); },
       onLog: m => console.info('[Zep]', m),
       onError: () => toast('Il tuo personaggio non si carica: per ora uso Zep 🤖', 'err'),
     });
     document.body.classList.add('has-avatar');
-    const nome = AV.kind === 'robot' ? 'Zep' : (inf.nome || AV.name).replace(/\.(vrm|glb)$/i, '');
-    $('#avname').textContent = nome; $('#avsname').textContent = nome;
+    AV_NOME = AV.kind === 'robot' ? 'Zep' : (inf.nome || AV.name).replace(/\.(vrm|glb)$/i, '');
+    applicaNome();
     $('#avskind').textContent = AV.kind === 'robot' ? 'robot integrato' : AV.kind === 'vrm' ? 'VRM · espressioni e sguardo' : 'GLB' + (AV.info.clips.length ? ' · ' + AV.info.clips.length + ' animazioni' : '');
     $('#avreset').style.display = inf.presente ? 'block' : 'none';
-    $('#inp').placeholder = 'Scrivi a ' + nome + '…';
   } catch (e) {
     console.warn('Avatar 3D non disponibile', e);
     document.body.classList.remove('has-avatar'); AV = null;
@@ -7753,7 +8066,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 // stato del personaggio = stato di MAIK (pensa, parla, ascolta, sveglia)
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
-  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open')); }   // coperto da una finestra: riposa
+  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
   const umore = AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
   const txt = umore || AV_STATE_TXT[s] || s;
   if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
@@ -7782,18 +8095,22 @@ function cleanSpeech(t) {
 }
 const sentences = t => (t.match(/[^.!?…]+[.!?…]+["»”)]*\s*|[^.!?…]+$/g) || []).map(s => s.trim()).filter(s => s.length > 1);
 function itVoice() { const vs = speechSynthesis.getVoices(); return vs.find(x => x.lang && x.lang.startsWith('it') && /natural|neural|online/i.test(x.name)) || vs.find(x => x.lang && x.lang.startsWith('it')); }
-function say(t) { if (!ttsOn || !window.speechSynthesis) return; stopSpeech(); sentences(cleanSpeech(t)).slice(0, 16).forEach(s => VOICE.q.push(s)); pump(); }
+function say(t) { if (!ttsOn || !voceDisponibile()) return; stopSpeech(); sentences(cleanSpeech(t)).slice(0, 16).forEach(s => VOICE.q.push(s)); pump(); }
 // durante lo streaming: appena c'è una frase completa la dice (niente attesa della risposta intera)
 function feedSpeech(full, done) {
-  if (!ttsOn || !window.speechSynthesis) return;
+  if (!ttsOn || !voceDisponibile()) return;
   const txt = cleanSpeech(full);
   const upto = done ? txt.length : Math.max(txt.lastIndexOf('. '), txt.lastIndexOf('! '), txt.lastIndexOf('? '), txt.lastIndexOf('… ')) + 1;
-  if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); }
+  if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); if (VOICE.cur && VOICE.cur.neurale && VOICE.q.length) sintesi(VOICE.q[0]).catch(() => {}); }
 }
 function pump() {
   if (VOICE.cur || !VOICE.q.length) return;
+  if (usaNeurale()) pumpNeurale(); else pumpBrowser();                       // v13: voce neurale Piper se c'è
+}
+function pumpBrowser() {
+  if (!window.speechSynthesis) { VOICE.q = []; speechDone(); return; }
   const s = VOICE.q.shift(), u = new SpeechSynthesisUtterance(s);
-  u.lang = 'it-IT'; u.rate = 1.03; u.pitch = 1.05; const v = itVoice(); if (v) u.voice = v;
+  u.lang = 'it-IT'; u.rate = 1.03 * (+OPT.velocita || 1); u.pitch = Math.min(2, 1.05 * (+OPT.tono || 1)); const v = sceltaVoce(); if (v) u.voice = v;
   u.onstart = () => {
     if (VOICE.cur !== u) return;
     speaking = true; SPH.state = 'speaking'; VOICE.last = s; caption(s);
@@ -7820,7 +8137,7 @@ function speechDone() {
   if (buonanotte) { buonanotte = false; setTimeout(() => { if (AV && !speaking) AV.react('goodnight'); }, 600); }
   if (handsFree() && !busy) setTimeout(() => { if (handsFree() && !speaking && !busy && !listening) startReco(); }, 350);
 }
-function stopSpeech() { VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
+function stopSpeech() { const c = VOICE.cur; VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; if (c && c.src) { try { c.src.stop(); } catch (e) {} } clearInterval(NEURALE.timer); try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
 let capT = 0;
 function caption(t, you) {
   clearTimeout(capT);
@@ -7859,14 +8176,17 @@ function detectPresence() {
   TRACK.fd = null; TRACK.mode = 'movimento';
   if ('FaceDetector' in window) { try { TRACK.fd = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 }); TRACK.mode = 'viso'; } catch (e) {} }
   if (PC_MODE && !TRACK.mp && OPT.mediapipe !== false) tryMediaPipe();
+  if (PC_MODE && OPT.mediapipe !== false && gestiOn()) tryManiMP();               // v13: gesti delle mani
+  if (TRACK.mp || TRACK.gr) modoTrack();
   TRACK.timer = setInterval(trackStep, 150);
 }
-async function tryMediaPipe() {
+function tryMediaPipe() { return TRACK.mpP || (TRACK.mpP = caricaViso()); }
+async function caricaViso() {
   try {
     const vision = await import('/lib/mp/vision_bundle.mjs');
     const files = await vision.FilesetResolver.forVisionTasks('/lib/mp/wasm');
-    TRACK.mp = await vision.FaceLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: '/lib/mp/face_landmarker.task', delegate: 'GPU' }, outputFaceBlendshapes: true, runningMode: 'VIDEO', numFaces: 1 });
-    TRACK.mode = 'viso e sorriso';
+    TRACK.mp = await mpCrea(vision.FaceLandmarker, files, { baseOptions: { modelAssetPath: '/lib/mp/face_landmarker.task' }, outputFaceBlendshapes: true, runningMode: 'VIDEO', numFaces: 1 });
+    modoTrack();
   } catch (e) { console.info('MediaPipe non disponibile (va bene lo stesso):', e && e.message); }
 }
 let trackBusy = false;
@@ -7874,14 +8194,15 @@ async function trackStep() {
   const v = $('#cam'); if (!camOn || v.readyState < 2 || trackBusy) return;
   trackBusy = true; let res = null;
   try {
+    TRACK.asp = (v.videoWidth || 4) / (v.videoHeight || 3); TRACK.n = (TRACK.n || 0) + 1;
+    if (TRACK.gr && gestiOn() && (GIOCO.on || GEST.conta || TRACK.n % 2 === 0)) {     // v13: le mani (a turno col viso, sempre durante il gioco)
+      try { onMani(daMP(TRACK.gr.recognizeForVideo(v, performance.now()))); TRACK.maniOk = (TRACK.maniOk || 0) + 1; }
+      catch (e) { console.info('Gesti delle mani: errore, li spengo', e && e.message); TRACK.gr = null; }
+    }
     if (TRACK.mp) {
       try {
-        const r = TRACK.mp.detectForVideo(v, performance.now()), lm = r.faceLandmarks && r.faceLandmarks[0];
-        if (lm) {
-          let x = 0, y = 0; for (const p of lm) { x += p.x; y += p.y; }
-          const cat = ((r.faceBlendshapes && r.faceBlendshapes[0]) || {}).categories || [], g = n => (cat.find(c => c.categoryName === n) || {}).score || 0;
-          res = { present: true, x: x / lm.length, y: y / lm.length, smile: (g('mouthSmileLeft') + g('mouthSmileRight')) / 2 };
-        } else res = { present: false };
+        const r = TRACK.mp.detectForVideo(v, performance.now());
+        res = onViso(r.faceLandmarks && r.faceLandmarks[0], ((r.faceBlendshapes && r.faceBlendshapes[0]) || {}).categories || []);
       } catch (e) { TRACK.mp = null; }
     }
     if (!res && TRACK.fd) {
@@ -7904,7 +8225,7 @@ async function trackStep() {
   TRACK.face = !!(res.present && res.x != null);
   if (AV && TRACK.face) { const k = res.soft ? 0.6 : 1; AV.lookAt((0.5 - res.x) * 2.2 * k, (0.5 - res.y) * 1.8 * k, 'face'); }
   if (AV && res.smile > 0.5 && Date.now() - TRACK.smileT > 6000) { TRACK.smileT = Date.now(); AV.emote('happy', 2600); }
-  const s = $('#fstat'); if (s && res.present) s.textContent = '✓ ti vedo · ' + TRACK.mode;
+  const s = $('#fstat'); if (s && res.present && performance.now() - GEST.lastSeen > 900) s.textContent = '✓ ti vedo · ' + TRACK.mode;
 }
 async function toggleEyes() {
   if (TRACK.eyes) { TRACK.eyes = false; if (!friend) stopCam(); TRACK.face = false; toast('👀 Webcam spenta'); }
@@ -7966,6 +8287,7 @@ function updateStageBar() {
   const set = (id, on) => { const b = $(id); if (b) b.classList.toggle('on', !!on); };
   set('#sbtts', ttsOn); $('#sbtts').textContent = ttsOn ? '🔊' : '🔇';
   set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus')); set('#sbmusic', MUSIC.on);
+  set('#sbgest', gestiOn() && camOn); set('#sbmirror', SPECCHIO.on); set('#sbgame', GIOCO.on);
 }
 document.addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable;
@@ -7974,7 +8296,9 @@ document.addEventListener('keydown', e => {
   if (e.altKey && !e.ctrlKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newChat(); return; }
   if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
-  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, '?': openKeys, h: openKeys };
+  if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
+  if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
+  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -7996,8 +8320,9 @@ async function rispondiConferma(id, a) {
   const i = PENDING.indexOf(id); if (i >= 0) PENDING.splice(i, 1);
   let r;
   try { r = await postJ('/pc/conferma', { id, si: a !== 'no', sempre: a === 'sempre' }); } catch (e) { r = { ok: false, esito: 'Server non raggiungibile' }; }
-  if (card) { card.classList.add('done'); card.innerHTML = '<div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito) + '</div>' + (r.immagine ? shotHTML(r.immagine) : ''); }
-  toast(r.esito, r.ok ? 'ok' : 'err'); if (ttsOn && r.ok && !r.analizza) say(r.esito);
+  if (card) { card.classList.add('done'); card.innerHTML = '<div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito) + '</div>' + (r.immagine ? shotHTML(r.immagine) : '') + esitiHTML(r.esiti); }
+  toast(r.esito, r.ok ? 'ok' : 'err'); if (ttsOn && r.ok && !r.analizza) say(r.voce ? r.esito + '\n' + r.voce : r.esito);
+  if (r.esiti && $('#rmodal').classList.contains('open')) loadRoutine();
   if (AV) { if (a === 'no') AV.gesture('shake'); else AV.react(r.ok ? 'ok' : 'fail'); }
   if (r.ok && r.tra && card) contoAllaRovescia(card, r.tra);
   if (r.ok && r.immagine && r.analizza) guardaScreenshot(r.immagine);
@@ -8060,7 +8385,7 @@ let buonanotte = false;
 function reactToReply(full, meta, chiesto) {
   if (!AV) return;
   const e = guessEmotion(full); if (e) AV.emote(e, 4000);
-  if (/\bbuona\s*notte\b|\bvado a (?:letto|dormire)\b|\bnotte notte\b/i.test(chiesto || '')) { if (ttsOn && window.speechSynthesis) buonanotte = true; else setTimeout(() => AV && AV.react('goodnight'), 1500); }
+  if (/\bbuona\s*notte\b|\bvado a (?:letto|dormire)\b|\bnotte notte\b/i.test(chiesto || '')) { if (ttsOn && voceDisponibile()) buonanotte = true; else setTimeout(() => AV && AV.react('goodnight'), 1500); }
   if (/❤️|💚|💙|🥰|😍|ti voglio bene|ti adoro/i.test(full)) AV.react('love');
   else if (/😂|🤣|ahah|ahaha|haha/i.test(full)) AV.react('laugh');
   else if (/😉/.test(full)) AV.react('wink');
@@ -8097,7 +8422,7 @@ const pickOne = a => a[(Math.random() * a.length) | 0];
 function onPokeZep(x) {
   const f = pickOne(FRASI_TOCCO[x.reaction] || FRASI_TOCCO.giggle);
   caption(f); captionOff(2600);
-  if (ttsOn && window.speechSynthesis && !speaking && !busy) say(f);
+  if (ttsOn && voceDisponibile() && !speaking && !busy) say(f);
 }
 function salutoIniziale() {
   if (!AV) return;
@@ -8114,7 +8439,7 @@ function comandoZep(t) {
   if (!AV) return null;
   if (RE_BALLA.test(t)) { zepBalla(); return pickOne(['🕺 Musica, maestro! Si balla!', '💃 Guarda come ballo!', '🎶 Uno, due, tre… si balla!']) + (MUSIC.on ? '' : ' Premi **B** e metti la tua musica: ballo a tempo!'); }
   if (RE_STOPBALLO.test(t) && AV.dancing) { AV.dance(false); if (MUSIC.on) stopMusic(); updateStageBar(); return 'Ok, mi fermo 😅 Che fiatone!'; }
-  return null;
+  return comandoZepV13(t);
 }
 // 🎵 BALLA CON LA TUA MUSICA: il microfono ascolta, trova i colpi (onset) e Zep balla a tempo
 const MUSIC = { on: false, st: null, ctx: null, an: null, buf: null, prev: null, hist: [], last: 0, timer: 0, beats: 0 };
@@ -8151,8 +8476,585 @@ function musicStep() {
   }
 }
 
+// ============================================================
+// V13 — ZEP TI VEDE (gesti delle mani, specchio, sasso-carta-forbici), VOCE NEURALE,
+//        PERSONALIZZA ZEP, ROUTINE E MODALITÀ, AVVISI DEL PC
+// ============================================================
+
+// ---------- 🖐️ GESTI DELLE MANI (MediaPipe GestureRecognizer, gira sul tuo PC) ----------
+const GEST = { cur: '', since: 0, fired: '', firedT: -1e9, lastSeen: -1e9, xs: [], conta: false, contaFine: 0, contaN: -1, contaK: -1, contaSince: 0, n: 0, visti: 0, ultimo: '' };
+const GESTI_MP = { Thumb_Up: 'pollice_su', Thumb_Down: 'pollice_giu', Victory: 'vittoria', ILoveYou: 'ti_amo', Closed_Fist: 'pugno', Pointing_Up: 'indica_su', Open_Palm: 'mano' };
+const GESTI_EMOJI = { pollice_su: '👍', pollice_giu: '👎', vittoria: '✌️', ti_amo: '🤟', pugno: '✊', indica_su: '☝️', saluto_mano: '👋', cinque: '🖐️', zitto: '✋' };
+const FRASI_GESTI = {
+  pollice_su: ['Grande! 👍', 'Ok, ricevuto! 👍', 'Perfetto! 👍'],
+  pollice_giu: ['Oh no… cosa non va? 👎', 'Uffa! Ci riprovo meglio 👎'],
+  vittoria: ['Pace! ✌️', 'Evviva! ✌️'],
+  ti_amo: ['Ti voglio bene anch\'io! 💚', 'Rock and roll! 🤘'],
+  pugno: ['Pugnetto! ✊', 'Batti il pugno! ✊'],
+  indica_su: ['Cosa c\'è lassù? ☝️', 'Guardo in alto! ☝️'],
+  saluto_mano: ['Ciao! 👋', 'Ehi, ciao anche a te! 👋'],
+  cinque: ['Batti cinque! 🖐️', 'Dammi il cinque! 🖐️'],
+};
+const NUMERI_IT = ['zero', 'uno', 'due', 'tre', 'quattro', 'cinque'];
+function gestiOn() { return OPT.gesti !== false; }
+// MediaPipe sulla scheda video; se il driver non collabora, sul processore (più lento ma va)
+function mpCrea(T, files, o) {
+  const con = d => T.createFromOptions(files, Object.assign({}, o, { baseOptions: Object.assign({}, o.baseOptions, { delegate: d }) }));
+  return con('GPU').catch(e => { console.info('MediaPipe: niente GPU, uso il processore', e && e.message); return con('CPU'); });
+}
+function modoTrack() { TRACK.mode = [TRACK.mp ? 'viso e sorriso' : TRACK.fd ? 'viso' : 'movimento', TRACK.gr ? 'mani' : ''].filter(Boolean).join(' · '); }
+function tryManiMP() {
+  if (TRACK.grP) return TRACK.grP;
+  return (TRACK.grP = (async () => {
+    try {
+      const vision = await import('/lib/mp/vision_bundle.mjs');
+      const files = await vision.FilesetResolver.forVisionTasks('/lib/mp/wasm');
+      TRACK.gr = await mpCrea(vision.GestureRecognizer, files, { baseOptions: { modelAssetPath: '/lib/mp/gesture_recognizer.task' }, runningMode: 'VIDEO', numHands: 1 });
+      modoTrack();
+    } catch (e) { console.info('Gesti delle mani non disponibili (va bene lo stesso):', e && e.message); }
+  })());
+}
+// risultato di MediaPipe → { gesto, score, lm (21 punti), mano }
+function daMP(g) {
+  const lm = g && g.landmarks && g.landmarks[0];
+  if (!lm) return null;
+  const c = g.gestures && g.gestures[0] && g.gestures[0][0], h = (g.handedness || g.handednesses || [])[0];
+  return { gesto: c ? c.categoryName : 'None', score: c ? c.score : 0, lm, mano: h && h[0] ? h[0].categoryName : '' };
+}
+// quante dita sono alzate (funziona anche con la mano girata: confronta le distanze dal polso)
+function contaDita(lm, asp) {
+  asp = asp || TRACK.asp || 4 / 3;
+  const d = (a, b) => Math.hypot((lm[a].x - lm[b].x) * asp, lm[a].y - lm[b].y);
+  let n = 0;
+  for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) if (d(tip, 0) > d(pip, 0) * 1.12) n++;
+  if (d(4, 17) > d(2, 17) * 1.2 && d(4, 5) > d(3, 5)) n++;                       // pollice aperto
+  return n;
+}
+function mostraGesto(em) {
+  const el = $('#gesto'); if (!el || !em) return;
+  el.textContent = em; el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove('on'), 1300);
+}
+// cuore del riconoscimento: un gesto vale se resta fermo un attimo; ogni gesto scatta una volta sola (poi cambia o togli la mano)
+function onMani(r, t) {
+  const now = t != null ? t : performance.now();
+  GEST.n++;
+  if (!r || !r.lm) {
+    if (now - GEST.lastSeen > 700) { GEST.cur = ''; GEST.fired = ''; GEST.xs = []; GEST.contaK = -1; }
+    return null;
+  }
+  GEST.lastSeen = now; GEST.visti++;
+  const dita = contaDita(r.lm);
+  let g = r.score >= 0.55 ? (GESTI_MP[r.gesto] || '') : '';
+  if (!g && dita === 5) g = 'mano';
+  const s = $('#fstat'); if (s) s.textContent = '✓ ti vedo · ' + (g ? (GESTI_EMOJI[g] || '🖐️') + ' ' + g.replace('_', ' ') : '🖐️ ' + dita + ' dita');
+  // ✊✋✌️ durante il gioco conta solo la mossa
+  if (GIOCO.on) {
+    const m = g === 'pugno' || (!g && dita === 0) ? 'sasso' : g === 'mano' || dita >= 4 ? 'carta' : g === 'vittoria' || dita === 2 ? 'forbici' : '';
+    if (m) GIOCO.visto.push([now, m]);
+    if (g === 'pollice_su' && GIOCO.fase === 'fine' && now - GIOCO.fineT > 900 && now - GEST.firedT > 1500) { GEST.firedT = now; giocaRound(); }
+    return m;
+  }
+  // 🔢 «conta le mie dita»
+  if (GEST.conta) {
+    if (GEST.contaFine == null) GEST.contaFine = now + 25000;                        // 25 s dalla prima mano vista
+    if (now > GEST.contaFine) { GEST.conta = false; caption('Basta contare! 🖐️'); captionOff(1800); return null; }
+    if (dita !== GEST.contaK) { GEST.contaK = dita; GEST.contaSince = now; }
+    else if (now - GEST.contaSince > 650 && dita !== GEST.contaN) {
+      GEST.contaN = dita; GEST.contaFine = now + 20000;
+      const f = dita === 0 ? 'Zero! È un pugno ✊' : NUMERI_IT[dita][0].toUpperCase() + NUMERI_IT[dita].slice(1) + '! ' + ['☝️', '✌️', '🤟', '🖖', '🖐️'][dita - 1];
+      if (AV) { if (dita > 0) AV.act('count', { n: dita, dur: 1.8 }); else AV.react('pugno'); }
+      mostraGesto(String(dita)); caption(f); captionOff(1800);
+      if (ttsOn && !busy) say(f);
+      return 'conta:' + dita;
+    }
+    return null;
+  }
+  // 👋 ciao: mano aperta che va avanti e indietro
+  const cx = r.lm[9].x;
+  GEST.xs.push([now, cx]); GEST.xs = GEST.xs.filter(p => now - p[0] < 1500);
+  if (g === 'mano' || dita >= 4) {
+    let giri = 0, dir = 0, ext = GEST.xs.length ? GEST.xs[0][1] : cx;
+    for (const [, x] of GEST.xs) {
+      const dx = x - ext;
+      if (dir >= 0 && dx < -0.035) { if (dir > 0) giri++; dir = -1; ext = x; }
+      else if (dir <= 0 && dx > 0.035) { if (dir < 0) giri++; dir = 1; ext = x; }
+      else if ((dir > 0 && x > ext) || (dir < 0 && x < ext)) ext = x;
+    }
+    if (giri >= 2 && now - GEST.firedT > 1800) { GEST.xs = []; GEST.fired = 'mano'; return reagisciGesto('saluto_mano', now); }
+  }
+  if (g !== GEST.cur) { GEST.cur = g; GEST.since = now; if (g !== GEST.fired) GEST.fired = ''; }
+  if (!g || g === GEST.fired || now - GEST.firedT < 1800) return null;
+  if (g === 'mano') {                                                            // ✋ ferma: zittisci Zep, oppure batti cinque
+    const fermi = GEST.xs.filter(p => now - p[0] < 600).map(p => p[1]);
+    if (now - GEST.since < 600 || Math.max(...fermi) - Math.min(...fermi) > 0.03) return null;
+    GEST.fired = g; return reagisciGesto(speaking ? 'zitto' : 'cinque', now);
+  }
+  if (now - GEST.since < 450) return null;
+  GEST.fired = g; return reagisciGesto(g, now);
+}
+function reagisciGesto(k, now) {
+  GEST.firedT = now != null ? now : performance.now(); GEST.ultimo = k;
+  mostraGesto(GESTI_EMOJI[k]);
+  if (k === 'zitto') { stopSpeech(); caption('✋ Ok, mi fermo'); captionOff(1600); if (AV) AV.gesture('nod'); return k; }
+  if (AV) AV.react(k);
+  const f = pickOne(FRASI_GESTI[k] || ['👀']); caption(f); captionOff(2200);
+  if (ttsOn && !speaking && !busy) say(f);
+  return k;
+}
+async function toggleGesti() {
+  if (!camOn || !TRACK.eyes) { setOpt('gesti', true); if (!TRACK.eyes) await toggleEyes(); }
+  else setOpt('gesti', !gestiOn());
+  const on = gestiOn() && camOn;
+  if (on) { tryManiMP(); toast('🖐️ Vedo le tue mani: 👋 ciao · 👍 👎 ✌️ 🤟 ✊ ☝️ · ✋ ferma per zittirmi · «conta le mie dita»', 'ok'); }
+  else if (!gestiOn()) toast('🖐️ Non guardo più le tue mani');
+  $('#optgesti').checked = gestiOn(); updateStageBar();
+}
+async function contaLeDita() {
+  if (!AV) return 'Per contare le dita mi serve il personaggio 3D (sul PC) 🖐️';
+  if (!camOn || !TRACK.eyes) { setOpt('gesti', true); await toggleEyes(); }
+  if (!camOn) return 'Per vedere le tue dita mi serve la webcam 👀';
+  tryManiMP(); GEST.conta = true; GEST.contaFine = null; GEST.contaN = -1; GEST.contaK = -1;
+  clearTimeout(GEST.contaT); GEST.contaT = setTimeout(() => { if (GEST.conta && GEST.contaN < 0) GEST.conta = false; }, 45000);   // nessuna mano: lascia stare
+  $('#optgesti').checked = gestiOn(); updateStageBar();
+  return 'Fammi vedere la mano davanti alla webcam: conto le dita! 🖐️';
+}
+
+// ---------- 🪞 SPECCHIO: Zep copia la tua testa e le tue espressioni ----------
+const SPECCHIO = { on: false, base: null };
+function specchioDa(lm, g, asp) {
+  asp = asp || TRACK.asp || 4 / 3;
+  const eL = lm[33], eR = lm[263], naso = lm[1], mento = lm[152];
+  const mx = (eL.x + eR.x) / 2, my = (eL.y + eR.y) / 2, ex = (eR.x - eL.x) * asp, ey = eR.y - eL.y, occhi = Math.hypot(ex, ey) || 0.1;
+  const r = (naso.y - my) / Math.max(0.02, mento.y - my);
+  SPECCHIO.base = SPECCHIO.base == null ? r : SPECCHIO.base + (r - SPECCHIO.base) * 0.01;        // si adatta piano a come stai seduto
+  return {
+    yaw: -((naso.x - mx) * asp) / occhi * 1.6,           // giri la testa → Zep la gira dalla stessa parte, come allo specchio
+    pitch: (r - SPECCHIO.base) * 3.2, roll: Math.atan2(ey, ex),
+    smile: (g('mouthSmileLeft') + g('mouthSmileRight')) / 2, jaw: g('jawOpen'),
+    brow: Math.max(g('browInnerUp'), (g('browOuterUpLeft') + g('browOuterUpRight')) / 2),
+    blinkL: g('eyeBlinkLeft'), blinkR: g('eyeBlinkRight'),
+  };
+}
+// un viso visto da MediaPipe (anche finto, per le prove)
+function onViso(lm, cat) {
+  if (!lm) return { present: false };
+  let x = 0, y = 0; for (const p of lm) { x += p.x; y += p.y; }
+  const g = n => ((cat || []).find(c => c.categoryName === n) || {}).score || 0;
+  if (SPECCHIO.on && AV) AV.mirror(specchioDa(lm, g));
+  return { present: true, x: x / lm.length, y: y / lm.length, smile: (g('mouthSmileLeft') + g('mouthSmileRight')) / 2 };
+}
+async function toggleSpecchio(on) {
+  on = on == null ? !SPECCHIO.on : !!on;
+  if (on) {
+    if (!AV) { toast('Lo specchio serve il personaggio 3D (sul PC)', 'err'); return; }
+    if (!camOn || !TRACK.eyes) { await toggleEyes(); if (!camOn) return; }
+    if (!TRACK.mp) { toast('🪞 Preparo il riconoscimento del viso…'); await tryMediaPipe(); }
+    if (!TRACK.mp) { toast('🪞 Lo specchio serve il riconoscimento del viso (MediaPipe): la prima volta serve internet', 'err'); return; }
+    SPECCHIO.on = true; SPECCHIO.base = null;
+    toast('🪞 Specchio: gira la testa, sorridi, alza le sopracciglia, fai l\'occhiolino… ti copio! (I per smettere)', 'ok');
+    caption('🪞 Sono il tuo specchio!'); captionOff(2000);
+  } else {
+    if (!SPECCHIO.on) return;
+    SPECCHIO.on = false; if (AV) AV.mirror(null); toast('🪞 Specchio spento');
+  }
+  updateStageBar();
+}
+
+// ---------- ✊✋✌️ SASSO, CARTA, FORBICI (con la mano davanti alla webcam, coi bottoni o scrivendo) ----------
+const GIOCO = { on: false, tu: 0, zep: 0, pari: 0, fase: '', mossa: '', visto: [], tmr: [], fineT: 0, zepM: '', primo: false };
+const MOSSE = { sasso: '✊', carta: '✋', forbici: '✌️' }, BATTE = { sasso: 'forbici', carta: 'sasso', forbici: 'carta' };
+const conWebcam = () => !!(camOn && TRACK.gr && gestiOn());
+function rpsScore() { $('#rpssc').textContent = 'Tu ' + GIOCO.tu + ' – ' + GIOCO.zep + ' ' + nomeZep(); document.querySelectorAll('#rps [data-m]').forEach(b => b.classList.toggle('sel', b.dataset.m === GIOCO.mossa)); }
+function toggleGioco(on, zitto) {
+  on = on == null ? !GIOCO.on : !!on;
+  if (on && !AV) { toast('Il gioco serve il personaggio 3D (sul PC)', 'err'); return; }
+  if (on === GIOCO.on) { if (on && GIOCO.fase !== 'conta' && GIOCO.fase !== 'mostra') giocaRound(); return; }
+  GIOCO.on = on; document.body.classList.toggle('gioco', on);
+  if (on) {
+    GIOCO.tu = GIOCO.zep = GIOCO.pari = 0; GIOCO.mossa = ''; GIOCO.fase = ''; GIOCO.primo = true; rpsScore();
+    if (camOn && gestiOn()) tryManiMP();
+    if (!zitto) { const intro = introGioco(); caption(intro); say(intro); }
+    giocaRound();
+  } else {
+    GIOCO.tmr.forEach(clearTimeout); GIOCO.tmr = []; GIOCO.fase = '';
+    const f = GIOCO.tu + GIOCO.zep + GIOCO.pari ? 'Finale: tu ' + GIOCO.tu + ', io ' + GIOCO.zep + (GIOCO.tu > GIOCO.zep ? '. Hai vinto tu, complimenti! 🏆' : GIOCO.tu < GIOCO.zep ? '. Ho vinto io! 😄 La rivincita quando vuoi.' : '. Pareggio! 🤝') : 'Ok, giochiamo un\'altra volta! ✊';
+    caption(f); captionOff(3000); say(f);
+    if (AV) AV.emote(GIOCO.tu < GIOCO.zep ? 'happy' : 'relaxed', 2500);
+  }
+  updateStageBar();
+}
+function giocaRound(mossa) {
+  if (!GIOCO.on || GIOCO.fase === 'conta' || GIOCO.fase === 'mostra' || GIOCO.fase === 'attesa') { if (mossa) GIOCO.mossa = mossa; rpsScore(); return; }
+  GIOCO.fase = 'attesa'; GIOCO.mossa = mossa || ''; GIOCO.visto = []; rpsScore();
+  const t0 = performance.now(), primo = GIOCO.primo; GIOCO.primo = false;
+  GIOCO.tmr.push(setTimeout(function parti() {                                   // aspetta che Zep abbia finito di parlare
+    if (!GIOCO.on) return;
+    const dt = performance.now() - t0;
+    if (((speaking || VOICE.cur || VOICE.q.length) && dt < 15000) || (primo && !ttsOn && dt < 2600)) { GIOCO.tmr.push(setTimeout(parti, 200)); return; }
+    GIOCO.fase = 'conta'; GIOCO.visto = [];
+    if (AV) AV.act('rpsShake', { dur: 2.4 });
+    const passo = (txt, ms) => GIOCO.tmr.push(setTimeout(() => { if (GIOCO.on) { caption(txt); mostraGesto('✊'); } }, ms));
+    passo('Sasso…', 0); passo('carta…', 800); passo('forbici!', 1600);
+    GIOCO.tmr.push(setTimeout(scopri, 2400));
+  }, 300));
+}
+function introGioco() { return 'Giochiamo a sasso, carta, forbici! ' + (conWebcam() ? 'Quando dico «forbici», fai la tua mossa con la mano davanti alla webcam.' : 'Scegli la mossa coi bottoni ✊ ✋ ✌️ (o i tasti 1 2 3, o scrivila) e al «forbici» la scopriamo.'); }
+function scopri() {
+  if (!GIOCO.on) return;
+  GIOCO.fase = 'mostra'; GIOCO.zepM = ['sasso', 'carta', 'forbici'][(Math.random() * 3) | 0];
+  if (AV) AV.act('rpsShow', { shape: GIOCO.zepM, dur: 3.2 });
+  mostraGesto(MOSSE[GIOCO.zepM]);
+  const t0 = performance.now();
+  (function guarda() {
+    if (!GIOCO.on) return;
+    const tua = GIOCO.mossa || mossaVista(t0);
+    if (tua) return risultato(tua);
+    if (performance.now() - t0 > (conWebcam() ? 2500 : 4500)) {
+      GIOCO.fase = 'fine'; GIOCO.fineT = performance.now();
+      const f = conWebcam() ? 'Non ho visto la tua mossa 🤔 Tieni la mano ferma davanti alla webcam. Ancora? (▶)' : 'Non hai scelto la mossa 🤔 Usa ✊ ✋ ✌️. Ancora? (▶)';
+      caption(f); captionOff(3500); if (AV) AV.gesture('shrug'); return;
+    }
+    GIOCO.tmr.push(setTimeout(guarda, 120));
+  })();
+}
+// la mossa che la webcam ha visto di più intorno al «forbici!»
+function mossaVista(t0) {
+  const c = {}; for (const [t, m] of GIOCO.visto) if (t > t0 - 800) c[m] = (c[m] || 0) + 1;      // anche la mano già pronta al «forbici!»
+  const best = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : '';
+}
+function risultato(tua) {
+  const zep = GIOCO.zepM; GIOCO.fase = 'fine'; GIOCO.fineT = performance.now(); GIOCO.mossa = tua;
+  let f;
+  if (tua === zep) { GIOCO.pari++; f = 'Io ' + zep + ' ' + MOSSE[zep] + ', tu ' + tua + ' ' + MOSSE[tua] + ': pari! 🤝'; if (AV) AV.emote('surprised', 1800); }
+  else if (BATTE[zep] === tua) { GIOCO.zep++; f = 'Io ' + zep + ' ' + MOSSE[zep] + ', tu ' + tua + ' ' + MOSSE[tua] + ': ho vinto io! 😄'; if (AV) { AV.emote('happy', 2600); AV.react('laugh'); } }
+  else { GIOCO.tu++; f = 'Io ' + zep + ' ' + MOSSE[zep] + ', tu ' + tua + ' ' + MOSSE[tua] + ': hai vinto tu! 👏'; if (AV) { AV.emote('sad', 1600); setTimeout(() => AV && GIOCO.on && AV.react('pollice_su'), 1400); } }
+  rpsScore(); caption(f); captionOff(4000);
+  if (ttsOn) say(f.replace(/\s+(?=[✊✋✌])/gu, ''));                         // «Io carta, tu sasso: …» (le emoji non si leggono)
+  GIOCO.ultimo = { tua, zep, esito: tua === zep ? 'pari' : BATTE[zep] === tua ? 'zep' : 'tu' };
+  return GIOCO.ultimo;
+}
+// «sasso», «ancora», «basta» scritti (o detti) durante il gioco
+function giocoTesto(t) {
+  if (!GIOCO.on) return false;
+  const s = t.trim().toLowerCase().replace(/[!.?]+$/, '');
+  const m = { sasso: 'sasso', pietra: 'sasso', carta: 'carta', forbici: 'forbici', forbice: 'forbici' }[s];
+  if (m) { if (GIOCO.fase === 'conta' || GIOCO.fase === 'attesa') { GIOCO.mossa = m; rpsScore(); } else if (GIOCO.fase === 'mostra') risultato(m); else giocaRound(m); return true; }
+  if (/^(?:ancora|di nuovo|un'altra|un altro|rivincita|gioca|giochiamo)$/.test(s)) { giocaRound(); return true; }
+  if (/^(?:basta(?: giocare)?|stop|fine|smettiamo)$/.test(s)) { toggleGioco(false); return true; }
+  return false;
+}
+
+// ---------- 🔊 VOCE NEURALE (Piper, offline sul tuo PC): bocca guidata dall'audio vero ----------
+const NEURALE = { info: null, ctx: null, an: null, buf: null, cache: new Map(), errori: 0, rotta: false, timer: 0 };
+async function voceInfo() { try { NEURALE.info = await (await fetch('/voce/info')).json(); } catch (e) { NEURALE.info = null; } return NEURALE.info; }
+function usaNeurale() { return !!(NEURALE.info && NEURALE.info.pronta && OPT.piper !== false && !NEURALE.rotta); }
+function voceDisponibile() { return usaNeurale() || !!window.speechSynthesis; }
+function audioCtx() {
+  if (!NEURALE.ctx) {
+    NEURALE.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    NEURALE.an = NEURALE.ctx.createAnalyser(); NEURALE.an.fftSize = 512; NEURALE.an.connect(NEURALE.ctx.destination);
+    NEURALE.buf = new Float32Array(NEURALE.an.fftSize);
+  }
+  if (NEURALE.ctx.state === 'suspended') NEURALE.ctx.resume().catch(() => {});
+  return NEURALE.ctx;
+}
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (usaNeurale()) audioCtx(); }, true));   // il browser sblocca l'audio al primo clic/tasto
+function sintesi(s) {
+  const vel = +OPT.velocita || 1, key = vel + '|' + s;
+  if (NEURALE.cache.has(key)) return NEURALE.cache.get(key);
+  const p = (async () => {
+    const r = await postJ('/voce', { testo: s, velocita: vel });
+    if (!r.ok) throw new Error(r.errore || r.esito || 'voce non disponibile');
+    const bin = atob(r.audio), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    const buf = await audioCtx().decodeAudioData(u8.buffer);
+    return { buf, fonemi: r.fonemi, ms: r.durata_ms || buf.duration * 1000 };
+  })();
+  NEURALE.cache.set(key, p); if (NEURALE.cache.size > 30) NEURALE.cache.delete(NEURALE.cache.keys().next().value);
+  p.catch(() => NEURALE.cache.delete(key));
+  return p;
+}
+function pumpNeurale() {
+  const s = VOICE.q.shift(), tok = { s, src: null, neurale: true };
+  VOICE.cur = tok;
+  sintesi(s).then(async r => {
+    if (VOICE.cur !== tok) return;
+    const ctx = audioCtx();
+    if (ctx.state !== 'running') await Promise.race([ctx.resume(), new Promise(ok => setTimeout(ok, 500))]);
+    if (VOICE.cur !== tok) return;
+    if (ctx.state !== 'running') throw new Error('il browser blocca l\'audio finché non clicchi la pagina');
+    const tono = Math.min(1.6, Math.max(0.6, +OPT.tono || 1));
+    const src = ctx.createBufferSource(); src.buffer = r.buf; src.playbackRate.value = tono; src.connect(NEURALE.an); tok.src = src;
+    speaking = true; SPH.state = 'speaking'; VOICE.last = s; caption(s); NEURALE.errori = 0;
+    const fon = r.fonemi && r.fonemi.length ? r.fonemi.map(([f, a, d]) => [f, a / tono, d / tono]) : null;
+    if (AV) { AV.setState('speaking'); AV.speakLine(s, { phon: fon, ms: r.ms / tono }); }
+    if (listening && !bargeOK()) { try { reco.stop(); } catch (e) {} }
+    if (bargeOK() && !listening) (function prova() { if (!speaking || listening) return; if (busy) return setTimeout(prova, 200); startReco(); })();
+    clearInterval(NEURALE.timer);
+    NEURALE.timer = setInterval(() => {                                          // volume vero → la bocca si chiude nelle pause
+      const b = NEURALE.buf; NEURALE.an.getFloatTimeDomainData(b); let e = 0; for (let i = 0; i < b.length; i++) e += b[i] * b[i];
+      const rms = Math.sqrt(e / b.length); if (AV) AV.audioLevel(Math.min(1, rms * 2.6)); if (core && rms > 0.09) core.pulse(Math.min(1, rms * 3));
+    }, 33);
+    const fine = () => {
+      clearTimeout(tok.guardia); if (VOICE.cur !== tok) return;
+      clearInterval(NEURALE.timer); VOICE.cur = null;
+      if (VOICE.q.length) pump(); else speechDone();
+    };
+    src.onended = fine; tok.guardia = setTimeout(fine, r.ms / tono + 2500);
+    src.start();
+    if (VOICE.q.length) sintesi(VOICE.q[0]).catch(() => {});                     // intanto prepara la frase dopo
+  }).catch(e => {
+    if (VOICE.cur !== tok) return;
+    const m = String(e && e.message || e);
+    console.info('Voce neurale:', m);
+    if (++NEURALE.errori >= 3 || /computer|🔒|blocca l'audio/.test(m)) { NEURALE.rotta = true; toast('🔊 Voce neurale non disponibile (' + m.slice(0, 80) + '): uso la voce del browser', 'err'); }
+    VOICE.cur = null; VOICE.q.unshift(s); pumpBrowser();                         // questa frase con la voce del browser
+  });
+}
+function sceltaVoce() {
+  const vs = window.speechSynthesis ? speechSynthesis.getVoices() : [];
+  return (OPT.voceNome && vs.find(v => v.name === OPT.voceNome)) || itVoice();
+}
+function provaVoce() {
+  const was = ttsOn; ttsOn = true;
+  say('Ciao! Sono ' + nomeZep() + '. Questa è la mia voce: ti piace?');
+  ttsOn = was;
+}
+
+// ---------- 🎨 PERSONALIZZA ZEP: nome, colori, accessori, voce, animazioni ----------
+const COLORI_CORPO = [[null, '#eef3ff', 'bianco'], ['#ff6fae', , 'rosa'], ['#7ec8ff', , 'azzurro'], ['#7be0b5', , 'menta'], ['#ffd45e', , 'giallo'], ['#b79cff', , 'lilla'], ['#ff9a52', , 'arancio'], ['#3a3f4f', , 'grafite']];
+const COLORI_LUCI = [[null, 'tema'], ['#00f5ff', 'ciano'], ['#ff8c00', 'arancio'], ['#39ff88', 'verde'], ['#ff4fd8', 'fucsia'], ['#ff3355', 'rosso'], ['#ffd400', 'oro'], ['#ffffff', 'bianco']];
+const ACCESSORI_UI = [['cilindro', '🎩', 'cilindro'], ['berretto', '🧢', 'berretto'], ['cappellino', '🥳', 'festa'], ['cuffie', '🎧', 'cuffie'], ['occhiali', '👓', 'occhiali'], ['occhialiSole', '🕶️', 'da sole'], ['papillon', '🎀', 'papillon'], ['sciarpa', '🧣', 'sciarpa']];
+const ACC_GRUPPI = [['cilindro', 'berretto', 'cappellino'], ['occhiali', 'occhialiSole'], ['papillon', 'sciarpa']], ACC_NO = { cuffie: ['cilindro', 'cappellino'], cilindro: ['cuffie'], cappellino: ['cuffie'] };
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)), rgbHex = a => '#' + a.map(x => (+x).toString(16).padStart(2, '0')).join('');
+function lookAttuale() { return Object.assign({ corpo: null, luci: null, accessori: [] }, OPT.look || {}); }
+let AV_NOME = 'Zep';
+function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
+function applicaNome() {
+  const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
+  document.title = 'MAIK // ' + n + ' V13'; if (GIOCO.on) rpsScore();
+}
+function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
+function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
+function toggleAcc(k) {
+  let a = lookAttuale().accessori.slice();
+  if (a.includes(k)) a = a.filter(x => x !== k);
+  else { const g = ACC_GRUPPI.find(x => x.includes(k)) || []; a = a.filter(x => !g.includes(x) && !(ACC_NO[k] || []).includes(x)); a.push(k); }
+  setLookOpt({ accessori: a });
+}
+function openLook() { $('#lmodal').classList.add('open'); renderLook(); voceRender(); animRender(); }
+function closeLook() { $('#lmodal').classList.remove('open'); clearTimeout(NEURALE.poll); }
+function renderLook() {
+  const b = $('#lbody'); if (!b || !$('#lmodal').classList.contains('open')) return;
+  const L = lookAttuale(), robot = !AV || AV.kind === 'robot', luce = L.luci ? rgbHex(L.luci) : null;
+  const sez = (t, h) => '<div class="lsec"><h4>' + t + '</h4>' + h + '</div>';
+  const corpo = COLORI_CORPO.map(([c, v, n]) => '<button type="button" title="' + n + '" style="background:' + (c || v) + '" class="' + ((L.corpo || null) === c ? 'on' : '') + '" onclick="setLookOpt({corpo:' + (c ? '\'' + c + '\'' : 'null') + '})"></button>').join('')
+    + '<input type="color" title="Un altro colore" value="' + (L.corpo || '#eef3ff') + '" onchange="setLookOpt({corpo:this.value})">';
+  const luci = COLORI_LUCI.map(([c, n]) => '<button type="button" title="' + n + '" style="background:' + (c || 'linear-gradient(135deg,var(--accent),var(--accent2))') + '" class="' + (luce === c ? 'on' : '') + '" onclick="setLookOpt({luci:' + (c ? '[' + hexRGB(c) + ']' : 'null') + '})"></button>').join('')
+    + '<input type="color" title="Un altro colore" value="' + (luce || '#00f5ff') + '" onchange="setLookOpt({luci:hexRGB(this.value)})">';
+  const acc = ACCESSORI_UI.map(([k, e, n]) => '<button type="button" data-acc="' + k + '" class="' + (L.accessori.includes(k) ? 'on' : '') + '" onclick="toggleAcc(\'' + k + '\')"><i>' + e + '</i>' + n + '</button>').join('');
+  b.innerHTML = sez('🏷️ Nome', '<input class="tfield" id="lnome" maxlength="24" style="margin-top:0" placeholder="Zep" value="' + escA(OPT.nomeZep || '') + '" onchange="setNome(this.value)" onkeydown="if(event.key===\'Enter\')this.blur()">')
+    + '<div class="' + (robot ? '' : 'lmut') + '">' + sez('🎨 Colore del corpo', '<div class="sw" id="lcorpo">' + corpo + '</div>') + sez('💡 Luci', '<div class="sw" id="lluci">' + luci + '</div>')
+    + sez('🎩 Accessori', '<div class="accs" id="lacc">' + acc + '</div>') + '</div>'
+    + (robot ? '<div class="trow"><button class="tbtn" type="button" onclick="setLookOpt({corpo:null,luci:null,accessori:[]})">↺ Zep come nuovo</button></div>' : '<div class="note">Colori e accessori sono per Zep, il robot: il tuo personaggio resta com\'è.</div>')
+    + sez('🔊 Voce', '<div id="lvoce"></div>') + sez('💃 Animazioni .vrma', '<div id="lanim"></div>');
+  voceRender(true); animRender(true);
+}
+async function voceRender(soloCache) {
+  const el = $('#lvoce'); if (!el) return;
+  const I = soloCache ? NEURALE.info : await voceInfo();
+  if (!$('#lvoce')) return;
+  const vs = window.speechSynthesis ? speechSynthesis.getVoices().filter(v => v.lang && v.lang.startsWith('it')) : [];
+  let h = '<div class="vbox"><b>Voce neurale (Piper)</b> <small>· naturale, gratis, senza internet</small>';
+  if (!I) h += '<div class="note" style="margin-top:4px">…</div>';
+  else if (!I.motore) h += '<div class="note" style="margin-top:4px">Non installata. Nel terminale scrivi <code>pip install piper-tts</code> e riavvia MAIK: poi scarichi qui una voce italiana (una volta sola).</div>';
+  else {
+    const d = I.download && !I.download.fatto ? I.download : null;
+    h += (I.voci || []).map(v => {
+      const giu = (I.scaricate || []).includes(v.id), uso = I.voce === v.id;
+      return '<div class="vrow"><div class="vn">' + esc(v.nome || v.id) + ' <small>' + esc((v.descrizione || '') + (v.mb ? ' · ' + v.mb + ' MB' : '')) + '</small>'
+        + (d && d.voce === v.id ? '<div class="bar"><i style="width:' + (d.perc || 0) + '%"></i></div>' : '') + '</div>'
+        + (giu ? (uso ? '<span class="vok">✓ in uso</span>' : '<button class="tbtn" type="button" onclick="voceImposta(\'' + v.id + '\')">Usa</button>')
+          : '<button class="tbtn" type="button" ' + (d ? 'disabled' : '') + ' onclick="voceScarica(\'' + v.id + '\')">' + (d && d.voce === v.id ? (d.perc || 0) + '%' : '⬇ Scarica') + '</button>') + '</div>';
+    }).join('');
+    if (I.download && I.download.errore) h += '<div class="note" style="color:var(--red)">Download non riuscito: ' + esc(I.download.errore) + '</div>';
+    if (I.pronta) h += '<label class="opt">Parla con la voce neurale<input type="checkbox" id="optpiper" ' + (OPT.piper !== false ? 'checked' : '') + ' onchange="setOpt(\'piper\',this.checked);NEURALE.rotta=false;voceRender(true)"></label>';
+    if (NEURALE.rotta) h += '<div class="note" style="color:var(--red)">In questa sessione uso la voce del browser (la neurale ha dato errore).</div>';
+  }
+  h += '</div><div class="vbox"><b>Voce del browser</b> <small>· ' + (usaNeurale() ? 'di riserva' : 'in uso') + '</small><select class="tfield" id="lvsel" onchange="setOpt(\'voceNome\',this.value||null)"><option value="">automatica</option>'
+    + vs.map(v => '<option ' + (OPT.voceNome === v.name ? 'selected' : '') + ' value="' + escA(v.name) + '">' + esc(v.name) + '</option>').join('') + '</select></div>'
+    + '<div class="rng">Tono <input type="range" id="ltono" min="0.6" max="1.5" step="0.05" value="' + (+OPT.tono || 1) + '" oninput="setOpt(\'tono\',+this.value);this.nextElementSibling.textContent=(+this.value).toFixed(2)"><span>' + (+OPT.tono || 1).toFixed(2) + '</span></div>'
+    + '<div class="rng">Velocità <input type="range" id="lvel" min="0.7" max="1.5" step="0.05" value="' + (+OPT.velocita || 1) + '" oninput="setOpt(\'velocita\',+this.value);this.nextElementSibling.textContent=(+this.value).toFixed(2)"><span>' + (+OPT.velocita || 1).toFixed(2) + '</span></div>'
+    + '<div class="trow"><button class="tbtn solid" type="button" onclick="provaVoce()">▶ Prova la voce</button></div>';
+  el.innerHTML = h;
+  clearTimeout(NEURALE.poll);
+  if (I && I.download && !I.download.fatto && $('#lmodal').classList.contains('open')) NEURALE.poll = setTimeout(() => voceRender(), 700);
+}
+async function voceScarica(id) {
+  let r; try { r = await postJ('/voce/scarica', { voce: id }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) toast('⬇ ' + (r.errore || 'Download non partito'), 'err'); else toast('⬇ Scarico la voce (una volta sola)…');
+  NEURALE.info = r.info || NEURALE.info; voceAttendi(); voceRender(true);
+}
+function voceAttendi() {                                                         // a download finito: avvisa e usa subito la voce
+  clearTimeout(NEURALE.attesa);
+  NEURALE.attesa = setTimeout(async () => {
+    const I = await voceInfo(); if (!I || !I.download) return;
+    if (!I.download.fatto) return voceAttendi();
+    if (I.download.errore) toast('⬇ Download non riuscito: ' + I.download.errore, 'err');
+    else { toast('🔊 Voce neurale pronta!', 'ok'); NEURALE.rotta = false; voceRender(true); }
+  }, 900);
+}
+async function voceImposta(id) { let r; try { r = await postJ('/voce/imposta', { voce: id }); } catch (e) { r = {}; } if (r.info) NEURALE.info = r.info; voceRender(true); if (r.ok) provaVoce(); }
+let ANIM = [];
+async function animRender(soloCache) {
+  const el = $('#lanim'); if (!el) return;
+  if (!soloCache) { try { ANIM = (await (await fetch('/animazioni')).json()).animazioni || []; } catch (e) { ANIM = []; } }
+  const vrm = AV && AV.kind === 'vrm';
+  if (!$('#lanim')) return;
+  $('#lanim').innerHTML = (ANIM.length ? ANIM.map(a => '<div class="vrow"><div class="vn">' + esc(a.nome) + ' <small>' + esc(a.dimensione || '') + '</small></div>'
+      + '<button class="tbtn" type="button" ' + (vrm ? '' : 'disabled title="Serve un personaggio .vrm"') + ' onclick="animPlay(\'' + escA(a.file) + '\')">▶</button><button class="tbtn" type="button" title="Elimina" onclick="animDel(\'' + escA(a.file) + '\')">🗑</button></div>').join('')
+    : '<div class="note" style="margin-top:0">Nessuna animazione ancora.</div>')
+    + '<div class="trow"><button class="tbtn" type="button" onclick="$(\'#vrmain\').click()">📤 Carica .vrma</button></div>'
+    + '<div class="note">Le animazioni <b>.vrma</b> muovono il tuo personaggio <b>.vrm</b> (VRoid): ne trovi gratis su VRoid Hub e BOOTH. ' + (vrm ? 'Poi dimmi «fai l\'animazione …».' : 'Zep (il robot) usa i suoi gesti.') + '</div>';
+}
+async function uploadVrma(f) {
+  if (!f) return;
+  if (!/\.vrma$/i.test(f.name)) { toast('Serve un file .vrma', 'err'); return; }
+  try {
+    const r = await (await fetch('/animazioni', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nome': encodeURIComponent(f.name) }, body: f })).json();
+    if (!r.ok) { toast(r.errore || 'File non valido', 'err'); return; }
+    toast('💃 Animazione «' + r.animazione.nome + '» salvata', 'ok'); await animRender();
+    if (AV && AV.kind === 'vrm') animPlay(r.animazione.file);
+  } catch (e) { toast('Caricamento non riuscito', 'err'); }
+}
+async function animPlay(file) {
+  if (!AV) return { ok: false };
+  const r = await AV.playVrma('/animazioni/' + encodeURIComponent(file)).catch(e => ({ ok: false, errore: String(e) }));
+  if (!r || !r.ok) toast('💃 ' + ((r && r.errore) || 'Animazione non riuscita'), 'err');
+  return r;
+}
+async function animDel(file) { if (!confirm('Eliminare questa animazione?')) return; try { await postJ('/animazioni/elimina', { file }); } catch (e) {} animRender(); }
+// «fai l'animazione saluto»
+async function animDaTesto(nome) {
+  if (!ANIM.length) { try { ANIM = (await (await fetch('/animazioni')).json()).animazioni || []; } catch (e) {} }
+  const n = normParole(nome).join(' '), a = ANIM.find(x => normParole(x.nome).join(' ') === n) || ANIM.find(x => normParole(x.nome).join(' ').includes(n));
+  if (!a) return ANIM.length ? 'Non trovo l\'animazione «' + nome + '». Ho: ' + ANIM.map(x => x.nome).join(', ') + '.' : 'Non ho ancora animazioni: caricane una .vrma da 🎨 Personalizza.';
+  if (!AV || AV.kind !== 'vrm') return 'Le animazioni .vrma funzionano con un personaggio .vrm: Zep usa i suoi gesti 🤖';
+  animPlay(a.file); return '💃 Ecco «' + a.nome + '»!';
+}
+
+// ---------- ⚡ ROUTINE E MODALITÀ (sempre con conferma) ----------
+let RUT = [], RFORM = { id: null }, ranT = 0;
+const GIORNI_UI = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+const MODELLI_RUT = {
+  lavoro: { nome: 'lavoro', tipo: 'modalità', passi: ['apri gmail', 'apri google calendar', 'metti il volume al 30', 'di\' Buon lavoro! Se ti serve qualcosa, chiamami.'] },
+  gioco: { nome: 'gioco', tipo: 'modalità', passi: ['apri steam', 'metti il volume al 70', 'di\' Buon divertimento! 🎮'] },
+  buongiorno: { nome: 'buongiorno', tipo: 'routine', orario: '07:30', giorni: [0, 1, 2, 3, 4], passi: ['di\' Buongiorno! Pronto per una nuova giornata?', 'come sta il pc', 'metti il volume al 40', 'apri youtube'] },
+  buonanotte: { nome: 'buonanotte', tipo: 'routine', orario: '23:00', giorni: [0, 1, 2, 3, 4, 5, 6], passi: ['metti in pausa la musica', 'metti il volume al 10', 'di\' Buonanotte! A domani 🌙'] },
+};
+async function openRoutine() { $('#rmodal').classList.add('open'); if (!RFORM.id && !$('#rnome').value) rNuova(); await loadRoutine(); }
+function closeRoutine() { $('#rmodal').classList.remove('open'); }
+async function loadRoutine() {
+  try { RUT = (await (await fetch('/routine')).json()).routine || []; } catch (e) { $('#rlist').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  renderRoutine();
+}
+function passiHTML(an) {
+  return '<ul class="rpassi">' + (an || []).map(a => '<li><span class="' + (a.ok ? 'ok' : 'ko') + '">' + (a.ok ? '✓' : '✗') + '</span><span>' + esc(a.passo)
+    + (!a.ok ? ' <small>— ' + esc(a.descrizione) + '</small>' : a.descrizione && a.descrizione !== a.passo ? ' <small>→ ' + esc(a.descrizione) + '</small>' : '') + '</span></li>').join('') + '</ul>';
+}
+function renderRoutine() {
+  $('#rcount').textContent = RUT.length ? ' (' + RUT.length + ')' : '';
+  $('#rlist').innerHTML = RUT.length ? RUT.map(r => '<div class="rcard" data-id="' + escA(r.id) + '"><h5>' + (r.tipo === 'modalità' ? '🎛️' : '⚡') + ' ' + esc(r.nome)
+      + ' <small>' + esc(r.quando || 'quando me lo chiedi') + (r.ultima ? ' · ultima: ' + esc(fmtQ(r.ultima)) : '') + '</small></h5>' + passiHTML(r.analisi)
+      + '<div class="trow"><button class="tbtn solid" type="button" data-r="run">▶ Avvia</button><button class="tbtn" type="button" data-r="edit">✏️ Modifica</button><button class="tbtn" type="button" data-r="del" title="Elimina">🗑</button></div></div>').join('')
+    : '<div class="note" style="margin-top:6px">Nessuna routine ancora: parti da un esempio qui sotto, oppure dimmi «<b>crea la modalità lavoro: apri gmail, volume al 30</b>».</div>';
+}
+function rGiorniHTML(sel) { $('#rgiorni').innerHTML = GIORNI_UI.map((g, i) => '<label class="' + (sel.includes(i) ? 'on' : '') + '" title="' + ['lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato', 'domenica'][i] + '"><input type="checkbox" value="' + i + '" ' + (sel.includes(i) ? 'checked' : '') + ' onchange="this.parentNode.classList.toggle(\'on\',this.checked)">' + g + '</label>').join(''); }
+function rGiorni() { return [...document.querySelectorAll('#rgiorni input')].filter(x => x.checked).map(x => +x.value); }
+function rPreset(k) { rGiorniHTML(k === 'feriali' ? [0, 1, 2, 3, 4] : k === 'weekend' ? [5, 6] : [0, 1, 2, 3, 4, 5, 6]); }
+function rNuova(m) {
+  const r = m ? MODELLI_RUT[m] : null;
+  RFORM.id = null; $('#rftitle').textContent = r ? '＋ Nuova: ' + r.nome : '＋ Nuova routine';
+  $('#rnome').value = r ? r.nome : ''; $('#rpassi').value = r ? r.passi.join('\n') : ''; $('#rora').value = r && r.orario || '';
+  $('#rtipo').value = r ? r.tipo : 'routine'; rGiorniHTML(r && r.giorni || [0, 1, 2, 3, 4, 5, 6]); rAnalizza();
+}
+function rModifica(id) {
+  const r = RUT.find(x => x.id === id); if (!r) return;
+  RFORM.id = r.id; $('#rftitle').textContent = '✏️ Modifica: ' + r.nome;
+  $('#rnome').value = r.nome; $('#rpassi').value = r.passi.join('\n'); $('#rora').value = r.orario || ''; $('#rtipo').value = r.tipo || 'routine';
+  rGiorniHTML(r.giorni || [0, 1, 2, 3, 4, 5, 6]); rAnalizza(); $('#rnome').focus();
+}
+function rAnalizzaDopo() { clearTimeout(ranT); ranT = setTimeout(rAnalizza, 450); }
+async function rAnalizza() {
+  const passi = $('#rpassi').value; if (!passi.trim()) { $('#ranal').innerHTML = ''; return; }
+  try { const r = await postJ('/routine/analizza', { passi }); $('#ranal').innerHTML = passiHTML(r.analisi).replace(/^<ul class="rpassi">|<\/ul>$/g, ''); } catch (e) {}
+}
+async function rSalva() {
+  const body = { id: RFORM.id, nome: $('#rnome').value, passi: $('#rpassi').value, orario: $('#rora').value || null, giorni: rGiorni(), tipo: $('#rtipo').value };
+  let r; try { r = await postJ('/routine', body); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) { toast('⚡ ' + (r.errore || 'Non salvata'), 'err'); return; }
+  const ko = (r.analisi || []).filter(a => !a.ok).length;
+  toast('⚡ «' + r.routine.nome + '» salvata' + (r.routine.orario ? ' (' + (r.routine.quando || r.routine.orario) + ')' : '') + (ko ? ' · ' + ko + ' pass' + (ko === 1 ? 'o' : 'i') + ' da sistemare' : ''), ko ? '' : 'ok');
+  rNuova(); loadRoutine();
+}
+async function rElimina(id) { const r = RUT.find(x => x.id === id); if (!confirm('Eliminare la routine «' + (r ? r.nome : id) + '»?')) return; try { await postJ('/routine/elimina', { id }); } catch (e) {} loadRoutine(); }
+const esitiHTML = es => !es || !es.length ? '' : '<ul class="esiti">' + es.map(e => '<li><span class="' + (e.ok ? 'ok' : 'ko') + '">' + (e.ok ? '✓' : '✗') + '</span> ' + esc(e.esito) + '</li>').join('') + '</ul>' + es.filter(e => e.immagine).map(e => shotHTML(e.immagine)).join('');
+async function rAvvia(id) {
+  const r0 = RUT.find(x => x.id === id) || { nome: id, passi: [] };
+  closeRoutine();
+  let r; try { r = await postJ('/routine/esegui', { id }); } catch (e) { r = { ok: false, esito: 'Server non raggiungibile' }; }
+  const t = '⚡ Routine **' + r0.nome + '** (' + r0.passi.length + ' pass' + (r0.passi.length === 1 ? 'o' : 'i') + ')';
+  const d = add('ai', ''); mc(d).innerHTML = renderAI(t); finalize(d, t, null, null);
+  if (r.conferma) { addConferme(d, [r.conferma]); if (ttsOn) say('Faccio la routine ' + r0.nome + '?'); if (AV) AV.gesture('nod'); }
+  else esitoRoutine(d, r);
+}
+function esitoRoutine(d, r, titolo) {
+  const w = document.createElement('div'); w.className = 'pcwrap';
+  w.innerHTML = '<div class="pcconf done"><div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito || '') + '</div>' + esitiHTML(r.esiti) + '</div>';
+  d.insertBefore(w, d.querySelector('.acts')); $('#msgs').scrollTop = 1e9;
+  if (ttsOn) say([titolo, r.esito, r.voce].filter(Boolean).join('\n'));
+  if (AV) AV.react(r.ok ? 'ok' : 'fail');
+}
+// le routine a orario (dal server) e gli avvisi del PC (batteria, disco…)
+async function checkNotizieRoutine() {
+  let a; try { a = (await (await fetch('/routine/notizie')).json()).notizie || []; } catch (e) { return; }
+  for (const n of a) {
+    const d = add('ai', ''); mc(d).innerHTML = renderAI(n.testo); finalize(d, n.testo, null, null);
+    notify('MAIK ⚡ ' + n.nome, n.testo);
+    if (AV && AV.mood === 'sleep') AV.wake();
+    if (n.tipo === 'conferma') { addConferme(d, [n.conferma]); if (ttsOn) say(n.testo); if (AV) AV.gesture('wave'); }
+    else esitoRoutine(d, n, n.testo);
+  }
+}
+async function checkAvvisi() {
+  let a; try { a = (await (await fetch('/pc/avvisi')).json()).avvisi || []; } catch (e) { return; }
+  for (const x of a) {
+    const d = add('ai', x.testo, 'avviso'); finalize(d, x.testo, null, null);
+    toast(x.testo, x.livello === 'alta' ? 'err' : ''); notify('MAIK · il tuo PC', x.testo);
+    if (AV) { if (AV.mood === 'sleep') AV.wake(); AV.emote(x.livello === 'bassa' ? 'relaxed' : 'surprised', 2600); AV.gesture(x.livello === 'alta' ? 'shrug' : 'nod'); }
+    if (ttsOn) say(x.testo);
+  }
+}
+
+// ---------- comandi a parole (li fa Zep, senza chiedere al modello) ----------
+const RE_GIOCO = /\b(?:giochiamo|gioca(?:re)?|facciamo|partita)\b.*\b(?:sasso|morra)\b|^(?:sasso,? carta,? forbici|morra cinese)[!.]*$/i;
+const RE_CONTA = /\b(?:conta|quante|indovina)\b.*\bdita\b/i;
+const RE_SPECCHIO = /^(?:(?:zep|maik)[,!]?\s+)?(?:fai(?:mi)? (?:lo|da) specchio|modalit[aà] specchio|imitami|copiami|specchio)[!. ]*$/i;
+const RE_ANIM = /^(?:(?:zep|maik)[,!]?\s+)?(?:fai|balla|esegui|mostrami) l['’]animazione\s+(.+?)[!. ]*$/i;
+function comandoZepV13(t) {
+  if (RE_GIOCO.test(t)) { if (!AV) return null; const g = GIOCO.on; toggleGioco(true, true); return g ? 'Ancora un giro! ✊' : introGioco(); }
+  if (RE_CONTA.test(t)) return contaLeDita();
+  if (RE_SPECCHIO.test(t)) { if (!AV) return null; toggleSpecchio(true); return '🪞 Ok, faccio il tuo specchio: muoviti e ti copio!'; }
+  const m = t.match(RE_ANIM); if (m) return animDaTesto(m[1]);
+  return null;
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();}});
+$('#rmodal').addEventListener('click',e=>{if(e.target.id==='rmodal')closeRoutine();});
+$('#rlist').addEventListener('click',e=>{const b=e.target.closest('button[data-r]');if(!b)return;const id=b.closest('.rcard').dataset.id;if(b.dataset.r==='run')rAvvia(id);else if(b.dataset.r==='edit')rModifica(id);else rElimina(id);});
+$('#rps').addEventListener('click',e=>{const b=e.target.closest('button[data-m]');if(b)giocoTesto(b.dataset.m);});
 $('#dmodal').addEventListener('click',e=>{if(e.target.id==='dmodal')closeDocs();});
 $('#kmodal').addEventListener('click',e=>{if(e.target.id==='kmodal')closeKeys();});
 ['dragenter','dragover'].forEach(ev=>$('#ddrop').addEventListener(ev,e=>{e.preventDefault();$('#ddrop').classList.add('on');}));
@@ -8184,13 +9086,15 @@ $('#main').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer
 $('#inp').addEventListener('paste',e=>{const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(x=>x.type.startsWith('image/'));if(it){e.preventDefault();attachFile(it.getAsFile());}});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
 if(PC_MODE)document.body.classList.add('pc');
-ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;$('#optvita').checked=OPT.vita!==false;
+ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;$('#optvita').checked=OPT.vita!==false;$('#optgesti').checked=gestiOn();
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
 // il personaggio arriva quando si chiude la schermata di avvio (prima sarebbe coperto: niente GPU sprecata)
 Promise.resolve(bootP).then(()=>avatarInit()).then(()=>{if(AV)setTimeout(salutoIniziale,600);});updateStageBar();
 setInterval(()=>{if(AV)AV.setTimeOfDay(new Date().getHours());},600000);
 $('#inp').addEventListener('input',()=>{zepAttivo();const n=Date.now();if(AV&&n-(window._typT||0)>2500){window._typT=n;AV.react('typing');}});
 setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);setInterval(checkSeguiti,20000);
+voceInfo();setInterval(checkNotizieRoutine,8000);setInterval(checkAvvisi,20000);setTimeout(checkAvvisi,6000);
+fetch('/routine').then(r=>r.json()).then(r=>{RUT=r.routine||[];$('#rcount').textContent=RUT.length?' ('+RUT.length+')':'';}).catch(()=>{});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSeguiti();});
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
@@ -8228,8 +9132,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 12.0 — Server avviato            ║
-║  Zep vivo · labiale · gesti · PC · voce · agente ║
+║           MAIK 13.0 — Server avviato            ║
+║ gesti · specchio · voce neurale · routine · PC  ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

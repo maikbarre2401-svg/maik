@@ -46,6 +46,26 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🖐️ Novità V13 — Zep ti vede, parla come una persona, è tuo e fa le cose da solo (sul PC, versione server)
+
+| | Cosa fa |
+|---|---|
+| 🖐️ **Vede i gesti delle tue mani** | Accendi 👀 (tasto **C** o **G**): con **MediaPipe** (gira sul tuo PC, niente cloud) riconosce la mano. 👋 **saluti** → ti risaluta · 👍 / 👎 · ✌️ · 🤟 (cuore) · ✊ (pugnetto) · ☝️ (guarda in alto) · 🖐️ ferma → **batti cinque** · ✋ mentre parla → **si zittisce**. Ogni gesto scatta una volta sola (niente raffiche). «**conta le mie dita**» → conta le dita che alzi e te le mostra con le sue. |
+| 🪞 **Specchio** | Tasto **I** o «fammi da specchio»: copia come **giri e pieghi la testa**, il **sorriso**, la **bocca aperta**, le **sopracciglia** e l'**occhiolino**. |
+| ✊✋✌️ **Sasso, carta, forbici** | Tasto **J**, ✊ sul palco o «**giochiamo a sasso carta forbici**». «Sasso… carta… forbici!»: fai la mossa **con la mano davanti alla webcam**, coi bottoni, coi tasti **1 2 3** o scrivendola. Punteggio, rivincita (▶, Invio, 👍 o «ancora»), «basta» per il finale. |
+| 🔊 **Voce neurale (Piper)** | Una voce **naturale, gratis e offline**: `pip install piper-tts`, poi in **🎨 Personalizza** scarichi una voce italiana (Paola o Riccardo, una volta sola). La **bocca segue i fonemi veri** con i loro tempi e si **chiude nelle pause** dell'audio. Se Piper non c'è o si rompe, usa la voce del browser da sola. |
+| 🎨 **Personalizza** | Tasto **A**: **nome** (anche nella chat e nel titolo), **colore del corpo** e delle **luci**, **accessori** (🎩 cilindro, 🧢 berretto, 🥳 cappellino, 🎧 cuffie, 👓 occhiali, 🕶️ da sole, 🎀 papillon, 🧣 sciarpa), voce del browser, **tono** e **velocità**, animazioni **.vrma** per il tuo .vrm («fai l'animazione saluto»). Il pannello sta di lato: vedi Zep cambiare mentre scegli. |
+| ⚡ **Routine e modalità** | Più comandi in uno: «**crea la modalità lavoro: apri gmail, apri google calendar e metti il volume al 30**», poi «**modalità lavoro**». Anche **a orario**: «ogni giorno alle 7:30 fai la routine buongiorno», «…nei giorni feriali». Tasto **R** per crearle, vedere ✓/✗ passo per passo, modificarle, avviarle. Esempi pronti: lavoro, gioco, buongiorno, buonanotte. |
+| ⚠️ **Avvisi del PC** | Ti avvisa (in chat, a voce e con una notifica) se la **batteria** è sotto il 20% (o il 10%), il **disco** è quasi pieno, la **RAM** o la **CPU** sono al massimo. Al massimo uno ogni 30 minuti per tipo. |
+
+- **Sicurezza**: una routine si fa **sempre dopo la tua conferma**; «Sì, sempre» vale per quella routine sola e **non esiste** per le routine che scrivono testo. Le routine a orario mandano la loro conferma all'ora giusta. I gesti delle mani **non confermano mai** i comandi del PC.
+- Ogni passo di una routine è un comando che già conosci (siti, app, volume, musica, screenshot, «come sta il pc», promemoria, briefing…) oppure «**di' …**» per farti dire una frase. Le frasi da dire o da scrivere tengono le loro virgole.
+- Nuovi endpoint: `GET /routine` · `GET /routine/notizie` · `GET /pc/avvisi` · `GET /voce/info` · `GET /animazioni` · `GET /animazioni/<file>` · `POST /routine` `{nome, passi, orario?, giorni?, tipo?}` · `POST /routine/elimina` · `POST /routine/esegui` · `POST /routine/analizza` · `POST /voce` `{testo, velocita?}` (WAV + fonemi) · `POST /voce/scarica` · `POST /voce/imposta` · `POST /animazioni` (file .vrma) · `POST /animazioni/elimina` (le POST solo da questo PC). Nuovo strumento dell'agente: `esegui_routine`.
+- Variabili: `MAIK_PIPER` (comando piper, se non usi il modulo Python) · `MAIK_VOCE` · `MAIK_VOCI_URL` · `MAIK_AVVISI=0` (niente avvisi) · `MAIK_AVVISI_OGNI` (secondi, 60) · `MAIK_ROUTINE_OGNI` (secondi, 20) · `MAIK_MODELLO_MANI_URL`.
+- La prima volta servono internet per il modello delle mani (MediaPipe, ~8 MB) e per la voce Piper (28–63 MB): poi restano in `dati_maik/` e funziona tutto offline.
+
+---
+
 ## 🌱 Novità V12 — Zep parla, gesticola e vive (sul PC, versione server)
 
 | | Cosa fa |
@@ -262,9 +282,9 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V12 — `maik_server.py`
+## MAIK — Server V13 — `maik_server.py`
 
-Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
+Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
 ```bash
 ollama pull llama3.1      # una volta

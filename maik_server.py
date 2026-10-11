@@ -3283,7 +3283,7 @@ LIB_FISSE = {
     "three-vrm.module.min.js": f"@pixiv/three-vrm@{VERSIONE_VRM}/lib/three-vrm.module.min.js",
     "mp/vision_bundle.mjs": f"@mediapipe/tasks-vision@{VERSIONE_MP}/vision_bundle.mjs",
 }
-_RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs)/[A-Za-z0-9_-]{1,60}\.js")
+_RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs|environments)/[A-Za-z0-9_-]{1,60}\.js")
 _RE_LIB_MP = re.compile(r"mp/wasm/vision_wasm(?:_nosimd)?_internal\.(?:js|wasm)")
 _LIB_LOCK = threading.Lock()
 
@@ -3821,9 +3821,10 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Server V10</title>
+<title>MAIK // Zep V11</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
+<script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js"}}</script>
 <link rel="icon" type="image/png" href="/icona-192.png">
 <link rel="apple-touch-icon" href="/icona-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -3988,11 +3989,56 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .dhit{background:rgba(var(--accent2-rgb),.07);border-left:2px solid rgba(var(--accent2-rgb),.7);padding:6px 9px;border-radius:0 6px 6px 0;margin-top:6px;font-size:12px;line-height:1.45}
   .dhit b{color:#e3d8ff}.dhit mark{background:rgba(var(--accent-rgb),.25);color:#fff;border-radius:2px}
   #instbtn{display:none}
+  /* ===== V11: Zep 3D, layout da PC, sottotitoli, conferme del PC ===== */
+  #chatcol{display:contents}
+  #stage3d,#avpill,#stagebar,#caption,#stagedrop{display:none}
+  body.has-avatar #sphere-wrap{display:none}
+  body.has-avatar #stage3d{display:block;position:absolute;inset:0}
+  body.has-avatar #avpill{display:flex;position:absolute;top:12px;left:14px;z-index:20;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;background:rgba(var(--bg-rgb),.55);border:1px solid var(--border);backdrop-filter:blur(8px);font-size:12px;font-family:'Share Tech Mono',monospace;letter-spacing:1px}
+  #avpill b{color:#fff;font-weight:400}#avstate{color:var(--dim)}
+  #avdot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  body[data-av="listening"] #avdot{background:var(--green);box-shadow:0 0 12px var(--green);animation:pl 1s infinite}
+  body[data-av="thinking"] #avdot{background:var(--purple);box-shadow:0 0 12px var(--purple);animation:pl .6s infinite}
+  body[data-av="speaking"] #avdot{animation:pl .35s infinite}
+  body.has-avatar #stagebar{display:flex;position:absolute;top:10px;right:12px;z-index:20;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:60%}
+  #stagebar button{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:rgba(var(--bg-rgb),.55);backdrop-filter:blur(8px);color:var(--text);cursor:pointer;font-size:15px;transition:.15s}
+  #stagebar button:hover{border-color:var(--accent);transform:translateY(-1px)}
+  #stagebar button.on{background:rgba(var(--accent-rgb),.22);border-color:var(--accent);box-shadow:0 0 14px rgba(var(--accent-rgb),.35)}
+  #stagebar button.off{opacity:.45}
+  body.has-avatar #caption{display:block;position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;max-width:min(760px,86%);padding:9px 18px;border-radius:14px;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);color:#fff;font-size:18px;line-height:1.4;text-align:center;opacity:0;transition:opacity .35s;pointer-events:none;text-shadow:0 1px 3px #000}
+  #caption.on{opacity:1}#caption.you{color:var(--green);font-style:italic}
+  body.has-avatar #stagedrop{position:absolute;inset:14px;z-index:25;border:2px dashed var(--accent);border-radius:16px;align-items:center;justify-content:center;font-size:20px;background:rgba(var(--bg-rgb),.75);color:#fff}
+  body.has-avatar #sphere-area.drop #stagedrop{display:flex}
+  body.pip-on #stage3d::after{content:'🗗 Zep è nella mini-finestra';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-family:'Share Tech Mono',monospace;letter-spacing:2px}
+  /* PC: personaggio grande a sinistra, chat a destra */
+  body.pc #main{flex-direction:row}
+  body.pc #sphere-area{flex:1;min-width:0}
+  body.pc #chatcol{display:flex;flex-direction:column;width:min(460px,40vw);flex-shrink:0;border-left:1px solid var(--border);background:rgba(var(--bg-rgb),.5);backdrop-filter:blur(14px)}
+  body.pc #msgs{height:auto;flex:1;border-top:none}
+  body.pc .quick{padding-top:8px}
+  /* solo Zep: tutto lo schermo al personaggio, la chat diventa una barra che galleggia */
+  body.focus #side{display:none}
+  body.focus.pc #chatcol{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(720px,92%);z-index:30;border:1px solid var(--border);border-radius:28px;background:rgba(var(--bg-rgb),.6)}
+  body.focus #msgs,body.focus .quick{display:none}
+  body.focus #caption{bottom:96px;font-size:22px}
+  body.focus header{display:none}
+  .avside{display:flex;align-items:center;justify-content:space-between;gap:8px}.avside small{display:block;color:var(--dim);font-size:10px;font-family:'Share Tech Mono',monospace}
+  .avside .tbtn{flex:0 0 auto;min-width:0;padding:6px 10px;font-size:12px}
+  .keys{display:grid;gap:8px;font-size:14px}.keys kbd{display:inline-block;min-width:26px;text-align:center;padding:2px 7px;margin-right:8px;border-radius:6px;border:1px solid var(--border);border-bottom-width:3px;background:rgba(var(--accent-rgb),.08);font-family:'Share Tech Mono',monospace;font-size:12px;color:#fff}
+  .pcwrap{margin-top:8px;display:grid;gap:6px}
+  .pcconf{border:1px solid rgba(255,176,32,.55);background:rgba(255,176,32,.08);border-radius:10px;padding:9px 11px}
+  .pcconf .pct{font-size:13.5px;margin-bottom:7px}.pcconf .pct b{color:#fff;word-break:break-all}
+  .pcconf .pcb{display:flex;gap:6px;flex-wrap:wrap}
+  .pcconf button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600}
+  .pcconf button[data-a="si"]{background:var(--accent);color:#050a0f;border:none}
+  .pcconf button:hover{filter:brightness(1.15)}
+  .pcconf.done{border-color:var(--border);background:rgba(var(--accent-rgb),.05)}.pcconf.done .pct{margin:0}.pcconf .ok{color:var(--green)}.pcconf .ko{color:var(--red)}
+  .agc.wait{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.5);color:#ffe2a8}
   .cite{display:inline-block;font-size:.82em;font-family:'Share Tech Mono',monospace;padding:0 6px;border-radius:6px;background:rgba(var(--accent2-rgb),.16);border:1px solid rgba(var(--accent2-rgb),.45);color:#e3d8ff;white-space:nowrap}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V10</span></div>
+  <div class="logo">M A I K <span>// V11</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -4027,6 +4073,13 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="memres"></div>
     <button class="tbtn" style="width:100%;margin-top:8px" onclick="openMem()">🧠 Memoria completa</button>
     <button class="tbtn" style="width:100%;margin-top:6px" onclick="openDocs()">📚 I tuoi documenti<span id="doccount"></span></button>
+    <h3>🧍 Personaggio 3D</h3>
+    <div class="avside"><div><b id="avsname">Zep</b><small id="avskind">robot integrato</small></div>
+      <button class="tbtn" type="button" onclick="$('#avin').click()" title="Carica il tuo personaggio .vrm o .glb">📤 Carica</button></div>
+    <input type="file" id="avin" accept=".vrm,.glb" style="display:none" onchange="uploadAvatar(this.files[0]);this.value=''">
+    <button class="tbtn" id="avreset" type="button" style="width:100%;margin-top:6px;display:none" onclick="resetAvatar()">↺ Torna a Zep (robot)</button>
+    <div class="note" style="margin-top:6px">Crea il tuo gratis con <b>VRoid Studio</b> (esporta .vrm) o usa un .glb. Trascinalo sul personaggio per caricarlo.</div>
+    <label class="opt">🎙️ Posso essere interrotto mentre parlo<input type="checkbox" id="optbarge" onchange="setOpt('barge',this.checked)"></label>
     <h3>🎨 Tema</h3>
     <div class="thsw" id="themes"></div>
     <h3>⚙ Opzioni</h3>
@@ -4040,7 +4093,22 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="fbadge"><span class="fbdot"></span> MAIK · MODALITÀ AMICO</div>
       <div id="cambox"><video id="cam" autoplay muted playsinline></video><div id="fstat">webcam</div></div>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
+      <div id="stage3d" aria-label="Il personaggio 3D"></div>
+      <div id="avpill" aria-live="polite"><span id="avdot"></span><b id="avname">Zep</b><span id="avstate">pronto</span></div>
+      <div id="stagebar" role="toolbar" aria-label="Comandi del personaggio">
+        <button id="sbtts" onclick="toggleTTS()" title="Voce di Zep on/off (V)" aria-label="Voce">🔊</button>
+        <button id="sbconv" onclick="toggleConv()" title="Conversazione a voce a mani libere (M) — puoi interrompermi" aria-label="Conversazione a voce">🎙️</button>
+        <button id="sbeyes" onclick="toggleEyes()" title="Ti guardo con la webcam (C)" aria-label="Webcam: ti guardo">👀</button>
+        <button id="sbscreen" onclick="lookScreen()" title="Guarda il mio schermo (S)" aria-label="Guarda lo schermo">🖥️</button>
+        <button id="sbframe" onclick="toggleFraming()" title="Inquadratura: busto / intero (Z)" aria-label="Inquadratura">🧍</button>
+        <button id="sbpip" onclick="miniWindow()" title="Mini-finestra sempre in primo piano (P)" aria-label="Mini-finestra">🗗</button>
+        <button id="sbfocus" onclick="toggleFocus()" title="Solo Zep, a tutto schermo (F)" aria-label="Solo Zep">⛶</button>
+        <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
+      </div>
+      <div id="caption" aria-live="polite"></div>
+      <div id="stagedrop">📤 Lascia qui il tuo personaggio (.vrm o .glb)</div>
     </div>
+    <div id="chatcol">
     <div id="msgs"></div>
     <div class="quick">
       <button onclick="newChat()">💬 nuova chat</button>
@@ -4050,6 +4118,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('Cosa c\'è nella lista?')">🛒 lista</button>
       <button onclick="openDocs()">📚 documenti</button>
       <button onclick="guarda()">👁️ guardami</button>
+      <button onclick="qs('come sta il pc?')">💻 stato del PC</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
     </div>
@@ -4062,6 +4131,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button id="stopbtn" onclick="stopGen()" title="Ferma" aria-label="Ferma la risposta">■</button>
       <button class="send" id="send" onclick="invia()" aria-label="Invia">➤</button>
     </div>
+    </div>
   </div>
 </div>
 
@@ -4069,6 +4139,26 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   <div class="mod" style="max-width:560px">
     <div class="modh"><div class="modt">🧠 MEMORIA DI MAIK</div><button class="ib" onclick="closeMem()" aria-label="Chiudi">✕</button></div>
     <div class="modb"><input class="sfield" id="memf" placeholder="Filtra i ricordi…" oninput="renderMem()" style="margin-bottom:10px"><div id="membody"></div></div>
+  </div>
+</div>
+
+<div class="ov" id="kmodal">
+  <div class="mod" style="max-width:520px">
+    <div class="modh"><div class="modt">⌨️ SCORCIATOIE</div><button class="ib" onclick="closeKeys()" aria-label="Chiudi">✕</button></div>
+    <div class="modb"><div class="keys">
+      <div><kbd>Spazio</kbd> tieni premuto per parlare, lascia per mandare</div>
+      <div><kbd>M</kbd> conversazione a voce a mani libere</div>
+      <div><kbd>Esc</kbd> zittisci Zep / ferma la risposta</div>
+      <div><kbd>V</kbd> voce di Zep on/off</div>
+      <div><kbd>C</kbd> ti guardo con la webcam</div>
+      <div><kbd>S</kbd> guarda il mio schermo</div>
+      <div><kbd>F</kbd> solo Zep, a tutto schermo</div>
+      <div><kbd>P</kbd> mini-finestra sempre in primo piano</div>
+      <div><kbd>Z</kbd> inquadratura busto / intero</div>
+      <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
+      <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
+      <div><kbd>?</kbd> questo elenco</div>
+    </div><div class="note">Sul personaggio: trascina per girarlo, rotellina per lo zoom, doppio clic per rimetterlo a posto. Le scorciatoie non valgono mentre scrivi.</div></div>
   </div>
 </div>
 
@@ -4480,6 +4570,479 @@ const MaikKit = (() => {
 })();
 </script>
 <script>
+/* ============================================================
+   ZepKit — il personaggio 3D di MAIK (Three.js)
+   · il TUO modello: .vrm (VRoid Studio…) con espressioni e sguardo VRM, oppure .glb
+     (ossa riconosciute per nome, forme della bocca, animazioni contenute nel file)
+   · senza file: «Zep», un robottino 3D disegnato qui (nessun download)
+   Stessa interfaccia per tutti: stato, parola per parola (bocca a tempo), palpebre,
+   sguardo (mouse o webcam), emozioni, gesti, tema, mini-finestra.
+   ============================================================ */
+window.ZepKit = (() => {
+  let LIBS = null;
+  async function libs() {
+    if (LIBS) return LIBS;
+    const THREE = await import('three');
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    let RoomEnvironment = null, VRM = null;
+    try { ({ RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js')); } catch (e) {}
+    try { VRM = await import('@pixiv/three-vrm'); } catch (e) {}
+    return (LIBS = { THREE, GLTFLoader, RoomEnvironment, VRM });
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
+  const VOWELS = { a: 'aa', à: 'aa', e: 'ee', è: 'ee', é: 'ee', i: 'ih', ì: 'ih', o: 'oh', ò: 'oh', u: 'ou', ù: 'ou', y: 'ih' };
+  const EMOS = ['happy', 'sad', 'surprised', 'angry', 'relaxed'];
+  const noise = t => Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.7 + 1.7) * 0.3 + Math.sin(t * 0.7 + 4.1) * 0.2;
+  const norm = s => String(s || '').toLowerCase().replace(/^mixamorig\d*[:_]?/, '').replace(/[^a-z0-9]/g, '');
+
+  // ---------- ricerca delle ossa in un .glb qualsiasi (Mixamo, Ready Player Me, Blender…) ----------
+  const BONE_NAMES = {
+    hips: ['hips', 'pelvis', 'hip'], spine: ['spine', 'spine1', 'spine01'], chest: ['spine2', 'chest', 'spine02', 'upperchest', 'spine3'],
+    neck: ['neck', 'neck1', 'neck01'], head: ['head'],
+    leftUpperArm: ['leftarm', 'leftupperarm', 'upperarml', 'larm', 'lupperarm', 'armleft', 'upperarmleft', 'shoulderlowerl'],
+    rightUpperArm: ['rightarm', 'rightupperarm', 'upperarmr', 'rarm', 'rupperarm', 'armright', 'upperarmright', 'shoulderlowerr'],
+    leftLowerArm: ['leftforearm', 'leftlowerarm', 'forearml', 'lowerarml', 'lforearm', 'llowerarm', 'forearmleft'],
+    rightLowerArm: ['rightforearm', 'rightlowerarm', 'forearmr', 'lowerarmr', 'rforearm', 'rlowerarm', 'forearmright'],
+    leftHand: ['lefthand', 'handl', 'lhand', 'handleft'], rightHand: ['righthand', 'handr', 'rhand', 'handright'],
+  };
+  function findBones(root) {
+    const all = []; root.traverse(o => { if (o.isBone || o.type === 'Bone') all.push(o); });
+    const out = {};
+    for (const [k, names] of Object.entries(BONE_NAMES)) {
+      out[k] = all.find(b => names.includes(norm(b.name))) || null;
+    }
+    return out;
+  }
+  // ---------- forme (morph target) in un .glb: bocca, palpebre, emozioni ----------
+  const MORPH_NAMES = {
+    aa: ['visemeaa', 'aa', 'a', 'mouthopen', 'jawopen', 'vrcvaa', 'fclmthsmall'], ih: ['visemei', 'ih', 'i', 'vrcvih'],
+    ou: ['visemeu', 'ou', 'u', 'vrcvou', 'mouthfunnel'], ee: ['visemee', 'ee', 'e', 'vrcvee'], oh: ['visemeo', 'oh', 'o', 'vrcvoh', 'mouthpucker'],
+    blink: ['blink', 'eyesclosed', 'eyeclose', 'eyeblink', 'blinkboth'], blinkLeft: ['eyeblinkleft', 'blinkleft', 'blinkl'], blinkRight: ['eyeblinkright', 'blinkright', 'blinkr'],
+    happy: ['happy', 'joy', 'smile', 'mouthsmile', 'fun'], happyL: ['mouthsmileleft'], happyR: ['mouthsmileright'],
+    sad: ['sad', 'sorrow', 'mouthfrown'], sadL: ['mouthfrownleft'], sadR: ['mouthfrownright'],
+    surprised: ['surprised', 'surprise', 'browinnerup', 'shock'], angry: ['angry', 'anger', 'browdownleft', 'browdown'], relaxed: ['relaxed', 'calm'],
+  };
+  function findMorphs(root) {
+    const out = {};
+    root.traverse(o => {
+      if (!o.morphTargetDictionary || !o.morphTargetInfluences) return;
+      for (const [name, idx] of Object.entries(o.morphTargetDictionary)) {
+        const n = norm(name);
+        for (const [k, names] of Object.entries(MORPH_NAMES)) if (names.includes(n)) (out[k] = out[k] || []).push([o, idx]);
+      }
+    });
+    return out;
+  }
+
+  async function create(container, opts = {}) {
+    const { THREE, GLTFLoader, RoomEnvironment, VRM } = await libs();
+    const log = opts.onLog || (() => {});
+    // ---------- scena ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: !!opts.preserve });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+    const canvas = renderer.domElement; canvas.className = 'zep-canvas';
+    canvas.style.cssText = 'width:100%;height:100%;display:block;outline:none;touch-action:none';
+    container.appendChild(canvas);
+    const scene = new THREE.Scene();
+    if (RoomEnvironment) { try { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.55; } catch (e) {} }
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
+    const hemi = new THREE.HemisphereLight(0xcfe3ff, 0x140c26, 0.9); scene.add(hemi);
+    const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(1.4, 2.6, 2.4); scene.add(key);
+    const rim = new THREE.DirectionalLight(0x00f5ff, 2.4); rim.position.set(-2.2, 1.6, -2.2); scene.add(rim);
+    const rim2 = new THREE.DirectionalLight(0x7c3aed, 1.6); rim2.position.set(2.2, 1.2, -1.8); scene.add(rim2);
+    const accent = new THREE.Color(0x00f5ff), accent2 = new THREE.Color(0x7c3aed);
+    // anello luminoso a terra + ombra morbida + particelle
+    const ringMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.45, 96), ringMat); ring.rotation.x = -Math.PI / 2; scene.add(ring);
+    const ring2 = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.535, 96), ringMat.clone()); ring2.material.opacity = 0.25; ring2.rotation.x = -Math.PI / 2; scene.add(ring2);
+    const shCanvas = document.createElement('canvas'); shCanvas.width = shCanvas.height = 128;
+    { const g = shCanvas.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+    const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shCanvas), transparent: true, depthWrite: false }));
+    shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+    const PN = 140, pPos = new Float32Array(PN * 3), pSpd = new Float32Array(PN);
+    const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    const pMat = new THREE.PointsMaterial({ color: accent, size: 0.012, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
+    const particles = new THREE.Points(pGeo, pMat); scene.add(particles);
+
+    // ---------- stato condiviso dell'animazione ----------
+    const S = {
+      state: 'idle', t: 0, blinkT: 2 + Math.random() * 3, blink: 0,
+      mouth: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }, mouthTarget: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 },
+      visemes: [], speakUntil: 0, level: 0,
+      emo: { happy: 0, sad: 0, surprised: 0, angry: 0, relaxed: 0 }, emoTarget: null, emoUntil: 0,
+      gesture: null, gestureT: 0,
+      look: { x: 0, y: 0 }, lookTarget: { x: 0, y: 0 }, lookSource: 'pointer', lastLookInput: 0,
+      yaw: 0, yawTarget: 0, zoom: 1, framing: opts.framing || 'busto',
+    };
+    const charRoot = new THREE.Group(); scene.add(charRoot);
+    let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, mouthY = 1.4, baseY = 0, topY = 1.6;
+
+    // ============================================================
+    // 1) il TUO modello (.vrm / .glb)
+    // ============================================================
+    async function loadModel(url) {
+      const loader = new GLTFLoader();
+      if (VRM) loader.register(p => new VRM.VRMLoaderPlugin(p));
+      const gltf = await loader.loadAsync(url);
+      const v = gltf.userData && gltf.userData.vrm;
+      if (v) {
+        try { VRM.VRMUtils.removeUnnecessaryVertices(gltf.scene); } catch (e) {}
+        try { VRM.VRMUtils.rotateVRM0(v); } catch (e) {}
+        v.scene.traverse(o => { o.frustumCulled = false; });
+        charRoot.add(v.scene); vrm = v; kind = 'vrm';
+        name = (v.meta && (v.meta.name || v.meta.title)) || 'VRM';
+        const hb = n => { try { return v.humanoid.getNormalizedBoneNode(n); } catch (e) { return null; } };
+        const bones = {}; for (const k of Object.keys(BONE_NAMES)) bones[k] = hb(k);
+        if (!bones.chest) bones.chest = hb('upperChest');
+        rig = makeBoneRig(bones, null);
+        if (v.lookAt) { v.lookAt.target = lookObj; v.lookAt.autoUpdate = true; }
+      } else {
+        const root = gltf.scene; charRoot.add(root); kind = 'glb'; name = 'GLB';
+        root.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+        if (gltf.animations && gltf.animations.length) {
+          mixer = new THREE.AnimationMixer(root);
+          for (const c of gltf.animations) clips[c.name.toLowerCase()] = mixer.clipAction(c);
+          const pick = re => Object.entries(clips).find(([n]) => re.test(n));
+          const idle = pick(/idle|breath|stand|wait|loop/) || Object.entries(clips)[0];
+          if (idle) { idle[1].play(); clips.__idle = idle[1]; }
+          const talk = pick(/talk|speak|chat/); if (talk) clips.__talk = talk[1];
+          const wave = pick(/wave|hello|greet|saluto/); if (wave) clips.__wave = wave[1];
+        }
+        rig = makeBoneRig(findBones(root), findMorphs(root));
+        rig.hasClips = !!clips.__idle;
+        // ossa mosse dall'animazione del file: quelle non le tocchiamo (le altre sì, es. braccia in A/T-pose)
+        const animate = new Set((gltf.animations || []).flatMap(c => c.tracks.map(tr => tr.name.split('.')[0])));
+        rig.animated = k => !!(rig.bones[k] && animate.has(rig.bones[k].name));
+      }
+      // dimensioni: inquadratura sul viso / busto
+      charRoot.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(charRoot), size = box.getSize(new THREE.Vector3());
+      height = size.y || 1.6;
+      if (box.min.y !== 0 && isFinite(box.min.y)) charRoot.position.y -= box.min.y;   // i piedi a terra
+      baseY = charRoot.position.y;
+      charRoot.updateMatrixWorld(true);
+      topY = new THREE.Box3().setFromObject(charRoot).max.y;
+      const hp = new THREE.Vector3();
+      if (rig.bones.head) { rig.bones.head.getWorldPosition(hp); headY = hp.y; } else headY = height * 0.9;
+      mouthY = headY;
+      log(`avatar ${kind}: ${name} · ossa ${Object.values(rig.bones).filter(Boolean).length} · forme ${Object.keys(rig.morphs || {}).length} · animazioni ${Object.keys(clips).filter(k => !k.startsWith('__')).length}`);
+    }
+
+    // rig a ossa: rotazioni "nel mondo" del personaggio (che guarda verso +Z) applicate sopra la posa di riposo,
+    // così funziona sia con le ossa normalizzate VRM sia con assi locali qualsiasi dei .glb
+    function makeBoneRig(bones, morphs) {
+      const order = ['hips', 'spine', 'chest', 'neck', 'head', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm'];
+      const rest = {}; for (const k of order) if (bones[k]) rest[k] = bones[k].quaternion.clone();
+      // braccia: quanto sono già sotto l'orizzontale (T-pose ≈ 0, A-pose ≈ 40°)
+      const armDrop = {};      // (la posa attuale = riposo, più l'eventuale animazione del file: vedi update)
+      charRoot.updateMatrixWorld(true);
+      for (const [up, low, sign] of [['leftUpperArm', 'leftLowerArm', -1], ['rightUpperArm', 'rightLowerArm', 1]]) {
+        if (bones[up] && bones[low]) {
+          const a = bones[up].getWorldPosition(new THREE.Vector3()), b = bones[low].getWorldPosition(new THREE.Vector3());
+          const d = b.sub(a); armDrop[up] = Math.atan2(-d.y, Math.abs(d.x) + 1e-6); armDrop.side = Math.sign(d.x) || sign;
+        }
+      }
+      const qD = new THREE.Quaternion(), qP = new THREE.Quaternion(), qPi = new THREE.Quaternion(), e = new THREE.Euler();
+      return {
+        bones, morphs, armDrop,
+        apply(k, x, y, z) {               // rotazione (radianti) nel riferimento del personaggio, sopra la posa attuale
+          const b = bones[k]; if (!b || (!x && !y && !z)) return;
+          if (b.parent) { b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(qP); } else qP.identity();
+          charRoot.getWorldQuaternion(qPi); qP.premultiply(qPi.invert());          // togli la rotazione del personaggio
+          qD.setFromEuler(e.set(x, y, z, 'YXZ'));
+          qPi.copy(qP).invert();
+          b.quaternion.premultiply(qP).premultiply(qD).premultiply(qPi);      // = P'⁻¹ · D · P' · posa attuale
+        },
+        reset() { for (const k of Object.keys(rest)) bones[k].quaternion.copy(rest[k]); },
+      };
+    }
+
+    // ============================================================
+    // 2) «Zep», il robottino integrato
+    // ============================================================
+    function buildRobot() {
+      kind = 'robot'; name = 'Zep';
+      const R = new THREE.Group(); charRoot.add(R);
+      const white = new THREE.MeshPhysicalMaterial({ color: 0xeef3ff, roughness: 0.28, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.15 });
+      const dark = new THREE.MeshPhysicalMaterial({ color: 0x05070d, roughness: 0.08, metalness: 0.4, clearcoat: 1 });
+      // occhi, bocca e luci: colori pieni del tema (non toccati dalla luce né dal tone mapping)
+      const glow = new THREE.MeshBasicMaterial({ color: accent.clone(), toneMapped: false });
+      const glow2 = new THREE.MeshBasicMaterial({ color: accent2.clone(), toneMapped: false });
+      const add = (geo, mat, x, y, z, parent = R) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
+      const body = new THREE.Group(); body.position.y = 0.55; R.add(body);
+      add(new THREE.CapsuleGeometry(0.27, 0.32, 12, 32), white, 0, 0.18, 0, body).scale.set(1, 1, 0.82);
+      add(new THREE.TorusGeometry(0.255, 0.018, 12, 64), glow, 0, 0.05, 0, body).rotation.x = Math.PI / 2;
+      const core = add(new THREE.CircleGeometry(0.055, 32), glow, 0, 0.26, 0.222, body);
+      const neck = new THREE.Group(); neck.position.set(0, 0.52, 0); body.add(neck);
+      add(new THREE.CylinderGeometry(0.06, 0.08, 0.09, 24), dark, 0, 0.02, 0, neck);
+      const head = new THREE.Group(); head.position.set(0, 0.25, 0); neck.add(head);
+      add(new THREE.SphereGeometry(0.3, 48, 32), white, 0, 0, 0, head).scale.set(1.18, 0.92, 1);
+      // visiera di vetro scuro centrata davanti (+Z): phi = π/2 è il davanti della sfera
+      const visor = add(new THREE.SphereGeometry(0.262, 48, 32, Math.PI * 0.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.27, Math.PI * 0.44), dark, 0, 0, 0.068, head);
+      visor.scale.set(1.2, 0.95, 1);
+      const eyeGeo = new THREE.CapsuleGeometry(0.03, 0.05, 8, 16);
+      const eyeL = add(eyeGeo, glow, -0.1, 0.035, 0.31, head), eyeR = add(eyeGeo, glow, 0.1, 0.035, 0.31, head);
+      const mouth = add(new THREE.BoxGeometry(0.11, 0.022, 0.012), glow, 0, -0.085, 0.315, head);
+      for (const s of [-1, 1]) {
+        add(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 32), white, s * 0.355, 0, 0, head).rotation.z = Math.PI / 2;
+        add(new THREE.TorusGeometry(0.06, 0.012, 10, 32), glow2, s * 0.382, 0, 0, head).rotation.y = Math.PI / 2;
+      }
+      add(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), dark, 0, 0.33, 0, head);
+      const tip = add(new THREE.SphereGeometry(0.03, 20, 16), glow2, 0, 0.42, 0, head);
+      const arm = s => {
+        const sh = new THREE.Group(); sh.position.set(s * 0.33, 0.36, 0); body.add(sh);
+        add(new THREE.SphereGeometry(0.07, 24, 16), white, 0, 0, 0, sh);
+        add(new THREE.CapsuleGeometry(0.05, 0.16, 8, 16), white, 0, -0.13, 0, sh);
+        const el = new THREE.Group(); el.position.set(0, -0.26, 0); sh.add(el);
+        add(new THREE.CapsuleGeometry(0.045, 0.14, 8, 16), white, 0, -0.1, 0, el);
+        add(new THREE.SphereGeometry(0.055, 20, 16), glow2, 0, -0.22, 0, el);
+        return { sh, el };
+      };
+      const L = arm(1), Rr = arm(-1);    // il braccio SINISTRO del robot è dalla parte +X (guarda verso di te)
+      const ROB = { R, body, neck, head, eyeL, eyeR, mouth, core, tip, L, Rr, glow, glow2 };
+      headY = 0.55 + 0.52 + 0.25; mouthY = headY;
+      charRoot.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(R); height = bb.max.y; topY = bb.max.y;
+      rig = { robot: ROB, bones: { head: head }, morphs: null };
+      log('avatar integrato: Zep');
+    }
+
+    // ============================================================
+    // animazione
+    // ============================================================
+    const lookObj = new THREE.Object3D(); scene.add(lookObj);
+    const cam = { target: new THREE.Vector3(), dist: 2 };
+    function frame() {
+      const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
+      camera.aspect = w / h;
+      const full = S.framing === 'intero';
+      // busto: dalla cima della testa fino a metà busto · intero: tutto il corpo
+      const span = (full ? height * 1.15 : height * (kind === 'robot' ? 0.86 : 0.6)) * S.zoom;   // il robot ha la testa grande
+      const ty = full ? height * 0.5 : topY - span * 0.45;
+      cam.target.set(0, ty, 0);
+      const fov = THREE.MathUtils.degToRad(camera.fov);
+      cam.dist = (span / 2) / Math.tan(fov / 2) / Math.min(1, camera.aspect * 1.25);
+      camera.near = Math.max(0.005, cam.dist / 100); camera.far = cam.dist * 100;
+      camera.position.set(0, ty + span * 0.04, cam.dist); camera.lookAt(cam.target); camera.updateProjectionMatrix();
+      const r = Math.max(0.3, height * 0.28); ring.scale.setScalar(r / 0.45); ring2.scale.setScalar(r / 0.45); shadow.scale.setScalar(r * 2.6);
+      for (let i = 0; i < PN; i++) { pPos[i * 3] = (Math.random() - 0.5) * height * 1.6; pPos[i * 3 + 1] = Math.random() * height * 1.3; pPos[i * 3 + 2] = (Math.random() - 0.5) * height * 0.9 - height * 0.2; pSpd[i] = 0.02 + Math.random() * 0.06; }
+      pGeo.attributes.position.needsUpdate = true; pMat.size = height * 0.008;
+    }
+    function resize() {
+      const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
+      renderer.setSize(w, h, false); frame();
+    }
+
+    function setExpr(k, v) {
+      if (vrm && vrm.expressionManager) { try { vrm.expressionManager.setValue(k, v); } catch (e) {} return; }
+      const m = rig && rig.morphs; if (!m) return;
+      const set = list => (list || []).forEach(([o, i]) => { o.morphTargetInfluences[i] = v; });
+      if (k === 'blink') { if (m.blink) set(m.blink); else { set(m.blinkLeft); set(m.blinkRight); } return; }
+      if (k === 'happy' && !m.happy) { set(m.happyL); set(m.happyR); return; }
+      if (k === 'sad' && !m.sad) { set(m.sadL); set(m.sadR); return; }
+      if (['ih', 'ou', 'ee', 'oh'].includes(k) && !m[k]) return;    // senza visemi: basta «aa»
+      set(m[k]);
+    }
+
+    function update(dt) {
+      S.t += dt; const t = S.t, now = performance.now();
+      // --- bocca: visemi parola per parola (o "onda" se il browser non dà i confini delle parole)
+      const speaking = S.state === 'speaking' || now < S.speakUntil;
+      for (const k in S.mouthTarget) S.mouthTarget[k] = 0;
+      while (S.visemes.length && S.visemes[0].end < now) S.visemes.shift();
+      const cur = S.visemes.find(v => v.start <= now && now < v.end);
+      if (cur) { if (cur.v !== 'm') S.mouthTarget[cur.v] = cur.w; }
+      else if (speaking && !S.visemes.length) S.mouthTarget.aa = clamp(0.25 + 0.35 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)), 0, 1);
+      if (S.level > 0.02) S.mouthTarget.aa = Math.max(S.mouthTarget.aa, S.level);
+      const hasVis = vrm || (rig && rig.morphs && rig.morphs.ih);
+      if (!hasVis) { let s = 0; for (const k in S.mouthTarget) s = Math.max(s, S.mouthTarget[k]); for (const k in S.mouthTarget) S.mouthTarget[k] = 0; S.mouthTarget.aa = s; }
+      for (const k in S.mouth) S.mouth[k] = damp(S.mouth[k], S.mouthTarget[k], 22, dt);
+      // --- palpebre
+      S.blinkT -= dt;
+      if (S.blinkT <= 0) { S.blink = 1; S.blinkT = 2 + Math.random() * 4 + (Math.random() < 0.2 ? -1.6 : 0); }
+      const blinkV = S.blink > 0 ? Math.sin(Math.PI * (1 - S.blink)) : 0;
+      S.blink = Math.max(0, S.blink - dt * 7);
+      // --- emozioni (si spengono da sole)
+      if (S.emoTarget && now > S.emoUntil) S.emoTarget = null;
+      for (const k of EMOS) {
+        let tgt = S.emoTarget === k ? 1 : 0;
+        if (k === 'relaxed' && S.state === 'idle' && !S.emoTarget) tgt = 0.15;
+        if (k === 'surprised' && S.state === 'alarm') tgt = 1;
+        S.emo[k] = damp(S.emo[k], tgt * (speaking && k === 'happy' ? 0.6 : 1), 6, dt);
+      }
+      // --- sguardo: mouse / webcam, altrimenti si guarda attorno
+      if (now - S.lastLookInput > 4000) { S.lookTarget.x = 0.25 * noise(t * 0.35); S.lookTarget.y = 0.12 * noise(t * 0.3 + 3); }
+      if (S.state === 'thinking') { S.lookTarget.x = 0.45; S.lookTarget.y = 0.45; }
+      S.look.x = damp(S.look.x, clamp(S.lookTarget.x, -1, 1), 5, dt); S.look.y = damp(S.look.y, clamp(S.lookTarget.y, -1, 1), 5, dt);
+      S.yaw = damp(S.yaw, S.yawTarget, 6, dt); charRoot.rotation.y = S.yaw;
+      lookObj.position.set(S.look.x * height * 0.5, headY + S.look.y * height * 0.3, cam.dist * 0.9);
+      // --- gesti
+      let G = null;
+      if (S.gesture) { S.gestureT += dt; const dur = { wave: 2.2, nod: 1.1, shake: 1.2, think: 3, celebrate: 2.2, shrug: 1.6 }[S.gesture] || 1.5; G = { k: S.gesture, p: S.gestureT / dur, t: S.gestureT }; if (G.p >= 1) { S.gesture = null; G = null; } }
+      const env = G ? Math.sin(Math.PI * clamp(G.p, 0, 1)) : 0;
+      // --- corpo
+      const breath = Math.sin(t * 1.7), listen = S.state === 'listening' ? 1 : 0, think = S.state === 'thinking' ? 1 : 0;
+      let headX = -S.look.y * 0.35 + 0.02 * noise(t * 0.8) + listen * 0.05 + think * -0.12, headY2 = S.look.x * 0.55 + 0.03 * noise(t * 0.6 + 2), headZ = listen * 0.12 + think * 0.1 + 0.02 * noise(t * 0.5 + 5);
+      if (speaking) { headX += 0.025 * Math.sin(t * 6.3) * (S.mouth.aa + 0.3); headY2 += 0.02 * Math.sin(t * 2.1); }
+      if (G && G.k === 'nod') headX += 0.22 * Math.sin(G.t * 14) * env;
+      if (G && G.k === 'shake') headY2 += 0.3 * Math.sin(G.t * 13) * env;
+      if (G && G.k === 'shrug') headZ += 0.15 * env;
+      if (S.emo.sad > 0.3) headX += 0.12 * S.emo.sad;
+      if (rig && rig.robot) animateRobot(rig.robot, { dt, t, breath, headX, headY: headY2, headZ, G, env, speaking, blinkV, listen, think });
+      else if (rig) {
+        const hasClip = rig.hasClips, anim = k => hasClip && rig.animated && rig.animated(k);
+        rig.reset();                                     // si riparte dalla posa di riposo…
+        if (mixer) mixer.update(dt);                     // …poi l'animazione del file (se c'è)…
+        if (!anim('hips')) rig.apply('hips', 0, 0, 0.012 * Math.sin(t * 0.7));
+        if (!anim('spine')) rig.apply('spine', 0.015 * breath + listen * 0.05, 0.02 * Math.sin(t * 0.5), 0);
+        else if (listen) rig.apply('spine', listen * 0.05, 0, 0);
+        if (!anim('chest')) rig.apply('chest', 0.012 * breath, 0, 0);
+        rig.apply('neck', headX * 0.4, headY2 * 0.4, headZ * 0.4);
+        rig.apply('head', headX * 0.6, headY2 * 0.6, headZ * 0.6);
+        if (rig.bones.leftUpperArm && !anim('leftUpperArm') && !anim('rightUpperArm')) {
+          const down = 1.25, dl = (rig.armDrop.leftUpperArm || 0), dr = (rig.armDrop.rightUpperArm || 0);
+          const sway = 0.03 * Math.sin(t * 1.1), talk = speaking ? 0.08 * Math.sin(t * 4.2) : 0;
+          let lz = -(down - dl) + sway, rz = (down - dr) - sway, lx = 0, rx = 0, lowL = -0.25 - talk, lowR = -0.25 + talk, rLowZ = 0;
+          if (G && G.k === 'wave') { rz = lerp(rz, -0.35, env); rx = lerp(0, -0.3, env); lowR = lerp(lowR, 0, env); rLowZ = lerp(0, -1.3 + 0.45 * Math.sin(G.t * 11), env); }
+          if (G && G.k === 'celebrate') { const b = 0.15 * Math.sin(G.t * 12); lz = lerp(lz, 1.1 + b, env); rz = lerp(rz, -1.1 - b, env); }
+          if (G && G.k === 'shrug') { lz = lerp(lz, lz + 0.35, env); rz = lerp(rz, rz - 0.35, env); lowL -= 0.6 * env; lowR -= 0.6 * env; }
+          if (think) { rz = lerp(rz, 0.5, think); rx = -0.9 * think; lowR = -1.9 * think; }
+          rig.apply('leftUpperArm', lx, 0, lz); rig.apply('rightUpperArm', rx, 0, rz);
+          rig.apply('leftLowerArm', lowL, 0, 0); rig.apply('rightLowerArm', lowR, 0, rLowZ);
+        }
+        if (G && G.k === 'wave' && clips.__wave && G.t < dt * 1.5) clips.__wave.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.2).play();
+        if (clips.__talk) { const w = speaking ? 1 : 0; clips.__talk.enabled = true; if (!clips.__talk.isRunning() && w) clips.__talk.play(); clips.__talk.weight = damp(clips.__talk.weight || 0, w, 4, dt); }
+        // espressioni
+        setExpr('blink', clamp(blinkV + (S.emo.happy > 0.6 ? 0.15 : 0), 0, 1));
+        for (const k of ['aa', 'ih', 'ou', 'ee', 'oh']) setExpr(k, S.mouth[k]);
+        for (const k of EMOS) setExpr(k, S.emo[k] * (k === 'happy' && S.mouth.aa > 0.3 ? 0.5 : 1));
+        if (vrm) vrm.update(dt);                         // …e i nostri movimenti sopra (testa, braccia, espressioni)
+        if (!rig.bones.head && !vrm) {                   // modello senza ossa: si muove tutto insieme
+          charRoot.position.y = baseY + height * 0.012 * Math.sin(t * 1.6);
+          charRoot.rotation.y = S.yaw + S.look.x * 0.35; charRoot.rotation.x = -S.look.y * 0.08;
+          charRoot.scale.setScalar(1 + 0.025 * S.mouth.aa);
+        }
+      }
+      // ambiente
+      const glowK = S.state === 'listening' ? 1 : S.state === 'thinking' ? 0.7 + 0.3 * Math.sin(t * 6) : S.state === 'alarm' ? 0.6 + 0.4 * Math.sin(t * 18) : 0.55 + 0.1 * Math.sin(t * 1.5);
+      ringMat.opacity = 0.35 + 0.4 * glowK; ring.rotation.z += dt * 0.2; ring2.rotation.z -= dt * 0.12;
+      const pa = pGeo.attributes.position.array;
+      for (let i = 0; i < PN; i++) { pa[i * 3 + 1] += pSpd[i] * dt * height * (speaking ? 2 : 1); if (pa[i * 3 + 1] > height * 1.3) pa[i * 3 + 1] = 0; }
+      pGeo.attributes.position.needsUpdate = true;
+    }
+
+    function animateRobot(B, a) {
+      const { t, dt, G, env } = a;
+      B.R.position.y = 0.035 * Math.sin(t * 1.6) + (G && G.k === 'celebrate' ? 0.06 * Math.abs(Math.sin(G.t * 10)) * env : 0);
+      B.body.rotation.z = 0.02 * Math.sin(t * 0.7); B.body.rotation.x = 0.02 * a.breath + a.listen * 0.06;
+      B.neck.rotation.set(a.headX * 0.4, a.headY * 0.4, a.headZ * 0.4);
+      B.head.rotation.set(a.headX * 0.6, a.headY * 0.6, a.headZ * 0.6);
+      // occhi: palpebre ed emozioni
+      const e = S.emo, eyeH = clamp(1 - a.blinkV, 0.08, 1) * (1 - 0.6 * e.happy) * (1 + 0.35 * e.surprised) * (1 - 0.3 * e.angry);
+      for (const [eye, s] of [[B.eyeL, -1], [B.eyeR, 1]]) {
+        eye.scale.set(1 + 0.25 * e.surprised, eyeH, 1); eye.rotation.z = s * (0.35 * e.sad - 0.4 * e.angry);
+        eye.position.y = 0.035 + 0.02 * e.happy - 0.015 * e.sad; eye.position.x = s * 0.1 + S.look.x * 0.025;
+        eye.position.y += S.look.y * 0.02;
+      }
+      // bocca: larghezza/altezza dai visemi
+      const m = S.mouth, open = clamp(m.aa + m.oh * 0.9 + m.ou * 0.6 + m.ee * 0.45 + m.ih * 0.35, 0, 1.2);
+      const wide = 1 + 0.35 * m.ee + 0.3 * m.ih - 0.45 * m.ou - 0.35 * m.oh + 0.5 * e.happy - 0.2 * e.sad;
+      B.mouth.scale.set(Math.max(0.35, wide), 1 + open * 5.5 + 2 * e.surprised, 1); B.mouth.position.y = -0.085 - open * 0.012 + 0.008 * e.happy;
+      // braccia
+      let lz = 0.18 + 0.03 * Math.sin(t * 1.1), rz = -0.18 - 0.03 * Math.sin(t * 1.1), rx = 0, lx = 0, le = -0.25, re = -0.25, reZ = 0;
+      if (a.speaking) { le -= 0.15 * Math.sin(t * 4.2); re += 0.15 * Math.sin(t * 4.2 + 1); }
+      if (G && G.k === 'wave') { rz = lerp(rz, -2.5, env); re = lerp(re, 0, env); reZ = lerp(0, 0.5 * Math.sin(G.t * 11), env); }
+      if (G && G.k === 'celebrate') { const b = 0.15 * Math.sin(G.t * 12); lz = lerp(lz, 2.6 + b, env); rz = lerp(rz, -2.6 - b, env); }
+      if (G && G.k === 'shrug') { lz = lerp(lz, 0.7, env); rz = lerp(rz, -0.7, env); le -= 0.9 * env; re -= 0.9 * env; }
+      if (a.think) { rz = lerp(rz, -0.35, a.think); rx = -1.2 * a.think; re = -1.7 * a.think; }
+      B.L.sh.rotation.set(lx, 0, lz); B.Rr.sh.rotation.set(rx, 0, rz); B.L.el.rotation.set(le, 0, 0); B.Rr.el.rotation.set(re, 0, reZ);
+      // luci
+      const pulse = S.state === 'thinking' ? 0.5 + 0.5 * Math.sin(t * 7) : S.state === 'listening' ? 1 : S.state === 'alarm' ? Math.abs(Math.sin(t * 9)) : 0.4 + 0.15 * Math.sin(t * 2);
+      const k1 = 0.75 + 0.25 * (a.speaking ? open : 0) + 0.15 * pulse, k2 = 0.55 + 0.45 * pulse;
+      B.glow.color.copy(accent).multiplyScalar(k1); B.glow2.color.copy(accent2).multiplyScalar(k2);
+      B.tip.scale.setScalar(1 + 0.4 * pulse);
+    }
+
+    // ---------- avvio ----------
+    if (opts.modelUrl) {
+      try { await loadModel(opts.modelUrl); }
+      catch (e) { log('modello non caricato: ' + (e && e.message || e)); charRoot.clear(); rig = null; vrm = null; mixer = null; clips = {}; buildRobot(); opts.onError && opts.onError(e); }
+    } else buildRobot();
+    resize();
+
+    // ---------- ciclo (anche nella mini-finestra: usa il requestAnimationFrame della sua finestra) ----------
+    let rafWin = window, last = performance.now(), raf = 0, alive = true, paused = false;
+    function loop() {
+      if (!alive) return;
+      const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+      if (!paused) { update(dt); renderer.render(scene, camera); }
+      raf = rafWin.requestAnimationFrame(loop);
+    }
+    raf = rafWin.requestAnimationFrame(loop);
+    let ro = new ResizeObserver(() => resize()); ro.observe(container);
+
+    // trascina per girarlo, rotellina per lo zoom, doppio clic per rimetterlo a posto
+    let drag = null;
+    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, yaw: S.yawTarget }; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', e => { if (drag) S.yawTarget = clamp(drag.yaw + (e.clientX - drag.x) * 0.008, -1.1, 1.1); });
+    canvas.addEventListener('pointerup', () => { drag = null; });
+    canvas.addEventListener('wheel', e => { e.preventDefault(); S.zoom = clamp(S.zoom * (e.deltaY > 0 ? 1.08 : 0.93), 0.55, 2.6); frame(); }, { passive: false });
+    canvas.addEventListener('dblclick', () => { S.yawTarget = 0; S.zoom = 1; frame(); });
+
+    const api = {
+      get kind() { return kind; }, get name() { return name; },
+      get info() { return { kind, name, height, bones: rig && rig.bones ? Object.entries(rig.bones).filter(([, b]) => b).map(([k]) => k) : [], morphs: rig && rig.morphs ? Object.keys(rig.morphs) : [], clips: Object.keys(clips).filter(k => !k.startsWith('__')), vrm: !!vrm, lookAt: !!(vrm && vrm.lookAt), expressions: vrm && vrm.expressionManager ? vrm.expressionManager.expressions.map(x => x.expressionName) : [] }; },
+      get state() { return S.state; }, get debug() { return S; },
+      canvas, renderer,
+      setState(s) { S.state = s; if (s === 'speaking') S.speakUntil = performance.now() + 400; },
+      // una parola pronunciata: le vocali diventano forme della bocca distribuite nella durata
+      word(w, ms) {
+        const txt = String(w || '').toLowerCase(); const now = performance.now();
+        ms = ms || clamp(txt.length * 75, 160, 900);
+        const vs = [...txt].map(c => VOWELS[c] || (/[mbp]/.test(c) ? 'm' : null)).filter(Boolean);
+        if (!vs.length) vs.push('aa');
+        const step = ms / vs.length, start = Math.max(now, S.visemes.length ? S.visemes[S.visemes.length - 1].end : now);
+        vs.forEach((v, i) => S.visemes.push({ v, w: 0.55 + Math.random() * 0.4, start: start + i * step, end: start + (i + 0.85) * step }));
+        S.speakUntil = Math.max(S.speakUntil, start + ms + 150);
+        if (S.visemes.length > 60) S.visemes.splice(0, S.visemes.length - 60);
+      },
+      level(v) { S.level = clamp(v || 0, 0, 1); },
+      stopSpeaking() { S.visemes.length = 0; S.speakUntil = 0; S.level = 0; if (S.state === 'speaking') S.state = 'idle'; },
+      emote(k, ms = 3500) { if (k === 'neutral' || !EMOS.includes(k)) { S.emoTarget = null; return; } S.emoTarget = k; S.emoUntil = performance.now() + ms; },
+      gesture(k) { S.gesture = k; S.gestureT = 0; },
+      lookAt(x, y, source = 'pointer') { S.lookTarget.x = clamp(x, -1, 1); S.lookTarget.y = clamp(y, -1, 1); S.lastLookInput = performance.now(); S.lookSource = source; },
+      setAccent(a, b) {
+        accent.setRGB(a[0] / 255, a[1] / 255, a[2] / 255, THREE.SRGBColorSpace); accent2.setRGB(b[0] / 255, b[1] / 255, b[2] / 255, THREE.SRGBColorSpace);
+        ringMat.color.copy(accent); ring2.material.color.copy(accent); pMat.color.copy(accent); rim.color.copy(accent); rim2.color.copy(accent2);
+        if (rig && rig.robot) { rig.robot.glow.color.copy(accent); rig.robot.glow2.color.copy(accent2); }
+      },
+      setFraming(f) { S.framing = f === 'intero' ? 'intero' : 'busto'; frame(); },
+      get framing() { return S.framing; },
+      // sposta il personaggio in un altro contenitore (anche in un'altra finestra: la mini-finestra sempre visibile)
+      attachTo(el, win) {
+        win = win || window; ro.disconnect(); rafWin.cancelAnimationFrame(raf);
+        container = el; el.appendChild(canvas);
+        ro = new (win.ResizeObserver || ResizeObserver)(() => resize()); ro.observe(el);
+        rafWin = win; last = performance.now(); raf = rafWin.requestAnimationFrame(loop); resize();
+      },
+      pause(p) { paused = !!p; },
+      snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
+      // per i test e il debug: dove sono le ossa e dove guardano
+      bonePos(k) { const b = rig && rig.bones && rig.bones[k]; if (!b) return null; const v = b.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z]; },
+      boneForward(k) { const b = rig && rig.bones && rig.bones[k]; if (!b) return null; const v = new THREE.Vector3(0, 0, 1).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())); return [v.x, v.y, v.z]; },
+      get robot() { return rig && rig.robot; },
+      dispose() { alive = false; rafWin.cancelAnimationFrame(raf); ro.disconnect(); try { renderer.dispose(); } catch (e) {} canvas.remove(); },
+    };
+    if (opts.accent) api.setAccent(opts.accent, opts.accent2 || opts.accent);
+    return api;
+  }
+  return { create, libs, VOWELS };
+})();
+</script>
+<script>
 const $=s=>document.querySelector(s);
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escA(s){return esc(s).replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -4587,6 +5150,8 @@ async function invia(opt){
   opt=opt||{};const regen=!!opt.regen;
   const t=(opt.text!=null?opt.text:$('#inp').value).trim();const A=regen?null:att;
   if((!t&&!A)||busy)return;
+  if(!regen&&!A&&t&&rispostaVeloce(t)){if(opt.text==null)$('#inp').value='';return;}   // «sì» / «no» alla conferma aperta
+  stopSpeech();
   if(!regen){$('#inp').value='';clearAtt();}
   $('#send').disabled=true;busy=true;lastAct=Date.now();
   if(/ricordami|avvisami|timer|sveglia|svegliami|promemoria/i.test(t))askNotify();
@@ -4613,13 +5178,14 @@ async function invia(opt){
         const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
-        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;}
+        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
-            mc(bubble).innerHTML=renderAI(full);say(full);finalize(bubble,full,obj.stat,A?null:t);
+            mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!window.speechSynthesis)captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
+            addConferme(bubble,obj.conferme);reactToReply(full,obj);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
@@ -4664,6 +5230,7 @@ function sphInit(){core=MaikKit.core(cv,{size:200});core.setAccent(themeRGB.acce
 function sphPos(){wrap.style.left=SPH.x+'px';wrap.style.top=SPH.y+'px';}
 let sphT=0;
 function sphLoop(){
+  if(AV){requestAnimationFrame(sphLoop);return;}      // c'è il personaggio 3D: la sfera riposa
   sphT+=.02;const a=area.getBoundingClientRect();const mx=a.width-SPH.size,my=a.height-SPH.size;
   if(!SPH.drag&&!MaikKit.reduceMotion&&mx>4&&my>4){SPH.x+=SPH.vx;SPH.y+=SPH.vy;if(SPH.x<=0||SPH.x>=mx){SPH.vx*=-1;SPH.x=Math.max(0,Math.min(mx,SPH.x));}if(SPH.y<=0||SPH.y>=my){SPH.vy*=-1;SPH.y=Math.max(0,Math.min(my,SPH.y));}sphPos();}
   const st=SPH.state!=='idle'?SPH.state:(listening?'listening':'idle');core.setState(st);
@@ -4681,18 +5248,7 @@ document.addEventListener('touchend',()=>{SPH.drag=false;});
 let camOn=false,camStream=null,faceTimer=null,present=false,awaySince=Date.now();
 async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:true});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
 function stopCam(){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
-function detectPresence(){
-  let fd=null;if('FaceDetector' in window){try{fd=new FaceDetector({fastMode:true,maxDetectedFaces:1});}catch(e){}}
-  const off=document.createElement('canvas');off.width=64;off.height=48;const oc=off.getContext('2d',{willReadFrequently:true});
-  let prev=null,lastMo=0;present=false;awaySince=Date.now();
-  faceTimer=setInterval(async()=>{
-    const v=$('#cam');if(!camOn||v.readyState<2)return;let pr=false;
-    if(fd){try{pr=(await fd.detect(v)).length>0;}catch(e){fd=null;}}
-    if(!fd){try{oc.drawImage(v,0,0,64,48);const cur=oc.getImageData(0,0,64,48).data;if(prev){let d=0;for(let i=0;i<cur.length;i+=4)d+=Math.abs(cur[i]-prev[i]);d/=(cur.length/4);if(d>7)lastMo=Date.now();}prev=cur;pr=(Date.now()-lastMo)<9000;}catch(e){}}
-    onPresence(pr);
-  },700);
-}
-function onPresence(pr){const s=$('#fstat');if(pr){if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
+function onPresence(pr){const s=$('#fstat');if(pr){if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(away>20000&&AV)AV.gesture('wave');if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
 
 // ---------- VISIONE (👁️ Guarda) ----------
 function snap(){const v=$('#cam');const c=document.createElement('canvas');c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.7);}
@@ -4722,19 +5278,26 @@ async function autoGlance(){
 // ---------- VOCE (riconoscimento) ----------
 let reco=null,listening=false,micFatal=false;
 function initReco(){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;reco=new SR();reco.lang='it-IT';reco.continuous=false;reco.interimResults=true;let fin='';
-  reco.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;}$('#inp').value=(fin+it).trim();};
+  reco.onresult=e=>{let it='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;else it+=e.results[i][0].transcript;}
+    const said=(fin+it).trim();
+    if(speaking){                       // mentre parla: è la sua voce nel microfono, o mi stai interrompendo?
+      if(isEcho(said)){fin='';$('#inp').value='';return;}
+      if(said.split(/\s+/).length<2)return;
+      stopSpeech();                      // interrotto: ti ascolto
+    }
+    $('#inp').value=said;if(said)caption('🎤 '+said,true);};
   reco.onend=()=>{listening=false;$('#mic').classList.remove('on');let val=$('#inp').value.trim();fin='';
+    if(val&&rispostaVeloce(val)){$('#inp').value='';captionOff(300);if(handsFree())setTimeout(startReco,600);return;}
     if(val&&friend&&OPT.wake){const rest=MaikKit.wake(val);if(rest===null){$('#inp').value='';val='';}else{$('#inp').value=rest||'Ciao!';val=$('#inp').value;}}   // senza «Maik» non rispondo
-    if(val)invia();else if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,700);
-    if(!friend)setTimeout(()=>{if(!listening)micMeter.stop();},1500);};
-  reco.onerror=e=>{listening=false;$('#mic').classList.remove('on');if(e.error==='no-speech'){if(friend&&!speaking&&!busy&&!micFatal)setTimeout(startReco,500);return;}if(e.error==='aborted')return;if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){micFatal=true;toast('Microfono non disponibile — scrivi pure','err');return;}toast('Errore microfono: '+e.error,'err');};
+    if(val){captionOff(200);invia();}else{captionOff(200);if((handsFree()&&!busy&&!micFatal)&&(!speaking||bargeOK()))setTimeout(startReco,speaking?150:700);}
+    if(!handsFree())setTimeout(()=>{if(!listening)micMeter.stop();},1500);};
+  reco.onerror=e=>{listening=false;$('#mic').classList.remove('on');if(e.error==='no-speech'){if(handsFree()&&!busy&&!micFatal&&(!speaking||bargeOK()))setTimeout(startReco,500);return;}if(e.error==='aborted')return;if(['not-allowed','service-not-allowed','audio-capture'].includes(e.error)){micFatal=true;toast('Microfono non disponibile — scrivi pure','err');return;}toast('Errore microfono: '+e.error,'err');};
 }
-function startReco(){if(!reco||listening||busy||speaking||micFatal)return;try{listening=true;reco.start();$('#mic').classList.add('on');micMeter.start();}catch(e){}}
+function startReco(){if(!reco||listening||busy||micFatal||(speaking&&!bargeOK()))return;try{listening=true;reco.start();$('#mic').classList.add('on');micMeter.start();}catch(e){}}
 function toggleMic(){if(!reco){toast('Voce non supportata dal browser','err');return;}if(listening){reco.stop();}else{micFatal=false;startReco();}}
 
 // ---------- TTS (voce di MAIK) ----------
-let ttsOn=false,speaking=false;
-function say(t){if(!ttsOn||!window.speechSynthesis)return;speechSynthesis.cancel();const p=stripThink(t).replace(/[#*_`>]/g,'').replace(/<[^>]+>/g,'').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu,'').slice(0,400);if(!p.trim())return;const u=new SpeechSynthesisUtterance(p);u.lang='it-IT';u.rate=1;u.pitch=1.1;const v=speechSynthesis.getVoices().find(x=>x.lang&&x.lang.startsWith('it'));if(v)u.voice=v;u.onboundary=()=>{if(core)core.pulse(1);};u.onstart=()=>{speaking=true;SPH.state='speaking';if(listening){try{reco.stop();}catch(e){}}};u.onend=()=>{speaking=false;if(SPH.state==='speaking')SPH.state='idle';if(friend&&!busy&&!speaking)setTimeout(()=>{if(friend)startReco();},400);};speechSynthesis.speak(u);}
+let ttsOn=false,speaking=false;     // la voce (say, feedSpeech…) è nella sezione V11 più sotto
 
 // ---------- MODALITÀ AMICO ----------
 let friend=false,lastAct=Date.now(),proTimer=null,proGap=90000;
@@ -4833,7 +5396,7 @@ function beep(n){try{const c=new (window.AudioContext||window.webkitAudioContext
 const LS={get:(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v);}catch(e){return d;}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
 const OPT=Object.assign({wake:false,boot:true,theme:'neon'},LS.get('maik_srv_opt',{}));
 function setOpt(k,v){OPT[k]=v;LS.set('maik_srv_opt',OPT);}
-function setTheme(k){themeRGB=MaikKit.applyTheme(k);if(core)core.setAccent(themeRGB.accent,themeRGB.accent2);setOpt('theme',k);renderThemes();}
+function setTheme(k){themeRGB=MaikKit.applyTheme(k);if(core)core.setAccent(themeRGB.accent,themeRGB.accent2);if(AV)AV.setAccent(themeRGB.accent,themeRGB.accent2);setOpt('theme',k);renderThemes();}
 function renderThemes(){$('#themes').innerHTML=Object.entries(MaikKit.THEMES).map(([k,t])=>'<button type="button" class="'+(k===OPT.theme?'on':'')+'" onclick="setTheme(\''+k+'\')"><i style="background:linear-gradient(135deg,'+t.accent+','+t.accent2+')"></i>'+t.nm+'</button>').join('');}
 let MEM=null;
 async function openMem(){$('#memf').value='';$('#mmodal').classList.add('open');$('#membody').innerHTML='<div class="note">Carico…</div>';try{MEM=await (await fetch('/statistiche')).json();}catch(e){MEM=null;}renderMem();}
@@ -4861,16 +5424,27 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('🧠','Memoria completa',()=>openMem(),'ricordi'),c('🧰','Strumenti',()=>openTools(),'calcolatrice, timer…'),
     c('🎤','Parla con MAIK',()=>toggleMic(),'microfono'),c('≡','Mostra / nascondi la barra laterale',()=>toggleSide(),''),
     c('💬','Nuova chat',()=>newChat(),'conversazione'),c('📚','I tuoi documenti',()=>openDocs(),'fonti, file, carica'),
-    c('📲','Installa MAIK come app',()=>installa(),'pwa','installa app telefono')];
+    c('📲','Installa MAIK come app',()=>installa(),'pwa','installa app telefono'),
+    c('🎙️',conv?'Spegni la conversazione a voce':'Conversazione a voce (mani libere)',()=>toggleConv(),'M','parla voce microfono'),
+    c('👀','Ti guardo con la webcam',()=>toggleEyes(),'C','sguardo occhi webcam'),
+    c('🖥️','Guarda il mio schermo',()=>lookScreen(),'S','schermo screenshot'),
+    c('🗗','Mini-finestra sempre in primo piano',()=>miniWindow(),'P','pip finestra'),
+    c('⛶','Solo Zep (schermo intero)',()=>toggleFocus(),'F','focus intero'),
+    c('🧍','Inquadratura busto / intero',()=>toggleFraming(),'Z','camera'),
+    c('📤','Carica il tuo personaggio 3D (.vrm / .glb)',()=>$('#avin').click(),'avatar','vroid vrm glb zepeto'),
+    c('💻','Stato del PC',()=>qs('come sta il pc?'),'CPU RAM','computer batteria'),
+    c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
   Object.entries(MaikKit.THEMES).forEach(([k,t])=>L.push(c('🎨','Tema: '+t.nm,()=>{setTheme(k);toast('🎨 Tema '+t.nm,'ok');},'tema','colore')));
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  MaikKit.boot({version:'V10 · SERVER',key:'maik_boot_v10',checks:[
+  MaikKit.boot({version:'V11 · ZEP',key:'maik_boot_v11',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Personaggio 3D',run:async()=>{if(!PC_MODE)return{ok:true,text:'sfera (schermo piccolo)'};try{const r=await fetch('/lib/three.module.min.js',{method:'HEAD'});const a=await (await fetch('/avatar/info')).json();return r.ok?{ok:true,text:a.presente?'il tuo: '+a.nome:'Zep (robot integrato)'}:{ok:false,text:'serve internet la prima volta'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Comandi del PC',run:async()=>{try{const r=await (await fetch('/pc/registro')).json();return r.attivo?{ok:true,text:'attivi · sempre con conferma'+(r.finto?' (prova)':'')}:{ok:false,text:'spenti (MAIK_PC=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 10 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -4879,7 +5453,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 10 🤖 Ora **agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 11 🧍 Ora ho un **corpo 3D** (carica il tuo personaggio .vrm/.glb dalla barra laterale), parlo con la bocca a tempo, ti guardo con la webcam e posso **usare il tuo PC** (sempre chiedendoti conferma): prova «apri youtube» o «come sta il pc?». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -4905,13 +5479,13 @@ async function delChat(id){const c=CHATS.find(x=>x.id===id),pr=id==='principale'
 
 // ---------- V10: AGENTE · FONTI · FOLLOW-UP (chip sotto la risposta) ----------
 function agEl(d){let g=d.querySelector('.ag');if(!g){g=document.createElement('div');g.className='ag';d.insertBefore(g,d.querySelector('.acts'));}return g;}
-function chipH(a){return '<span class="agc'+(a.ok===false?' ko':'')+'" title="'+escA((a.tipo||'')+': '+(a.esito||''))+'">'+(a.icona||'🔧')+' '+esc(a.esito||a.tipo||'')+'</span>';}
+function chipH(a){return '<span class="agc'+(a.ok===false?' ko':'')+(a.attesa?' wait':'')+'" title="'+escA((a.tipo||'')+': '+(a.esito||''))+'">'+(a.icona||'🔧')+' '+esc(a.esito||a.tipo||'')+'</span>';}
 function addChips(d,az,fo,fu){let h='';(az||[]).forEach(a=>h+=chipH(a));
   (fo||[]).forEach(f=>h+='<span class="agc src'+(f.citata?' cit':'')+'" title="'+escA(f.anteprima||f.nome)+'">📄 '+esc(f.nome)+' · parte '+f.pezzo+'</span>');
   if(fu)h+='<span class="agc fu" title="'+escA('Evento: '+fu.evento+' ('+fu.quando+')')+'">🔁 ti chiederò com\'è andata</span>';
   if(h||d.querySelector('.ag'))agEl(d).innerHTML=h;}
 async function checkSeguiti(){if(busy)return;try{const r=await (await fetch('/seguiti/scaduti?sessione='+encodeURIComponent(CUR))).json();const a=r.seguiti||[];
-  a.forEach(x=>{const d=add('ai',x.testo,'seguito');finalize(d,x.testo,null,null);toast('🔁 '+x.evento,'ok');notify('MAIK',x.testo);if(core)core.pulse(1.5);say(x.testo);});
+  a.forEach(x=>{const d=add('ai',x.testo,'seguito');finalize(d,x.testo,null,null);toast('🔁 '+x.evento,'ok');notify('MAIK',x.testo);if(core)core.pulse(1.5);if(AV){AV.gesture('wave');AV.emote('happy');}say(x.testo);});
   if(a.length){beep(1);loadChats();}}catch(e){}}
 
 // ---------- V10: I TUOI DOCUMENTI ----------
@@ -4948,9 +5522,336 @@ async function installa(){if(!instEv){toast(matchMedia('(display-mode: standalon
   instEv.prompt();try{await instEv.userChoice;}catch(e){}instEv=null;$('#instbtn').style.display='none';}
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('/sw.js').catch(()=>{});
 
+// ============================================================
+// V11 — ZEP 3D · VOCE · SGUARDO · MINI-FINESTRA · COMANDI DEL PC
+// ============================================================
+// sul PC (schermo largo, mouse): personaggio 3D grande e chat a destra; su telefono resta la sfera
+const PC_MODE = !MaikKit.touch && innerWidth >= 1000 && !/[?&]sfera\b/.test(location.search) && OPT.avatar !== false;
+let AV = null, conv = false, pipWin = null, ptt = false;
+const AV_STATE_TXT = { idle: 'pronto', listening: 'ti ascolto…', thinking: 'penso…', speaking: 'parlo', alarm: '⏰ sveglia!' };
+
+async function avatarInit() {
+  if (!PC_MODE || !window.ZepKit) return;
+  let inf = { presente: false };
+  try { inf = await (await fetch('/avatar/info')).json(); } catch (e) {}
+  try {
+    AV = await ZepKit.create($('#stage3d'), {
+      modelUrl: inf.presente ? '/avatar?v=' + encodeURIComponent(inf.caricato || '') : null,
+      accent: themeRGB.accent, accent2: themeRGB.accent2, framing: OPT.framing || 'busto',
+      onLog: m => console.info('[Zep]', m),
+      onError: () => toast('Il tuo personaggio non si carica: per ora uso Zep 🤖', 'err'),
+    });
+    document.body.classList.add('has-avatar');
+    const nome = AV.kind === 'robot' ? 'Zep' : (inf.nome || AV.name).replace(/\.(vrm|glb)$/i, '');
+    $('#avname').textContent = nome; $('#avsname').textContent = nome;
+    $('#avskind').textContent = AV.kind === 'robot' ? 'robot integrato' : AV.kind === 'vrm' ? 'VRM · espressioni e sguardo' : 'GLB' + (AV.info.clips.length ? ' · ' + AV.info.clips.length + ' animazioni' : '');
+    $('#avreset').style.display = inf.presente ? 'block' : 'none';
+    $('#inp').placeholder = 'Scrivi a ' + nome + '…';
+  } catch (e) {
+    console.warn('Avatar 3D non disponibile', e);
+    document.body.classList.remove('has-avatar'); AV = null;
+    toast('Personaggio 3D non disponibile (la prima volta serve internet): uso la sfera', 'err');
+  }
+  updateStageBar();
+}
+async function avatarReload() { if (AV) { AV.dispose(); AV = null; } await avatarInit(); }
+async function uploadAvatar(f) {
+  if (!f) return;
+  if (!/\.(vrm|glb)$/i.test(f.name)) { toast('Serve un file .vrm o .glb', 'err'); return; }
+  if (f.size > 100 * 1024 * 1024) { toast('File troppo grande (massimo 100 MB)', 'err'); return; }
+  toast('📤 Carico «' + f.name + '»…');
+  try {
+    const r = await (await fetch('/avatar', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nome': encodeURIComponent(f.name) }, body: f })).json();
+    if (!r.ok) { toast(r.errore || 'File non valido', 'err'); return; }
+    await avatarReload();
+    toast('🧍 Ecco ' + $('#avname').textContent + '!', 'ok');
+    if (AV) { AV.gesture('wave'); AV.emote('happy'); }
+  } catch (e) { toast('Caricamento non riuscito', 'err'); }
+}
+async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integrato?')) return; try { await postJ('/avatar/elimina'); } catch (e) {} await avatarReload(); }
+
+// stato del personaggio = stato di MAIK (pensa, parla, ascolta, sveglia)
+function avState() {
+  const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
+  if (AV) AV.setState(s);
+  if (document.body.dataset.av !== s) { document.body.dataset.av = s; $('#avstate').textContent = AV_STATE_TXT[s] || s; }
+}
+setInterval(avState, 120);
+
+// lo sguardo segue il mouse (se la webcam non vede un viso)
+let lookRaf = 0, lookEv = null;
+document.addEventListener('mousemove', e => {
+  lookEv = e; if (lookRaf || !AV || TRACK.face) return;
+  lookRaf = requestAnimationFrame(() => {
+    lookRaf = 0; const r = $('#sphere-area').getBoundingClientRect();
+    AV.lookAt((lookEv.clientX - (r.left + r.width / 2)) / (r.width / 2) * 0.8, -(lookEv.clientY - (r.top + r.height * 0.35)) / (r.height / 2) * 0.8);
+  });
+});
+
+// ---------- VOCE: parla frase per frase mentre scrive, bocca a tempo parola per parola ----------
+const VOICE = { q: [], cur: null, spoken: 0, last: '' };
+const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
+function cleanSpeech(t) {
+  return stripThink(t || '').replace(/```[\s\S]*?(?:```|$)/g, ' (ti ho scritto del codice) ').replace(/\[[^\]\n]{1,80}\.[A-Za-z0-9]{1,5}(?: · parte \d+)?\]/g, '')
+    .replace(/https?:\/\/\S+/g, 'il link').replace(/[#*_`>|]/g, '').replace(/<[^>]+>/g, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
+}
+const sentences = t => (t.match(/[^.!?…]+[.!?…]+["»”)]*\s*|[^.!?…]+$/g) || []).map(s => s.trim()).filter(s => s.length > 1);
+function itVoice() { const vs = speechSynthesis.getVoices(); return vs.find(x => x.lang && x.lang.startsWith('it') && /natural|neural|online/i.test(x.name)) || vs.find(x => x.lang && x.lang.startsWith('it')); }
+function say(t) { if (!ttsOn || !window.speechSynthesis) return; stopSpeech(); sentences(cleanSpeech(t)).slice(0, 16).forEach(s => VOICE.q.push(s)); pump(); }
+// durante lo streaming: appena c'è una frase completa la dice (niente attesa della risposta intera)
+function feedSpeech(full, done) {
+  if (!ttsOn || !window.speechSynthesis) return;
+  const txt = cleanSpeech(full);
+  const upto = done ? txt.length : Math.max(txt.lastIndexOf('. '), txt.lastIndexOf('! '), txt.lastIndexOf('? '), txt.lastIndexOf('… ')) + 1;
+  if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); }
+}
+function pump() {
+  if (VOICE.cur || !VOICE.q.length) return;
+  const s = VOICE.q.shift(), u = new SpeechSynthesisUtterance(s);
+  u.lang = 'it-IT'; u.rate = 1.03; u.pitch = 1.05; const v = itVoice(); if (v) u.voice = v;
+  u.onstart = () => {
+    if (VOICE.cur !== u) return;
+    speaking = true; SPH.state = 'speaking'; VOICE.last = s; caption(s);
+    if (listening && !bargeOK()) { try { reco.stop(); } catch (e) {} }
+    if (bargeOK() && !listening) (function prova() { if (!speaking || listening) return; if (busy) return setTimeout(prova, 200); startReco(); })();   // ascolta per farsi interrompere
+  };
+  u.onboundary = e => {
+    if (VOICE.cur !== u || (e.name && e.name !== 'word')) return;
+    const w = (s.slice(e.charIndex).match(/^[\p{L}\p{N}']+/u) || [''])[0];
+    if (core) core.pulse(1);
+    if (AV && w) AV.word(w, Math.max(140, w.length * 68 / u.rate));
+  };
+  const avanti = () => { clearTimeout(u._guardia); if (VOICE.cur !== u) return; VOICE.cur = null; if (VOICE.q.length) pump(); else speechDone(); };
+  u.onend = u.onerror = avanti;
+  u._guardia = setTimeout(avanti, 4000 + s.length * 120);   // se il browser non avvisa la fine della frase, si va avanti lo stesso
+  VOICE.cur = u; speechSynthesis.speak(u);
+}
+function speechDone() {
+  speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; if (AV) AV.stopSpeaking(); captionOff();
+  if (handsFree() && !busy) setTimeout(() => { if (handsFree() && !speaking && !busy && !listening) startReco(); }, 350);
+}
+function stopSpeech() { VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
+let capT = 0;
+function caption(t, you) {
+  clearTimeout(capT);
+  for (const el of [$('#caption'), pipWin && pipWin.document.getElementById('pipcap')]) { if (!el) continue; el.textContent = t; el.classList.toggle('you', !!you); el.classList.add('on'); }
+}
+function captionOff(ms = 1400) { clearTimeout(capT); capT = setTimeout(() => { for (const el of [$('#caption'), pipWin && pipWin.document.getElementById('pipcap')]) if (el) el.classList.remove('on'); }, ms); }
+function toggleTTS() { ttsOn = !ttsOn; setOpt('voce', ttsOn); if (!ttsOn) stopSpeech(); toast(ttsOn ? '🔊 Voce di ' + $('#avname').textContent + ' accesa' : '🔇 Voce spenta'); updateStageBar(); }
+
+// ---------- CONVERSAZIONE A VOCE (mani libere, si può interrompere) ----------
+function handsFree() { return friend || conv; }
+function bargeOK() { return handsFree() && OPT.barge !== false; }
+function toggleConv() {
+  if (!reco) { toast('Il riconoscimento vocale serve Chrome o Edge', 'err'); return; }
+  conv = !conv;
+  if (conv) { ttsOn = true; micFatal = false; startReco(); toast('🎙️ Parla quando vuoi: ti rispondo a voce' + (OPT.barge !== false ? ' (e puoi interrompermi)' : ''), 'ok'); if (AV) AV.gesture('nod'); }
+  else { if (listening) { try { reco.stop(); } catch (e) {} } toast('🎙️ Conversazione a voce spenta'); }
+  updateStageBar();
+}
+// la frase sentita mentre Zep parla è solo la sua voce nel microfono? (eco)
+function isEcho(t) {
+  const w = normParole(t), ref = new Set(normParole(VOICE.last + ' ' + (VOICE.q[0] || '')));
+  if (!w.length) return true;
+  return w.filter(x => ref.has(x)).length / w.length >= 0.5;
+}
+const normParole = t => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').split(' ').filter(x => x.length > 1);
+// tieni premuto Spazio per parlare
+function pttDown() { if (!reco || ptt) return; ptt = true; stopSpeech(); micFatal = false; startReco(); caption('🎤 ti ascolto…', true); }
+function pttUp() { ptt = false; if (listening) { try { reco.stop(); } catch (e) {} } }
+
+// ---------- TI GUARDO (webcam): viso e sorriso (MediaPipe) → rilevamento volti → movimento ----------
+const TRACK = { timer: null, fd: null, mp: null, mode: '', prev: null, lastMo: 0, smileT: 0, face: false, eyes: false };
+const trackCanvas = document.createElement('canvas'); trackCanvas.width = 64; trackCanvas.height = 48;
+const trackCtx = trackCanvas.getContext('2d', { willReadFrequently: true });
+function detectPresence() {
+  clearInterval(TRACK.timer); TRACK.prev = null; TRACK.lastMo = 0; present = false; awaySince = Date.now();
+  TRACK.fd = null; TRACK.mode = 'movimento';
+  if ('FaceDetector' in window) { try { TRACK.fd = new FaceDetector({ fastMode: true, maxDetectedFaces: 1 }); TRACK.mode = 'viso'; } catch (e) {} }
+  if (PC_MODE && !TRACK.mp && OPT.mediapipe !== false) tryMediaPipe();
+  TRACK.timer = setInterval(trackStep, 150);
+}
+async function tryMediaPipe() {
+  try {
+    const vision = await import('/lib/mp/vision_bundle.mjs');
+    const files = await vision.FilesetResolver.forVisionTasks('/lib/mp/wasm');
+    TRACK.mp = await vision.FaceLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: '/lib/mp/face_landmarker.task', delegate: 'GPU' }, outputFaceBlendshapes: true, runningMode: 'VIDEO', numFaces: 1 });
+    TRACK.mode = 'viso e sorriso';
+  } catch (e) { console.info('MediaPipe non disponibile (va bene lo stesso):', e && e.message); }
+}
+let trackBusy = false;
+async function trackStep() {
+  const v = $('#cam'); if (!camOn || v.readyState < 2 || trackBusy) return;
+  trackBusy = true; let res = null;
+  try {
+    if (TRACK.mp) {
+      try {
+        const r = TRACK.mp.detectForVideo(v, performance.now()), lm = r.faceLandmarks && r.faceLandmarks[0];
+        if (lm) {
+          let x = 0, y = 0; for (const p of lm) { x += p.x; y += p.y; }
+          const cat = ((r.faceBlendshapes && r.faceBlendshapes[0]) || {}).categories || [], g = n => (cat.find(c => c.categoryName === n) || {}).score || 0;
+          res = { present: true, x: x / lm.length, y: y / lm.length, smile: (g('mouthSmileLeft') + g('mouthSmileRight')) / 2 };
+        } else res = { present: false };
+      } catch (e) { TRACK.mp = null; }
+    }
+    if (!res && TRACK.fd) {
+      try { const f = await TRACK.fd.detect(v); if (f.length) { const b = f[0].boundingBox; res = { present: true, x: (b.x + b.width / 2) / v.videoWidth, y: (b.y + b.height / 2) / v.videoHeight }; } else res = { present: false }; }
+      catch (e) { TRACK.fd = null; }
+    }
+    if (!res) {            // nessun rilevatore di volti: dove si muove qualcosa
+      trackCtx.drawImage(v, 0, 0, 64, 48); const cur = trackCtx.getImageData(0, 0, 64, 48).data;
+      if (TRACK.prev) {
+        let d = 0, sx = 0, sy = 0, n = 0;
+        for (let i = 0, p = 0; i < cur.length; i += 4, p++) { const dd = Math.abs(cur[i] - TRACK.prev[i]) + Math.abs(cur[i + 1] - TRACK.prev[i + 1]); d += dd; if (dd > 40) { sx += p % 64; sy += (p / 64) | 0; n++; } }
+        d /= cur.length / 4; if (d > 7) TRACK.lastMo = Date.now();
+        if (n > 6) res = { present: true, x: sx / n / 64, y: sy / n / 48, soft: true };
+      }
+      TRACK.prev = cur;
+      if (!res) res = { present: Date.now() - TRACK.lastMo < 9000 };
+    }
+  } finally { trackBusy = false; }
+  onPresence(res.present);
+  TRACK.face = !!(res.present && res.x != null);
+  if (AV && TRACK.face) { const k = res.soft ? 0.6 : 1; AV.lookAt((0.5 - res.x) * 2.2 * k, (0.5 - res.y) * 1.8 * k, 'face'); }
+  if (AV && res.smile > 0.5 && Date.now() - TRACK.smileT > 6000) { TRACK.smileT = Date.now(); AV.emote('happy', 2600); }
+  const s = $('#fstat'); if (s && res.present) s.textContent = '✓ ti vedo · ' + TRACK.mode;
+}
+async function toggleEyes() {
+  if (TRACK.eyes) { TRACK.eyes = false; if (!friend) stopCam(); TRACK.face = false; toast('👀 Webcam spenta'); }
+  else { const ok = await startCam(); if (ok) { TRACK.eyes = true; toast('👀 Ti guardo: ti seguo con lo sguardo', 'ok'); if (AV) AV.gesture('wave'); } }
+  updateStageBar();
+}
+
+// ---------- GUARDA IL MIO SCHERMO: una foto dello schermo da far vedere al modello visione ----------
+async function lookScreen() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) { toast('Il tuo browser non può condividere lo schermo', 'err'); return; }
+  let st;
+  try { st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }); } catch (e) { return; }
+  try {
+    const v = document.createElement('video'); v.srcObject = st; v.muted = true; await v.play(); await new Promise(r => setTimeout(r, 350));
+    const c = document.createElement('canvas'), k = Math.min(1, 1280 / (v.videoWidth || 1280));
+    c.width = Math.round((v.videoWidth || 1280) * k); c.height = Math.round((v.videoHeight || 720) * k);
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    att = { kind: 'image', name: 'schermo.jpg', dataUrl: c.toDataURL('image/jpeg', 0.8) }; renderAtt();
+    toast('🖥️ Ho visto lo schermo: chiedimi cosa vuoi sapere', 'ok'); $('#inp').focus();
+    if (!$('#inp').value) $('#inp').value = 'Cosa vedi sul mio schermo?';
+  } finally { st.getTracks().forEach(t => t.stop()); }
+}
+
+// ---------- MINI-FINESTRA SEMPRE IN PRIMO PIANO (Document Picture-in-Picture, Chrome/Edge) ----------
+async function miniWindow() {
+  if (!AV) { toast('La mini-finestra serve il personaggio 3D', 'err'); return; }
+  if (pipWin) { pipWin.close(); return; }
+  if (!('documentPictureInPicture' in window)) { toast('La mini-finestra sempre in primo piano funziona con Chrome o Edge aggiornati', 'err'); return; }
+  try { pipWin = await documentPictureInPicture.requestWindow({ width: 340, height: 480 }); }
+  catch (e) { toast('Mini-finestra non disponibile: ' + e.message, 'err'); return; }
+  const d = pipWin.document;
+  document.querySelectorAll('style').forEach(s => d.head.appendChild(s.cloneNode(true)));
+  d.documentElement.style.cssText = document.documentElement.style.cssText;
+  d.title = $('#avname').textContent;
+  d.body.innerHTML = '<div id="pipstage"></div><div id="pipcap" class="caption"></div><div class="pipbar"><button id="pipmic" title="Parla">🎤</button><input id="pipinp" placeholder="Scrivi a ' + escA($('#avname').textContent) + '…"><button id="pipsend" title="Invia">➤</button></div>';
+  const st = d.createElement('style');
+  st.textContent = 'body{margin:0;height:100vh;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}#pipstage{flex:1;position:relative;min-height:0}.caption{position:absolute;left:8px;right:8px;bottom:58px;padding:6px 10px;border-radius:10px;background:rgba(0,0,0,.55);color:#fff;font:15px Rajdhani,system-ui,sans-serif;text-align:center;opacity:0;transition:opacity .3s;pointer-events:none}.caption.on{opacity:1}.caption.you{color:var(--green)}.pipbar{display:flex;gap:6px;padding:8px;border-top:1px solid var(--border)}.pipbar input{flex:1;min-width:0;background:rgba(var(--accent-rgb),.06);border:1px solid var(--border);border-radius:16px;padding:8px 12px;color:#fff;outline:none}.pipbar button{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);background:rgba(var(--accent-rgb),.12);color:#fff;cursor:pointer}';
+  d.head.appendChild(st);
+  AV.attachTo(d.getElementById('pipstage'), pipWin);
+  const inp = d.getElementById('pipinp');
+  d.getElementById('pipsend').onclick = () => { const v = inp.value.trim(); if (!v) return; inp.value = ''; invia({ text: v }); };
+  inp.onkeydown = e => { if (e.key === 'Enter') d.getElementById('pipsend').click(); if (e.key === 'Escape') stopSpeech(); };
+  d.getElementById('pipmic').onclick = () => toggleMic();
+  pipWin.addEventListener('pagehide', () => { if (AV) AV.attachTo($('#stage3d'), window); pipWin = null; document.body.classList.remove('pip-on'); updateStageBar(); });
+  document.body.classList.add('pip-on'); updateStageBar();
+}
+
+// ---------- SOLO ZEP · INQUADRATURA · SCORCIATOIE ----------
+function toggleFocus(on) {
+  const v = on == null ? !document.body.classList.contains('focus') : on;
+  document.body.classList.toggle('focus', v); updateStageBar();
+  if (v && document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+  if (!v && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+function toggleFraming() { if (!AV) return; const f = AV.framing === 'busto' ? 'intero' : 'busto'; AV.setFraming(f); setOpt('framing', f); toast(f === 'busto' ? '🧍 Inquadratura: busto' : '🧍 Inquadratura: corpo intero'); }
+function openKeys() { $('#kmodal').classList.add('open'); }
+function closeKeys() { $('#kmodal').classList.remove('open'); }
+function updateStageBar() {
+  const set = (id, on) => { const b = $(id); if (b) b.classList.toggle('on', !!on); };
+  set('#sbtts', ttsOn); $('#sbtts').textContent = ttsOn ? '🔊' : '🔇';
+  set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus'));
+}
+document.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable;
+  if (e.key === 'Escape') { if (speaking) stopSpeech(); if (busy) stopGen(); if (document.body.classList.contains('focus') && !document.querySelector('.ov.open')) toggleFocus(false); closeKeys(); return; }
+  if (document.querySelector('.ov.open') || document.querySelector('.mk-pal.open')) return;
+  if (e.altKey && !e.ctrlKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newChat(); return; }
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
+  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, '?': openKeys, h: openKeys };
+  const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
+});
+document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
+
+// ---------- COMANDI DEL PC: conferma con un clic, oppure dicendo/scrivendo «sì» / «no» ----------
+const PENDING = [];
+function confHTML(c) {
+  return '<div class="pcconf" data-id="' + escA(c.id) + '"><div class="pct">' + (c.icona || '🖥️') + ' Posso <b>' + esc(c.descrizione) + '</b>?</div><div class="pcb">'
+    + '<button type="button" data-a="si">✓ Sì</button><button type="button" data-a="sempre" title="Per questo tipo di azione non chiedermelo più">✓ Sì, sempre</button><button type="button" data-a="no">✕ No</button></div></div>';
+}
+function addConferme(d, list) {
+  if (!list || !list.length) return;
+  const g = document.createElement('div'); g.className = 'pcwrap'; g.innerHTML = list.map(confHTML).join('');
+  d.insertBefore(g, d.querySelector('.acts')); list.forEach(c => PENDING.push(c.id));
+}
+async function rispondiConferma(id, a) {
+  const card = document.querySelector('.pcconf[data-id="' + CSS.escape(id) + '"]');
+  const i = PENDING.indexOf(id); if (i >= 0) PENDING.splice(i, 1);
+  let r;
+  try { r = await postJ('/pc/conferma', { id, si: a !== 'no', sempre: a === 'sempre' }); } catch (e) { r = { ok: false, esito: 'Server non raggiungibile' }; }
+  if (card) { card.classList.add('done'); card.innerHTML = '<div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito) + '</div>'; }
+  toast(r.esito, r.ok ? 'ok' : 'err'); if (ttsOn && r.ok) say(r.esito);
+  if (AV) AV.gesture(a === 'no' ? 'shake' : r.ok ? 'nod' : 'shrug');
+}
+const RE_SI = /^(?:s[iì]+|ok(?:ay)?|vai|certo|conferm[ao]|fallo|aprilo|aprila|procedi|s[iì] grazie|perfetto)[!. ]*$/i, RE_NO = /^(?:no+|annulla|lascia perdere|non farlo|niente|stop)[!. ]*$/i;
+function rispostaVeloce(t) {      // «sì» / «no» rispondono alla domanda di conferma ancora aperta
+  if (!PENDING.length) return false;
+  const id = PENDING[PENDING.length - 1];
+  if (RE_SI.test(t.trim())) { rispondiConferma(id, 'si'); return true; }
+  if (RE_NO.test(t.trim())) { rispondiConferma(id, 'no'); return true; }
+  return false;
+}
+
+// emozione e gesto adatti alla risposta
+function guessEmotion(t) {
+  const s = String(t || '');
+  if (/😢|😔|😞|💙|mi dispiace|che peccato|triste/i.test(s)) return 'sad';
+  if (/😮|😲|🤯|wow|incredibile|davvero\?!/i.test(s)) return 'surprised';
+  if (/🧘|respira|con calma|tranquill/i.test(s)) return 'relaxed';
+  if (/😊|😄|😁|😂|🎉|🥳|❤️|💚|👍|😉|ottimo|fantastico|evviva|bravo|brava|che bello|felice|perfetto|fatto!/i.test(s)) return 'happy';
+  return null;
+}
+function reactToReply(full, meta) {
+  if (!AV) return;
+  const e = guessEmotion(full); if (e) AV.emote(e, 4000);
+  const az = (meta && meta.azioni) || [];
+  if (/^(?:ciao|ehi|buongiorno|buonasera|salve|hey|eccomi)\b/i.test(cleanSpeech(full))) AV.gesture('wave');
+  else if (/\b(?:evviva|complimenti|grandioso)\b|🎉|🥳/i.test(full)) AV.gesture('celebrate');
+  else if (az.some(a => a.ok === false)) AV.gesture('shrug');
+  else if (az.length || (meta && meta.azione)) AV.gesture('nod');
+}
+
+// trascina il tuo .vrm/.glb sul personaggio per caricarlo
+['dragenter', 'dragover'].forEach(ev => $('#sphere-area').addEventListener(ev, e => {
+  if (!AV || !e.dataTransfer) return; const it = [...(e.dataTransfer.items || [])][0];
+  if (it && it.kind === 'file' && !/^image\//.test(it.type)) { e.preventDefault(); e.stopPropagation(); $('#sphere-area').classList.add('drop'); }
+}));
+['dragleave', 'drop'].forEach(ev => $('#sphere-area').addEventListener(ev, () => $('#sphere-area').classList.remove('drop')));
+$('#sphere-area').addEventListener('drop', e => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f && /\.(vrm|glb)$/i.test(f.name)) { e.preventDefault(); e.stopPropagation(); uploadAvatar(f); }
+});
+
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();}});
 $('#dmodal').addEventListener('click',e=>{if(e.target.id==='dmodal')closeDocs();});
+$('#kmodal').addEventListener('click',e=>{if(e.target.id==='kmodal')closeKeys();});
 ['dragenter','dragover'].forEach(ev=>$('#ddrop').addEventListener(ev,e=>{e.preventDefault();$('#ddrop').classList.add('on');}));
 ['dragleave','drop'].forEach(ev=>$('#ddrop').addEventListener(ev,()=>$('#ddrop').classList.remove('on')));
 $('#ddrop').addEventListener('drop',e=>{e.preventDefault();docFiles(e.dataTransfer.files);});
@@ -4966,7 +5867,7 @@ runBoot();pal=MaikKit.palette(palCmds);
 if(innerWidth<=760)$('#side').classList.add('hidden');
 $('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
 // azioni sui messaggi
-$('#msgs').addEventListener('click',e=>{const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
+$('#msgs').addEventListener('click',e=>{const cb=e.target.closest('.pcconf button');if(cb){rispondiConferma(cb.closest('.pcconf').dataset.id,cb.dataset.a);return;}const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
   if(b.dataset.act==='copy')(navigator.clipboard?navigator.clipboard.writeText(stripThink(raw)):Promise.reject()).then(()=>toast('Copiato ✓','ok'),()=>toast('Copia non riuscita','err'));
   else if(b.dataset.act==='speak'){const w=ttsOn;ttsOn=true;say(raw);ttsOn=w;}
   else if(b.dataset.act==='regen')regen(d);});
@@ -4976,7 +5877,10 @@ $('#msgs').addEventListener('click',e=>{const b=e.target.closest('.acts button')
 $('#main').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer.files&&e.dataTransfer.files[0];if(f)attachFile(f);});
 $('#inp').addEventListener('paste',e=>{const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(x=>x.type.startsWith('image/'));if(it){e.preventDefault();attachFile(it.getAsFile());}});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
+if(PC_MODE)document.body.classList.add('pc');
+ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
+avatarInit().then(()=>{if(AV)setTimeout(()=>AV.gesture('wave'),600);});updateStageBar();
 setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);setInterval(checkSeguiti,20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSeguiti();});
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto

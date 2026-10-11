@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v10.0                     ║
+║                  MAIK — Server v11.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,19 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v11.0 — ZEP: IL TUO PERSONAGGIO 3D (solo PC):
+  • Al posto della sfera, un personaggio 3D animato: carichi il tuo .vrm (VRoid…) o .glb
+    e lui parla con la bocca a tempo, sbatte le palpebre, ti guarda, si emoziona, gesticola.
+    Senza file usa «Zep», un robottino 3D integrato. Three.js/three-vrm arrivano dal CDN la
+    prima volta e restano in dati_maik/lib (poi funziona offline).
+  • 🖥️ Comandi del PC, SEMPRE con conferma: siti, ricerche (Google, YouTube…), app, cartelle,
+    stato del PC (CPU, RAM, disco, batteria). Solo dalla GUI di questo computer.
+  • 🎙️ Conversazione a voce continua con interruzione · 👀 ti segue con lo sguardo (webcam)
+  • 🗗 Mini-finestra sempre in primo piano · scorciatoie da tastiera · si apre come finestra-app
+  • Nuovi endpoint: /pc/info, /pc/attesa, /pc/conferma, /pc/fiducia, /pc/registro,
+    /avatar (GET/POST), /avatar/info, /avatar/elimina, /lib/*
+  • Variabili: MAIK_PC=0 · MAIK_PC_FINTO=1 (prove) · MAIK_APP=0 o --no-app · MAIK_CDN
 
 NOVITÀ v10.0 — AGENTE, DOCUMENTI, CHAT, AMICO VERO, APP:
   • 🤖 Agente: il modello decide da solo di usare gli strumenti (promemoria, timer,
@@ -67,7 +80,12 @@ EREDITA DA v5.0:
 
 import os
 import re
+import sys
 import ast
+import shlex
+import ctypes
+import platform
+import subprocess
 import json
 import math
 import time
@@ -131,6 +149,15 @@ che avete vissuto insieme, citalo con calore.""",
     "agente": _env("MAIK_AGENTE", "1") not in ("0", "no", "false"),
     # follow-up: dopo quanti secondi richiedere com'è andata (0 = automatico, dopo l'evento)
     "seguiti_ritardo": int(_env("MAIK_SEGUITI_RITARDO", "0")),
+    # v11: comandi del PC (con conferma), finestra-app, avatar 3D
+    "pc": _env("MAIK_PC", "1") not in ("0", "no", "false"),
+    "pc_finto": _env("MAIK_PC_FINTO", "0") in ("1", "si", "sì", "true"),        # test/demo: non apre niente davvero
+    "pc_remoto": _env("MAIK_PC_REMOTO", "0") in ("1", "si", "sì", "true"),      # conferme anche da altri dispositivi
+    "app": _env("MAIK_APP", "1") not in ("0", "no", "false"),                   # apri come finestra-app (Chrome/Edge)
+    "cdn": _env("MAIK_CDN", "https://cdn.jsdelivr.net/npm/").rstrip("/") + "/",
+    "modello_viso_url": _env("MAIK_MODELLO_VISO_URL", "https://storage.googleapis.com/mediapipe-models/"
+                             "face_landmarker/face_landmarker/float16/1/face_landmarker.task"),
+    "avatar_max_mb": int(_env("MAIK_AVATAR_MAX_MB", "100")),
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -140,7 +167,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "10.0"
+VERSIONE  = "11.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -2196,6 +2223,371 @@ def rileva_evento(testo, ora=None):
 
 
 # ════════════════════════════════════════════════════════════
+# PC (v11) — Zep usa il tuo computer: siti, ricerche, app, cartelle, stato del PC.
+# Ogni azione che APRE qualcosa chiede prima conferma (a meno che tu non dica «fallo sempre»).
+# Niente comandi arbitrari: solo siti http(s), app note (o quelle che scrivi tu in
+# dati_maik/app_pc.json) e le cartelle personali. Le conferme valgono solo da questo PC.
+# ════════════════════════════════════════════════════════════
+SITI_PC = {
+    "youtube": "https://www.youtube.com", "google": "https://www.google.com", "gmail": "https://mail.google.com",
+    "whatsapp": "https://web.whatsapp.com", "netflix": "https://www.netflix.com", "spotify": "https://open.spotify.com",
+    "amazon": "https://www.amazon.it", "wikipedia": "https://it.wikipedia.org", "maps": "https://www.google.com/maps",
+    "google maps": "https://www.google.com/maps", "instagram": "https://www.instagram.com", "facebook": "https://www.facebook.com",
+    "tiktok": "https://www.tiktok.com", "twitch": "https://www.twitch.tv", "github": "https://github.com",
+    "traduttore": "https://translate.google.com", "google traduttore": "https://translate.google.com",
+    "calendario": "https://calendar.google.com", "drive": "https://drive.google.com", "google drive": "https://drive.google.com",
+    "outlook": "https://outlook.live.com", "x": "https://x.com", "twitter": "https://x.com", "reddit": "https://www.reddit.com",
+    "linkedin": "https://www.linkedin.com", "meteo": "https://www.ilmeteo.it", "repubblica": "https://www.repubblica.it",
+    "corriere": "https://www.corriere.it", "gazzetta": "https://www.gazzetta.it", "chatgpt": "https://chatgpt.com",
+}
+RICERCHE_PC = {
+    "google": "https://www.google.com/search?q={}", "youtube": "https://www.youtube.com/results?search_query={}",
+    "maps": "https://www.google.com/maps/search/{}", "wikipedia": "https://it.wikipedia.org/w/index.php?search={}",
+    "amazon": "https://www.amazon.it/s?k={}", "immagini": "https://www.google.com/search?tbm=isch&q={}",
+    "spotify": "https://open.spotify.com/search/{}",
+}
+# nome → come aprirla su Windows (ShellExecute) · macOS (open -a) · Linux (prima eseguibile trovato)
+APP_PC = {
+    "calcolatrice": ("calc.exe", "Calculator", [["gnome-calculator"], ["kcalc"], ["galculator"], ["xcalc"]]),
+    "blocco note": ("notepad.exe", "TextEdit", [["gnome-text-editor"], ["gedit"], ["kate"], ["mousepad"], ["xed"]]),
+    "esplora file": ("explorer.exe", "Finder", [["nautilus"], ["dolphin"], ["thunar"], ["nemo"], ["pcmanfm"]]),
+    "paint": ("mspaint.exe", "Preview", [["kolourpaint"], ["pinta"], ["gimp"]]),
+    "impostazioni": ("ms-settings:", "System Settings", [["gnome-control-center"], ["systemsettings"]]),
+    "spotify": ("spotify:", "Spotify", [["spotify"]]),
+    "chrome": ("chrome", "Google Chrome", [["google-chrome"], ["chromium"], ["chromium-browser"]]),
+    "edge": ("msedge", "Microsoft Edge", [["microsoft-edge"]]),
+    "firefox": ("firefox", "Firefox", [["firefox"]]),
+    "word": ("winword", "Microsoft Word", [["libreoffice", "--writer"]]),
+    "excel": ("excel", "Microsoft Excel", [["libreoffice", "--calc"]]),
+    "powerpoint": ("powerpnt", "Microsoft PowerPoint", [["libreoffice", "--impress"]]),
+    "visual studio code": ("vscode:", "Visual Studio Code", [["code"]]),
+    "discord": ("discord:", "Discord", [["discord"]]),
+    "steam": ("steam:", "Steam", [["steam"]]),
+    "posta": ("mailto:", "Mail", [["thunderbird"], ["evolution"]]),
+    "fotocamera": ("microsoft.windows.camera:", "Photo Booth", [["cheese"]]),
+    "musica": ("mswindowsmusic:", "Music", [["rhythmbox"], ["elisa"]]),
+}
+ALIAS_APP = {"calcolatore": "calcolatrice", "calc": "calcolatrice", "notepad": "blocco note", "note": "blocco note",
+             "blocconote": "blocco note", "editor di testo": "blocco note", "explorer": "esplora file",
+             "esplora risorse": "esplora file", "file": "esplora file", "gestione file": "esplora file",
+             "google chrome": "chrome", "microsoft edge": "edge", "vscode": "visual studio code", "vs code": "visual studio code",
+             "code": "visual studio code", "email": "posta", "mail": "posta", "camera": "fotocamera", "impostazioni di sistema": "impostazioni"}
+CARTELLE_PC = {"desktop": ("Desktop", "Scrivania"), "scrivania": ("Desktop", "Scrivania"),
+               "documenti": ("Documents", "Documenti"), "download": ("Downloads", "Scaricati"),
+               "scaricati": ("Downloads", "Scaricati"), "immagini": ("Pictures", "Immagini"), "foto": ("Pictures", "Immagini"),
+               "musica": ("Music", "Musica"), "video": ("Videos", "Video", "Movies"), "home": ("",), "utente": ("",)}
+ICONE_PC = {"sito": "🌐", "cerca": "🔎", "app": "🖥️", "cartella": "📁", "info": "💻"}
+
+
+def _sistema():
+    return "win" if os.name == "nt" else "mac" if sys.platform == "darwin" else "linux"
+
+
+def _gb(n):
+    return f"{n / 1024 ** 3:.1f}".replace(".", ",")
+
+
+def info_pc():
+    """Stato del computer con la sola libreria standard (Windows, macOS, Linux)."""
+    s, out = _sistema(), {"sistema": f"{platform.system()} {platform.release()}".strip(), "core": os.cpu_count() or 1}
+    try:                                                    # RAM
+        if s == "win":
+            class _MEM(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong)] + \
+                           [(n, ctypes.c_ulonglong) for n in ("tot", "lib", "tpf", "apf", "tv", "av", "aev")]
+            m = _MEM(); m.dwLength = ctypes.sizeof(_MEM)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+            out["ram_tot"], out["ram_lib"] = m.tot, m.lib
+        elif s == "linux":
+            mi = dict(re.findall(r"^(\w+):\s+(\d+)", Path("/proc/meminfo").read_text(), re.M))
+            out["ram_tot"], out["ram_lib"] = int(mi["MemTotal"]) * 1024, int(mi.get("MemAvailable", mi["MemFree"])) * 1024
+        else:
+            out["ram_tot"] = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], timeout=3))
+            vm = subprocess.check_output(["vm_stat"], timeout=3, text=True)
+            pag = int(re.search(r"page size of (\d+)", vm).group(1))
+            libere = sum(int(re.search(rf"{k}:\s+(\d+)", vm).group(1)) for k in ("Pages free", "Pages inactive"))
+            out["ram_lib"] = libere * pag
+    except Exception:
+        pass
+    try:                                                    # CPU % (due letture a distanza di 0,3 s)
+        if s == "win":
+            def tempi():
+                i, k, u = (ctypes.c_ulonglong(), ctypes.c_ulonglong(), ctypes.c_ulonglong())
+                ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(i), ctypes.byref(k), ctypes.byref(u))
+                return i.value, k.value + u.value          # il tempo kernel comprende già l'idle
+            a = tempi(); time.sleep(0.3); b = tempi()
+            out["cpu"] = round(100 * (1 - (b[0] - a[0]) / max(1, b[1] - a[1])))
+        elif s == "linux":
+            def tempi():
+                v = [int(x) for x in Path("/proc/stat").read_text().split("\n")[0].split()[1:]]
+                return v[3] + (v[4] if len(v) > 4 else 0), sum(v)
+            a = tempi(); time.sleep(0.3); b = tempi()
+            out["cpu"] = round(100 * (1 - (b[0] - a[0]) / max(1, b[1] - a[1])))
+        else:
+            out["cpu"] = round(min(100, 100 * os.getloadavg()[0] / (os.cpu_count() or 1)))
+        out["cpu"] = max(0, min(100, out["cpu"]))
+    except Exception:
+        pass
+    try:
+        du = shutil.disk_usage(str(Path.home()))
+        out["disco_tot"], out["disco_lib"] = du.total, du.free
+    except Exception:
+        pass
+    try:                                                    # batteria
+        if s == "win":
+            class _BAT(ctypes.Structure):
+                _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("perc", ctypes.c_ubyte),
+                            ("sys", ctypes.c_ubyte), ("vita", ctypes.c_ulong), ("piena", ctypes.c_ulong)]
+            b = _BAT()
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(b)) and b.perc != 255 and not b.flag & 128:
+                out["batteria"], out["in_carica"] = b.perc, b.ac == 1
+        elif s == "linux":
+            for d in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+                out["batteria"] = int((d / "capacity").read_text().strip())
+                out["in_carica"] = (d / "status").read_text().strip().lower() in ("charging", "full")
+                break
+        else:
+            t = subprocess.check_output(["pmset", "-g", "batt"], timeout=3, text=True)
+            m = re.search(r"(\d+)%;\s*([a-zA-Z ]+)", t)
+            if m:
+                out["batteria"], out["in_carica"] = int(m.group(1)), "discharging" not in m.group(2)
+    except Exception:
+        pass
+    try:                                                    # acceso da
+        if s == "win":
+            out["acceso_s"] = ctypes.windll.kernel32.GetTickCount64() // 1000
+        elif s == "linux":
+            out["acceso_s"] = int(float(Path("/proc/uptime").read_text().split()[0]))
+        else:
+            bt = subprocess.check_output(["sysctl", "-n", "kern.boottime"], timeout=3, text=True)
+            out["acceso_s"] = int(time.time()) - int(re.search(r"sec = (\d+)", bt).group(1))
+    except Exception:
+        pass
+    parti = [f"💻 {out['sistema']}"]
+    if "cpu" in out:
+        parti.append(f"CPU {out['cpu']}% ({out['core']} core)")
+    if out.get("ram_tot"):
+        usata = out["ram_tot"] - out.get("ram_lib", 0)
+        parti.append(f"RAM {_gb(usata)} / {_gb(out['ram_tot'])} GB ({round(100 * usata / out['ram_tot'])}%)")
+    if out.get("disco_tot"):
+        parti.append(f"disco libero {_gb(out['disco_lib'])} GB su {_gb(out['disco_tot'])}")
+    if "batteria" in out:
+        parti.append(f"🔋 batteria {out['batteria']}%{' in carica' if out.get('in_carica') else ''}")
+    if out.get("acceso_s"):
+        h, m = divmod(out["acceso_s"] // 60, 60)
+        parti.append(f"acceso da {h} h {m} min" if h else f"acceso da {m} min")
+    out["testo"] = " · ".join(parti)
+    return out
+
+
+class ComandiPC:
+    """Prepara le azioni sul PC, aspetta la conferma, poi le esegue (o le simula con MAIK_PC_FINTO=1)."""
+
+    TIPI = ("sito", "cerca", "app", "cartella")
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.attesa = {}           # id → azione da confermare
+        self.registro = []         # ultime azioni eseguite (anche simulate)
+
+    # ── capire cosa aprire ─────────────────────────────────
+    @staticmethod
+    def _url_sito(nome):
+        orig = re.sub(r"\s+", " ", str(nome or "")).strip().strip(" .!?\"'«»")
+        orig = re.sub(r"^(?:il sito(?: di)?|la pagina(?: di)?|sito(?: di)?|su)\s+", "", orig, flags=re.I)
+        n = orig.lower()                          # minuscolo solo per riconoscere: il percorso resta com'è
+        if n in SITI_PC:
+            return SITI_PC[n]
+        if re.fullmatch(r"https?://[^\s<>\"']{3,300}", orig, re.I):
+            return orig
+        if re.fullmatch(r"(?:www\.)?[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*\.[a-z]{2,12}(?:/[^\s<>\"']{0,200})?", orig, re.I):
+            return "https://" + orig
+        return None
+
+    @staticmethod
+    def app_utente():
+        """App aggiunte a mano in dati_maik/app_pc.json: {"nome": "percorso o comando"}."""
+        try:
+            with open(os.path.join(DATA_DIR, "app_pc.json"), encoding="utf-8") as f:
+                d = json.load(f)
+            return {str(k).lower().strip(): str(v) for k, v in d.items() if str(k).strip() and str(v).strip()} if isinstance(d, dict) else {}
+        except Exception:
+            return {}
+
+    @classmethod
+    def _app(cls, nome):
+        n = re.sub(r"\s+", " ", str(nome or "")).strip().lower().strip(" .!?\"'«»")
+        n = re.sub(r"^(?:il|lo|la|l'|l’|i|gli|le|un|una|l'app(?:licazione)?(?: di)?|app(?:licazione)?(?: di)?|programma)\s*", "", n).strip()
+        utente = cls.app_utente()
+        if n in utente:
+            return n, ("utente", utente[n])
+        n = ALIAS_APP.get(n, n)
+        return (n, ("nota", APP_PC[n])) if n in APP_PC else (n, None)
+
+    @staticmethod
+    def _cartella(nome):
+        n = re.sub(r"\s+", " ", str(nome or "")).strip().lower().strip(" .!?\"'«»")
+        n = re.sub(r"^(?:la\s+)?(?:cartella\s+)?(?:dei|degli|delle|di|del|della|i|gli|le)?\s*", "", n).strip()
+        nomi = CARTELLE_PC.get(n)
+        if not nomi:
+            return n, None
+        home = Path.home()
+        for x in nomi:
+            p = home / x if x else home
+            if p.is_dir():
+                return n, str(p)
+        return n, str(home / nomi[0]) if nomi[0] else str(home)
+
+    def descrivi(self, tipo, args):
+        """Ritorna (descrizione, dettagli) se l'azione è valida, altrimenti (None, motivo)."""
+        if tipo == "sito":
+            url = self._url_sito(args.get("sito") or args.get("url"))
+            return (f"aprire {url}", {"url": url}) if url else (None, f"non so che sito sia «{args.get('sito') or args.get('url')}»")
+        if tipo == "cerca":
+            q = re.sub(r"\s+", " ", str(args.get("q") or "")).strip()[:150]
+            dove = str(args.get("dove") or "google").strip().lower()
+            dove = {"you tube": "youtube", "google maps": "maps", "mappe": "maps", "foto": "immagini"}.get(dove, dove)
+            if not q:
+                return None, "cosa devo cercare?"
+            if dove not in RICERCHE_PC:
+                dove = "google"
+            return f"cercare «{q}» su {dove.title()}", {"url": RICERCHE_PC[dove].format(urllib.parse.quote_plus(q)), "q": q, "dove": dove}
+        if tipo == "app":
+            n, app = self._app(args.get("nome"))
+            if not app:
+                return None, (f"non conosco l'app «{n}»: puoi aggiungerla in dati_maik/app_pc.json "
+                              '(es. {"' + (n or "nome") + '": "C:/percorso/programma.exe"})')
+            return f"aprire {n.title() if app[0] == 'nota' else n}", {"nome": n, "app": app}
+        if tipo == "cartella":
+            n, percorso = self._cartella(args.get("nome"))
+            return (f"aprire la cartella {n.title()}", {"percorso": percorso}) if percorso else \
+                (None, f"non so quale cartella sia «{n}» (prova: desktop, documenti, download, immagini, musica, video)")
+        return None, f"azione sul PC «{tipo}» sconosciuta"
+
+    def prepara(self, tipo, args, memoria=None):
+        """Azione valida → da confermare (o subito, se ti fidi già per quel tipo)."""
+        desc, det = self.descrivi(tipo, args or {})
+        if not desc:
+            return {"ok": False, "esito": det}
+        fiducia = set((memoria.ricordi.get("pc_fiducia") if memoria else None) or [])
+        if tipo in fiducia:
+            return {"ok": True, "esito": self.esegui(tipo, det, desc)}
+        pid = uuid.uuid4().hex[:10]
+        with self._lock:
+            ora = time.time()
+            self.attesa = {k: v for k, v in self.attesa.items() if ora - v["creato"] < 600}   # scadono dopo 10 minuti
+            self.attesa[pid] = {"id": pid, "tipo": tipo, "descrizione": desc, "dettagli": det, "creato": ora,
+                                "icona": ICONE_PC.get(tipo, "🖥️")}
+        return {"ok": True, "esito": f"{desc}: aspetto il tuo ok", "conferma": {"id": pid, "tipo": tipo,
+                "descrizione": desc, "icona": ICONE_PC.get(tipo, "🖥️")}}
+
+    def conferma(self, pid, si=True, sempre=False, memoria=None):
+        with self._lock:
+            az = self.attesa.pop(str(pid), None)
+        if not az:
+            return {"ok": False, "esito": "Questa richiesta è scaduta o è già stata gestita."}
+        if not si:
+            return {"ok": True, "esito": f"Ok, non lo faccio ({az['descrizione']})."}
+        if sempre and memoria is not None:
+            fid = sorted(set(memoria.ricordi.get("pc_fiducia") or []) | {az["tipo"]})
+            memoria.imposta_ricordo("pc_fiducia", fid)
+        return {"ok": True, "esito": self.esegui(az["tipo"], az["dettagli"], az["descrizione"])}
+
+    def esegui(self, tipo, det, desc):
+        voce = {"quando": datetime.datetime.now().isoformat(timespec="seconds"), "tipo": tipo, "descrizione": desc}
+        try:
+            if CONFIG["pc_finto"]:
+                voce["finto"] = True                        # test/demo: non apre niente davvero
+            elif tipo in ("sito", "cerca"):
+                webbrowser.open(det["url"])
+            elif tipo == "cartella":
+                self._apri(det["percorso"])
+            elif tipo == "app":
+                genere, val = det["app"]
+                if genere == "utente":
+                    self._apri_utente(val)
+                else:
+                    win, mac, linux = val
+                    s = _sistema()
+                    if s == "win":
+                        os.startfile(win)                   # noqa: ShellExecute (solo valori della tabella)
+                    elif s == "mac":
+                        subprocess.Popen(["open", "-a", mac], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    else:
+                        cmd = next((c for c in linux if shutil.which(c[0])), None)
+                        if not cmd:
+                            raise FileNotFoundError(f"{det['nome']} non sembra installata")
+                        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            esito = f"✅ Fatto: {desc}."
+        except Exception as e:
+            voce["errore"] = str(e)[:120]
+            esito = f"⚠️ Non ci sono riuscito ({desc}): {str(e)[:100]}"
+        with self._lock:
+            self.registro = (self.registro + [voce])[-50:]
+        return esito
+
+    @staticmethod
+    def _apri(percorso):
+        s = _sistema()
+        if s == "win":
+            os.startfile(percorso)
+        else:
+            subprocess.Popen(["open" if s == "mac" else "xdg-open", percorso],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+    @classmethod
+    def _apri_utente(cls, val):
+        """App scritta da te in app_pc.json: un file/percorso si apre, altrimenti è un comando (senza shell)."""
+        if os.path.exists(os.path.expanduser(val)) or re.match(r"^[a-z][a-z0-9+.-]*:", val, re.I):
+            cls._apri(os.path.expanduser(val))
+        else:
+            subprocess.Popen(shlex.split(val, posix=_sistema() != "win"), stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=_sistema() != "win")
+
+    # ── frasi dirette (anche senza Ollama): «apri youtube», «cerca X su google», «come sta il pc?» ──
+    def router(self, testo, memoria=None):
+        t = re.sub(r"\s+", " ", (testo or "").strip())
+        tl = t.lower().rstrip(" .!?")
+        tl = re.sub(r"^(?:ehi |ok |hey )?(?:maik|zep)[,!]?\s+", "", tl)
+        tl = re.sub(r"^(?:per favore |puoi |potresti |mi puoi |riesci a )", "", tl)
+        if re.search(r"\b(?:come sta il (?:pc|computer)|stato del (?:pc|computer)|quanta (?:ram|memoria)|"
+                     r"(?:uso|carico) della cpu|quanta batteria|batteria del (?:pc|computer)|spazio (?:libero|su disco|sul disco))\b", tl):
+            return {"testo": info_pc()["testo"]}
+        dovi = r"(google|youtube|you tube|maps|google maps|wikipedia|amazon|spotify|immagini)"
+        m = re.match(r"^(?:cerca(?:mi)?|trova(?:mi)?)\s+su\s+" + dovi + r"\s+(.+)$", tl)      # «cerca su youtube X»
+        if m:
+            return self._risposta("cerca", {"q": m.group(2), "dove": m.group(1)}, memoria)
+        m = re.match(r"^(?:cerca(?:mi)?|trova(?:mi)?)\s+(.+?)\s+su\s+" + dovi + r"$", tl)       # «cerca X su google»
+        if m:
+            return self._risposta("cerca", {"q": m.group(1), "dove": m.group(2)}, memoria)
+        m = re.match(r"^(?:apri|aprimi|avvia|lancia|fai partire|vai su|vai a|portami su|mostrami)\s+(.{2,60})$", tl)
+        if not m or len(tl.split()) > 8:
+            return None
+        cosa = m.group(1).strip()
+        if re.match(r"^(?:la\s+)?cartella\b", cosa) or cosa in CARTELLE_PC:
+            if self._cartella(cosa)[1]:
+                return self._risposta("cartella", {"nome": cosa}, memoria)
+            return None
+        if self._app(cosa)[1]:
+            return self._risposta("app", {"nome": cosa}, memoria)
+        if self._url_sito(cosa):
+            return self._risposta("sito", {"sito": cosa}, memoria)
+        return None
+
+    def _risposta(self, tipo, args, memoria):
+        r = self.prepara(tipo, args, memoria)
+        if not r["ok"]:
+            return {"testo": "🤔 " + r["esito"].capitalize() + "."}
+        if r.get("conferma"):
+            return {"testo": f"{ICONE_PC.get(tipo, '🖥️')} Posso {r['conferma']['descrizione']}? Confermi qui sotto 👇",
+                    "conferma": r["conferma"]}
+        return {"testo": r["esito"]}
+
+
+PC = ComandiPC()
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -2220,8 +2612,16 @@ Se ti servono dati che non sai, scrivi SOLO il tag e fermati: riceverai i risult
 Regole: usa i tag solo quando servono; JSON valido su una riga; "quando" in italiano semplice
 («tra 20 minuti», «domani alle 9», «venerdì alle 18:30»). Non dire mai di aver fatto qualcosa senza il tag."""
 
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria"}
-ICONE_STRUMENTI = {"promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc"}
+STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella"}
+PROMPT_AGENTE_PC = """COMPUTER — puoi usare il PC della persona. Aprire qualcosa chiede SEMPRE la sua conferma con un pulsante:
+tu proponilo con il tag e dillo in modo naturale («te lo apro, conferma qui sotto»).
+[[azione:{"tipo":"apri_sito","sito":"youtube"}]]   [[azione:{"tipo":"cerca_web","q":"ricetta carbonara","dove":"youtube"}]]
+[[azione:{"tipo":"apri_app","nome":"calcolatrice"}]]   [[azione:{"tipo":"apri_cartella","nome":"download"}]]
+[[azione:{"tipo":"info_pc"}]]  ← CPU, RAM, disco, batteria: è un dato, scrivi solo il tag e aspetta il risultato
+("dove" per cerca_web: google, youtube, maps, wikipedia, amazon, immagini, spotify)"""
+ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥️", "apri_cartella": "📁", "info_pc": "💻",
+                   "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
                    "cerca_documenti": "📚", "cerca_memoria": "🧠"}
 
@@ -2302,7 +2702,9 @@ class Agente:
         """Esegue una richiesta dopo averla controllata. Ritorna {tipo, ok, icona, esito, [dati], [fonti]}."""
         tipo = str(a.get("tipo", "")).strip().lower().replace("-", "_")
         tipo = {"reminder": "promemoria", "spesa": "lista", "calcolo": "calcola", "calc": "calcola",
-                "documenti": "cerca_documenti", "memoria": "cerca_memoria", "orario": "ora"}.get(tipo, tipo)
+                "documenti": "cerca_documenti", "memoria": "cerca_memoria", "orario": "ora",
+                "sito": "apri_sito", "apri": "apri_sito", "url": "apri_sito", "app": "apri_app", "cartella": "apri_cartella",
+                "cerca": "cerca_web", "google": "cerca_web", "pc": "info_pc", "stato_pc": "info_pc"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -2414,6 +2816,14 @@ class Agente:
                     righe.append(" · ".join(str(v)[:120] for k, v in x.items() if k != "tipo"))
                 return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} ricordi",
                             dati=("\n".join(righe) if righe else f"nessun ricordo su «{q}»"))
+            if tipo in STRUMENTI_PC:                    # v11: il PC (sempre con conferma)
+                if not CONFIG["pc"]:
+                    return dict(r, esito="i comandi del PC sono spenti (MAIK_PC=0)")
+                x = PC.prepara(STRUMENTI_PC[tipo], a, memoria)
+                return dict(r, ok=x["ok"], esito=x["esito"], conferma=x.get("conferma"))
+            if tipo == "info_pc":
+                d = info_pc()
+                return dict(r, ok=True, esito=d["testo"].replace("💻 ", "")[:90], dati=d["testo"])
             return dict(r, esito=f"strumento «{tipo}» sconosciuto")
         except ZeroDivisionError:
             return dict(r, esito="divisione per zero", dati="divisione per zero: impossibile")
@@ -2465,7 +2875,8 @@ class MotoreAI:
                          f"cita la fonte tra parentesi quadre, es. [{fonti[0]['nome']}]) ---\n{blocchi}\n--- FINE DOCUMENTI ---")
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
-            strumenti = PROMPT_AGENTE + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
+            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
+                         + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else ""))
         else:
             strumenti = ("Le azioni pratiche (timer, promemoria, lista, calcoli, ora nel mondo, briefing) le fai quando "
                          "te le chiedono con frasi come «metti un timer di 10 minuti» o «ricordami alle 18 di…»: "
@@ -2614,6 +3025,10 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         cmd = self._gestisci_comando(testo)
         if cmd:
             return cmd
+        pc = PC.router(testo, self.memoria) if CONFIG["pc"] else None
+        if pc:
+            self.memoria.salva_scambio(testo, pc["testo"])
+            return self._meta(ok=True, risposta=pc["testo"], azione=True, conferme=[pc["conferma"]] if pc.get("conferma") else [])
         azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
         if azione:
             self.memoria.salva_scambio(testo, azione)
@@ -2654,6 +3069,12 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             cmd = self._gestisci_comando(testo)
             if cmd:
                 return {"done": True, "comando": cmd}
+            pc = PC.router(testo, self.memoria) if CONFIG["pc"] else None     # v11: «apri youtube», «come sta il pc?»
+            if pc:
+                on_token(pc["testo"])
+                self.memoria.salva_scambio(testo, pc["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid,
+                                  conferme=[pc["conferma"]] if pc.get("conferma") else [])
             # azioni pratiche: istantanee, anche offline (più richieste insieme → l'agente)
             azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
             if azione:
@@ -2725,7 +3146,9 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if not finale and azioni:
                 finale = "Fatto! ✅"
                 on_token(finale)
-        chip = [{k: a.get(k) for k in ("tipo", "ok", "icona", "esito")} for a in azioni]
+        chip = [dict({k: a.get(k) for k in ("tipo", "ok", "icona", "esito")}, **({"attesa": True} if a.get("conferma") else {}))
+                for a in azioni]
+        conferme = [a["conferma"] for a in azioni if a.get("conferma")]
         fonti_meta = [{"nome": f["nome"], "pezzo": f["pezzo"], "anteprima": f.get("testo", "")[:200],
                        "citata": f["nome"].lower() in finale.lower()} for f in fonti]
         # in memoria va la risposta senza il "ragionamento" <think> e senza tag (risparmia contesto)
@@ -2735,7 +3158,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
         return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
-                          seguito=seguito, sessione=sid, titolo=titolo)
+                          seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme)
 
     def stato(self):
         return {
@@ -2850,6 +3273,138 @@ def icona_png(n):
 
 
 # ════════════════════════════════════════════════════════════
+# AVATAR 3D (v11) — librerie in cache e il tuo personaggio (.vrm / .glb)
+# ════════════════════════════════════════════════════════════
+# Three.js, three-vrm e MediaPipe arrivano dal CDN la PRIMA volta e restano in dati_maik/lib:
+# poi l'avatar funziona anche senza internet. Solo questi file (niente proxy aperto).
+VERSIONE_THREE, VERSIONE_VRM, VERSIONE_MP = "0.169.0", "3.1.6", "0.10.14"
+LIB_FISSE = {
+    "three.module.min.js": f"three@{VERSIONE_THREE}/build/three.module.min.js",
+    "three-vrm.module.min.js": f"@pixiv/three-vrm@{VERSIONE_VRM}/lib/three-vrm.module.min.js",
+    "mp/vision_bundle.mjs": f"@mediapipe/tasks-vision@{VERSIONE_MP}/vision_bundle.mjs",
+}
+_RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs)/[A-Za-z0-9_-]{1,60}\.js")
+_RE_LIB_MP = re.compile(r"mp/wasm/vision_wasm(?:_nosimd)?_internal\.(?:js|wasm)")
+_LIB_LOCK = threading.Lock()
+
+
+def sorgente_lib(nome):
+    """URL da cui scaricare un file di /lib/, o None se non è tra quelli permessi."""
+    if nome in LIB_FISSE:
+        return CONFIG["cdn"] + LIB_FISSE[nome]
+    if _RE_LIB_ADDON.fullmatch(nome):
+        return CONFIG["cdn"] + f"three@{VERSIONE_THREE}/examples/jsm/" + nome[len("addons/"):]
+    if _RE_LIB_MP.fullmatch(nome):
+        return CONFIG["cdn"] + f"@mediapipe/tasks-vision@{VERSIONE_MP}/wasm/" + nome[len("mp/wasm/"):]
+    if nome == "mp/face_landmarker.task":
+        return CONFIG["modello_viso_url"]
+    return None
+
+
+def lib_locale(nome):
+    """Percorso del file in cache (lo scarica la prima volta). Ritorna (percorso | None, errore)."""
+    url = sorgente_lib(nome)
+    if not url:
+        return None, "file non permesso"
+    percorso = os.path.join(DATA_DIR, "lib", *nome.split("/"))
+    if os.path.isfile(percorso):
+        return percorso, ""
+    with _LIB_LOCK:
+        if os.path.isfile(percorso):
+            return percorso, ""
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "MAIK"}), timeout=40) as r:
+                dati = r.read(40 * 1024 * 1024 + 1)
+            if len(dati) > 40 * 1024 * 1024:
+                return None, "file troppo grande"
+            os.makedirs(os.path.dirname(percorso), exist_ok=True)
+            with open(percorso + ".tmp", "wb") as f:
+                f.write(dati)
+            os.replace(percorso + ".tmp", percorso)
+            return percorso, ""
+        except Exception as e:
+            return None, f"non riesco a scaricare {nome} (serve internet la prima volta): {e}"
+
+
+def _avatar_info():
+    try:
+        with open(os.path.join(DATA_DIR, "avatar", "avatar.json"), encoding="utf-8") as f:
+            info = json.load(f)
+        return info if os.path.isfile(os.path.join(DATA_DIR, "avatar", info.get("file", ""))) else None
+    except Exception:
+        return None
+
+
+def salva_avatar(nome, dati):
+    """Salva il tuo personaggio. Accetta solo glTF binari (.glb e .vrm, che è un .glb con le regole VRM)."""
+    nome = re.sub(r"[^\w .()-]+", "_", os.path.basename(str(nome or "avatar.glb")))[:80] or "avatar.glb"
+    if len(dati) < 20 or dati[:4] != b"glTF" or struct.unpack("<I", dati[4:8])[0] != 2:
+        return None, "Non è un modello 3D valido: servono file .vrm o .glb (glTF 2.0 binario)."
+    try:
+        lung_json = struct.unpack("<I", dati[12:16])[0]
+        intestazione = json.loads(dati[20:20 + lung_json].decode("utf-8", "ignore") or "{}")
+    except Exception:
+        intestazione = {}
+    est = intestazione.get("extensions", {}) if isinstance(intestazione, dict) else {}
+    tipo = "vrm" if ("VRMC_vrm" in est or "VRM" in est or nome.lower().endswith(".vrm")) else "glb"
+    cartella = os.path.join(DATA_DIR, "avatar")
+    os.makedirs(cartella, exist_ok=True)
+    for vecchio in os.listdir(cartella):
+        if vecchio.startswith("avatar."):
+            try:
+                os.remove(os.path.join(cartella, vecchio))
+            except OSError:
+                pass
+    file_ = f"avatar.{tipo}"
+    with open(os.path.join(cartella, file_ + ".tmp"), "wb") as f:
+        f.write(dati)
+    os.replace(os.path.join(cartella, file_ + ".tmp"), os.path.join(cartella, file_))
+    info = {"nome": nome, "tipo": tipo, "file": file_, "dimensione": len(dati),
+            "animazioni": len(intestazione.get("animations", []) or []) if isinstance(intestazione, dict) else 0,
+            "caricato": datetime.datetime.now().isoformat(timespec="seconds")}
+    with open(os.path.join(cartella, "avatar.json"), "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False)
+    return info, None
+
+
+def elimina_avatar():
+    cartella = os.path.join(DATA_DIR, "avatar")
+    if os.path.isdir(cartella):
+        shutil.rmtree(cartella, ignore_errors=True)
+        return True
+    return False
+
+
+# ── finestra-app: MAIK si apre come un programma (Chrome/Edge --app), non come una scheda ──
+def _browser_app():
+    s = _sistema()
+    if s == "win":
+        cand = [os.path.join(os.environ.get(k, ""), *p) for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")
+                for p in (("Google", "Chrome", "Application", "chrome.exe"), ("Microsoft", "Edge", "Application", "msedge.exe"))
+                if os.environ.get(k)]
+    elif s == "mac":
+        cand = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium"]
+    else:
+        cand = [shutil.which(x) or "" for x in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge")]
+    return next((c for c in cand if c and os.path.isfile(c)), None)
+
+
+def apri_finestra(url):
+    exe = _browser_app() if CONFIG["app"] else None
+    if exe:
+        try:
+            subprocess.Popen([exe, f"--app={url}", "--window-size=1360,860"], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=_sistema() != "win")
+            return "finestra-app"
+        except Exception:
+            pass
+    webbrowser.open(url)
+    return "browser"
+
+
+# ════════════════════════════════════════════════════════════
 # SERVER WEB
 # ════════════════════════════════════════════════════════════
 MOTORE = MotoreAI()
@@ -2892,6 +3447,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", cache)
         self.end_headers()
         self.wfile.write(corpo)
+
+    def _richiesta_locale(self):
+        """Comandi del PC e avatar: solo dalla GUI di questo computer. Blocca altri siti (Origin),
+        DNS rebinding (Host) e altri dispositivi in rete (a meno di MAIK_PC_REMOTO=1)."""
+        host = self.headers.get("Host", "")
+        origine = self.headers.get("Origin")
+        if origine is not None and origine != f"http://{host}":
+            return False
+        if CONFIG["pc_remoto"]:
+            return True
+        nome_host = host.rsplit(":", 1)[0] if not host.startswith("[") else host.split("]")[0] + "]"
+        ip = self.client_address[0]
+        return nome_host in ("localhost", "127.0.0.1", "[::1]") and (ip.startswith("127.") or ip in ("::1", "::ffff:127.0.0.1"))
+
+    def _servi_file(self, percorso, tipo, cache="public, max-age=604800"):
+        dim = os.path.getsize(percorso)
+        self.send_response(200)
+        self.send_header("Content-Type", tipo)
+        self.send_header("Content-Length", str(dim))
+        self.send_header("Cache-Control", cache)
+        self.end_headers()
+        with open(percorso, "rb") as f:
+            shutil.copyfileobj(f, self.wfile, 256 * 1024)
 
     def _servi_gui(self):
         # Preferisci aria.html (la tua GUI completa); altrimenti usa quella integrata.
@@ -2988,6 +3566,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._invia(json.dumps(MANIFEST, ensure_ascii=False), "application/manifest+json; charset=utf-8")
             elif base == "/sw.js":
                 self._invia(SERVICE_WORKER, "application/javascript; charset=utf-8", "no-cache")
+            # ── v11: PC, avatar 3D, librerie ──
+            elif base == "/pc/info":
+                self._json(info_pc())
+            elif base == "/pc/attesa":
+                self._json({"attesa": [{k: v[k] for k in ("id", "tipo", "descrizione", "icona")} for v in PC.attesa.values()]})
+            elif base == "/pc/registro":
+                self._json({"registro": PC.registro, "fiducia": MOTORE.memoria.ricordi.get("pc_fiducia") or [],
+                            "attivo": CONFIG["pc"], "finto": CONFIG["pc_finto"],
+                            "app": sorted(APP_PC) + sorted(ComandiPC.app_utente()), "siti": sorted(SITI_PC)})
+            elif base == "/avatar/info":
+                info = _avatar_info()
+                self._json({"presente": bool(info), **(info or {})})
+            elif base == "/avatar":
+                info = _avatar_info()
+                if not info:
+                    self.send_error(404)
+                else:
+                    self._servi_file(os.path.join(DATA_DIR, "avatar", info["file"]), "model/gltf-binary", "no-cache")
+            elif base.startswith("/lib/"):
+                percorso, errore = lib_locale(base[len("/lib/"):])
+                if not percorso:
+                    self._json({"errore": errore}, 404 if errore == "file non permesso" else 502)
+                else:
+                    tipo = ("text/javascript; charset=utf-8" if percorso.endswith((".js", ".mjs")) else
+                            "application/wasm" if percorso.endswith(".wasm") else "application/octet-stream")
+                    self._servi_file(percorso, tipo)
             elif base in ("/icona-192.png", "/icona-512.png", "/favicon.ico", "/apple-touch-icon.png"):
                 n = 512 if "512" in base else 192
                 self._invia(icona_png(n), "image/png", "public, max-age=86400")
@@ -3000,6 +3604,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         base = self.path.split("?")[0]
         try:
+            if base == "/avatar":                                   # v11: il tuo personaggio 3D (file grezzo)
+                lung = int(self.headers.get("Content-Length", 0) or 0)
+                if not self._richiesta_locale():
+                    self._json({"ok": False, "errore": "Solo da questo computer."}, 403); return
+                if lung <= 0 or lung > CONFIG["avatar_max_mb"] * 1024 * 1024:
+                    self._json({"ok": False, "errore": f"Il file deve essere tra 1 byte e {CONFIG['avatar_max_mb']} MB."}, 413); return
+                dati = self.rfile.read(lung)
+                info, errore = salva_avatar(urllib.parse.unquote(self.headers.get("X-Nome", "avatar.glb")), dati)
+                self._json({"ok": bool(info), "avatar": info, "errore": errore}); return
             if base == "/chat":
                 testo = self._read_json_body().get("testo", "").strip()
                 if not testo:
@@ -3114,6 +3727,24 @@ class Handler(BaseHTTPRequestHandler):
 
             elif base == "/documenti/elimina":
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
+
+            elif base in ("/pc/conferma", "/pc/fiducia", "/avatar/elimina"):
+                c = self._read_json_body()
+                if not self._richiesta_locale():
+                    self._json({"ok": False, "esito": "🔒 I comandi del PC si confermano solo da questo computer."}, 403)
+                elif base == "/avatar/elimina":
+                    self._json({"ok": elimina_avatar()})
+                elif base == "/pc/conferma":
+                    self._json(PC.conferma(str(c.get("id", "")), bool(c.get("si", True)), bool(c.get("sempre")), MOTORE.memoria))
+                else:
+                    fid = set(MOTORE.memoria.ricordi.get("pc_fiducia") or [])
+                    tipo = str(c.get("tipo", ""))
+                    if c.get("azzera"):
+                        fid = set()
+                    elif tipo in ComandiPC.TIPI:
+                        (fid.add if c.get("attiva") else fid.discard)(tipo)
+                    MOTORE.memoria.imposta_ricordo("pc_fiducia", sorted(fid))
+                    self._json({"ok": True, "fiducia": sorted(fid)})
 
             elif base == "/seguiti/elimina":
                 self._json({"ok": MOTORE.memoria.elimina_seguito(str(self._read_json_body().get("id", "")))})
@@ -4360,10 +4991,14 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 # MAIN
 # ════════════════════════════════════════════════════════════
 def main():
+    if "--no-app" in sys.argv:
+        CONFIG["app"] = False
+    elif "--app" in sys.argv:
+        CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 10.0 — Server avviato            ║
-║  Agente · documenti · chat · follow-up · app     ║
+║           MAIK 11.0 — Server avviato            ║
+║  Zep 3D · comandi del PC · voce · agente · app   ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -4409,10 +5044,14 @@ def main():
     print(f"  Apprendimento con l'IA: {'ATTIVO' if CONFIG['apprendimento_ia'] else 'spento'}"
           f"  ·  agente: {'ATTIVO' if CONFIG['agente'] else 'spento'}"
           f"  ·  personalità: {CONFIG['personalita']}")
+    print(f"  Comandi del PC: {'ATTIVI (sempre con conferma)' if CONFIG['pc'] else 'spenti'}"
+          f"{' · SIMULATI' if CONFIG['pc_finto'] else ''}  ·  avatar 3D: "
+          f"{(_avatar_info() or {}).get('nome', 'Zep (integrato)')}")
     print(f"  Endpoint principali:")
     print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
     print(f"    POST /vedi          — visione: descrive un frame webcam")
-    print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina   [NUOVO v10]")
+    print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*  [NUOVO v11]")
+    print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")
     print(f"    GET/POST /documenti · GET /documenti/cerca?q= · /seguiti   [NUOVO v10]")
     print(f"    GET  /promemoria /promemoria/scaduti · GET/POST /lista")
     print(f"    GET  /briefing · POST /personalita · GET /appreso")
@@ -4420,7 +5059,7 @@ def main():
     print(f"    POST /episodio /obiettivo /relazione /reset /importa\n")
 
     threading.Thread(target=lambda: [icona_png(n) for n in (192, 512)], daemon=True).start()   # icone pronte
-    threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+    threading.Timer(1.2, lambda: print(f"  Aperto come {apri_finestra(url)}  (--no-app per la scheda normale)")).start()
 
     server = ThreadingHTTPServer((CONFIG["host"], CONFIG["porta"]), Handler)
     try:

@@ -4006,7 +4006,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #stagebar button.on{background:rgba(var(--accent-rgb),.22);border-color:var(--accent);box-shadow:0 0 14px rgba(var(--accent-rgb),.35)}
   #stagebar button.off{opacity:.45}
   body.has-avatar #caption{display:block;position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:20;max-width:min(760px,86%);padding:9px 18px;border-radius:14px;background:rgba(0,0,0,.5);backdrop-filter:blur(10px);color:#fff;font-size:18px;line-height:1.4;text-align:center;opacity:0;transition:opacity .35s;pointer-events:none;text-shadow:0 1px 3px #000}
-  #caption.on{opacity:1}#caption.you{color:var(--green);font-style:italic}
+  body.has-avatar #caption.on{opacity:1}#caption.you{color:var(--green);font-style:italic}
   body.has-avatar #stagedrop{position:absolute;inset:14px;z-index:25;border:2px dashed var(--accent);border-radius:16px;align-items:center;justify-content:center;font-size:20px;background:rgba(var(--bg-rgb),.75);color:#fff}
   body.has-avatar #sphere-area.drop #stagedrop{display:flex}
   body.pip-on #stage3d::after{content:'🗗 Zep è nella mini-finestra';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-family:'Share Tech Mono',monospace;letter-spacing:2px}
@@ -5573,7 +5573,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 // stato del personaggio = stato di MAIK (pensa, parla, ascolta, sveglia)
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
-  if (AV) AV.setState(s);
+  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open')); }   // coperto da una finestra: riposa
   if (document.body.dataset.av !== s) { document.body.dataset.av = s; $('#avstate').textContent = AV_STATE_TXT[s] || s; }
 }
 setInterval(avState, 120);
@@ -5593,7 +5593,7 @@ const VOICE = { q: [], cur: null, spoken: 0, last: '' };
 const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
 function cleanSpeech(t) {
   return stripThink(t || '').replace(/```[\s\S]*?(?:```|$)/g, ' (ti ho scritto del codice) ').replace(/\[[^\]\n]{1,80}\.[A-Za-z0-9]{1,5}(?: · parte \d+)?\]/g, '')
-    .replace(/https?:\/\/\S+/g, 'il link').replace(/[#*_`>|]/g, '').replace(/<[^>]+>/g, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
+    .replace(/https?:\/\/\S+?(?=[.,!?;:»)]*(?:\s|$))/g, 'il link').replace(/[#*_`>|]/g, '').replace(/<[^>]+>/g, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
 }
 const sentences = t => (t.match(/[^.!?…]+[.!?…]+["»”)]*\s*|[^.!?…]+$/g) || []).map(s => s.trim()).filter(s => s.length > 1);
 function itVoice() { const vs = speechSynthesis.getVoices(); return vs.find(x => x.lang && x.lang.startsWith('it') && /natural|neural|online/i.test(x.name)) || vs.find(x => x.lang && x.lang.startsWith('it')); }
@@ -5799,6 +5799,7 @@ function addConferme(d, list) {
   if (!list || !list.length) return;
   const g = document.createElement('div'); g.className = 'pcwrap'; g.innerHTML = list.map(confHTML).join('');
   d.insertBefore(g, d.querySelector('.acts')); list.forEach(c => PENDING.push(c.id));
+  $('#msgs').scrollTop = 1e9;
 }
 async function rispondiConferma(id, a) {
   const card = document.querySelector('.pcconf[data-id="' + CSS.escape(id) + '"]');

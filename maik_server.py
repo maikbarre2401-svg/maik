@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v11.0                     ║
+║                  MAIK — Server v12.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,23 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v12.0 — ZEP PIÙ VIVO E PIÙ BRAVO COL PC:
+  • 👄 Labiale vero dall'italiano scritto: ogni suono ha la sua forma (labbra chiuse per m/b/p,
+    denti sul labbro per f/v, lingua per l/n/t/d, labbra tonde per o/u…), coarticolazione,
+    accento; si riallinea parola per parola con la voce e impara quanto è veloce.
+  • 🙌 Gesti mentre parla scelti dalle parole: saluta, conta sulle dita, indica la chat,
+    mano sul petto («io»), palmo verso di te («tu»), braccia larghe («tutto»), spallucce
+    («forse»), pollice in su, colpi di mano sulle parole importanti, sopracciglia.
+  • 🤖 Zep ha un viso-schermo (occhi, sopracciglia, bocca con denti e lingua) e mani con le dita;
+    i tuoi .vrm/.glb muovono anche dita, gambe, 15 visemi (Ready Player Me) o forme ARKit.
+  • 🌱 Vita sua: si guarda attorno, canticchia, passeggia, si annoia, sbadiglia, si addormenta
+    (Zzz) e si sveglia quando torni; balla («balla!» o a tempo con la tua musica, tasto B);
+    se lo clicchi ride, salta, si arrabbia o gli gira la testa; luci diverse a seconda dell'ora.
+  • 🖥️ Più comandi del PC, sempre con conferma: volume (su/giù/muto/livello), musica (pausa,
+    play, brano successivo/precedente), screenshot (anche «cosa c'è sul mio schermo?»),
+    cerca e apri i tuoi file per nome, «digita …» (scrive al posto tuo), blocca il PC.
+  • Nuovi endpoint: GET /pc/screenshot/<nome>, GET /pc/file?q=, POST /pc/prepara
 
 NOVITÀ v11.0 — ZEP: IL TUO PERSONAGGIO 3D (solo PC):
   • Al posto della sfera, un personaggio 3D animato: carichi il tuo .vrm (VRoid…) o .glb
@@ -167,7 +184,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "11.0"
+VERSIONE  = "12.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1829,6 +1846,10 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 - 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
 - 📝 «prendi nota: …»
 - 🎭 «modalità coach / prof / comico / zen / genio / amico»
+🖥️ Sul PC (sempre con la tua conferma): «apri youtube» · «alza il volume» · «volume al 30» · «muto»
+   «metti in pausa la musica» · «canzone successiva» · «fai uno screenshot» · «cosa c'è sul mio schermo?»
+   «trova il file contratto» · «apri il pdf della bolletta» · «digita: ciao a tutti» · «blocca il pc» · «come sta il pc?»
+🧍 Zep: «balla!» (o tasto B con la tua musica) · «buonanotte» · cliccalo e reagisce 😄
 🤖 E puoi chiedermelo anche a parole tue: «stasera pasta, metti in lista gli ingredienti»,
    «mi fai il conto di 23 per 17?», «che tempo fa a Napoli?» — uso i miei strumenti da solo.
 📚 Carica i tuoi documenti (barra laterale) e chiedimi cosa c'è dentro: ti cito la fonte.
@@ -4490,7 +4511,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V11</title>
+<title>MAIK // Zep V12</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js"}}</script>
@@ -4702,12 +4723,20 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .pcconf button[data-a="si"]{background:var(--accent);color:#050a0f;border:none}
   .pcconf button:hover{filter:brightness(1.15)}
   .pcconf.done{border-color:var(--border);background:rgba(var(--accent-rgb),.05)}.pcconf.done .pct{margin:0}.pcconf .ok{color:var(--green)}.pcconf .ko{color:var(--red)}
+  /* V12: file trovati, screenshot, conto alla rovescia */
+  .pcfile{display:flex;align-items:center;gap:9px;border:1px solid var(--border);background:rgba(var(--accent-rgb),.05);border-radius:10px;padding:7px 10px}
+  .pcfile .fi{font-size:20px;flex:0 0 auto}.pcfile .fn{flex:1;min-width:0}.pcfile .fn b{display:block;color:#fff;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pcfile .fn small{color:var(--dim);font-size:11.5px}
+  .pcfile button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.12);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;flex:0 0 auto}
+  .pcfile button:hover{border-color:var(--accent)}.pcfile button:disabled{opacity:.5;cursor:default}
+  .pcshot{margin-top:7px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}.pcshot img{max-width:100%;max-height:220px;border-radius:8px;border:1px solid var(--border);cursor:zoom-in}
+  .pcshot button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.12);color:var(--text);border-radius:8px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
+  .pcconf .cd{font-variant-numeric:tabular-nums;color:var(--accent);font-weight:700}
   .agc.wait{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.5);color:#ffe2a8}
   .cite{display:inline-block;font-size:.82em;font-family:'Share Tech Mono',monospace;padding:0 6px;border-radius:6px;background:rgba(var(--accent2-rgb),.16);border:1px solid rgba(var(--accent2-rgb),.45);color:#e3d8ff;white-space:nowrap}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V11</span></div>
+  <div class="logo">M A I K <span>// V12</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -4749,6 +4778,8 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <button class="tbtn" id="avreset" type="button" style="width:100%;margin-top:6px;display:none" onclick="resetAvatar()">↺ Torna a Zep (robot)</button>
     <div class="note" style="margin-top:6px">Crea il tuo gratis con <b>VRoid Studio</b> (esporta .vrm) o usa un .glb. Trascinalo sul personaggio per caricarlo.</div>
     <label class="opt">🎙️ Posso essere interrotto mentre parlo<input type="checkbox" id="optbarge" onchange="setOpt('barge',this.checked)"></label>
+    <label class="opt">🌱 Vivo da solo (mi annoio, dormo, passeggio)<input type="checkbox" id="optvita" onchange="setOpt('vita',this.checked);if(AV)AV.setAlive({on:this.checked})"></label>
+    <div class="note">Cliccami e reagisco 😄 · «balla!» o <b>B</b> con la tua musica · «buonanotte» e vado a dormire.</div>
     <h3>🎨 Tema</h3>
     <div class="thsw" id="themes"></div>
     <h3>⚙ Opzioni</h3>
@@ -4772,6 +4803,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <button id="sbframe" onclick="toggleFraming()" title="Inquadratura: busto / intero (Z)" aria-label="Inquadratura">🧍</button>
         <button id="sbpip" onclick="miniWindow()" title="Mini-finestra sempre in primo piano (P)" aria-label="Mini-finestra">🗗</button>
         <button id="sbfocus" onclick="toggleFocus()" title="Solo Zep, a tutto schermo (F)" aria-label="Solo Zep">⛶</button>
+        <button id="sbmusic" onclick="toggleMusic()" title="Balla con la tua musica (B): ascolto il microfono e ballo a tempo" aria-label="Balla con la musica">🎵</button>
         <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
       </div>
       <div id="caption" aria-live="polite"></div>
@@ -4788,6 +4820,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="openDocs()">📚 documenti</button>
       <button onclick="guarda()">👁️ guardami</button>
       <button onclick="qs('come sta il pc?')">💻 stato del PC</button>
+      <button onclick="q('Trova il file ')">🗂️ trova un file</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
     </div>
@@ -4824,6 +4857,8 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>F</kbd> solo Zep, a tutto schermo</div>
       <div><kbd>P</kbd> mini-finestra sempre in primo piano</div>
       <div><kbd>Z</kbd> inquadratura busto / intero</div>
+      <div><kbd>B</kbd> balla con la tua musica (ascolto il microfono)</div>
+      <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
       <div><kbd>?</kbd> questo elenco</div>
@@ -5240,12 +5275,13 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit — il personaggio 3D di MAIK (Three.js)
-   · il TUO modello: .vrm (VRoid Studio…) con espressioni e sguardo VRM, oppure .glb
-     (ossa riconosciute per nome, forme della bocca, animazioni contenute nel file)
-   · senza file: «Zep», un robottino 3D disegnato qui (nessun download)
-   Stessa interfaccia per tutti: stato, parola per parola (bocca a tempo), palpebre,
-   sguardo (mouse o webcam), emozioni, gesti, tema, mini-finestra.
+   ZepKit V12 — il personaggio 3D di MAIK (Three.js)
+   · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
+     (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
+   · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
+   Labiale dall'italiano scritto (consonanti comprese, coarticolazione), gesti mentre parla scelti
+   dalle parole, e una vita sua: si guarda attorno, si annoia, sbadiglia, si addormenta, balla,
+   passeggia, reagisce se lo tocchi. Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
   let LIBS = null;
@@ -5261,10 +5297,242 @@ window.ZepKit = (() => {
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
-  const VOWELS = { a: 'aa', à: 'aa', e: 'ee', è: 'ee', é: 'ee', i: 'ih', ì: 'ih', o: 'oh', ò: 'oh', u: 'ou', ù: 'ou', y: 'ih' };
-  const EMOS = ['happy', 'sad', 'surprised', 'angry', 'relaxed'];
+  const smooth = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[(Math.random() * a.length) | 0];
   const noise = t => Math.sin(t * 1.3) * 0.5 + Math.sin(t * 2.7 + 1.7) * 0.3 + Math.sin(t * 0.7 + 4.1) * 0.2;
   const norm = s => String(s || '').toLowerCase().replace(/^mixamorig\d*[:_]?/, '').replace(/[^a-z0-9]/g, '');
+  const senzaAccenti = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const VOWELS = { a: 'aa', à: 'aa', e: 'ee', è: 'ee', é: 'ee', i: 'ih', ì: 'ih', o: 'oh', ò: 'oh', u: 'ou', ù: 'ou', y: 'ih' };
+  const EMOS = ['happy', 'sad', 'surprised', 'angry', 'relaxed'];
+
+  // ============================================================
+  // LABBRA — dall'italiano scritto ai 15 visemi (gli stessi di Oculus / Ready Player Me)
+  // ============================================================
+  const VIS = ['sil', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR', 'aa', 'E', 'I', 'O', 'U'];
+  // forma della bocca per ogni visema: apertura, larghezza, labbra arrotondate, denti, lingua, labbra premute, labbro morso
+  const VP = {
+    sil: {}, PP: { wide: -0.05, round: 0.05, press: 1 }, FF: { open: 0.08, wide: 0.12, teeth: 0.9, bite: 1 },
+    TH: { open: 0.22, wide: 0.15, teeth: 0.7, tongue: 0.9 }, DD: { open: 0.24, wide: 0.12, teeth: 0.75, tongue: 0.55 },
+    kk: { open: 0.32, wide: 0.08, teeth: 0.35 }, CH: { open: 0.2, wide: -0.3, round: 0.65, teeth: 0.85 },
+    SS: { open: 0.12, wide: 0.4, teeth: 1 }, nn: { open: 0.2, wide: 0.1, teeth: 0.45, tongue: 0.7 },
+    RR: { open: 0.26, wide: -0.08, round: 0.3, tongue: 0.45 }, aa: { open: 1, wide: 0.12, teeth: 0.15, tongue: 0.1 },
+    E: { open: 0.58, wide: 0.55, teeth: 0.4 }, I: { open: 0.32, wide: 0.85, teeth: 0.65 },
+    O: { open: 0.72, wide: -0.38, round: 0.75 }, U: { open: 0.36, wide: -0.62, round: 1 },
+  };
+  const MP_KEYS = ['open', 'wide', 'round', 'teeth', 'tongue', 'press', 'bite'];
+  // quanto un suono "comanda" sui vicini (coarticolazione): le labbra chiuse di m/b/p vincono sempre
+  const DOM = { sil: 0.7, PP: 3.2, FF: 2.4, TH: 0.7, DD: 0.55, kk: 0.45, CH: 1.5, SS: 1.2, nn: 0.5, RR: 0.5, aa: 1, E: 1, I: 1, O: 1.1, U: 1.25 };
+  // i 5 visemi dei VRM (aa ih ou ee oh) ottenuti dai 15
+  const VRM5 = { sil: {}, PP: {}, FF: { ih: 0.15 }, TH: { ee: 0.2, aa: 0.1 }, DD: { ih: 0.25, aa: 0.1 }, kk: { aa: 0.25, ee: 0.1 },
+    CH: { ou: 0.35, ih: 0.15 }, SS: { ih: 0.35, ee: 0.1 }, nn: { ih: 0.2, aa: 0.1 }, RR: { oh: 0.2, ih: 0.1 },
+    aa: { aa: 1 }, E: { ee: 0.8, aa: 0.15 }, I: { ih: 0.9 }, O: { oh: 0.9 }, U: { ou: 1 } };
+  const V_OF = { a: 'aa', à: 'aa', á: 'aa', e: 'E', è: 'E', é: 'E', i: 'I', ì: 'I', í: 'I', o: 'O', ò: 'O', ó: 'O', u: 'U', ù: 'U', ú: 'U' };
+  const isV = c => c in V_OF;
+  const ACC = /[àáèéìíòóùú]/;
+
+  // una parola italiana → suoni (visema + durata relativa). «mamma» → PP aa PP(lunga) aa
+  function g2p(word) {
+    const w = String(word || '').toLowerCase().replace(/[^a-zàáèéìíòóùú']/g, '');
+    const out = [], push = (v, d, o) => out.push(Object.assign({ v, d }, o || {}));
+    for (let i = 0; i < w.length; i++) {
+      const c = w[i], prev = w[i - 1] || '';
+      if (c === "'" || c === 'h') continue;
+      if (isV(c)) {
+        const n = w[i + 1] || '';
+        if (c === 'i' && isV(n) && (/[cg]/.test(prev) || (prev === 'l' && w[i - 2] === 'g'))) continue;   // cia, gio, scia, figlio: la i non si sente
+        if (c === 'u' && isV(n) && /[qg]/.test(prev)) { push('U', 0.45, { glide: 1 }); continue; }          // qua, guerra
+        if ((c === 'i' || c === 'u') && isV(n) && !ACC.test(c) && (i === 0 || !isV(prev))) { push(V_OF[c], 0.5, { glide: 1 }); continue; }  // ieri, uomo
+        push(V_OF[c], ACC.test(c) ? 1.35 : 1, { vow: 1, acc: ACC.test(c) ? 1 : 0 });
+        continue;
+      }
+      const gem = w[i + 1] === c;                                       // doppie: «tutto», «faccio»
+      const n = gem ? (w[i + 2] || '') : (w[i + 1] || ''), n2 = gem ? (w[i + 3] || '') : (w[i + 2] || '');
+      let v = null, d = 0.65, skip = 0;
+      switch (c) {
+        case 'p': case 'b': case 'm': v = 'PP'; d = 0.75; break;
+        case 'f': case 'v': v = 'FF'; d = 0.85; break;
+        case 't': case 'd': v = 'DD'; d = 0.6; break;
+        case 'n': v = 'nn'; d = 0.62; break;
+        case 'l': v = 'nn'; d = 0.6; break;
+        case 'r': v = 'RR'; d = 0.55; break;
+        case 's': if (n === 'c' && /[ei]/.test(n2)) { v = 'CH'; d = 1; skip = 1; } else { v = 'SS'; d = 0.9; } break;
+        case 'z': v = 'SS'; d = 0.95; break;
+        case 'c': if (/[eièéì]/.test(n)) { v = 'CH'; d = 0.9; } else { v = 'kk'; d = 0.65; if (n === 'h') skip = 1; } break;
+        case 'g':
+          if (n === 'n') { v = 'nn'; d = 0.75; skip = 1; }
+          else if (n === 'l' && n2 === 'i') { v = 'nn'; d = 0.75; skip = 1; }
+          else if (/[eièéì]/.test(n)) { v = 'CH'; d = 0.85; }
+          else { v = 'kk'; d = 0.6; if (n === 'h') skip = 1; }
+          break;
+        case 'q': case 'k': v = 'kk'; d = 0.65; break;
+        case 'x': push('kk', 0.5, { cons: 1 }); v = 'SS'; d = 0.8; break;
+        case 'j': case 'y': v = 'I'; d = 0.5; break;
+        case 'w': v = 'U'; d = 0.5; break;
+        default: continue;
+      }
+      push(v, gem ? d * 1.7 : d, { cons: 1 });
+      i += (gem ? 1 : 0) + skip;
+    }
+    const vows = out.filter(x => x.vow);
+    if (vows.length && !vows.some(x => x.acc)) { const s = vows.length >= 2 ? vows[vows.length - 2] : vows[0]; s.d *= 1.25; s.acc = 1; }   // accento sulla penultima
+    if (!out.length) push('aa', 1, { vow: 1 });
+    return out;
+  }
+  const NUM_U = ['zero', 'uno', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci', 'undici', 'dodici', 'tredici',
+    'quattordici', 'quindici', 'sedici', 'diciassette', 'diciotto', 'diciannove'];
+  const NUM_T = ['', '', 'venti', 'trenta', 'quaranta', 'cinquanta', 'sessanta', 'settanta', 'ottanta', 'novanta'];
+  function numIt(n) {
+    if (n < 20) return NUM_U[n];
+    if (n < 100) { let t = NUM_T[(n / 10) | 0]; const u = n % 10; if (u === 1 || u === 8) t = t.slice(0, -1); return t + (u ? NUM_U[u] : ''); }
+    if (n < 1000) { const c = (n / 100) | 0, r = n % 100, rs = r ? numIt(r) : ''; return (c === 1 ? 'cento' : NUM_U[c] + 'cento').slice(0, rs.startsWith('ott') ? -1 : undefined) + rs; }
+    if (n < 10000) { const m = (n / 1000) | 0, r = n % 1000; return (m === 1 ? 'mille' : NUM_U[m] + 'mila') + (r ? numIt(r) : ''); }
+    return String(n).split('').map(d => NUM_U[+d]).join(' ');
+  }
+  // una frase → segmenti nel tempo {v, t0, t1, ci (posizione nel testo), amp}; unit = ms per "unità" di durata
+  function buildLine(text, from = 0, t0 = 0, unit = 82) {
+    const segs = [], re = /([\p{L}']+)|(\d+)|([.,;:!?…]+)/gu;
+    re.lastIndex = from;
+    let m, t = t0, first = true;
+    while ((m = re.exec(text))) {
+      if (m[3]) {
+        const pausa = /[.!?…]/.test(m[3]) ? 4.5 : /[;:]/.test(m[3]) ? 3 : 2.2;
+        segs.push({ v: 'sil', t0: t, t1: t + pausa * unit, ci: m.index }); t += pausa * unit; continue;
+      }
+      const parole = m[1] ? [m[1]] : numIt(+m[2]).split(' ');
+      for (const p of parole) {
+        if (!first) t += 0.25 * unit;                               // micro-pausa tra le parole
+        for (const ph of g2p(p)) {
+          const d = ph.d * unit;
+          segs.push({ v: ph.v, t0: t, t1: t + d, ci: m.index, amp: ph.acc ? 1 : 0.82 + Math.random() * 0.16 });
+          t += d;
+        }
+        first = false;
+      }
+    }
+    return segs;
+  }
+  const units = segs => segs.length ? (segs[segs.length - 1].t1 - segs[0].t0) : 0;
+
+  // ============================================================
+  // GESTI MENTRE PARLA — dalle parole al piano dei gesti (posizione nel testo → gesto)
+  // ============================================================
+  const KW = [
+    [/^(ciao|salve|buongiorno|buonasera|benvenut[oaie]|ehi|eccomi|bentornat[oaie]|hey)$/, 'wave', { start: 1 }],
+    [/^(arrivederci|buonanotte|addio)$/, 'wave'],
+    [/^(io|me)$/, 'chest'],
+    [/^(tu|te|tuo|tua|tuoi|tue|voi)$/, 'offer'],
+    [/^si$/, 'nod', { start: 1 }],
+    [/^(certo|certamente|esatto|esattamente|giusto|assolutamente|perfetto|ok|okay|confermo|daccordo)$/, 'nod'],
+    [/^(no|mai|nessuno|niente|nulla)$/, 'shake'],
+    [/^(forse|magari|boh|chissa|dipende|probabilmente)$/, 'shrug'],
+    [/^(tutto|tutti|tutte|grande|grandi|enorme|enormi|tantissim[oaie]|moltissim[oaie]|ovunque|mondo|infinit[oaie]|immens[oaie])$/, 'wide'],
+    [/^(piccol[oaie]|pochino|briciolo|minimo|leggermente|pizzico)$/, 'small'],
+    [/^(ecco|guarda)$/, 'point'],
+    [/^(penso|credo|immagino|vediamo|allora|dunque|direi|hmm+)$/, 'think', { start: 1 }],
+    [/^(evviva|grandioso|complimenti|urra|congratulazioni|festeggiamo|fantastico|fantastica)$/, 'celebrate'],
+    [/^(ottimo|ottima|bravo|brava|bravissim[oaie]|benissimo|top|fatto)$/, 'thumbsup'],
+    [/^(grazie)$/, 'bow'],
+    [/^(attenzione|importante|ricorda|ricordati|occhio)$/, 'count', { n: 1 }],
+  ];
+  const BIGRAMS = { 'secondo me': 'chest', 'per me': 'chest', 'non so': 'shrug', 'non lo': 'shrug', 'qui sotto': 'point',
+    'un po': 'small', 'prima di': null, 'di sicuro': 'nod', 'per niente': 'shake', 'ti voglio': 'heart', 'vi voglio': 'heart' };
+  const ORDINALI = { primo: 1, prima: 1, secondo: 2, seconda: 2, terzo: 3, terza: 3, quarto: 4, quarta: 4, quinto: 5, quinta: 5 };
+  const LUNGHE_NO = new Set(['quando', 'perche', 'questo', 'questa', 'quello', 'quella', 'ancora', 'sempre', 'proprio', 'allora', 'mentre', 'abbiamo', 'avevo', 'essere', 'stato', 'stata', 'sono', 'anche']);
+  function plan(text) {
+    const toks = [], re = /([\p{L}']+)|(\d+)([.)])?|([.,;:!?…\n]+)/gu;
+    let m;
+    while ((m = re.exec(text))) toks.push(m[4] ? { p: m[4], ci: m.index } : { w: senzaAccenti((m[1] || m[2]).toLowerCase()).replace(/'/g, ''), ci: m.index, num: m[2] ? +m[2] : null, marker: !!m[3] });
+    const parole = toks.filter(x => x.w);
+    const ev = [], esclama = /!\s*$/.test(text), domanda = /\?\s*$/.test(text);
+    let lastG = -99, lastBeat = -99, lato = 'R';
+    for (let i = 0; i < toks.length; i++) {
+      const x = toks[i]; if (!x.w) continue;
+      const inizio = i === 0 || !!toks[i - 1].p;
+      const nx = toks[i + 1] && toks[i + 1].w ? toks[i + 1].w : '';
+      let g = null, o = {};
+      const bi = BIGRAMS[x.w + ' ' + nx];
+      if (bi !== undefined) g = bi;
+      else if (x.num != null && x.marker && x.num >= 1 && x.num <= 5) { g = 'count'; o = { n: x.num }; }
+      else if (ORDINALI[x.w] && inizio && toks[i + 1] && toks[i + 1].p) { g = 'count'; o = { n: ORDINALI[x.w] }; }
+      else for (const [r, k, opt] of KW) {
+        if (r.test(x.w)) { if (opt && opt.start && !inizio) break; g = k; o = Object.assign({}, opt); break; }
+      }
+      if ((g === 'shake') && x.w === 'no' && !inizio) g = null;
+      const gap = inizio && i > 0 && /[.!?…\n]/.test(toks[i - 1].p) ? 6 : 13;
+      if (g && (x.ci - lastG >= gap || g === 'count')) { ev.push(Object.assign({ ci: x.ci, k: g, amp: esclama ? 1.15 : 1 }, o)); lastG = x.ci; continue; }
+      if (!g && x.w.length >= 6 && !LUNGHE_NO.has(x.w) && x.ci - lastG >= 10 && x.ci - lastBeat >= 12) {
+        ev.push({ ci: x.ci, k: 'beat', amp: esclama ? 1.35 : 1, side: lato }); lato = lato === 'R' ? 'L' : 'R'; lastBeat = x.ci;
+      }
+    }
+    if (domanda && parole.length) ev.push({ ci: parole[parole.length - 1].ci, k: 'tilt' });
+    if (esclama && parole.length) { const forte = parole.reduce((a, b) => (b.w.length > a.w.length ? b : a)); ev.push({ ci: forte.ci, k: 'brows' }); }
+    if (text.length > 70 && !/^\s*(ciao|ehi|buongiorno|buonasera)/i.test(text)) ev.push({ ci: 0, k: 'gazeaway' });
+    return ev.sort((a, b) => a.ci - b.ci);
+  }
+
+  // ============================================================
+  // POSE E GESTI — braccia "a riposo verso il basso": sz apre di lato, sx porta avanti, ex piega il gomito,
+  // ey ruota l'avambraccio verso dentro (−) o fuori (+), ez lo alza di lato, wr gira il palmo. Il destro è lo specchio.
+  // ============================================================
+  const REST = { sx: -0.05, sy: 0, sz: 0.28, ex: -0.3, ey: 0, ez: 0, wr: 0 };
+  const TALK = { sx: -0.32, sy: 0, sz: 0.3, ex: -0.95, ey: -0.2, ez: 0, wr: 0.5 };
+  const THINK = { sx: -1.35, sy: -0.65, sz: 0.2, ex: -1.75, ey: -0.25, ez: 0, wr: 0.3 };      // mano al mento (robot)
+  const THINK_H = { sx: -0.55, sy: -0.35, sz: 0.15, ex: -2.3, ey: -0.55, ez: 0, wr: 0.3 };    // (umanoide)
+  const FACE_POSE = {      // mano alla bocca / sul viso / agli occhi: [robot, umanoide]
+    yawn: [{ sx: -1.55, sy: -0.6, sz: 0.25, ex: -1.6, ey: -0.2, ez: 0, wr: 0.4 }, { sx: -0.6, sy: -0.4, sz: 0.15, ex: -2.45, ey: -0.6, ez: 0, wr: 0.4 }],
+    facepalm: [{ sx: -1.65, sy: -0.6, sz: 0.3, ex: -1.75, ey: -0.3, ez: 0, wr: 0.2 }, { sx: -0.7, sy: -0.45, sz: 0.15, ex: -2.55, ey: -0.65, ez: 0, wr: 0.2 }],
+    rubeyes: [{ sx: -1.7, sy: -0.5, sz: 0.3, ex: -1.7, ey: -0.3, ez: 0, wr: 0 }, { sx: -0.65, sy: -0.4, sz: 0.15, ex: -2.5, ey: -0.6, ez: 0, wr: 0 }],
+  };
+  const HANDS = {   // piegatura delle dita: pollice, indice, medio, anulare, mignolo (0 dritto · 1 chiuso)
+    relax: [0.2, 0.25, 0.3, 0.35, 0.4], open: [0, 0, 0, 0, 0], fist: [0.85, 1, 1, 1, 1], point: [0.75, 0, 1, 1, 1],
+    thumb: [0, 1, 1, 1, 1], pinch: [0.55, 0.55, 0.3, 0.35, 0.4], claw: [0.3, 0.6, 0.6, 0.6, 0.6],
+    count1: [0.85, 0, 1, 1, 1], count2: [0.85, 0, 0, 1, 1], count3: [0.85, 0, 0, 0, 1], count4: [0.85, 0, 0, 0, 0], count5: [0, 0, 0, 0, 0],
+  };
+  const ARMS_OF = { L: ['L'], R: ['R'], B: ['L', 'R'] };
+  const env = (p, a = 0.18, r = 0.25) => smooth(p / a) * smooth((1 - p) / r);
+  const armTo = (A, T, w) => { for (const k in T) A[k] = lerp(A[k], T[k], w); };
+  // ogni gesto: durata, braccia usate, e cosa fa alla posa (w = quanto pesa adesso)
+  const ACT = {
+    wave: { dur: 2.2, arms: 'R', f(a, w, P) { armTo(P[a.arm], { sz: 1.85, sx: -0.25, ex: -0.15, ey: 0, ez: 1.25 + 0.45 * Math.sin(a.t * 11), wr: 0 }, w); P.hand[a.arm] = ['open', w]; P.head.z += 0.07 * w; P.face.brow += 0.3 * w; P.face.smile += 0.45 * w; } },
+    celebrate: { dur: 2.2, arms: 'B', f(a, w, P) { const b = 0.15 * Math.sin(a.t * 12); for (const s of 'LR') { armTo(P['arm' + s], { sz: 2.55 + b, sx: -0.1, ex: -0.25, ey: 0, ez: 0 }, w); P.hand[s] = ['fist', w]; } P.root.py += 0.045 * Math.abs(Math.sin(a.t * 10)) * w; P.face.mode.happy += w; P.face.smile += w; } },
+    shrug: { dur: 1.6, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.5, sx: -0.35, ex: -1.3, ey: 0.5, ez: 0, wr: 1.3 }, w); P.hand[s] = ['open', w]; } P.head.z += 0.15 * w; P.face.brow += 0.6 * w; P.face.frown += 0.3 * w; P.shoulders += w; } },
+    think: { dur: 3, arms: 'R', f(a, w, P) { armTo(P.armR, P.robot ? THINK : THINK_H, w); P.hand.R = ['fist', w * 0.7]; P.head.x -= 0.1 * w; P.head.y += 0.2 * w; P.head.z += 0.08 * w; P.look = [0.5, 0.5, w]; P.face.browL += 0.5 * w; } },
+    nod: { dur: 1.1, f(a, w, P) { P.head.x += 0.2 * Math.sin(a.t * 14) * w; } },
+    shake: { dur: 1.2, f(a, w, P) { P.head.y += 0.28 * Math.sin(a.t * 13) * w; } },
+    tilt: { dur: 1.2, f(a, w, P) { P.head.z += 0.16 * w; P.face.brow += 0.55 * w; } },
+    brows: { dur: 0.9, f(a, w, P) { P.face.brow += 0.8 * w; } },
+    chest: { dur: 1.4, arms: 'R', f(a, w, P) { armTo(P.armR, { sz: 0.1, sx: -0.45, ex: -2.0, ey: -1.0, ez: 0, wr: -0.2 }, w); P.hand.R = ['open', w]; } },
+    offer: { dur: 1.3, arms: 'R', f(a, w, P) { armTo(P.armR, { sz: 0.38, sx: -0.75, ex: -1.1, ey: 0.3, ez: 0, wr: 1.4 }, w); P.hand.R = ['open', w]; P.head.x += 0.05 * w; } },
+    point: { dur: 1.8, arms: 'L', f(a, w, P) { armTo(P.armL, { sz: 1.2, sx: -0.8, ex: -0.12, ey: 0, ez: 0, wr: 0 }, w); P.hand.L = ['point', w]; P.look = [0.75, -0.05, w]; } },
+    wide: { dur: 1.5, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.95, sx: -0.55, ex: -0.5, ey: 0.35, ez: 0, wr: 1.0 }, w); P.hand[s] = ['open', w]; } P.face.brow += 0.3 * w; } },
+    small: { dur: 1.3, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.15, sx: -0.65, ex: -1.55, ey: -0.6, ez: 0, wr: 0.6 }, w); P.hand[s] = ['pinch', w]; } P.face.squint += 0.3 * w; } },
+    count: { dur: 1.5, arms: 'R', f(a, w, P) { armTo(P.armR, { sz: 0.32, sx: -0.6, ex: -2.0, ey: -0.15, ez: 0, wr: 0.4 }, w); P.hand.R = ['count' + clamp(a.n || 1, 1, 5), w]; } },
+    thumbsup: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sz: 0.3, sx: -0.85, ex: -1.4, ey: -0.25, ez: 0, wr: -0.4 }, w); P.hand.R = ['thumb', w]; P.face.smile += 0.6 * w; P.face.mode.happy += 0.6 * w; } },
+    clap: { dur: 1.6, arms: 'B', f(a, w, P) { const c = 0.5 + 0.5 * Math.sin(a.t * 16); for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.2, sx: -0.75, ex: -1.45, ey: -0.6 - 0.18 * c, ez: 0, wr: 0 }, w); P.hand[s] = ['open', w]; } P.face.smile += 0.7 * w; } },
+    bow: { dur: 1.6, f(a, w, P) { P.spine.x += 0.3 * w; P.head.x += 0.2 * w; } },
+    beat: { dur: 0.38, add: 1, f(a, w, P) { const k = Math.sin(Math.PI * clamp(a.t / 0.38, 0, 1)) * (a.amp || 1) * P.talk; const A = P['arm' + (a.side || 'R')]; A.ex -= 0.32 * k; A.sx -= 0.1 * k; P.head.x += 0.04 * k; P.face.brow += 0.12 * k; } },
+    yawn: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, FACE_POSE.yawn[P.robot ? 0 : 1], w); P.hand.R = ['relax', w]; const m = smooth(a.p / 0.35) * smooth((0.85 - a.p) / 0.25); P.face.mouthOpen = Math.max(P.face.mouthOpen, 0.95 * m); P.face.mouthRound = Math.max(P.face.mouthRound, 0.45 * m); P.face.closed += 0.85 * m; P.head.x -= 0.18 * m; P.spine.x -= 0.08 * m; } },
+    stretch: { dur: 2.4, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 2.7, sx: -0.1, ex: -0.3, ey: 0, ez: 0.2, wr: 0 }, w); P.hand[s] = ['open', w]; } P.spine.x -= 0.12 * w; P.head.x -= 0.15 * w; P.face.closed += 0.6 * w; P.root.py += 0.02 * w; } },
+    scratch: { dur: 1.8, arms: 'R', f(a, w, P) { armTo(P.armR, { sz: 1.5, sx: -0.9, ex: -2.2, ey: -0.5 + 0.1 * Math.sin(a.t * 18), ez: 0, wr: 0 }, w); P.hand.R = ['claw', w]; P.head.z -= 0.12 * w; P.face.browIn += 0.4 * w; } },
+    lookaround: { dur: 3.2, f(a, w, P) { P.look = [0.9 * Math.sin(a.p * Math.PI * 2), 0.1 * Math.sin(a.p * Math.PI * 4), w]; } },
+    glance: { dur: 1.6, f(a, w, P) { P.look = [0.85, -0.25, w]; } },
+    shift: { dur: 3, f(a, w, P) { P.root.x += (a.side === 'L' ? 1 : -1) * 0.025 * P.h * w; P.spine.z += (a.side === 'L' ? -1 : 1) * 0.04 * w; P.hips.z += (a.side === 'L' ? 1 : -1) * 0.03 * w; } },
+    hum: { dur: 4, f(a, w, P) { P.head.z += 0.07 * Math.sin(a.t * 5) * w; P.head.x += 0.03 * Math.sin(a.t * 10) * w; P.face.smile += 0.35 * w; P.face.squint += 0.3 * w; P.face.press += 0.4 * w; P.notes = Math.max(P.notes, w); } },
+    checkhand: { dur: 2.4, arms: 'L', f(a, w, P) { armTo(P.armL, { sz: 0.35, sx: -0.9, ex: -1.7, ey: -0.3, ez: 0, wr: 1.2 }, w); P.hand.L = [[0, 0.5 + 0.5 * Math.sin(a.t * 9), 0.5 + 0.5 * Math.sin(a.t * 9 + 1), 0.5 + 0.5 * Math.sin(a.t * 9 + 2), 0.5 + 0.5 * Math.sin(a.t * 9 + 3)], w]; P.look = [0.35, -0.45, w]; } },
+    giggle: { dur: 1.3, f(a, w, P) { P.head.y += 0.12 * Math.sin(a.t * 20) * w; P.spine.z += 0.05 * Math.sin(a.t * 18) * w; P.face.mode.happy += w; P.face.smile += w; P.face.mouthOpen = Math.max(P.face.mouthOpen, 0.3 * w * (0.6 + 0.4 * Math.sin(a.t * 22))); } },
+    startle: { dur: 0.9, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.65, sx: -0.3, ex: -0.5, ey: 0.2, ez: 0, wr: 0.5 }, w); P.hand[s] = ['open', w]; } P.root.py += 0.05 * Math.sin(Math.PI * clamp(a.p * 1.6, 0, 1)); P.face.wide += w; P.face.brow += w; P.face.mouthOpen = Math.max(P.face.mouthOpen, 0.45 * w); P.face.mouthRound = Math.max(P.face.mouthRound, 0.8 * w); } },
+    annoyed: { dur: 2.6, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.22, sx: -0.6, ex: -1.95, ey: -1.05, ez: 0, wr: 0 }, w); P.hand[s] = ['fist', w]; } P.face.angry += w; P.face.frown += 0.6 * w; P.head.z += 0.1 * w; P.head.y -= 0.15 * w; } },
+    dizzy: { dur: 2.6, f(a, w, P) { P.head.x += 0.12 * Math.sin(a.t * 6) * w; P.head.z += 0.12 * Math.cos(a.t * 6) * w; P.spine.z += 0.05 * Math.sin(a.t * 3) * w; P.face.mode.dizzy += w; } },
+    rubeyes: { dur: 1.6, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], Object.assign({}, FACE_POSE.rubeyes[P.robot ? 0 : 1], { ey: FACE_POSE.rubeyes[P.robot ? 0 : 1].ey + 0.08 * Math.sin(a.t * 14 + (s === 'L' ? 0 : 1)) }), w); P.hand[s] = ['fist', w]; } P.face.closed += w; } },
+    facepalm: { dur: 1.8, arms: 'R', f(a, w, P) { armTo(P.armR, FACE_POSE.facepalm[P.robot ? 0 : 1], w); P.hand.R = ['open', w]; P.head.x += 0.22 * w; P.face.closed += 0.7 * w; } },
+    jump: { dur: 0.7, f(a, w, P) { P.root.py += 0.06 * Math.sin(Math.PI * a.p); P.face.wide += 0.5 * w; } },
+    heart: { dur: 2.4, arms: 'B', f(a, w, P) { for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.12, sx: -0.5, ex: -2.0, ey: -0.95, ez: 0, wr: 0 }, w); P.hand[s] = ['open', w]; } P.face.mode.heart += w; P.face.smile += w; P.hearts = Math.max(P.hearts, w); } },
+    wink: { dur: 0.9, f(a, w, P) { P.face.mode.wink += w; P.face.smile += 0.7 * w; } },
+    antenna: { dur: 1.5, f(a, w, P) { P.antenna += w; } },
+    spin: { dur: 1.6, f(a, w, P) { P.root.yaw += Math.PI * 2 * smooth(a.p); } },
+  };
+  const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
 
   // ---------- ricerca delle ossa in un .glb qualsiasi (Mixamo, Ready Player Me, Blender…) ----------
   const BONE_NAMES = {
@@ -5275,34 +5543,141 @@ window.ZepKit = (() => {
     leftLowerArm: ['leftforearm', 'leftlowerarm', 'forearml', 'lowerarml', 'lforearm', 'llowerarm', 'forearmleft'],
     rightLowerArm: ['rightforearm', 'rightlowerarm', 'forearmr', 'lowerarmr', 'rforearm', 'rlowerarm', 'forearmright'],
     leftHand: ['lefthand', 'handl', 'lhand', 'handleft'], rightHand: ['righthand', 'handr', 'rhand', 'handright'],
+    leftUpperLeg: ['leftupleg', 'leftupperleg', 'upperlegl', 'thighl', 'lthigh', 'leftthigh', 'thighleft', 'upperlegleft'],
+    rightUpperLeg: ['rightupleg', 'rightupperleg', 'upperlegr', 'thighr', 'rthigh', 'rightthigh', 'thighright', 'upperlegright'],
+    leftLowerLeg: ['leftleg', 'leftlowerleg', 'lowerlegl', 'calfl', 'shinl', 'lcalf', 'leftcalf', 'leftshin', 'shinleft', 'lowerlegleft'],
+    rightLowerLeg: ['rightleg', 'rightlowerleg', 'lowerlegr', 'calfr', 'shinr', 'rcalf', 'rightcalf', 'rightshin', 'shinright', 'lowerlegright'],
   };
+  const FINGERS = ['Thumb', 'Index', 'Middle', 'Ring', 'Little'];
   function findBones(root) {
     const all = []; root.traverse(o => { if (o.isBone || o.type === 'Bone') all.push(o); });
     const out = {};
-    for (const [k, names] of Object.entries(BONE_NAMES)) {
-      out[k] = all.find(b => names.includes(norm(b.name))) || null;
+    for (const [k, names] of Object.entries(BONE_NAMES)) out[k] = all.find(b => names.includes(norm(b.name))) || null;
+    // dita: [lato][dito] = [falange 1, 2, 3]
+    out.fingers = {};
+    for (const [side, sl] of [['left', 'l'], ['right', 'r']]) {
+      out.fingers[side] = FINGERS.map(F => {
+        const fs = F === 'Little' ? ['pinky', 'little'] : [F.toLowerCase()];
+        return [1, 2, 3].map(i => {
+          const seg = F === 'Thumb' ? ['metacarpal', 'proximal', 'distal'][i - 1] : ['proximal', 'intermediate', 'distal'][i - 1];
+          const cand = fs.flatMap(f => [`${side}hand${f}${i}`, `${f}${i}${sl}`, `${f}0${i}${sl}`, `f${f}0${i}${sl}`, `${side}${f}${i}`, `${f}${i}${side}`, `${side}${f}${seg}`, `${f}${seg}${sl}`]);
+          return all.find(b => cand.includes(norm(b.name))) || null;
+        });
+      });
     }
     return out;
   }
-  // ---------- forme (morph target) in un .glb: bocca, palpebre, emozioni ----------
+  // ---------- forme (morph target) in un .glb: bocca, palpebre, emozioni, visemi Oculus, ARKit ----------
   const MORPH_NAMES = {
     aa: ['visemeaa', 'aa', 'a', 'mouthopen', 'jawopen', 'vrcvaa', 'fclmthsmall'], ih: ['visemei', 'ih', 'i', 'vrcvih'],
     ou: ['visemeu', 'ou', 'u', 'vrcvou', 'mouthfunnel'], ee: ['visemee', 'ee', 'e', 'vrcvee'], oh: ['visemeo', 'oh', 'o', 'vrcvoh', 'mouthpucker'],
     blink: ['blink', 'eyesclosed', 'eyeclose', 'eyeblink', 'blinkboth'], blinkLeft: ['eyeblinkleft', 'blinkleft', 'blinkl'], blinkRight: ['eyeblinkright', 'blinkright', 'blinkr'],
     happy: ['happy', 'joy', 'smile', 'mouthsmile', 'fun'], happyL: ['mouthsmileleft'], happyR: ['mouthsmileright'],
     sad: ['sad', 'sorrow', 'mouthfrown'], sadL: ['mouthfrownleft'], sadR: ['mouthfrownright'],
-    surprised: ['surprised', 'surprise', 'browinnerup', 'shock'], angry: ['angry', 'anger', 'browdownleft', 'browdown'], relaxed: ['relaxed', 'calm'],
+    surprised: ['surprised', 'surprise', 'shock'], angry: ['angry', 'anger'], relaxed: ['relaxed', 'calm'],
   };
+  const ARKIT = ['jawopen', 'mouthfunnel', 'mouthpucker', 'mouthpressleft', 'mouthpressright', 'mouthrolllower', 'mouthstretchleft',
+    'mouthstretchright', 'browinnerup', 'browouterupleft', 'browouterupright', 'browdownleft', 'browdownright', 'eyewideleft', 'eyewideright',
+    'eyesquintleft', 'eyesquintright', 'cheekpuff'];
   function findMorphs(root) {
-    const out = {};
+    const out = {}, oculus = {}, arkit = {};
     root.traverse(o => {
       if (!o.morphTargetDictionary || !o.morphTargetInfluences) return;
       for (const [name, idx] of Object.entries(o.morphTargetDictionary)) {
         const n = norm(name);
         for (const [k, names] of Object.entries(MORPH_NAMES)) if (names.includes(n)) (out[k] = out[k] || []).push([o, idx]);
+        const v = VIS.find(v => n === 'viseme' + v.toLowerCase()); if (v) (oculus[v] = oculus[v] || []).push([o, idx]);
+        if (ARKIT.includes(n)) (arkit[n] = arkit[n] || []).push([o, idx]);
       }
     });
-    return out;
+    return { m: out, oculus: Object.keys(oculus).length >= 8 ? oculus : null, arkit: arkit.jawopen ? arkit : null };
+  }
+
+  // ---------- volto del robot: occhi, sopracciglia e bocca disegnati su uno schermo (la visiera) ----------
+  const FW = 512, FH = 224;
+  function rr(g, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  function heartPath(g, x, y, s) { g.beginPath(); g.moveTo(x, y + s * 0.35); g.bezierCurveTo(x - s * 1.1, y - s * 0.35, x - s * 0.45, y - s * 1.05, x, y - s * 0.45); g.bezierCurveTo(x + s * 0.45, y - s * 1.05, x + s * 1.1, y - s * 0.35, x, y + s * 0.35); g.closePath(); }
+  function drawFace(g, F) {
+    g.clearRect(0, 0, FW, FH);
+    g.save();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    g.shadowColor = F.col; g.shadowBlur = 14 * F.glow;
+    g.fillStyle = F.col; g.strokeStyle = F.col; g.globalAlpha = F.dim;
+    const cx = FW / 2 + F.lx * 16, cy = FH / 2 - 16 - F.ly * 10;
+    const M = F.mode, modeMax = Math.max(M.happy, M.sleep, M.dizzy, M.heart);
+    for (const s of [-1, 1]) {
+      const x = cx + s * 66, y = cy;
+      const winkHere = s === 1 ? M.wink : 0;
+      const special = Math.max(modeMax, winkHere);
+      // occhio normale (capsula), che sfuma quando c'è un'espressione speciale
+      if (special < 0.98) {
+        g.save(); g.globalAlpha = F.dim * (1 - special);
+        const W = 44 * (1 + 0.18 * F.wide), Hf = 64 * (1 + 0.22 * F.wide) * (1 - 0.3 * F.squint);
+        const h = Math.max(6, Hf * clamp(1 - F.closed, 0.06, 1));
+        rr(g, x - W / 2, y - h / 2, W, h, W / 2); g.fill();
+        // palpebra inclinata: arrabbiato (angolo interno giù) o triste (angolo esterno giù)
+        const k = 0.55 * F.angry * -s + 0.42 * F.sad * s, depth = (0.2 * F.angry + 0.14 * F.sad) * h;
+        if (Math.abs(k) > 0.01 || depth > 0.5) {
+          g.globalCompositeOperation = 'destination-out'; g.shadowBlur = 0;
+          const top = y - h / 2 + depth;
+          g.beginPath(); g.moveTo(x - W, top - k * W - 80); g.lineTo(x - W, top - k * W); g.lineTo(x + W, top + k * W); g.lineTo(x + W, top + k * W - 80); g.closePath(); g.fill();
+          g.globalCompositeOperation = 'source-over'; g.shadowBlur = 14 * F.glow;
+        }
+        if (h > 26) { g.fillStyle = 'rgba(255,255,255,0.85)'; g.shadowBlur = 0; g.beginPath(); g.arc(x - W * 0.17, y - h * 0.24, 5.5, 0, Math.PI * 2); g.fill(); g.fillStyle = F.col; g.shadowBlur = 14 * F.glow; }
+        g.restore();
+      }
+      if (special > 0.02) {
+        g.save(); g.globalAlpha = F.dim * special; g.lineWidth = 11;
+        const best = winkHere > modeMax ? 'wink' : ['happy', 'sleep', 'dizzy', 'heart'].reduce((a, b) => (M[b] > M[a] ? b : a));
+        if (best === 'happy' || best === 'wink') { g.beginPath(); g.arc(x, y + 14, 23, Math.PI * 1.08, Math.PI * 1.92); g.stroke(); }
+        else if (best === 'sleep') { g.lineWidth = 8; g.beginPath(); g.arc(x, y - 8, 21, Math.PI * 0.12, Math.PI * 0.88); g.stroke(); }
+        else if (best === 'dizzy') { g.lineWidth = 6; g.beginPath(); for (let a = 0; a < Math.PI * 5; a += 0.2) { const r = 2 + a * 2.1, aa = a + F.t * 6 * s; g.lineTo(x + Math.cos(aa) * r, y + Math.sin(aa) * r); } g.stroke(); }
+        else if (best === 'heart') { g.fillStyle = F.col2; g.shadowColor = F.col2; heartPath(g, x, y + 4, 30 * (1 + 0.08 * Math.sin(F.t * 9))); g.fill(); }
+        g.restore();
+      }
+      // sopracciglia: si alzano (domande, sorpresa), angolo interno su (triste) o giù (arrabbiato)
+      const act = clamp(Math.max(F.brow, F.browIn, F.angry, F.sad, s === -1 ? F.browL : 0), 0, 1);
+      if (act > 0.03 && M.sleep < 0.5) {
+        g.save(); g.globalAlpha = F.dim * clamp(act * 1.6, 0, 1); g.lineWidth = 7;
+        const by = y - 52 - F.brow * 12 - (s === -1 ? F.browL * 10 : 0) - F.wide * 6;
+        const inner = -(F.browIn * 12 + F.sad * 8) + F.angry * 12, ox = x - s * 24, ix = x + s * 14;
+        g.beginPath(); g.moveTo(ox, by); g.lineTo(ix, by + inner); g.stroke(); g.restore();
+      }
+    }
+    // bocca: forma dai visemi + sorriso/broncio
+    const mx = FW / 2 + F.lx * 6, my = FH / 2 + 52 - F.ly * 4;
+    const o = F.open, r = F.round, sm = F.smile, fr = F.frown;
+    const W = 84 * (1 + 0.3 * F.wideM - 0.4 * r + 0.15 * sm - 0.1 * F.press);
+    const H = 3 + 66 * o * (1 - 0.12 * F.wideM);
+    const curve = (sm * 16 - fr * 14) * (1 - Math.min(1, o * 1.4) * 0.6);
+    g.globalAlpha = F.dim;
+    if (H < 8) {
+      g.lineWidth = 7 + 3 * F.press;
+      g.beginPath(); g.moveTo(mx - W / 2, my - curve * 0.5); g.quadraticCurveTo(mx, my + curve, mx + W / 2, my - curve * 0.5); g.stroke();
+      if (F.bite > 0.15) { g.save(); g.fillStyle = 'rgba(255,255,255,0.9)'; g.globalAlpha = F.dim * F.bite; g.shadowBlur = 6; rr(g, mx - W * 0.22, my - 11, W * 0.44, 8, 3); g.fill(); g.restore(); }
+    } else {
+      const top = my - H * 0.34, bot = my + H * 0.66, side = my - curve * 0.4;
+      // labbro di sopra più piatto, di sotto più tondo (i punti di controllo ×4/3: così la curva arriva davvero a top/bot)
+      const cu = side + (top - curve * 0.2 - side) * 4 / 3, cl = side + (bot + curve * 0.25 - side) * 4 / 3;
+      g.beginPath();
+      if (r > 0.5) g.ellipse(mx, (top + bot) / 2, W / 2 * (0.75 + 0.25 * (1 - r)), H / 2, 0, 0, Math.PI * 2);
+      else { g.moveTo(mx - W / 2, side); g.bezierCurveTo(mx - W * 0.3, cu, mx + W * 0.3, cu, mx + W / 2, side); g.bezierCurveTo(mx + W * 0.34, cl, mx - W * 0.34, cl, mx - W / 2, side); g.closePath(); }
+      g.save(); g.globalAlpha = F.dim * 0.22; g.fill(); g.restore();
+      g.lineWidth = 6; g.stroke();
+      g.save(); g.clip(); g.shadowBlur = 0;
+      if (F.teeth > 0.05) { g.fillStyle = 'rgba(255,255,255,0.92)'; g.globalAlpha = F.dim * clamp(F.teeth, 0, 1); g.fillRect(mx - W / 2, top - 4, W, 7 + 7 * F.teeth); }
+      if (F.tongue > 0.05 && H > 14) { g.fillStyle = F.col2; g.globalAlpha = F.dim * clamp(F.tongue, 0, 1) * 0.95; g.beginPath(); g.ellipse(mx, bot - H * (0.12 + 0.3 * F.tongue), W * 0.27, H * 0.3, 0, 0, Math.PI * 2); g.fill(); }
+      g.restore();
+    }
+    g.restore();
+  }
+
+  // ---------- simboli che volano (Zzz, note, cuori…) ----------
+  function symbolTexture(THREE, ch, col) {
+    const c = document.createElement('canvas'); c.width = c.height = 96;
+    const g = c.getContext('2d'); g.font = 'bold 64px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.shadowColor = col; g.shadowBlur = 14; g.fillStyle = col; g.fillText(ch, 48, 52);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   }
 
   async function create(container, opts = {}) {
@@ -5323,8 +5698,7 @@ window.ZepKit = (() => {
     const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(1.4, 2.6, 2.4); scene.add(key);
     const rim = new THREE.DirectionalLight(0x00f5ff, 2.4); rim.position.set(-2.2, 1.6, -2.2); scene.add(rim);
     const rim2 = new THREE.DirectionalLight(0x7c3aed, 1.6); rim2.position.set(2.2, 1.2, -1.8); scene.add(rim2);
-    const accent = new THREE.Color(0x00f5ff), accent2 = new THREE.Color(0x7c3aed);
-    // anello luminoso a terra + ombra morbida + particelle
+    const accent = new THREE.Color(0x00f5ff), accent2 = new THREE.Color(0x7c3aed), tmpC = new THREE.Color();
     const ringMat = new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.45, 96), ringMat); ring.rotation.x = -Math.PI / 2; scene.add(ring);
     const ring2 = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.535, 96), ringMat.clone()); ring2.material.opacity = 0.25; ring2.rotation.x = -Math.PI / 2; scene.add(ring2);
@@ -5336,19 +5710,48 @@ window.ZepKit = (() => {
     const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
     const pMat = new THREE.PointsMaterial({ color: accent, size: 0.012, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
     const particles = new THREE.Points(pGeo, pMat); scene.add(particles);
+    // ora del giorno: luce calda la mattina, arancio la sera, blu di notte
+    const TOD = {
+      mattina: { key: 0xffe2c4, ki: 1.6, sky: 0xfff0dc, gnd: 0x2a1a20, hi: 0.95, env: 0.6, stars: 0.4 },
+      giorno: { key: 0xffffff, ki: 1.5, sky: 0xcfe3ff, gnd: 0x140c26, hi: 0.9, env: 0.55, stars: 0.6 },
+      sera: { key: 0xffb27f, ki: 1.35, sky: 0xffc6aa, gnd: 0x2a1030, hi: 0.78, env: 0.45, stars: 0.7 },
+      notte: { key: 0xb4c0ff, ki: 0.95, sky: 0x6f7dff, gnd: 0x07061a, hi: 0.62, env: 0.35, stars: 1 },
+    };
+    const todOf = h => (h >= 6 && h < 10 ? 'mattina' : h >= 10 && h < 17 ? 'giorno' : h >= 17 && h < 21 ? 'sera' : 'notte');
+    const L = { key: new THREE.Color(0xffffff), sky: new THREE.Color(0xcfe3ff), gnd: new THREE.Color(0x140c26), ki: 1.5, hi: 0.9, env: 0.55, stars: 1 };
+    // simboli (Zzz, note, cuori, «!»): pochi sprite riciclati
+    const SYM = {}, sprites = [];
+    const symMat = ch => { if (!SYM[ch]) SYM[ch] = new THREE.SpriteMaterial({ map: symbolTexture(THREE, ch, ch === '♥' ? '#' + accent2.getHexString() : '#' + accent.getHexString()), transparent: true, depthWrite: false, toneMapped: false }); return SYM[ch]; };
+    function spawn(ch, pos, o = {}) {
+      let s = sprites.find(x => !x.alive);
+      if (!s) { if (sprites.length >= 14) return; s = { sp: new THREE.Sprite(symMat(ch)) }; scene.add(s.sp); sprites.push(s); }
+      s.sp.material = symMat(ch).clone(); s.alive = true; s.t = 0; s.life = o.life || 2.2; s.vx = o.vx ?? rnd(0.02, 0.06); s.vy = o.vy ?? 0.09; s.size = (o.size || 0.07) * height;
+      s.sp.position.copy(pos); s.sp.scale.setScalar(s.size); s.sp.visible = true;
+    }
 
     // ---------- stato condiviso dell'animazione ----------
+    const now0 = performance.now();
     const S = {
       state: 'idle', t: 0, blinkT: 2 + Math.random() * 3, blink: 0,
-      mouth: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }, mouthTarget: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 },
-      visemes: [], speakUntil: 0, level: 0,
+      mouth: { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 }, vis: Object.fromEntries(VIS.map(v => [v, 0])),
+      mp: Object.fromEntries(MP_KEYS.map(k => [k, 0])),
+      lip: { segs: [], unit: clamp(+opts.lipUnit || 82, 45, 160), text: '', ev: [], curCi: -1, start: 0, ciUnits: null, syncs: 0, quietUntil: 0, line: 0 },
+      speakUntil: 0, level: 0,
       emo: { happy: 0, sad: 0, surprised: 0, angry: 0, relaxed: 0 }, emoTarget: null, emoUntil: 0,
-      gesture: null, gestureT: 0,
-      look: { x: 0, y: 0 }, lookTarget: { x: 0, y: 0 }, lookSource: 'pointer', lastLookInput: 0,
+      acts: [], gesture: null,
+      look: { x: 0, y: 0 }, lookTarget: { x: 0, y: 0 }, lookSource: 'pointer', lastLookInput: 0, gaze: { until: 0, x: 0, y: 0 },
       yaw: 0, yawTarget: 0, zoom: 1, framing: opts.framing || 'busto',
+      hand: { L: HANDS.relax.slice(), R: HANDS.relax.slice() },
+      face: { brow: 0, browIn: 0, browL: 0, angry: 0, sad: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
+      talk: 0, think: 0, listen: 0, sleepW: 0, drowsyW: 0,
+      alive: { on: opts.alive !== false, lastAct: now0, mode: 'awake', next: now0 + rnd(14000, 22000), nextYawn: 0, boredMs: opts.boredMs || 150000, sleepMs: opts.sleepMs || 420000, zT: 0, noteT: 0, heartT: 0 },
+      dance: { on: false, bpm: 112, last: 0, n: 0, ext: false, until: 0, w: 0, hue: 0 },
+      walk: { x: 0, target: 0, phase: 0, yaw: 0, speed: 0, back: 0 },
+      poke: { n: 0, t: 0 },
+      tod: null, camX: 0,
     };
     const charRoot = new THREE.Group(); scene.add(charRoot);
-    let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, mouthY = 1.4, baseY = 0, topY = 1.6;
+    let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, baseY = 0, topY = 1.6;
 
     // ============================================================
     // 1) il TUO modello (.vrm / .glb)
@@ -5367,6 +5770,8 @@ window.ZepKit = (() => {
         const hb = n => { try { return v.humanoid.getNormalizedBoneNode(n); } catch (e) { return null; } };
         const bones = {}; for (const k of Object.keys(BONE_NAMES)) bones[k] = hb(k);
         if (!bones.chest) bones.chest = hb('upperChest');
+        bones.fingers = {};
+        for (const side of ['left', 'right']) bones.fingers[side] = FINGERS.map(F => (F === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal']).map(sg => hb(side + F + sg)));
         rig = makeBoneRig(bones, null);
         if (v.lookAt) { v.lookAt.target = lookObj; v.lookAt.autoUpdate = true; }
       } else {
@@ -5375,19 +5780,21 @@ window.ZepKit = (() => {
         if (gltf.animations && gltf.animations.length) {
           mixer = new THREE.AnimationMixer(root);
           for (const c of gltf.animations) clips[c.name.toLowerCase()] = mixer.clipAction(c);
-          const pick = re => Object.entries(clips).find(([n]) => re.test(n));
-          const idle = pick(/idle|breath|stand|wait|loop/) || Object.entries(clips)[0];
+          const pk = re => Object.entries(clips).find(([n]) => re.test(n));
+          const idle = pk(/idle|breath|stand|wait|loop/) || Object.entries(clips)[0];
           if (idle) { idle[1].play(); clips.__idle = idle[1]; }
-          const talk = pick(/talk|speak|chat/); if (talk) clips.__talk = talk[1];
-          const wave = pick(/wave|hello|greet|saluto/); if (wave) clips.__wave = wave[1];
+          const talk = pk(/talk|speak|chat/); if (talk) clips.__talk = talk[1];
+          const wave = pk(/wave|hello|greet|saluto/); if (wave) clips.__wave = wave[1];
+          const dance = pk(/dance|ballo|balla/); if (dance) clips.__dance = dance[1];
         }
-        rig = makeBoneRig(findBones(root), findMorphs(root));
+        const mm = findMorphs(root);
+        rig = makeBoneRig(findBones(root), mm.m);
+        rig.oculus = mm.oculus; rig.arkit = mm.arkit;
         rig.hasClips = !!clips.__idle;
-        // ossa mosse dall'animazione del file: quelle non le tocchiamo (le altre sì, es. braccia in A/T-pose)
         const animate = new Set((gltf.animations || []).flatMap(c => c.tracks.map(tr => tr.name.split('.')[0])));
         rig.animated = k => !!(rig.bones[k] && animate.has(rig.bones[k].name));
+        rig.animatedBone = b => animate.has(b.name);
       }
-      // dimensioni: inquadratura sul viso / busto
       charRoot.updateMatrixWorld(true);
       const box = new THREE.Box3().setFromObject(charRoot), size = box.getSize(new THREE.Vector3());
       height = size.y || 1.6;
@@ -5397,48 +5804,86 @@ window.ZepKit = (() => {
       topY = new THREE.Box3().setFromObject(charRoot).max.y;
       const hp = new THREE.Vector3();
       if (rig.bones.head) { rig.bones.head.getWorldPosition(hp); headY = hp.y; } else headY = height * 0.9;
-      mouthY = headY;
-      log(`avatar ${kind}: ${name} · ossa ${Object.values(rig.bones).filter(Boolean).length} · forme ${Object.keys(rig.morphs || {}).length} · animazioni ${Object.keys(clips).filter(k => !k.startsWith('__')).length}`);
+      const nDita = Object.values(rig.fingers || {}).length;
+      log(`avatar ${kind}: ${name} · ossa ${Object.values(rig.bones).filter(b => b && b.isObject3D).length} · dita ${nDita} · forme ${Object.keys(rig.morphs || {}).length}${rig.oculus ? ' · visemi completi' : ''}${rig.arkit ? ' · ARKit' : ''} · animazioni ${Object.keys(clips).filter(k => !k.startsWith('__')).length}`);
     }
 
-    // rig a ossa: rotazioni "nel mondo" del personaggio (che guarda verso +Z) applicate sopra la posa di riposo,
+    // rig a ossa: rotazioni "nel mondo" del personaggio (che guarda verso +Z) applicate sopra la posa attuale,
     // così funziona sia con le ossa normalizzate VRM sia con assi locali qualsiasi dei .glb
     function makeBoneRig(bones, morphs) {
-      const order = ['hips', 'spine', 'chest', 'neck', 'head', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm'];
+      const order = ['hips', 'spine', 'chest', 'neck', 'head', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm', 'leftHand', 'rightHand',
+        'leftUpperLeg', 'rightUpperLeg', 'leftLowerLeg', 'rightLowerLeg'];
       const rest = {}; for (const k of order) if (bones[k]) rest[k] = bones[k].quaternion.clone();
-      // braccia: quanto sono già sotto l'orizzontale (T-pose ≈ 0, A-pose ≈ 40°)
-      const armDrop = {};      // (la posa attuale = riposo, più l'eventuale animazione del file: vedi update)
+      const armDrop = {};
       charRoot.updateMatrixWorld(true);
+      const W = b => b.getWorldPosition(new THREE.Vector3());
       for (const [up, low, sign] of [['leftUpperArm', 'leftLowerArm', -1], ['rightUpperArm', 'rightLowerArm', 1]]) {
-        if (bones[up] && bones[low]) {
-          const a = bones[up].getWorldPosition(new THREE.Vector3()), b = bones[low].getWorldPosition(new THREE.Vector3());
-          const d = b.sub(a); armDrop[up] = Math.atan2(-d.y, Math.abs(d.x) + 1e-6); armDrop.side = Math.sign(d.x) || sign;
-        }
+        if (bones[up] && bones[low]) { const d = W(bones[low]).sub(W(bones[up])); armDrop[up] = Math.atan2(-d.y, Math.abs(d.x) + 1e-6); armDrop.side = Math.sign(d.x) || sign; }
       }
-      const qD = new THREE.Quaternion(), qP = new THREE.Quaternion(), qPi = new THREE.Quaternion(), e = new THREE.Euler();
+      // dita: asse di piegatura di ogni falange (perpendicolare al dito, verso il palmo), nel riferimento del genitore
+      const fingers = {};
+      for (const [side, m] of [['left', 1], ['right', -1]]) {
+        const ch = bones.fingers && bones.fingers[side]; const hand = bones[side + 'Hand'];
+        if (!ch || !hand || !ch.some(f => f[0])) continue;
+        const first = i => ch[i] && (ch[i][0] || ch[i][1]);
+        const mid = first(2) || first(1) || first(3), idx = first(1) || mid, lit = first(4) || first(3) || mid;
+        if (!mid) continue;
+        const d = W(mid).sub(W(hand)).normalize();
+        let s = W(idx).sub(W(lit)); if (s.lengthSq() < 1e-8) s = new THREE.Vector3(0, 0, 1);
+        const n = new THREE.Vector3().crossVectors(d, s.normalize()).multiplyScalar(m).normalize();
+        const list = [];
+        ch.forEach((segs, fi) => {
+          segs.forEach((b, si) => {
+            if (!b || !b.parent) return;
+            const nextB = segs.slice(si + 1).find(Boolean);
+            let dir = nextB ? W(nextB).sub(W(b)) : (b.children[0] ? W(b.children[0]).sub(W(b)) : null);
+            if (!dir || dir.lengthSq() < 1e-10) dir = (list.length && list[list.length - 1].f === fi) ? list[list.length - 1].dir.clone() : d.clone();
+            dir.normalize();
+            let ax = new THREE.Vector3().crossVectors(dir, n); if (ax.lengthSq() < 1e-8) ax = new THREE.Vector3(0, 0, m); ax.normalize();
+            const qp = b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+            list.push({ b, f: fi, seg: si, rest: b.quaternion.clone(), axis: ax.clone().applyQuaternion(qp).normalize(), dir });
+          });
+        });
+        fingers[side] = list;
+      }
+      const qD = new THREE.Quaternion(), qP = new THREE.Quaternion(), qPi = new THREE.Quaternion(), e = new THREE.Euler(), qA = new THREE.Quaternion(), vA = new THREE.Vector3();
+      const pre = (b) => { if (b.parent) { b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(qP); } else qP.identity(); charRoot.getWorldQuaternion(qPi); qP.premultiply(qPi.invert()); qPi.copy(qP).invert(); };
       return {
-        bones, morphs, armDrop,
-        apply(k, x, y, z) {               // rotazione (radianti) nel riferimento del personaggio, sopra la posa attuale
+        bones, morphs, armDrop, fingers,
+        apply(k, x, y, z) {                // rotazione (radianti) nel riferimento del personaggio, sopra la posa attuale
           const b = bones[k]; if (!b || (!x && !y && !z)) return;
-          if (b.parent) { b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(qP); } else qP.identity();
-          charRoot.getWorldQuaternion(qPi); qP.premultiply(qPi.invert());          // togli la rotazione del personaggio
-          qD.setFromEuler(e.set(x, y, z, 'YXZ'));
-          qPi.copy(qP).invert();
+          pre(b); qD.setFromEuler(e.set(x, y, z, 'YXZ'));
           b.quaternion.premultiply(qP).premultiply(qD).premultiply(qPi);      // = P'⁻¹ · D · P' · posa attuale
+        },
+        roll(k, fromK, ang) {              // gira un osso attorno alla direzione genitore→osso (es. il palmo attorno all'avambraccio)
+          const b = bones[k], a = bones[fromK]; if (!b || !a || !ang) return;
+          charRoot.updateMatrixWorld(true);
+          vA.copy(W(b)).sub(W(a)); if (vA.lengthSq() < 1e-10) return;
+          charRoot.getWorldQuaternion(qA); vA.applyQuaternion(qA.invert()).normalize();
+          pre(b); qD.setFromAxisAngle(vA, ang);
+          b.quaternion.premultiply(qP).premultiply(qD).premultiply(qPi);
+        },
+        curl(side, curls, skip) {          // piega le dita: curls = [pollice, indice, medio, anulare, mignolo]
+          for (const F of fingers[side] || []) {
+            if (skip && skip(F.b)) continue;
+            const c = curls[F.f] || 0, max = F.f === 0 ? [0.5, 0.75, 0.8][F.seg] : [1.25, 1.4, 1.05][F.seg];
+            F.b.quaternion.copy(F.rest).premultiply(qA.setFromAxisAngle(F.axis, c * max));
+          }
         },
         reset() { for (const k of Object.keys(rest)) bones[k].quaternion.copy(rest[k]); },
       };
     }
 
     // ============================================================
-    // 2) «Zep», il robottino integrato
+    // 2) «Zep», il robottino integrato (con il viso su uno schermo e le mani con le dita)
     // ============================================================
+    const faceCanvas = document.createElement('canvas'); faceCanvas.width = FW; faceCanvas.height = FH;
+    const faceCtx = faceCanvas.getContext('2d', { willReadFrequently: true });   // disegnato dalla CPU: niente attese della GPU a ogni fotogramma
     function buildRobot() {
       kind = 'robot'; name = 'Zep';
       const R = new THREE.Group(); charRoot.add(R);
       const white = new THREE.MeshPhysicalMaterial({ color: 0xeef3ff, roughness: 0.28, metalness: 0.15, clearcoat: 1, clearcoatRoughness: 0.15 });
       const dark = new THREE.MeshPhysicalMaterial({ color: 0x05070d, roughness: 0.08, metalness: 0.4, clearcoat: 1 });
-      // occhi, bocca e luci: colori pieni del tema (non toccati dalla luce né dal tone mapping)
       const glow = new THREE.MeshBasicMaterial({ color: accent.clone(), toneMapped: false });
       const glow2 = new THREE.MeshBasicMaterial({ color: accent2.clone(), toneMapped: false });
       const add = (geo, mat, x, y, z, parent = R) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); parent.add(m); return m; };
@@ -5450,30 +5895,49 @@ window.ZepKit = (() => {
       add(new THREE.CylinderGeometry(0.06, 0.08, 0.09, 24), dark, 0, 0.02, 0, neck);
       const head = new THREE.Group(); head.position.set(0, 0.25, 0); neck.add(head);
       add(new THREE.SphereGeometry(0.3, 48, 32), white, 0, 0, 0, head).scale.set(1.18, 0.92, 1);
-      // visiera di vetro scuro centrata davanti (+Z): phi = π/2 è il davanti della sfera
-      const visor = add(new THREE.SphereGeometry(0.262, 48, 32, Math.PI * 0.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.27, Math.PI * 0.44), dark, 0, 0, 0.068, head);
-      visor.scale.set(1.2, 0.95, 1);
-      const eyeGeo = new THREE.CapsuleGeometry(0.03, 0.05, 8, 16);
-      const eyeL = add(eyeGeo, glow, -0.1, 0.035, 0.31, head), eyeR = add(eyeGeo, glow, 0.1, 0.035, 0.31, head);
-      const mouth = add(new THREE.BoxGeometry(0.11, 0.022, 0.012), glow, 0, -0.085, 0.315, head);
+      // visiera di vetro scuro centrata davanti (+Z) e, sopra, lo schermo del viso (si somma alla luce)
+      const visGeo = r => new THREE.SphereGeometry(r, 48, 32, Math.PI * 0.5 - Math.PI * 0.4, Math.PI * 0.8, Math.PI * 0.27, Math.PI * 0.44);
+      const visor = add(visGeo(0.262), dark, 0, 0, 0.068, head); visor.scale.set(1.2, 0.95, 1);
+      const faceTex = new THREE.CanvasTexture(faceCanvas); faceTex.colorSpace = THREE.SRGBColorSpace; faceTex.anisotropy = 4;
+      const screen = add(visGeo(0.2636), new THREE.MeshBasicMaterial({ map: faceTex, transparent: true, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }), 0, 0, 0.068, head);
+      screen.scale.set(1.2, 0.95, 1); screen.renderOrder = 2;
       for (const s of [-1, 1]) {
         add(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 32), white, s * 0.355, 0, 0, head).rotation.z = Math.PI / 2;
         add(new THREE.TorusGeometry(0.06, 0.012, 10, 32), glow2, s * 0.382, 0, 0, head).rotation.y = Math.PI / 2;
       }
-      add(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), dark, 0, 0.33, 0, head);
-      const tip = add(new THREE.SphereGeometry(0.03, 20, 16), glow2, 0, 0.42, 0, head);
-      const arm = s => {
-        const sh = new THREE.Group(); sh.position.set(s * 0.33, 0.36, 0); body.add(sh);
+      const antenna = new THREE.Group(); antenna.position.set(0, 0.25, 0); head.add(antenna);
+      add(new THREE.CylinderGeometry(0.008, 0.008, 0.16, 8), dark, 0, 0.08, 0, antenna);
+      const tip = add(new THREE.SphereGeometry(0.03, 20, 16), glow2, 0, 0.17, 0, antenna);
+      const capsule = (r, len, mat, parent, y) => add(new THREE.CapsuleGeometry(r, len, 6, 12), mat, 0, y, 0, parent);
+      const arm = s => {                 // s = +1: il braccio SINISTRO del robot, dalla parte +X (guarda verso di te)
+        const sh = new THREE.Group(); sh.position.set(s * 0.33, 0.36, 0); sh.rotation.order = 'YXZ'; body.add(sh);
         add(new THREE.SphereGeometry(0.07, 24, 16), white, 0, 0, 0, sh);
         add(new THREE.CapsuleGeometry(0.05, 0.16, 8, 16), white, 0, -0.13, 0, sh);
-        const el = new THREE.Group(); el.position.set(0, -0.26, 0); sh.add(el);
+        const el = new THREE.Group(); el.position.set(0, -0.26, 0); el.rotation.order = 'YXZ'; sh.add(el);
         add(new THREE.CapsuleGeometry(0.045, 0.14, 8, 16), white, 0, -0.1, 0, el);
-        add(new THREE.SphereGeometry(0.055, 20, 16), glow2, 0, -0.22, 0, el);
-        return { sh, el };
+        const hand = new THREE.Group(); hand.position.set(0, -0.2, 0); el.add(hand);
+        add(new THREE.TorusGeometry(0.043, 0.01, 8, 24), glow2, 0, 0.012, 0, hand).rotation.x = Math.PI / 2;   // polsino luminoso
+        add(new THREE.SphereGeometry(0.05, 20, 16), white, 0, -0.032, 0, hand).scale.set(0.72, 0.95, 1.12);   // palmo
+        // tre dita (indice, medio, mignolo) e il pollice in avanti; il palmo guarda verso il corpo
+        const fingers = [];
+        const mk = (x, y, z, rx, len) => {
+          const f1 = new THREE.Group(); f1.position.set(x, y, z); f1.rotation.x = rx; hand.add(f1);
+          capsule(0.0145, len, white, f1, -len / 2 - 0.007);
+          const f2 = new THREE.Group(); f2.position.set(0, -len - 0.014, 0); f1.add(f2);
+          capsule(0.0135, len * 0.8, white, f2, -len * 0.4 - 0.007);
+          add(new THREE.SphereGeometry(0.0138, 10, 8), glow2, 0, -len * 0.8 - 0.016, 0, f2);
+          return [f1, f2];
+        };
+        fingers.push(mk(-s * 0.012, -0.032, 0.045, -0.95, 0.028));   // pollice (in avanti)
+        fingers[0][0].rotation.order = 'YXZ';                         // si chiude girando verso il palmo
+        fingers.push(mk(0, -0.074, 0.028, 0.08, 0.03));             // indice
+        fingers.push(mk(0, -0.078, 0, 0, 0.033));                    // medio
+        fingers.push(mk(0, -0.072, -0.028, -0.08, 0.028));          // mignolo (anulare+mignolo)
+        return { sh, el, hand, fingers, s };
       };
-      const L = arm(1), Rr = arm(-1);    // il braccio SINISTRO del robot è dalla parte +X (guarda verso di te)
-      const ROB = { R, body, neck, head, eyeL, eyeR, mouth, core, tip, L, Rr, glow, glow2 };
-      headY = 0.55 + 0.52 + 0.25; mouthY = headY;
+      const Lf = arm(1), Rr = arm(-1);
+      const ROB = { R, body, neck, head, screen, faceTex, core, tip, antenna, L: Lf, Rr, glow, glow2 };
+      headY = 0.55 + 0.52 + 0.25;
       charRoot.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(R); height = bb.max.y; topY = bb.max.y;
       rig = { robot: ROB, bones: { head: head }, morphs: null };
       log('avatar integrato: Zep');
@@ -5483,52 +5947,182 @@ window.ZepKit = (() => {
     // animazione
     // ============================================================
     const lookObj = new THREE.Object3D(); scene.add(lookObj);
-    const cam = { target: new THREE.Vector3(), dist: 2 };
+    const cam = { target: new THREE.Vector3(), dist: 2, ty: 1, span: 1 };
     function frame() {
       const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
       camera.aspect = w / h;
       const full = S.framing === 'intero';
-      // busto: dalla cima della testa fino a metà busto · intero: tutto il corpo
       const span = (full ? height * 1.15 : height * (kind === 'robot' ? 0.86 : 0.6)) * S.zoom;   // il robot ha la testa grande
-      const ty = full ? height * 0.5 : topY - span * 0.45;
-      cam.target.set(0, ty, 0);
+      cam.ty = full ? height * 0.5 : topY - span * 0.45; cam.span = span;
       const fov = THREE.MathUtils.degToRad(camera.fov);
       cam.dist = (span / 2) / Math.tan(fov / 2) / Math.min(1, camera.aspect * 1.25);
       camera.near = Math.max(0.005, cam.dist / 100); camera.far = cam.dist * 100;
-      camera.position.set(0, ty + span * 0.04, cam.dist); camera.lookAt(cam.target); camera.updateProjectionMatrix();
+      placeCamera(); camera.updateProjectionMatrix();
       const r = Math.max(0.3, height * 0.28); ring.scale.setScalar(r / 0.45); ring2.scale.setScalar(r / 0.45); shadow.scale.setScalar(r * 2.6);
       for (let i = 0; i < PN; i++) { pPos[i * 3] = (Math.random() - 0.5) * height * 1.6; pPos[i * 3 + 1] = Math.random() * height * 1.3; pPos[i * 3 + 2] = (Math.random() - 0.5) * height * 0.9 - height * 0.2; pSpd[i] = 0.02 + Math.random() * 0.06; }
       pGeo.attributes.position.needsUpdate = true; pMat.size = height * 0.008;
+    }
+    function placeCamera() {
+      cam.target.set(S.camX, cam.ty, 0);
+      camera.position.set(S.camX, cam.ty + cam.span * 0.04, cam.dist); camera.lookAt(cam.target);
     }
     function resize() {
       const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
       renderer.setSize(w, h, false); frame();
     }
 
+    function setMorph(list, v) { (list || []).forEach(([o, i]) => { o.morphTargetInfluences[i] = v; }); }
     function setExpr(k, v) {
       if (vrm && vrm.expressionManager) { try { vrm.expressionManager.setValue(k, v); } catch (e) {} return; }
       const m = rig && rig.morphs; if (!m) return;
-      const set = list => (list || []).forEach(([o, i]) => { o.morphTargetInfluences[i] = v; });
-      if (k === 'blink') { if (m.blink) set(m.blink); else { set(m.blinkLeft); set(m.blinkRight); } return; }
-      if (k === 'happy' && !m.happy) { set(m.happyL); set(m.happyR); return; }
-      if (k === 'sad' && !m.sad) { set(m.sadL); set(m.sadR); return; }
+      if (k === 'blink') { if (m.blink) setMorph(m.blink, v); else { setMorph(m.blinkLeft, v); setMorph(m.blinkRight, v); } return; }
+      if (k === 'blinkLeft' || k === 'blinkRight') { setMorph(m[k] || m.blink, v); return; }
+      if (k === 'happy' && !m.happy) { setMorph(m.happyL, v); setMorph(m.happyR, v); return; }
+      if (k === 'sad' && !m.sad) { setMorph(m.sadL, v); setMorph(m.sadR, v); return; }
       if (['ih', 'ou', 'ee', 'oh'].includes(k) && !m[k]) return;    // senza visemi: basta «aa»
-      set(m[k]);
+      setMorph(m[k], v);
     }
 
+    // ---------- labbra: segmenti nel tempo → forma della bocca (coarticolazione "a dominanza") ----------
+    function evalLips(now) {
+      const Lp = S.lip;
+      while (Lp.segs.length && Lp.segs[0].t1 < now - 400) Lp.segs.shift();
+      const P = { open: 0, wide: 0, round: 0, teeth: 0, tongue: 0, press: 0, bite: 0 };
+      for (const v of VIS) S.vis[v] = 0;
+      let sum = 0.04, active = null;
+      for (const sg of Lp.segs) {
+        if (sg.t0 > now + 260) break;
+        if (sg.t1 < now - 260) continue;
+        const c = (sg.t0 + sg.t1) / 2, hw = Math.max(30, (sg.t1 - sg.t0) / 2), tau = Math.abs(now - c) / hw;
+        const D = DOM[sg.v] * Math.exp(-1.1 * Math.pow(tau, 1.5));
+        if (D < 0.002) continue;
+        const vp = VP[sg.v], a = sg.amp ?? 1;
+        for (const k of MP_KEYS) P[k] += D * (vp[k] || 0) * (k === 'open' ? a : 1);
+        S.vis[sg.v] += D; sum += D;
+        if (now >= sg.t0 && now < sg.t1) active = sg;
+      }
+      for (const k of MP_KEYS) P[k] /= sum;
+      for (const v of VIS) S.vis[v] /= sum;
+      S.vis.sil += 0.04 / sum;
+      if (active && active.ci >= 0) Lp.curCi = Math.max(Lp.curCi, active.ci);
+      return P;
+    }
+    const BABBLE = ['ma', 'la', 'te', 'no', 'si', 'pa', 've', 'do', 'ri', 'ca', 'lo', 'ne', 'ta', 'mi', 'so', 'be', 'tu', 'qua'];
+    function babble(now) {
+      const txt = Array.from({ length: 3 }, () => pick(BABBLE) + pick(BABBLE)).join(' ');
+      for (const s of buildLine(txt, 0, now, S.lip.unit)) S.lip.segs.push(Object.assign(s, { ci: -1 }));
+    }
+    function fireEvents() {
+      const Lp = S.lip;
+      for (const e of Lp.ev) {
+        if (e.fired || e.ci > Lp.curCi) continue;
+        e.fired = true;
+        if (e.k === 'gazeaway') { S.gaze = { until: performance.now() + 650, x: -0.5, y: 0.35 }; continue; }
+        if (e.k === 'beat') { if (!armBusy(e.side)) act('beat', { side: e.side, amp: e.amp }); continue; }
+        const def = ACT[e.k]; if (!def) continue;
+        if (def.arms && armBusy(def.arms === 'B' ? null : def.arms, true)) continue;      // un gesto alla volta per braccio
+        act(e.k, { n: e.n, amp: e.amp });
+      }
+    }
+
+    // ---------- gesti (azioni) ----------
+    function armsOf(k, side) { const d = ACT[k]; if (!d || !d.arms) return []; return d.arms === 'B' ? ['L', 'R'] : [side || d.arms]; }
+    function armBusy(side, strict) {
+      return S.acts.some(a => !a.out && ACT[a.k].arms && a.k !== 'beat' && (!side || a.arms.includes(side)) && (strict || a.p < 0.85));
+    }
+    function act(k, o = {}) {
+      k = GESTURE_ALIAS[k] || k;
+      const def = ACT[k]; if (!def) return false;
+      const arms = armsOf(k, o.side);
+      for (const a of S.acts) if (a.k === k || (arms.length && a.arms.some(x => arms.includes(x)) && ACT[a.k].arms)) a.out = a.out ?? 0.25;   // il gesto vecchio sfuma
+      S.acts.push({ k, t: 0, p: 0, dur: o.dur || def.dur, amp: o.amp || 1, n: o.n, side: o.side, arm: 'arm' + (arms[0] || 'R'), arms });
+      if (S.acts.length > 12) S.acts.splice(0, S.acts.length - 12);
+      if (k !== 'beat') S.alive.next = Math.max(S.alive.next, performance.now() + 6000);
+      return true;
+    }
+
+    // ---------- vita: si annoia, sbadiglia, si addormenta, si sveglia ----------
+    function activity() {
+      const A = S.alive, now = performance.now();
+      A.lastAct = now;
+      if (A.mode === 'sleep') wake();
+      else if (A.mode === 'drowsy') A.mode = 'awake';
+      A.next = Math.max(A.next, now + 8000);
+    }
+    function sleepNow() {
+      const A = S.alive; if (A.mode === 'sleep') return;
+      A.mode = 'sleep'; S.acts.length = 0; S.walk.target = 0; S.dance.on = false;
+      opts.onSleep && opts.onSleep();
+    }
+    function wake() {
+      const A = S.alive; if (A.mode !== 'sleep') return;
+      A.mode = 'awake'; A.lastAct = performance.now(); A.next = A.lastAct + 12000;
+      act('startle'); setTimeout(() => act('rubeyes'), 650); setTimeout(() => { act('wave'); S.emoTarget = 'happy'; S.emoUntil = performance.now() + 3000; }, 2300);
+      opts.onWake && opts.onWake();
+    }
+    const IDLE = [['lookaround', 3], ['glance', 2], ['shift', 3], ['hum', 2], ['checkhand', 1.5], ['scratch', 1], ['stroll', 1.5], ['antenna', 1], ['smile', 1.5], ['blink2', 2]];
+    function idleAction() {
+      const tot = IDLE.reduce((s, x) => s + x[1], 0); let r = Math.random() * tot, k = 'lookaround';
+      for (const [n, w] of IDLE) { r -= w; if (r <= 0) { k = n; break; } }
+      if (k === 'stroll') { const lim = height * (S.framing === 'intero' ? 0.3 : 0.12); S.walk.target = Math.abs(S.walk.x) > lim * 0.4 ? 0 : (Math.random() < 0.5 ? -1 : 1) * rnd(0.5, 1) * lim; S.walk.back = performance.now() + rnd(9000, 16000); return k; }
+      if (k === 'antenna' && kind !== 'robot') k = 'lookaround';
+      if (k === 'smile') { S.emoTarget = 'happy'; S.emoUntil = performance.now() + 1800; return k; }
+      if (k === 'blink2') { S.blinkT = 0; setTimeout(() => { S.blinkT = 0; }, 260); return k; }
+      act(k, { side: Math.random() < 0.5 ? 'L' : 'R' });
+      return k;
+    }
+
+    // ---------- tocchi: solletico, «ehi!», e se esageri si arrabbia o gli gira la testa ----------
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    function poke(e) {
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObject(charRoot, true).find(h => h.object.visible && !h.object.isSprite);
+      if (!hit) return null;
+      let part = 'pancia';
+      if (rig && rig.robot) {
+        const B = rig.robot; let o = hit.object;
+        while (o) { if (o === B.head) { part = 'testa'; break; } if (o === B.L.sh || o === B.Rr.sh) { part = 'mano'; break; } o = o.parent; }
+      } else if (rig && rig.bones) {
+        let best = 1e9;
+        for (const [k, p] of [['head', 'testa'], ['chest', 'pancia'], ['spine', 'pancia'], ['hips', 'pancia'], ['leftHand', 'mano'], ['rightHand', 'mano'], ['leftLowerArm', 'mano'], ['rightLowerArm', 'mano']]) {
+          const b = rig.bones[k]; if (!b) continue; const d = b.getWorldPosition(new THREE.Vector3()).distanceTo(hit.point);
+          if (d < best) { best = d; part = p; }
+        }
+      }
+      const now = performance.now(), P = S.poke;
+      P.n = now - P.t < 6000 ? P.n + 1 : 1; P.t = now;
+      let reaction;
+      if (P.n >= 7) { reaction = 'dizzy'; P.n = 0; S.emoTarget = 'surprised'; S.emoUntil = now + 2500; }
+      else if (P.n >= 4) { reaction = 'annoyed'; S.emoTarget = 'angry'; S.emoUntil = now + 2600; }
+      else if (part === 'testa') { reaction = 'giggle'; S.emoTarget = 'happy'; S.emoUntil = now + 1800; }
+      else if (part === 'mano') reaction = 'wave';
+      else { reaction = 'startle'; setTimeout(() => act('giggle'), 700); }
+      activity(); act(reaction);
+      const info = { part, n: P.n || 7, reaction };
+      opts.onPoke && opts.onPoke(info);
+      return info;
+    }
+
+    // ============================================================
+    // il ciclo: labbra → vita → posa → ossa/robot → viso → ambiente
+    // ============================================================
     function update(dt) {
       S.t += dt; const t = S.t, now = performance.now();
-      // --- bocca: visemi parola per parola (o "onda" se il browser non dà i confini delle parole)
       const speaking = S.state === 'speaking' || now < S.speakUntil;
-      for (const k in S.mouthTarget) S.mouthTarget[k] = 0;
-      while (S.visemes.length && S.visemes[0].end < now) S.visemes.shift();
-      const cur = S.visemes.find(v => v.start <= now && now < v.end);
-      if (cur) { if (cur.v !== 'm') S.mouthTarget[cur.v] = cur.w; }
-      else if (speaking && !S.visemes.length) S.mouthTarget.aa = clamp(0.25 + 0.35 * Math.abs(Math.sin(t * 11)) * (0.6 + 0.4 * Math.sin(t * 3.1)), 0, 1);
-      if (S.level > 0.02) S.mouthTarget.aa = Math.max(S.mouthTarget.aa, S.level);
-      const hasVis = vrm || (rig && rig.morphs && rig.morphs.ih);
-      if (!hasVis) { let s = 0; for (const k in S.mouthTarget) s = Math.max(s, S.mouthTarget[k]); for (const k in S.mouthTarget) S.mouthTarget[k] = 0; S.mouthTarget.aa = s; }
-      for (const k in S.mouth) S.mouth[k] = damp(S.mouth[k], S.mouthTarget[k], 22, dt);
+      const A = S.alive, Lp = S.lip;
+      if (speaking || S.state === 'listening' || S.state === 'thinking' || S.state === 'alarm') { A.lastAct = now; if (A.mode !== 'awake') { if (A.mode === 'sleep') wake(); else A.mode = 'awake'; } }
+      // --- labbra
+      if (speaking && now > Lp.quietUntil && !Lp.segs.some(s => s.t1 > now)) babble(now);       // parla ma non sappiamo cosa: «borbotta» a tempo
+      const MP = evalLips(now);
+      if (S.level > 0.02) MP.open = Math.max(MP.open, S.level);
+      for (const k of MP_KEYS) S.mp[k] = damp(S.mp[k], MP[k], 30, dt);
+      const tm = { aa: 0, ih: 0, ou: 0, ee: 0, oh: 0 };
+      for (const v of VIS) { const w = S.vis[v]; if (w > 0.001) for (const k in VRM5[v]) tm[k] += w * VRM5[v][k]; }
+      if (S.level > 0.02) tm.aa = Math.max(tm.aa, S.level);
+      for (const k in S.mouth) S.mouth[k] = damp(S.mouth[k], clamp(tm[k], 0, 1), 26, dt);
+      fireEvents();
       // --- palpebre
       S.blinkT -= dt;
       if (S.blinkT <= 0) { S.blink = 1; S.blinkT = 2 + Math.random() * 4 + (Math.random() < 0.2 ? -1.6 : 0); }
@@ -5540,99 +6134,262 @@ window.ZepKit = (() => {
         let tgt = S.emoTarget === k ? 1 : 0;
         if (k === 'relaxed' && S.state === 'idle' && !S.emoTarget) tgt = 0.15;
         if (k === 'surprised' && S.state === 'alarm') tgt = 1;
+        if (k === 'happy' && S.dance.on) tgt = Math.max(tgt, 0.8);
         S.emo[k] = damp(S.emo[k], tgt * (speaking && k === 'happy' ? 0.6 : 1), 6, dt);
       }
+      // --- vita: noia, sonno, piccole azioni da solo
+      const night = S.tod === 'notte' ? 0.6 : 1, quiet = S.state === 'idle' && !speaking && !S.dance.on;
+      if (A.on && quiet) {
+        const idleFor = now - A.lastAct;
+        if (A.mode === 'awake' && idleFor > A.boredMs * night) { A.mode = 'drowsy'; A.nextYawn = now + 1500; }
+        if (A.mode !== 'sleep' && idleFor > A.sleepMs * night) sleepNow();
+        if (A.mode === 'drowsy' && now > A.nextYawn && !armBusy()) { act(Math.random() < 0.6 ? 'yawn' : 'stretch'); A.nextYawn = now + rnd(16000, 28000); }
+        if (A.mode === 'awake' && now > A.next && !armBusy() && now - S.lastLookInput > 2500) { idleAction(); A.next = now + rnd(7000, 15000); }
+      }
+      if (S.walk.back && now > S.walk.back) { S.walk.target = 0; S.walk.back = 0; }
+      if (!quiet && Math.abs(S.walk.target) > 0.001 && (speaking || S.state === 'listening')) S.walk.target = 0;   // quando parlate torna al centro
+      S.sleepW = damp(S.sleepW, A.mode === 'sleep' ? 1 : 0, 2.5, dt);
+      S.drowsyW = damp(S.drowsyW, A.mode === 'drowsy' ? 1 : 0, 2, dt);
+      // --- ballo
+      const D = S.dance;
+      if (D.on) {
+        const per = 60000 / D.bpm;
+        if (!D.ext) while (now - D.last >= per) { D.last += per; D.n++; }
+        if (now > D.until) D.on = false;
+      }
+      D.w = damp(D.w, D.on ? 1 : 0, 5, dt);
+      const ph = D.on || D.w > 0.01 ? clamp((now - D.last) / (60000 / D.bpm), 0, 1.5) : 0;
+      // --- passeggiata (il robot fluttua, gli umanoidi camminano)
+      const W = S.walk, dx = W.target - W.x, mv = Math.abs(dx) > 0.004 * height;
+      W.speed = damp(W.speed, mv ? Math.sign(dx) * 0.32 * height : 0, 4, dt);
+      if (mv) W.x += clamp(W.speed * dt, -Math.abs(dx), Math.abs(dx)); else W.speed = 0;
+      W.phase += Math.abs(W.speed) * dt / (0.2 * height) * Math.PI;
+      const moving = clamp(Math.abs(W.speed) / (0.25 * height), 0, 1);
+      W.yaw = damp(W.yaw, kind === 'robot' ? 0 : (mv ? Math.sign(dx) * 1.2 : 0), 5, dt);
+      S.camX = damp(S.camX, W.x * (S.framing === 'intero' ? 0.4 : 0.8), 3, dt);
       // --- sguardo: mouse / webcam, altrimenti si guarda attorno
       if (now - S.lastLookInput > 4000) { S.lookTarget.x = 0.25 * noise(t * 0.35); S.lookTarget.y = 0.12 * noise(t * 0.3 + 3); }
-      if (S.state === 'thinking') { S.lookTarget.x = 0.45; S.lookTarget.y = 0.45; }
-      S.look.x = damp(S.look.x, clamp(S.lookTarget.x, -1, 1), 5, dt); S.look.y = damp(S.look.y, clamp(S.lookTarget.y, -1, 1), 5, dt);
-      S.yaw = damp(S.yaw, S.yawTarget, 6, dt); charRoot.rotation.y = S.yaw;
-      lookObj.position.set(S.look.x * height * 0.5, headY + S.look.y * height * 0.3, cam.dist * 0.9);
-      // --- gesti
-      let G = null;
-      if (S.gesture) { S.gestureT += dt; const dur = { wave: 2.2, nod: 1.1, shake: 1.2, think: 3, celebrate: 2.2, shrug: 1.6 }[S.gesture] || 1.5; G = { k: S.gesture, p: S.gestureT / dur, t: S.gestureT }; if (G.p >= 1) { S.gesture = null; G = null; } }
-      const env = G ? Math.sin(Math.PI * clamp(G.p, 0, 1)) : 0;
-      // --- corpo
-      const breath = Math.sin(t * 1.7), listen = S.state === 'listening' ? 1 : 0, think = S.state === 'thinking' ? 1 : 0;
-      let headX = -S.look.y * 0.35 + 0.02 * noise(t * 0.8) + listen * 0.05 + think * -0.12, headY2 = S.look.x * 0.55 + 0.03 * noise(t * 0.6 + 2), headZ = listen * 0.12 + think * 0.1 + 0.02 * noise(t * 0.5 + 5);
-      if (speaking) { headX += 0.025 * Math.sin(t * 6.3) * (S.mouth.aa + 0.3); headY2 += 0.02 * Math.sin(t * 2.1); }
-      if (G && G.k === 'nod') headX += 0.22 * Math.sin(G.t * 14) * env;
-      if (G && G.k === 'shake') headY2 += 0.3 * Math.sin(G.t * 13) * env;
-      if (G && G.k === 'shrug') headZ += 0.15 * env;
-      if (S.emo.sad > 0.3) headX += 0.12 * S.emo.sad;
-      if (rig && rig.robot) animateRobot(rig.robot, { dt, t, breath, headX, headY: headY2, headZ, G, env, speaking, blinkV, listen, think });
-      else if (rig) {
-        const hasClip = rig.hasClips, anim = k => hasClip && rig.animated && rig.animated(k);
-        rig.reset();                                     // si riparte dalla posa di riposo…
-        if (mixer) mixer.update(dt);                     // …poi l'animazione del file (se c'è)…
-        if (!anim('hips')) rig.apply('hips', 0, 0, 0.012 * Math.sin(t * 0.7));
-        if (!anim('spine')) rig.apply('spine', 0.015 * breath + listen * 0.05, 0.02 * Math.sin(t * 0.5), 0);
-        else if (listen) rig.apply('spine', listen * 0.05, 0, 0);
-        if (!anim('chest')) rig.apply('chest', 0.012 * breath, 0, 0);
-        rig.apply('neck', headX * 0.4, headY2 * 0.4, headZ * 0.4);
-        rig.apply('head', headX * 0.6, headY2 * 0.6, headZ * 0.6);
-        if (rig.bones.leftUpperArm && !anim('leftUpperArm') && !anim('rightUpperArm')) {
-          const down = 1.25, dl = (rig.armDrop.leftUpperArm || 0), dr = (rig.armDrop.rightUpperArm || 0);
-          const sway = 0.03 * Math.sin(t * 1.1), talk = speaking ? 0.08 * Math.sin(t * 4.2) : 0;
-          let lz = -(down - dl) + sway, rz = (down - dr) - sway, lx = 0, rx = 0, lowL = -0.25 - talk, lowR = -0.25 + talk, rLowZ = 0;
-          if (G && G.k === 'wave') { rz = lerp(rz, -0.35, env); rx = lerp(0, -0.3, env); lowR = lerp(lowR, 0, env); rLowZ = lerp(0, -1.3 + 0.45 * Math.sin(G.t * 11), env); }
-          if (G && G.k === 'celebrate') { const b = 0.15 * Math.sin(G.t * 12); lz = lerp(lz, 1.1 + b, env); rz = lerp(rz, -1.1 - b, env); }
-          if (G && G.k === 'shrug') { lz = lerp(lz, lz + 0.35, env); rz = lerp(rz, rz - 0.35, env); lowL -= 0.6 * env; lowR -= 0.6 * env; }
-          if (think) { rz = lerp(rz, 0.5, think); rx = -0.9 * think; lowR = -1.9 * think; }
-          rig.apply('leftUpperArm', lx, 0, lz); rig.apply('rightUpperArm', rx, 0, rz);
-          rig.apply('leftLowerArm', lowL, 0, 0); rig.apply('rightLowerArm', lowR, 0, rLowZ);
-        }
-        if (G && G.k === 'wave' && clips.__wave && G.t < dt * 1.5) clips.__wave.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.2).play();
-        if (clips.__talk) { const w = speaking ? 1 : 0; clips.__talk.enabled = true; if (!clips.__talk.isRunning() && w) clips.__talk.play(); clips.__talk.weight = damp(clips.__talk.weight || 0, w, 4, dt); }
-        // espressioni
-        setExpr('blink', clamp(blinkV + (S.emo.happy > 0.6 ? 0.15 : 0), 0, 1));
-        for (const k of ['aa', 'ih', 'ou', 'ee', 'oh']) setExpr(k, S.mouth[k]);
-        for (const k of EMOS) setExpr(k, S.emo[k] * (k === 'happy' && S.mouth.aa > 0.3 ? 0.5 : 1));
-        if (vrm) vrm.update(dt);                         // …e i nostri movimenti sopra (testa, braccia, espressioni)
-        if (!rig.bones.head && !vrm) {                   // modello senza ossa: si muove tutto insieme
-          charRoot.position.y = baseY + height * 0.012 * Math.sin(t * 1.6);
-          charRoot.rotation.y = S.yaw + S.look.x * 0.35; charRoot.rotation.x = -S.look.y * 0.08;
-          charRoot.scale.setScalar(1 + 0.025 * S.mouth.aa);
-        }
+      S.think = damp(S.think, S.state === 'thinking' ? 1 : 0, 5, dt);
+      S.listen = damp(S.listen, S.state === 'listening' ? 1 : 0, 5, dt);
+      S.talk = damp(S.talk, speaking ? 1 : 0, speaking ? 4 : 2.5, dt);
+
+      // ---------- la posa di questo fotogramma ----------
+      const breath = Math.sin(t * (1.7 - 0.7 * S.sleepW)) * (1 + 0.8 * S.sleepW);
+      const P = {
+        head: { x: 0.02 * noise(t * 0.8), y: 0.03 * noise(t * 0.6 + 2), z: 0.02 * noise(t * 0.5 + 5) },
+        spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
+        root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
+        armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0,
+        face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
+        legs: { l: 0, r: 0, lk: 0, rk: 0 },
+      };
+      // ascolta · pensa · parla · sonno
+      P.head.x += S.listen * 0.05; P.head.z += S.listen * 0.12; P.spine.x += S.listen * 0.05; P.face.brow += S.listen * 0.2;
+      armTo(P.armR, kind === 'robot' ? THINK : THINK_H, S.think); P.head.x -= 0.12 * S.think; if (S.think > 0.05) { P.hand.R = ['fist', 0.7 * S.think]; P.look = [0.45, 0.45, S.think]; P.face.browL += 0.45 * S.think; }
+      armTo(P.armL, TALK, 0.5 * S.talk); armTo(P.armR, TALK, 0.6 * S.talk * (1 - S.think));
+      if (S.talk > 0.05) { P.head.x += 0.025 * Math.sin(t * 6.3) * (S.mp.open + 0.3) * S.talk; P.head.y += 0.02 * Math.sin(t * 2.1) * S.talk; P.spine.x += 0.03 * S.talk; }
+      if (S.emo.sad > 0.3) P.head.x += 0.12 * S.emo.sad;
+      if (S.sleepW > 0.01) {
+        const k = S.sleepW;
+        armTo(P.armL, { sz: 0.16, sx: 0.02, ex: -0.12, ey: 0 }, k); armTo(P.armR, { sz: 0.16, sx: 0.02, ex: -0.12, ey: 0 }, k);
+        P.head.x += 0.3 * k + 0.03 * breath * k; P.head.z += 0.12 * k; P.spine.x += 0.08 * k; P.face.closed += k; P.face.mode.sleep += k;
       }
+      P.face.closed += 0.38 * S.drowsyW; P.head.x += 0.06 * S.drowsyW;
+      // ballo: rimbalzo a tempo, testa, braccia che pompano, ogni tanto una giravolta
+      if (D.w > 0.01) {
+        const k = D.w, hop = Math.sin(Math.PI * clamp(ph, 0, 1)), sw = Math.sin(Math.PI * (D.n + ph) / 2), mossa = Math.floor(D.n / 8) % 3;
+        P.root.py += 0.035 * hop * k; P.head.x += 0.14 * Math.sin(2 * Math.PI * ph) * k; P.head.z += 0.08 * sw * k; P.spine.z += 0.06 * sw * k; P.root.x += 0.04 * height * sw * k;
+        for (const s of 'LR') {
+          const su = (D.n % 2 === 0) === (s === 'L') ? hop : 0;
+          if (mossa === 0) armTo(P['arm' + s], { sz: 0.55 + 0.9 * su, sx: -0.5, ex: -1.6 + 0.6 * su, ey: -0.2, ez: 0 }, k);
+          else if (mossa === 1) armTo(P['arm' + s], { sz: 0.8 + 0.25 * sw * (s === 'L' ? 1 : -1), sx: -0.35, ex: -0.9, ey: 0.4, ez: 0.3 * hop }, k);
+          else armTo(P['arm' + s], { sz: s === 'L' ? 2.3 - 0.4 * hop : 0.35, sx: -0.4, ex: s === 'L' ? -0.15 : -1.5, ey: s === 'L' ? 0 : -0.5, ez: 0 }, k);
+          P.hand[s] = [mossa === 2 && s === 'L' ? 'point' : 'fist', k];
+        }
+        if (D.n % 16 === 15) P.root.yaw += Math.PI * 2 * smooth(ph) * k;
+        P.face.mode.happy += 0.8 * k; P.face.smile += k; P.notes = Math.max(P.notes, 0.6 * k);
+      }
+      // camminata: gambe e braccia che oscillano (il robot si inclina)
+      if (moving > 0.02) {
+        const s = Math.sin(W.phase);
+        P.legs.l = 0.38 * s * moving; P.legs.r = -0.38 * s * moving; P.legs.lk = 0.55 * Math.max(0, -s) * moving; P.legs.rk = 0.55 * Math.max(0, s) * moving;
+        P.armL.sx += 0.25 * s * moving; P.armR.sx -= 0.25 * s * moving; P.root.py += 0.012 * Math.abs(Math.cos(W.phase)) * moving;
+        P.spine.z += kind === 'robot' ? -Math.sign(W.speed) * 0.1 * moving : 0;
+      }
+      // gesti in corso (i più recenti vincono)
+      for (let i = S.acts.length - 1; i >= 0; i--) { const a = S.acts[i]; a.t += dt; a.p = a.t / a.dur; if (a.out != null) a.out -= dt; if (a.p >= 1 || (a.out != null && a.out <= 0)) S.acts.splice(i, 1); }
+      for (const a of S.acts) {
+        const def = ACT[a.k];
+        let w = (def.add ? 1 : env(a.p)) * clamp(a.amp, 0, 1.5); if (a.out != null) w *= clamp(a.out / 0.25, 0, 1);
+        def.f(a, Math.min(1, w), P);
+      }
+      if (S.gesture && !S.acts.some(a => a.k === S.gesture)) S.gesture = null;
+      // sguardo finale (gesti > distoglie lo sguardo mentre pensa a cosa dire > mouse/webcam)
+      let lx = S.lookTarget.x, ly = S.lookTarget.y;
+      if (now < S.gaze.until && S.lookSource !== 'face') { lx = S.gaze.x; ly = S.gaze.y; }
+      if (P.look) { lx = lerp(lx, P.look[0], P.look[2]); ly = lerp(ly, P.look[1], P.look[2]); }
+      if (S.sleepW > 0.5) { lx = 0; ly = -0.2; }
+      S.look.x = damp(S.look.x, clamp(lx, -1, 1), 5, dt); S.look.y = damp(S.look.y, clamp(ly, -1, 1), 5, dt);
+      P.head.x += -S.look.y * 0.35; P.head.y += S.look.x * 0.55; P.spine.y += S.look.x * 0.1;
+      S.yaw = damp(S.yaw, S.yawTarget, 6, dt);
+      lookObj.position.set(S.look.x * height * 0.5 + W.x, headY + S.look.y * height * 0.3, cam.dist * 0.9);
+      // viso: emozioni + gesti
+      const F = S.face, e = S.emo;
+      const tgtF = {
+        brow: clamp(P.face.brow + 0.5 * e.surprised, 0, 1.2), browIn: clamp(P.face.browIn + 0.6 * e.sad, 0, 1), browL: clamp(P.face.browL, 0, 1),
+        angry: clamp(P.face.angry + e.angry, 0, 1), sad: clamp(e.sad, 0, 1), squint: clamp(P.face.squint + 0.35 * e.happy, 0, 1),
+        wide: clamp(P.face.wide + e.surprised, 0, 1), closed: clamp(P.face.closed, 0, 1), smile: clamp(P.face.smile + e.happy * 0.9 + e.relaxed * 0.3, 0, 1),
+        frown: clamp(P.face.frown + e.sad * 0.8 + e.angry * 0.4, 0, 1), press: clamp(P.face.press, 0, 1),
+      };
+      for (const k in tgtF) F[k] = damp(F[k], tgtF[k], 9, dt);
+      for (const k in F.mode) F.mode[k] = damp(F.mode[k], clamp(P.face.mode[k] + (k === 'happy' ? Math.max(0, e.happy - 0.6) * 2.5 : 0), 0, 1), 10, dt);
+      F.blinkV = blinkV; F.mouthOpen = P.face.mouthOpen; F.mouthRound = P.face.mouthRound;
+      // mani: forma delle dita
+      for (const s of 'LR') {
+        const [shape, w] = P.hand[s], tgt = Array.isArray(shape) ? shape : (HANDS[shape] || HANDS.relax);
+        for (let i = 0; i < 5; i++) S.hand[s][i] = damp(S.hand[s][i], lerp(HANDS.relax[i], tgt[i], clamp(w, 0, 1)), 12, dt);
+      }
+      // simboli
+      if (S.sleepW > 0.6 && now - A.zT > 1500) { A.zT = now; spawn('Z', headTop(0.12), { size: 0.06 + Math.random() * 0.03 }); }
+      if (P.notes > 0.3 && now - A.noteT > 650) { A.noteT = now; spawn(pick(['♪', '♫']), headTop(rnd(-0.1, 0.12)), { size: 0.06 }); }
+      if (P.hearts > 0.3 && now - A.heartT > 450) { A.heartT = now; spawn('♥', headTop(rnd(-0.12, 0.12)), { size: 0.055 }); }
+
+      if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
+      else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
       // ambiente
       const glowK = S.state === 'listening' ? 1 : S.state === 'thinking' ? 0.7 + 0.3 * Math.sin(t * 6) : S.state === 'alarm' ? 0.6 + 0.4 * Math.sin(t * 18) : 0.55 + 0.1 * Math.sin(t * 1.5);
-      ringMat.opacity = 0.35 + 0.4 * glowK; ring.rotation.z += dt * 0.2; ring2.rotation.z -= dt * 0.12;
+      ringMat.opacity = (0.35 + 0.4 * glowK) * (1 - 0.6 * S.sleepW) + 0.25 * D.w * Math.max(0, 1 - ph); ring.rotation.z += dt * (0.2 + 1.5 * D.w); ring2.rotation.z -= dt * 0.12;
+      ring.position.x = ring2.position.x = shadow.position.x = P.root.x;
       const pa = pGeo.attributes.position.array;
-      for (let i = 0; i < PN; i++) { pa[i * 3 + 1] += pSpd[i] * dt * height * (speaking ? 2 : 1); if (pa[i * 3 + 1] > height * 1.3) pa[i * 3 + 1] = 0; }
+      for (let i = 0; i < PN; i++) { pa[i * 3 + 1] += pSpd[i] * dt * height * (speaking ? 2 : 1) * (1 - 0.7 * S.sleepW); if (pa[i * 3 + 1] > height * 1.3) pa[i * 3 + 1] = 0; }
       pGeo.attributes.position.needsUpdate = true;
+      for (const s of sprites) {
+        if (!s.alive) continue;
+        s.t += dt; const k = s.t / s.life;
+        if (k >= 1) { s.alive = false; s.sp.visible = false; continue; }
+        s.sp.position.x += s.vx * height * dt * 0.5 + Math.sin(s.t * 3) * 0.002 * height; s.sp.position.y += s.vy * height * dt;
+        s.sp.material.opacity = Math.min(1, k * 5) * (1 - k); s.sp.scale.setScalar(s.size * (0.7 + 0.5 * k));
+      }
+      // luci dell'ora del giorno
+      if (S.tod) {
+        const T = TOD[S.tod];
+        L.key.lerp(tmpC.set(T.key), 1 - Math.exp(-2 * dt)); L.sky.lerp(tmpC.set(T.sky), 1 - Math.exp(-2 * dt)); L.gnd.lerp(tmpC.set(T.gnd), 1 - Math.exp(-2 * dt));
+        L.ki = damp(L.ki, T.ki, 2, dt); L.hi = damp(L.hi, T.hi, 2, dt); L.env = damp(L.env, T.env, 2, dt); L.stars = damp(L.stars, T.stars, 2, dt);
+        key.color.copy(L.key); hemi.color.copy(L.sky); hemi.groundColor.copy(L.gnd);
+        if (scene.environment) scene.environmentIntensity = L.env * (1 - 0.35 * S.sleepW);
+      }
+      key.intensity = L.ki * (1 - 0.35 * S.sleepW); hemi.intensity = L.hi * (1 - 0.3 * S.sleepW);
+      pMat.opacity = 0.7 * L.stars;
+      if (Math.abs(S.camX - cam.target.x) > 1e-5) placeCamera();
+    }
+    function headTop(dx = 0) {
+      const v = new THREE.Vector3();
+      const hb = rig && rig.bones && rig.bones.head;
+      if (hb) hb.getWorldPosition(v); else v.set(0, headY, 0);
+      v.y += height * (kind === 'robot' ? 0.2 : 0.14); v.x += dx * height; v.z += 0.05 * height;
+      return v;
     }
 
-    function animateRobot(B, a) {
-      const { t, dt, G, env } = a;
-      B.R.position.y = 0.035 * Math.sin(t * 1.6) + (G && G.k === 'celebrate' ? 0.06 * Math.abs(Math.sin(G.t * 10)) * env : 0);
-      B.body.rotation.z = 0.02 * Math.sin(t * 0.7); B.body.rotation.x = 0.02 * a.breath + a.listen * 0.06;
-      B.neck.rotation.set(a.headX * 0.4, a.headY * 0.4, a.headZ * 0.4);
-      B.head.rotation.set(a.headX * 0.6, a.headY * 0.6, a.headZ * 0.6);
-      // occhi: palpebre ed emozioni
-      const e = S.emo, eyeH = clamp(1 - a.blinkV, 0.08, 1) * (1 - 0.6 * e.happy) * (1 + 0.35 * e.surprised) * (1 - 0.3 * e.angry);
-      for (const [eye, s] of [[B.eyeL, -1], [B.eyeR, 1]]) {
-        eye.scale.set(1 + 0.25 * e.surprised, eyeH, 1); eye.rotation.z = s * (0.35 * e.sad - 0.4 * e.angry);
-        eye.position.y = 0.035 + 0.02 * e.happy - 0.015 * e.sad; eye.position.x = s * 0.1 + S.look.x * 0.025;
-        eye.position.y += S.look.y * 0.02;
+    function animateRobot(B, P, a) {
+      const { t } = a;
+      B.R.position.set(P.root.x, 0.035 * Math.sin(t * 1.6) * (1 - 0.6 * S.sleepW) + P.root.py * height, 0);
+      B.R.rotation.y = P.root.yaw; charRoot.rotation.y = S.yaw;
+      B.body.rotation.set(P.spine.x, P.spine.y, P.spine.z + 0.02 * Math.sin(t * 0.7));
+      B.body.position.y = 0.55 + 0.012 * P.shoulders;
+      B.neck.rotation.set(P.head.x * 0.4, P.head.y * 0.4, P.head.z * 0.4);
+      B.head.rotation.set(P.head.x * 0.6, P.head.y * 0.6, P.head.z * 0.6);
+      B.antenna.rotation.z = (0.25 * Math.sin(t * 14) * P.antenna) + 0.04 * Math.sin(t * 2.3) + 0.1 * S.dance.w * Math.sin(t * 8);
+      for (const [arm, A, side] of [[B.L, P.armL, 'L'], [B.Rr, P.armR, 'R']]) {
+        const m = arm.s;
+        arm.sh.rotation.set(A.sx, m * A.sy, m * A.sz); arm.el.rotation.set(A.ex, m * A.ey, m * A.ez); arm.hand.rotation.y = m * A.wr;
+        const c = S.hand[side];
+        arm.fingers.forEach(([f1, f2], i) => {
+          const cv = i === 0 ? c[0] : c[i === 3 ? 4 : i];            // pollice, indice, medio, mignolo
+          if (i === 0) { f1.rotation.y = -m * cv * 1.1; f2.rotation.z = -m * cv * 0.8; }
+          else { f1.rotation.z = -m * cv * 1.35; f2.rotation.z = -m * cv * 1.2; }
+        });
       }
-      // bocca: larghezza/altezza dai visemi
-      const m = S.mouth, open = clamp(m.aa + m.oh * 0.9 + m.ou * 0.6 + m.ee * 0.45 + m.ih * 0.35, 0, 1.2);
-      const wide = 1 + 0.35 * m.ee + 0.3 * m.ih - 0.45 * m.ou - 0.35 * m.oh + 0.5 * e.happy - 0.2 * e.sad;
-      B.mouth.scale.set(Math.max(0.35, wide), 1 + open * 5.5 + 2 * e.surprised, 1); B.mouth.position.y = -0.085 - open * 0.012 + 0.008 * e.happy;
-      // braccia
-      let lz = 0.18 + 0.03 * Math.sin(t * 1.1), rz = -0.18 - 0.03 * Math.sin(t * 1.1), rx = 0, lx = 0, le = -0.25, re = -0.25, reZ = 0;
-      if (a.speaking) { le -= 0.15 * Math.sin(t * 4.2); re += 0.15 * Math.sin(t * 4.2 + 1); }
-      if (G && G.k === 'wave') { rz = lerp(rz, -2.5, env); re = lerp(re, 0, env); reZ = lerp(0, 0.5 * Math.sin(G.t * 11), env); }
-      if (G && G.k === 'celebrate') { const b = 0.15 * Math.sin(G.t * 12); lz = lerp(lz, 2.6 + b, env); rz = lerp(rz, -2.6 - b, env); }
-      if (G && G.k === 'shrug') { lz = lerp(lz, 0.7, env); rz = lerp(rz, -0.7, env); le -= 0.9 * env; re -= 0.9 * env; }
-      if (a.think) { rz = lerp(rz, -0.35, a.think); rx = -1.2 * a.think; re = -1.7 * a.think; }
-      B.L.sh.rotation.set(lx, 0, lz); B.Rr.sh.rotation.set(rx, 0, rz); B.L.el.rotation.set(le, 0, 0); B.Rr.el.rotation.set(re, 0, reZ);
-      // luci
+      // viso sullo schermo
+      const F = S.face, mp = S.mp;
+      const open = clamp(Math.max(mp.open, F.mouthOpen), 0, 1.15), round = Math.max(mp.round, F.mouthRound);
+      drawFace(faceCtx, {
+        t, col: '#' + B.glow.color.getHexString(), col2: '#' + B.glow2.color.getHexString(), glow: 1, dim: 1 - 0.45 * S.sleepW,
+        lx: S.look.x, ly: S.look.y, closed: clamp(Math.max(F.closed, a.blinkV), 0, 1), squint: F.squint, wide: F.wide, angry: F.angry, sad: F.sad,
+        brow: F.brow, browIn: F.browIn, browL: F.browL, mode: F.mode,
+        open, round, wideM: mp.wide, teeth: mp.teeth * (open > 0.06 ? 1 : 0), tongue: mp.tongue, press: Math.max(mp.press, F.press), bite: mp.bite,
+        smile: F.smile * (1 - 0.5 * clamp(open, 0, 1)), frown: F.frown,
+      });
+      B.faceTex.needsUpdate = true;
+      // luci (nel ballo i colori girano a tempo)
       const pulse = S.state === 'thinking' ? 0.5 + 0.5 * Math.sin(t * 7) : S.state === 'listening' ? 1 : S.state === 'alarm' ? Math.abs(Math.sin(t * 9)) : 0.4 + 0.15 * Math.sin(t * 2);
-      const k1 = 0.75 + 0.25 * (a.speaking ? open : 0) + 0.15 * pulse, k2 = 0.55 + 0.45 * pulse;
-      B.glow.color.copy(accent).multiplyScalar(k1); B.glow2.color.copy(accent2).multiplyScalar(k2);
-      B.tip.scale.setScalar(1 + 0.4 * pulse);
+      const k1 = (0.75 + 0.25 * (a.speaking ? clamp(open, 0, 1) : 0) + 0.15 * pulse) * (1 - 0.5 * S.sleepW), k2 = (0.55 + 0.45 * pulse) * (1 - 0.4 * S.sleepW) + 0.8 * P.antenna * Math.abs(Math.sin(t * 12));
+      tmpC.copy(accent); if (S.dance.w > 0.01) tmpC.offsetHSL(((S.dance.n % 6) / 6) * S.dance.w, 0, 0);
+      B.glow.color.copy(tmpC).multiplyScalar(k1); B.glow2.color.copy(accent2).multiplyScalar(k2);
+      B.tip.scale.setScalar(1 + 0.4 * pulse + 0.5 * P.antenna);
+    }
+
+    function animateHumanoid(P, a) {
+      const { dt, blinkV } = a;
+      const anim = k => rig.hasClips && rig.animated && rig.animated(k);
+      rig.reset();                                     // si riparte dalla posa di riposo…
+      if (mixer) mixer.update(dt);                     // …poi l'animazione del file (se c'è)…
+      charRoot.position.set(P.root.x, baseY + P.root.py * height, 0);
+      charRoot.rotation.y = S.yaw + P.root.yaw;
+      if (!anim('hips')) rig.apply('hips', P.hips.x, P.hips.y, P.hips.z);
+      if (!anim('spine')) rig.apply('spine', P.spine.x * 0.6, P.spine.y * 0.6, P.spine.z * 0.6);
+      else if (S.listen > 0.05) rig.apply('spine', S.listen * 0.05, 0, 0);
+      if (!anim('chest')) rig.apply('chest', P.spine.x * 0.4, P.spine.y * 0.4, P.spine.z * 0.4);
+      rig.apply('neck', P.head.x * 0.4, P.head.y * 0.4, P.head.z * 0.4);
+      rig.apply('head', P.head.x * 0.6, P.head.y * 0.6, P.head.z * 0.6);
+      // braccia: dalla "posa appesa" alle ossa (T-pose o A-pose che sia)
+      if (rig.bones.leftUpperArm && !anim('leftUpperArm') && !anim('rightUpperArm')) {
+        for (const [s, m, A] of [['left', 1, P.armL], ['right', -1, P.armR]]) {
+          const drop = rig.armDrop[s + 'UpperArm'] || 0;
+          rig.apply(s + 'UpperArm', A.sx, m * A.sy, m * (A.sz - (Math.PI / 2 - drop)));
+          rig.apply(s + 'LowerArm', A.ex, m * A.ey, m * A.ez);
+          if (A.wr) rig.roll(s + 'Hand', s + 'LowerArm', m * A.wr);
+        }
+      }
+      for (const [s, side] of [['left', 'L'], ['right', 'R']]) rig.curl(s, S.hand[side], rig.animatedBone);
+      // gambe (camminata)
+      if (rig.bones.leftUpperLeg && !anim('leftUpperLeg')) {
+        rig.apply('leftUpperLeg', -P.legs.l, 0, 0); rig.apply('rightUpperLeg', -P.legs.r, 0, 0);
+        rig.apply('leftLowerLeg', P.legs.lk, 0, 0); rig.apply('rightLowerLeg', P.legs.rk, 0, 0);
+      }
+      if (clips.__wave && S.acts.some(x => x.k === 'wave' && x.t < dt * 1.5)) clips.__wave.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.2).play();
+      if (clips.__talk) { const w = a.speaking ? 1 : 0; clips.__talk.enabled = true; if (!clips.__talk.isRunning() && w) clips.__talk.play(); clips.__talk.weight = damp(clips.__talk.weight || 0, w, 4, dt); }
+      if (clips.__dance) { const w = S.dance.w; if (w > 0.01 && !clips.__dance.isRunning()) clips.__dance.play(); clips.__dance.weight = w; }
+      // espressioni
+      const F = S.face, mp = S.mp;
+      const closed = clamp(Math.max(F.closed, blinkV) + (F.mode.happy > 0.6 ? 0.15 : 0), 0, 1);
+      if (F.mode.wink > 0.3) { setExpr('blinkLeft', F.mode.wink); setExpr('blink', clamp(blinkV, 0, 1)); } else setExpr('blink', closed);
+      const extraOpen = F.mouthOpen, extraRound = F.mouthRound;
+      if (rig.oculus) {                                 // visemi completi (Ready Player Me / Oculus)
+        for (const v of VIS) setMorph(rig.oculus[v], clamp(S.vis[v] * (v === 'sil' ? 0.3 : 1.05) + (v === 'aa' ? extraOpen * 0.8 : v === 'O' ? extraRound * 0.5 : 0), 0, 1));
+      } else if (rig.arkit) {                           // forme ARKit: mascella, labbra arrotondate, premute…
+        const K = rig.arkit, o = clamp(Math.max(mp.open, extraOpen), 0, 1);
+        setMorph(K.jawopen, o * 0.8); setMorph(K.mouthfunnel, mp.round * o * 0.9); setMorph(K.mouthpucker, mp.round * (1 - o) * 0.8);
+        setMorph(K.mouthpressleft, mp.press * 0.7); setMorph(K.mouthpressright, mp.press * 0.7); setMorph(K.mouthrolllower, mp.bite * 0.6);
+        setMorph(K.mouthstretchleft, Math.max(0, mp.wide) * 0.35); setMorph(K.mouthstretchright, Math.max(0, mp.wide) * 0.35);
+        setMorph(K.browinnerup, clamp(F.browIn + F.brow * 0.5, 0, 1)); setMorph(K.browouterupleft, clamp(F.brow + F.browL, 0, 1)); setMorph(K.browouterupright, F.brow);
+        setMorph(K.browdownleft, F.angry); setMorph(K.browdownright, F.angry);
+        setMorph(K.eyewideleft, F.wide * 0.6); setMorph(K.eyewideright, F.wide * 0.6); setMorph(K.eyesquintleft, F.squint * 0.6); setMorph(K.eyesquintright, F.squint * 0.6);
+      } else for (const k of ['aa', 'ih', 'ou', 'ee', 'oh']) setExpr(k, clamp(S.mouth[k] + (k === 'aa' ? extraOpen : k === 'oh' ? extraRound * 0.6 : 0), 0, 1));
+      const e = S.emo;
+      for (const k of EMOS) {
+        let v = e[k] * (k === 'happy' && S.mouth.aa > 0.3 ? 0.5 : 1);
+        if (k === 'happy') v = Math.max(v, F.mode.happy * 0.8, F.mode.heart * 0.8, F.smile * 0.5);
+        if (k === 'surprised') v = Math.max(v, F.wide * 0.7, F.brow * 0.25);
+        if (k === 'angry') v = Math.max(v, F.angry * 0.8);
+        setExpr(k, clamp(v, 0, 1));
+      }
+      if (vrm) vrm.update(dt);                         // …e i nostri movimenti sopra (testa, braccia, dita, espressioni)
+      if (!rig.bones.head && !vrm) {                   // modello senza ossa: si muove tutto insieme
+        charRoot.position.y = baseY + height * 0.012 * Math.sin(S.t * 1.6) + P.root.py * height;
+        charRoot.rotation.y = S.yaw + P.root.yaw + S.look.x * 0.35; charRoot.rotation.x = -S.look.y * 0.08;
+        charRoot.scale.setScalar(1 + 0.025 * S.mouth.aa);
+      }
     }
 
     // ---------- avvio ----------
@@ -5641,52 +6398,137 @@ window.ZepKit = (() => {
       catch (e) { log('modello non caricato: ' + (e && e.message || e)); charRoot.clear(); rig = null; vrm = null; mixer = null; clips = {}; buildRobot(); opts.onError && opts.onError(e); }
     } else buildRobot();
     resize();
+    if (opts.hour != null) S.tod = todOf(opts.hour);
 
     // ---------- ciclo (anche nella mini-finestra: usa il requestAnimationFrame della sua finestra) ----------
     let rafWin = window, last = performance.now(), raf = 0, alive = true, paused = false;
     function loop() {
       if (!alive) return;
       const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
-      if (!paused) { update(dt); renderer.render(scene, camera); }
+      if (!paused) { const t1 = performance.now(); update(dt); const t2 = performance.now(); renderer.render(scene, camera); S.perf = { u: t2 - t1, r: performance.now() - t2 }; }
       raf = rafWin.requestAnimationFrame(loop);
     }
     raf = rafWin.requestAnimationFrame(loop);
     let ro = new ResizeObserver(() => resize()); ro.observe(container);
 
-    // trascina per girarlo, rotellina per lo zoom, doppio clic per rimetterlo a posto
+    // trascina per girarlo, rotellina per lo zoom, doppio clic per rimetterlo a posto, un clic = un tocco
     let drag = null;
-    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, yaw: S.yawTarget }; canvas.setPointerCapture(e.pointerId); });
-    canvas.addEventListener('pointermove', e => { if (drag) S.yawTarget = clamp(drag.yaw + (e.clientX - drag.x) * 0.008, -1.1, 1.1); });
-    canvas.addEventListener('pointerup', () => { drag = null; });
+    canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, yaw: S.yawTarget, t: performance.now(), moved: false }; try { canvas.setPointerCapture(e.pointerId); } catch (er) {} });
+    canvas.addEventListener('pointermove', e => { if (!drag) return; if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 6) drag.moved = true; if (drag.moved) S.yawTarget = clamp(drag.yaw + (e.clientX - drag.x) * 0.008, -1.1, 1.1); });
+    canvas.addEventListener('pointerup', e => { const d = drag; drag = null; if (d && !d.moved && performance.now() - d.t < 400) poke(e); });
     canvas.addEventListener('wheel', e => { e.preventDefault(); S.zoom = clamp(S.zoom * (e.deltaY > 0 ? 1.08 : 0.93), 0.55, 2.6); frame(); }, { passive: false });
     canvas.addEventListener('dblclick', () => { S.yawTarget = 0; S.zoom = 1; frame(); });
 
     const api = {
       get kind() { return kind; }, get name() { return name; },
-      get info() { return { kind, name, height, bones: rig && rig.bones ? Object.entries(rig.bones).filter(([, b]) => b).map(([k]) => k) : [], morphs: rig && rig.morphs ? Object.keys(rig.morphs) : [], clips: Object.keys(clips).filter(k => !k.startsWith('__')), vrm: !!vrm, lookAt: !!(vrm && vrm.lookAt), expressions: vrm && vrm.expressionManager ? vrm.expressionManager.expressions.map(x => x.expressionName) : [] }; },
+      get info() {
+        return { kind, name, height, bones: rig && rig.bones ? Object.entries(rig.bones).filter(([k, b]) => b && b.isObject3D && k !== 'fingers').map(([k]) => k) : [],
+          fingers: rig && rig.fingers ? Object.fromEntries(Object.entries(rig.fingers).map(([k, v]) => [k, v.length])) : {},
+          morphs: rig && rig.morphs ? Object.keys(rig.morphs) : [], visemes: rig && rig.oculus ? Object.keys(rig.oculus) : [], arkit: !!(rig && rig.arkit),
+          clips: Object.keys(clips).filter(k => !k.startsWith('__')), vrm: !!vrm, lookAt: !!(vrm && vrm.lookAt),
+          expressions: vrm && vrm.expressionManager ? vrm.expressionManager.expressions.map(x => x.expressionName) : [] };
+      },
       get state() { return S.state; }, get debug() { return S; },
       canvas, renderer,
-      setState(s) { S.state = s; if (s === 'speaking') S.speakUntil = performance.now() + 400; },
-      // una parola pronunciata: le vocali diventano forme della bocca distribuite nella durata
+      setState(s) { if (s !== S.state && s !== 'idle') activity(); S.state = s; if (s === 'speaking') S.speakUntil = performance.now() + 400; },
+      // una frase che sta per essere detta: bocca suono per suono e gesti scelti dalle parole
+      speakLine(text, o = {}) {
+        const now = performance.now(), Lp = S.lip, txt = String(text || '');
+        Lp.text = txt; Lp.line++; Lp.start = now; Lp.syncs = 0; Lp.curCi = -1; Lp.quietUntil = 0;
+        Lp.segs = Lp.segs.filter(s => s.t1 < now);
+        const unit = Lp.unit / clamp(o.rate || 1, 0.5, 2);
+        const segs = buildLine(txt, 0, now, unit);
+        Lp.segs.push(...segs);
+        Lp.ciUnits = new Map(); for (const s of segs) if (!Lp.ciUnits.has(s.ci)) Lp.ciUnits.set(s.ci, (s.t0 - now) / unit);
+        Lp.units = units(segs) / unit; Lp.rate = clamp(o.rate || 1, 0.5, 2);
+        Lp.ev = o.gestures === false ? [] : plan(txt);
+        S.speakUntil = Math.max(S.speakUntil, now + 400);
+        activity();
+        return { ms: units(segs), segs: segs.length, gesti: Lp.ev.length };
+      },
+      // il browser dice che sta iniziando la parola in posizione ci: si riallinea (e impara la velocità della voce)
+      sync(ci) {
+        const now = performance.now(), Lp = S.lip; if (!Lp.text) return;
+        const u0 = Lp.ciUnits && Lp.ciUnits.get(ci);
+        if (u0 != null && u0 > 3) { const est = (now - Lp.start) / u0 * Lp.rate; if (est > 30 && est < 220) Lp.unit = clamp(lerp(Lp.unit, est, 0.2), 45, 160); }
+        Lp.syncs++;
+        Lp.segs = Lp.segs.filter(s => s.t1 < now || (s.ci >= 0 && s.ci < ci && s.t0 <= now));
+        Lp.segs.push(...buildLine(Lp.text, ci, now, Lp.unit / Lp.rate));
+        for (const e of Lp.ev) if (!e.fired && e.ci < ci - 8) e.fired = true;      // gesti rimasti indietro: si saltano
+        Lp.curCi = Math.max(Lp.curCi, ci);
+      },
+      // la frase è finita: la bocca si ferma e, senza confini di parola, impara la velocità dalla durata vera
+      lineEnd() {
+        const now = performance.now(), Lp = S.lip; if (!Lp.text) return;
+        const dur = now - Lp.start;
+        if (!Lp.syncs && Lp.units > 4 && dur > 200) { const est = dur / Lp.units * Lp.rate; if (est > 0.4 * Lp.unit && est < 2.5 * Lp.unit) Lp.unit = clamp(lerp(Lp.unit, est, 0.35), 45, 160); }
+        Lp.segs = Lp.segs.filter(s => s.t1 < now); Lp.text = ''; Lp.ev = []; Lp.quietUntil = now + 300;
+      },
+      get lipUnit() { return S.lip.unit; }, set lipUnit(v) { S.lip.unit = clamp(+v || 82, 45, 160); },
+      // (compatibilità) una parola pronunciata adesso, distribuita in ms
       word(w, ms) {
-        const txt = String(w || '').toLowerCase(); const now = performance.now();
-        ms = ms || clamp(txt.length * 75, 160, 900);
-        const vs = [...txt].map(c => VOWELS[c] || (/[mbp]/.test(c) ? 'm' : null)).filter(Boolean);
-        if (!vs.length) vs.push('aa');
-        const step = ms / vs.length, start = Math.max(now, S.visemes.length ? S.visemes[S.visemes.length - 1].end : now);
-        vs.forEach((v, i) => S.visemes.push({ v, w: 0.55 + Math.random() * 0.4, start: start + i * step, end: start + (i + 0.85) * step }));
-        S.speakUntil = Math.max(S.speakUntil, start + ms + 150);
-        if (S.visemes.length > 60) S.visemes.splice(0, S.visemes.length - 60);
+        const now = performance.now(), ph = g2p(w), tot = ph.reduce((s, p) => s + p.d, 0) || 1;
+        ms = ms || clamp(String(w).length * 75, 160, 900);
+        let t0 = Math.max(now, S.lip.segs.length ? S.lip.segs[S.lip.segs.length - 1].t1 : now);
+        const u = ms / tot;
+        for (const p of ph) { S.lip.segs.push({ v: p.v, t0, t1: t0 + p.d * u, ci: -1, amp: p.acc ? 1 : 0.9 }); t0 += p.d * u; }
+        S.speakUntil = Math.max(S.speakUntil, t0 + 150);
+        if (S.lip.segs.length > 400) S.lip.segs.splice(0, S.lip.segs.length - 400);
       },
       level(v) { S.level = clamp(v || 0, 0, 1); },
-      stopSpeaking() { S.visemes.length = 0; S.speakUntil = 0; S.level = 0; if (S.state === 'speaking') S.state = 'idle'; },
+      stopSpeaking() { const Lp = S.lip; Lp.segs.length = 0; Lp.text = ''; Lp.ev = []; Lp.quietUntil = performance.now() + 300; S.speakUntil = 0; S.level = 0; if (S.state === 'speaking') S.state = 'idle'; },
       emote(k, ms = 3500) { if (k === 'neutral' || !EMOS.includes(k)) { S.emoTarget = null; return; } S.emoTarget = k; S.emoUntil = performance.now() + ms; },
-      gesture(k) { S.gesture = k; S.gestureT = 0; },
+      gesture(k, o) { k = GESTURE_ALIAS[k] || k; if (act(k, o || {})) { S.gesture = k; activity(); return true; } return false; },
+      act(k, o) { return act(k, o || {}); },
+      get gestures() { return Object.keys(ACT); },
+      // reazioni pronte per la GUI
+      react(kind, o = {}) {
+        const now = performance.now(); activity();
+        const em = (k, ms) => { S.emoTarget = k; S.emoUntil = now + (ms || 2500); };
+        switch (kind) {
+          case 'typing': S.lookTarget.x = 0.55; S.lookTarget.y = -0.55; S.lastLookInput = now; S.lookSource = 'typing'; break;
+          case 'ok': act('thumbsup'); em('happy'); break;
+          case 'fail': act(Math.random() < 0.5 ? 'facepalm' : 'shrug'); em('sad', 2000); break;
+          case 'reminder': case 'alarm': act('jump'); setTimeout(() => act('point'), 600); em('surprised'); break;
+          case 'welcome': case 'newchat': act('wave'); em('happy'); break;
+          case 'love': act('heart'); em('happy', 3000); break;
+          case 'laugh': act('giggle'); em('happy'); break;
+          case 'wink': act('wink'); break;
+          case 'goodnight': act('wave'); setTimeout(() => act('yawn'), 1800); setTimeout(() => sleepNow(), 4600); break;
+          case 'morning': act('stretch'); setTimeout(() => { act('wave'); em('happy'); }, 2300); break;
+          case 'think': act('think'); break;
+          case 'listen': act('tilt'); break;
+          default: return act(kind, o);
+        }
+        return true;
+      },
+      activity, sleep: sleepNow, wake,
+      get mood() { return S.alive.mode; },
+      setAlive(o = {}) { const A = S.alive; if (o.on != null) A.on = !!o.on; if (o.boredMs) A.boredMs = o.boredMs; if (o.sleepMs) A.sleepMs = o.sleepMs; if (o.nextMs != null) A.next = performance.now() + o.nextMs; },
+      setTimeOfDay(h) { S.tod = h == null ? null : todOf(((+h % 24) + 24) % 24); if (!S.tod) { L.key.set(0xffffff); L.sky.set(0xcfe3ff); L.gnd.set(0x140c26); L.ki = 1.5; L.hi = 0.9; L.env = 0.55; L.stars = 1; } return S.tod; },
+      get timeOfDay() { return S.tod; },
+      // ballo: on/off (con bpm), oppure i colpi di batteria dalla musica (beat)
+      dance(on, o = {}) {
+        const D = S.dance, now = performance.now();
+        if (!on) { D.on = false; return false; }
+        D.on = true; D.ext = !!o.ext; D.bpm = clamp(o.bpm || D.bpm || 112, 60, 180); D.last = now; D.n = 0; D.until = o.ms ? now + o.ms : Infinity;
+        activity(); return true;
+      },
+      beat(o = {}) {
+        const D = S.dance, now = performance.now(), gap = now - D.last;
+        if (D.ext && gap > 280 && gap < 1100) D.bpm = clamp(lerp(D.bpm, 60000 / gap, 0.3), 60, 180);
+        if (!D.on || !D.ext) { D.on = true; D.ext = true; D.n = 0; }
+        D.last = now; D.n++; D.until = now + (o.hold || 3500); S.alive.lastAct = now;
+      },
+      get dancing() { return S.dance.on; },
+      walkTo(x) { S.walk.target = clamp(x, -1, 1) * height * (S.framing === 'intero' ? 0.3 : 0.12); S.walk.back = 0; },
+      poke(x, y) { const r = canvas.getBoundingClientRect(); return poke({ clientX: r.left + (x ?? 0.5) * r.width, clientY: r.top + (y ?? 0.5) * r.height }); },
       lookAt(x, y, source = 'pointer') { S.lookTarget.x = clamp(x, -1, 1); S.lookTarget.y = clamp(y, -1, 1); S.lastLookInput = performance.now(); S.lookSource = source; },
       setAccent(a, b) {
         accent.setRGB(a[0] / 255, a[1] / 255, a[2] / 255, THREE.SRGBColorSpace); accent2.setRGB(b[0] / 255, b[1] / 255, b[2] / 255, THREE.SRGBColorSpace);
         ringMat.color.copy(accent); ring2.material.color.copy(accent); pMat.color.copy(accent); rim.color.copy(accent); rim2.color.copy(accent2);
         if (rig && rig.robot) { rig.robot.glow.color.copy(accent); rig.robot.glow2.color.copy(accent2); }
+        for (const k of Object.keys(SYM)) { SYM[k].map.dispose(); delete SYM[k]; }
       },
       setFraming(f) { S.framing = f === 'intero' ? 'intero' : 'busto'; frame(); },
       get framing() { return S.framing; },
@@ -5698,17 +6540,27 @@ window.ZepKit = (() => {
         rafWin = win; last = performance.now(); raf = rafWin.requestAnimationFrame(loop); resize();
       },
       pause(p) { paused = !!p; },
+      step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
       snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
+      faceSnapshot() { return faceCanvas.toDataURL('image/png'); },
       // per i test e il debug: dove sono le ossa e dove guardano
-      bonePos(k) { const b = rig && rig.bones && rig.bones[k]; if (!b) return null; const v = b.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z]; },
-      boneForward(k) { const b = rig && rig.bones && rig.bones[k]; if (!b) return null; const v = new THREE.Vector3(0, 0, 1).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())); return [v.x, v.y, v.z]; },
+      bonePos(k) { const b = rig && rig.bones && rig.bones[k]; if (!b || !b.isObject3D) return null; const v = b.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z]; },
+      boneForward(k) { const b = rig && rig.bones && rig.bones[k]; if (!b || !b.isObject3D) return null; const v = new THREE.Vector3(0, 0, 1).applyQuaternion(b.getWorldQuaternion(new THREE.Quaternion())); return [v.x, v.y, v.z]; },
+      fingerTip(side, f) {
+        const F = rig && rig.fingers && (rig.fingers[side] || []).filter(x => x.f === f); if (!F || !F.length) return null;
+        const v = F[F.length - 1].b.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z];
+      },
+      worldOf(obj) { const v = obj.getWorldPosition(new THREE.Vector3()); return [v.x, v.y, v.z]; },
+      morphValue(nome) { let out = null; charRoot.traverse(o => { if (out == null && o.morphTargetDictionary && nome in o.morphTargetDictionary) out = o.morphTargetInfluences[o.morphTargetDictionary[nome]]; }); return out; },
+      get lights() { return { key: '#' + key.color.getHexString(), ki: key.intensity, sky: '#' + hemi.color.getHexString() }; },
       get robot() { return rig && rig.robot; },
+      get sprites() { return sprites.filter(s => s.alive).length; },
       dispose() { alive = false; rafWin.cancelAnimationFrame(raf); ro.disconnect(); try { renderer.dispose(); } catch (e) {} canvas.remove(); },
     };
     if (opts.accent) api.setAccent(opts.accent, opts.accent2 || opts.accent);
     return api;
   }
-  return { create, libs, VOWELS };
+  return { create, libs, VOWELS, lips: { g2p, buildLine, numIt, VIS, VP }, plan, gestures: Object.keys(ACT) };
 })();
 </script>
 <script>
@@ -5767,7 +6619,7 @@ function askNotify(){try{if('Notification' in window&&Notification.permission===
 function fireAlarm(p){
   const msg=p.tipo==='timer'?'⏱️ '+p.testo+': tempo scaduto!':'⏰ Promemoria: **'+p.testo+'**';
   add('ai',msg,'alarm');beep(3);toast(msg.replace(/\*\*/g,''),'ok');notify('MAIK',msg.replace(/\*\*/g,''));
-  SPH.state='alarm';setTimeout(()=>{if(SPH.state==='alarm')SPH.state='idle';},2500);
+  SPH.state='alarm';setTimeout(()=>{if(SPH.state==='alarm')SPH.state='idle';},2500);if(AV)AV.react('reminder');
   const was=ttsOn;ttsOn=true;say(msg);ttsOn=was;
 }
 async function checkScaduti(){try{const r=await (await fetch('/promemoria/scaduti')).json();const s=r.scaduti||[];s.forEach(fireAlarm);if(s.length)loadPr();}catch(e){}}
@@ -5820,6 +6672,8 @@ async function invia(opt){
   const t=(opt.text!=null?opt.text:$('#inp').value).trim();const A=regen?null:att;
   if((!t&&!A)||busy)return;
   if(!regen&&!A&&t&&rispostaVeloce(t)){if(opt.text==null)$('#inp').value='';return;}   // «sì» / «no» alla conferma aperta
+  const loc=!regen&&!A&&t?comandoZep(t):null;                                                 // «balla!»: ci pensa Zep
+  if(loc){if(opt.text==null)$('#inp').value='';stopSpeech();add('me',t);const d=add('ai',loc);finalize(d,loc,null,null);say(loc);return;}
   stopSpeech();
   if(!regen){$('#inp').value='';clearAtt();}
   $('#send').disabled=true;busy=true;lastAct=Date.now();
@@ -5854,7 +6708,7 @@ async function invia(opt){
           else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!window.speechSynthesis)captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
-            addConferme(bubble,obj.conferme);reactToReply(full,obj);
+            addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
@@ -5917,7 +6771,7 @@ document.addEventListener('touchend',()=>{SPH.drag=false;});
 let camOn=false,camStream=null,faceTimer=null,present=false,awaySince=Date.now();
 async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:true});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
 function stopCam(){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
-function onPresence(pr){const s=$('#fstat');if(pr){if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(away>20000&&AV)AV.gesture('wave');if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
+function onPresence(pr){const s=$('#fstat');if(pr){zepAttivo();if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(away>20000&&AV)AV.gesture('wave');if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
 
 // ---------- VISIONE (👁️ Guarda) ----------
 function snap(){const v=$('#cam');const c=document.createElement('canvas');c.width=v.videoWidth||320;c.height=v.videoHeight||240;c.getContext('2d').drawImage(v,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.7);}
@@ -6102,19 +6956,24 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('🧍','Inquadratura busto / intero',()=>toggleFraming(),'Z','camera'),
     c('📤','Carica il tuo personaggio 3D (.vrm / .glb)',()=>$('#avin').click(),'avatar','vroid vrm glb zepeto'),
     c('💻','Stato del PC',()=>qs('come sta il pc?'),'CPU RAM','computer batteria'),
+    c('🕺','Zep: balla!',()=>zepBalla(),'ballo','festa danza'),c('🎵',MUSIC.on?'Smetti di ascoltare la musica':'Balla con la mia musica',()=>toggleMusic(),'B','microfono ritmo'),
+    c('😴','Zep: vai a dormire',()=>{if(AV)AV.react('goodnight');},'buonanotte','sonno'),
+    c('📸','Fai uno screenshot',()=>qs('fai uno screenshot'),'PC','schermata cattura'),c('🗂️','Trova un file…',()=>q('Trova il file '),'PC','cerca documento foto pdf'),
+    c('🔊','Alza il volume',()=>qs('alza il volume'),'PC','audio'),c('🔉','Abbassa il volume',()=>qs('abbassa il volume'),'PC','audio'),
+    c('⏯️','Pausa / riprendi la musica',()=>qs('pausa'),'PC','spotify youtube'),c('⏭️','Canzone successiva',()=>qs('canzone successiva'),'PC','brano'),
     c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
   Object.entries(MaikKit.THEMES).forEach(([k,t])=>L.push(c('🎨','Tema: '+t.nm,()=>{setTheme(k);toast('🎨 Tema '+t.nm,'ok');},'tema','colore')));
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V11 · ZEP',key:'maik_boot_v11',checks:[
+  return MaikKit.boot({version:'V12 · ZEP',key:'maik_boot_v12',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Personaggio 3D',run:async()=>{if(!PC_MODE)return{ok:true,text:'sfera (schermo piccolo)'};try{const r=await fetch('/lib/three.module.min.js');const a=await (await fetch('/avatar/info')).json();return r.ok?{ok:true,text:a.presente?'il tuo: '+a.nome:'Zep (robot integrato)'}:{ok:false,text:'serve internet la prima volta'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Comandi del PC',run:async()=>{try{const r=await (await fetch('/pc/registro')).json();return r.attivo?{ok:true,text:'attivi · sempre con conferma'+(r.finto?' (prova)':'')}:{ok:false,text:'spenti (MAIK_PC=0)'};}catch(e){return{ok:false,text:'errore'};}}},
-    {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 10 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 23 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
@@ -6122,7 +6981,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 11 🧍 Ora ho un **corpo 3D** (carica il tuo personaggio .vrm/.glb dalla barra laterale), parlo con la bocca a tempo, ti guardo con la webcam e posso **usare il tuo PC** (sempre chiedendoti conferma): prova «apri youtube» o «come sta il pc?». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 12 🧍 Il mio **corpo 3D** ora parla davvero: **bocca suono per suono**, **gesti mentre parlo**, e una **vita mia** (mi annoio, sbadiglio, mi addormento, passeggio… e se mi **clicchi** reagisco!). Dimmi «**balla!**» o premi **B** e metti la tua musica. Uso il tuo **PC**, sempre chiedendoti conferma: «apri youtube», «**alza il volume**», «**metti in pausa la musica**», «**cosa c\'è sul mio schermo?**», «**trova il file contratto**», «**blocca il pc**». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -6207,6 +7066,8 @@ async function avatarInit() {
     AV = await ZepKit.create($('#stage3d'), {
       modelUrl: inf.presente ? '/avatar?v=' + encodeURIComponent(inf.caricato || '') : null,
       accent: themeRGB.accent, accent2: themeRGB.accent2, framing: OPT.framing || 'busto',
+      lipUnit: +LS.get('maik_lip_unit', 0) || undefined, alive: OPT.vita !== false, hour: new Date().getHours(),
+      onPoke: onPokeZep, onSleep: () => { caption('💤 …zzz'); captionOff(2500); }, onWake: () => { caption('Eccomi! Mi ero appisolato 😅'); captionOff(2600); },
       onLog: m => console.info('[Zep]', m),
       onError: () => toast('Il tuo personaggio non si carica: per ora uso Zep 🤖', 'err'),
     });
@@ -6243,13 +7104,18 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
   if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open')); }   // coperto da una finestra: riposa
-  if (document.body.dataset.av !== s) { document.body.dataset.av = s; $('#avstate').textContent = AV_STATE_TXT[s] || s; }
+  const umore = AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
+  const txt = umore || AV_STATE_TXT[s] || s;
+  if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
 }
 setInterval(avState, 120);
 
 // lo sguardo segue il mouse (se la webcam non vede un viso)
 let lookRaf = 0, lookEv = null;
+let actT = 0;
+function zepAttivo() { const n = Date.now(); if (AV && n - actT > 1500) { actT = n; AV.activity(); } }
 document.addEventListener('mousemove', e => {
+  zepAttivo();
   lookEv = e; if (lookRaf || !AV || TRACK.face) return;
   lookRaf = requestAnimationFrame(() => {
     lookRaf = 0; const r = $('#sphere-area').getBoundingClientRect();
@@ -6281,22 +7147,27 @@ function pump() {
   u.onstart = () => {
     if (VOICE.cur !== u) return;
     speaking = true; SPH.state = 'speaking'; VOICE.last = s; caption(s);
+    if (AV) { AV.setState('speaking'); AV.speakLine(s, { rate: u.rate }); }
     if (listening && !bargeOK()) { try { reco.stop(); } catch (e) {} }
     if (bargeOK() && !listening) (function prova() { if (!speaking || listening) return; if (busy) return setTimeout(prova, 200); startReco(); })();   // ascolta per farsi interrompere
   };
   u.onboundary = e => {
     if (VOICE.cur !== u || (e.name && e.name !== 'word')) return;
-    const w = (s.slice(e.charIndex).match(/^[\p{L}\p{N}']+/u) || [''])[0];
     if (core) core.pulse(1);
-    if (AV && w) AV.word(w, Math.max(140, w.length * 68 / u.rate));
+    if (AV && e.charIndex != null) AV.sync(e.charIndex);
   };
-  const avanti = () => { clearTimeout(u._guardia); if (VOICE.cur !== u) return; VOICE.cur = null; if (VOICE.q.length) pump(); else speechDone(); };
+  const avanti = () => {
+    clearTimeout(u._guardia); if (VOICE.cur !== u) return;
+    if (AV) { AV.lineEnd(); LS.set('maik_lip_unit', Math.round(AV.lipUnit)); }      // impara la velocità di questa voce
+    VOICE.cur = null; if (VOICE.q.length) pump(); else speechDone();
+  };
   u.onend = u.onerror = avanti;
   u._guardia = setTimeout(avanti, 4000 + s.length * 120);   // se il browser non avvisa la fine della frase, si va avanti lo stesso
   VOICE.cur = u; speechSynthesis.speak(u);
 }
 function speechDone() {
   speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; if (AV) AV.stopSpeaking(); captionOff();
+  if (buonanotte) { buonanotte = false; setTimeout(() => { if (AV && !speaking) AV.react('goodnight'); }, 600); }
   if (handsFree() && !busy) setTimeout(() => { if (handsFree() && !speaking && !busy && !listening) startReco(); }, 350);
 }
 function stopSpeech() { VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
@@ -6444,7 +7315,7 @@ function closeKeys() { $('#kmodal').classList.remove('open'); }
 function updateStageBar() {
   const set = (id, on) => { const b = $(id); if (b) b.classList.toggle('on', !!on); };
   set('#sbtts', ttsOn); $('#sbtts').textContent = ttsOn ? '🔊' : '🔇';
-  set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus'));
+  set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus')); set('#sbmusic', MUSIC.on);
 }
 document.addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable;
@@ -6453,7 +7324,7 @@ document.addEventListener('keydown', e => {
   if (e.altKey && !e.ctrlKey && (e.key === 'n' || e.key === 'N')) { e.preventDefault(); newChat(); return; }
   if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
-  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, '?': openKeys, h: openKeys };
+  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -6462,7 +7333,7 @@ document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.pre
 const PENDING = [];
 function confHTML(c) {
   return '<div class="pcconf" data-id="' + escA(c.id) + '"><div class="pct">' + (c.icona || '🖥️') + ' Posso <b>' + esc(c.descrizione) + '</b>?</div><div class="pcb">'
-    + '<button type="button" data-a="si">✓ Sì</button><button type="button" data-a="sempre" title="Per questo tipo di azione non chiedermelo più">✓ Sì, sempre</button><button type="button" data-a="no">✕ No</button></div></div>';
+    + '<button type="button" data-a="si">✓ Sì</button>' + (c.sempre === false ? '' : '<button type="button" data-a="sempre" title="Per questo tipo di azione non chiedermelo più">✓ Sì, sempre</button>') + '<button type="button" data-a="no">✕ No</button></div></div>';
 }
 function addConferme(d, list) {
   if (!list || !list.length) return;
@@ -6475,9 +7346,47 @@ async function rispondiConferma(id, a) {
   const i = PENDING.indexOf(id); if (i >= 0) PENDING.splice(i, 1);
   let r;
   try { r = await postJ('/pc/conferma', { id, si: a !== 'no', sempre: a === 'sempre' }); } catch (e) { r = { ok: false, esito: 'Server non raggiungibile' }; }
-  if (card) { card.classList.add('done'); card.innerHTML = '<div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito) + '</div>'; }
-  toast(r.esito, r.ok ? 'ok' : 'err'); if (ttsOn && r.ok) say(r.esito);
-  if (AV) AV.gesture(a === 'no' ? 'shake' : r.ok ? 'nod' : 'shrug');
+  if (card) { card.classList.add('done'); card.innerHTML = '<div class="pct ' + (r.ok ? 'ok' : 'ko') + '">' + esc(r.esito) + '</div>' + (r.immagine ? shotHTML(r.immagine) : ''); }
+  toast(r.esito, r.ok ? 'ok' : 'err'); if (ttsOn && r.ok && !r.analizza) say(r.esito);
+  if (AV) { if (a === 'no') AV.gesture('shake'); else AV.react(r.ok ? 'ok' : 'fail'); }
+  if (r.ok && r.tra && card) contoAllaRovescia(card, r.tra);
+  if (r.ok && r.immagine && r.analizza) guardaScreenshot(r.immagine);
+  if (card) $('#msgs').scrollTop = 1e9;
+}
+// screenshot: si vede nella chat e, se vuoi, Zep lo guarda (modello visione)
+const shotHTML = u => '<div class="pcshot"><img src="' + escA(u) + '" alt="Screenshot dello schermo" data-big="' + escA(u) + '"><button type="button" data-shot="' + escA(u) + '">👁️ Cosa vedi?</button></div>';
+async function guardaScreenshot(url, domanda) {
+  if (busy) { setTimeout(() => guardaScreenshot(url, domanda), 600); return; }
+  try {
+    const bl = await (await fetch(url)).blob(), img = await createImageBitmap(bl);
+    const k = Math.min(1, 1280 / img.width), c = document.createElement('canvas');
+    c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    att = { kind: 'image', name: 'schermo.jpg', dataUrl: c.toDataURL('image/jpeg', 0.82) }; renderAtt();
+    invia({ text: domanda || 'Cosa vedi sul mio schermo? Descrivimelo.' });
+  } catch (e) { toast('Non riesco ad aprire lo screenshot', 'err'); }
+}
+function addSchermate(d, list) {
+  (list || []).forEach(s => { const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = shotHTML(s.immagine); d.insertBefore(w, d.querySelector('.acts')); if (s.analizza) guardaScreenshot(s.immagine); });
+}
+// «digita …»: hai qualche secondo per cliccare nella finestra giusta
+function contoAllaRovescia(card, n) {
+  const el = document.createElement('div'); el.className = 'pct'; card.appendChild(el);
+  if (AV) AV.lookAt(0.6, -0.3);
+  const tick = () => { el.innerHTML = n > 0 ? '⌨️ Scrivo tra <span class="cd">' + n + '</span>… clicca dove vuoi il testo' : '⌨️ Scritto! (se non vedi il testo, quella finestra non accetta la tastiera)'; if (n-- > 0) setTimeout(tick, 1000); };
+  tick();
+}
+// file trovati: ognuno con «apri» (che chiede comunque conferma)
+function addFile(d, list) {
+  if (!list || !list.length) return;
+  const g = document.createElement('div'); g.className = 'pcwrap pcfiles';
+  g.innerHTML = list.slice(0, 8).map(f => '<div class="pcfile" data-p="' + escA(f.percorso) + '"><span class="fi">' + esc(f.icona || '📄') + '</span><div class="fn"><b title="' + escA(f.percorso) + '">' + esc(f.nome) + '</b><small>' + esc([f.cartella, f.modificato, f.dimensione].filter(Boolean).join(' · ')) + '</small></div><button type="button">📂 Apri</button></div>').join('');
+  d.insertBefore(g, d.querySelector('.acts')); $('#msgs').scrollTop = 1e9;
+}
+async function apriFile(row) {
+  const btn = row.querySelector('button'); if (btn) btn.disabled = true;
+  let r; try { r = await postJ('/pc/prepara', { tipo: 'file', percorso: row.dataset.p }); } catch (e) { r = { ok: false, esito: 'Server non raggiungibile' }; }
+  if (r.conferma) { const w = document.createElement('div'); w.innerHTML = confHTML(r.conferma); row.replaceWith(w.firstChild); PENDING.push(r.conferma.id); }
+  else { toast(r.esito, r.ok ? 'ok' : 'err'); if (AV) AV.react(r.ok ? 'ok' : 'fail'); if (!r.ok && btn) btn.disabled = false; }
 }
 const RE_SI = /^(?:s[iì]+|ok(?:ay)?|vai|certo|conferm[ao]|fallo|aprilo|aprila|procedi|s[iì] grazie|perfetto)[!. ]*$/i, RE_NO = /^(?:no+|annulla|lascia perdere|non farlo|niente|stop)[!. ]*$/i;
 function rispostaVeloce(t) {      // «sì» / «no» rispondono alla domanda di conferma ancora aperta
@@ -6497,9 +7406,14 @@ function guessEmotion(t) {
   if (/😊|😄|😁|😂|🎉|🥳|❤️|💚|👍|😉|ottimo|fantastico|evviva|bravo|brava|che bello|felice|perfetto|fatto!/i.test(s)) return 'happy';
   return null;
 }
-function reactToReply(full, meta) {
+let buonanotte = false;
+function reactToReply(full, meta, chiesto) {
   if (!AV) return;
   const e = guessEmotion(full); if (e) AV.emote(e, 4000);
+  if (/\bbuona\s*notte\b|\bvado a (?:letto|dormire)\b|\bnotte notte\b/i.test(chiesto || '')) { if (ttsOn && window.speechSynthesis) buonanotte = true; else setTimeout(() => AV && AV.react('goodnight'), 1500); }
+  if (/❤️|💚|💙|🥰|😍|ti voglio bene|ti adoro/i.test(full)) AV.react('love');
+  else if (/😂|🤣|ahah|ahaha|haha/i.test(full)) AV.react('laugh');
+  else if (/😉/.test(full)) AV.react('wink');
   const az = (meta && meta.azioni) || [];
   if (/^(?:ciao|ehi|buongiorno|buonasera|salve|hey|eccomi)\b/i.test(cleanSpeech(full))) AV.gesture('wave');
   else if (/\b(?:evviva|complimenti|grandioso)\b|🎉|🥳/i.test(full)) AV.gesture('celebrate');
@@ -6517,6 +7431,75 @@ $('#sphere-area').addEventListener('drop', e => {
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
   if (f && /\.(vrm|glb)$/i.test(f.name)) { e.preventDefault(); e.stopPropagation(); uploadAvatar(f); }
 });
+
+
+// ============================================================
+// V12 — ZEP PIÙ VIVO: tocchi, ballo con la musica, saluti in base all'ora
+// ============================================================
+const FRASI_TOCCO = {
+  giggle: ['Ihih, mi fai il solletico! 😄', 'Ahah, la testa no! 😆', 'Ehi, così mi fai ridere! 😂'],
+  startle: ['Ehi! Mi hai fatto saltare! 😮', 'Oh! Che spavento! 😲', 'Ahi, che sorpresa! 😯'],
+  wave: ['Batti cinque! ✋', 'Ciao anche a te! 👋'],
+  annoyed: ['Ok, ok… basta toccarmi! 😤', 'Guarda che mi arrabbio… 😠'],
+  dizzy: ['Mi gira tutto… 😵‍💫', 'Basta, mi hai stordito! 😵'],
+};
+const pickOne = a => a[(Math.random() * a.length) | 0];
+function onPokeZep(x) {
+  const f = pickOne(FRASI_TOCCO[x.reaction] || FRASI_TOCCO.giggle);
+  caption(f); captionOff(2600);
+  if (ttsOn && window.speechSynthesis && !speaking && !busy) say(f);
+}
+function salutoIniziale() {
+  if (!AV) return;
+  const h = new Date().getHours();
+  if (h >= 5 && h < 11) AV.react('morning');                                   // si stiracchia e ti saluta
+  else if (h >= 23 || h < 5) { AV.act('yawn'); setTimeout(() => AV && AV.gesture('wave'), 2300); }   // è tardi: sbadiglia
+  else AV.gesture('wave');
+}
+// «balla!» / «smetti di ballare»: li fa Zep, senza chiedere al modello
+const RE_BALLA = /^(?:(?:ehi|dai|ok)\s+)?(?:(?:zep|maik)[,!]?\s+)?(?:balla|balliamo|fammi un balletto|fai un balletto|facciamo festa|mettiti a ballare|un balletto)\b/i;
+const RE_STOPBALLO = /^(?:(?:zep|maik)[,!]?\s+)?(?:smetti di ballare|basta ballare|stop ballo|fermati|basta)[!. ]*$/i;
+function zepBalla() { if (!AV) { toast('Serve il personaggio 3D (sul PC)', 'err'); return; } AV.dance(true, { bpm: 112 + Math.round(Math.random() * 16), ms: 14000 }); }
+function comandoZep(t) {
+  if (!AV) return null;
+  if (RE_BALLA.test(t)) { zepBalla(); return pickOne(['🕺 Musica, maestro! Si balla!', '💃 Guarda come ballo!', '🎶 Uno, due, tre… si balla!']) + (MUSIC.on ? '' : ' Premi **B** e metti la tua musica: ballo a tempo!'); }
+  if (RE_STOPBALLO.test(t) && AV.dancing) { AV.dance(false); if (MUSIC.on) stopMusic(); updateStageBar(); return 'Ok, mi fermo 😅 Che fiatone!'; }
+  return null;
+}
+// 🎵 BALLA CON LA TUA MUSICA: il microfono ascolta, trova i colpi (onset) e Zep balla a tempo
+const MUSIC = { on: false, st: null, ctx: null, an: null, buf: null, prev: null, hist: [], last: 0, timer: 0, beats: 0 };
+async function toggleMusic() {
+  if (!AV) { toast('Serve il personaggio 3D (sul PC)', 'err'); return; }
+  if (MUSIC.on) { stopMusic(); toast('🎵 Non ascolto più la musica'); updateStageBar(); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast('Il tuo browser non mi fa usare il microfono', 'err'); return; }
+  try { MUSIC.st = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { toast('Mi serve il microfono per sentire la musica 🎵', 'err'); return; }
+  MUSIC.ctx = new (window.AudioContext || window.webkitAudioContext)(); try { await MUSIC.ctx.resume(); } catch (e) {}
+  MUSIC.an = MUSIC.ctx.createAnalyser(); MUSIC.an.fftSize = 1024; MUSIC.an.smoothingTimeConstant = 0.15;
+  MUSIC.ctx.createMediaStreamSource(MUSIC.st).connect(MUSIC.an);
+  MUSIC.buf = new Uint8Array(MUSIC.an.frequencyBinCount); MUSIC.prev = null; MUSIC.hist = []; MUSIC.beats = 0; MUSIC.on = true;
+  clearInterval(MUSIC.timer); MUSIC.timer = setInterval(musicStep, 23);
+  toast('🎵 Metti la musica: la sento e ballo a tempo! (B per smettere)', 'ok'); updateStageBar();
+}
+function stopMusic() {
+  MUSIC.on = false; clearInterval(MUSIC.timer);
+  try { MUSIC.st.getTracks().forEach(x => x.stop()); } catch (e) {} try { MUSIC.ctx.close(); } catch (e) {}
+  MUSIC.an = null; if (AV) AV.dance(false);
+}
+function musicStep() {
+  const a = MUSIC.an; if (!a) return;
+  a.getByteFrequencyData(MUSIC.buf);
+  const b = MUSIC.buf, hz = MUSIC.ctx.sampleRate / a.fftSize, lo = Math.max(1, Math.round(40 / hz)), hi = Math.min(b.length - 1, Math.round(2500 / hz)), basso = 200 / hz;
+  let flux = 0, en = 0;
+  for (let i = lo; i <= hi; i++) { const v = b[i] / 255, d = v - (MUSIC.prev ? MUSIC.prev[i] / 255 : v); if (d > 0) flux += d * (i < basso ? 2 : 1); en += v; }
+  MUSIC.prev = b.slice(0);
+  const H = MUSIC.hist; H.push(flux); if (H.length > 43) H.shift();                 // circa un secondo di storia
+  const media = H.reduce((s, x) => s + x, 0) / H.length, sd = Math.sqrt(H.reduce((s, x) => s + (x - media) ** 2, 0) / H.length);
+  const now = performance.now(), forte = en / (hi - lo + 1);
+  if (H.length > 20 && flux > media + 1.4 * sd && flux > 0.5 && forte > 0.05 && now - MUSIC.last > 280) {
+    MUSIC.last = now; MUSIC.beats++; if (AV) AV.beat({ hold: 2600 });
+  }
+}
 
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();}});
@@ -6537,7 +7520,10 @@ const bootP=runBoot();pal=MaikKit.palette(palCmds);
 if(innerWidth<=760)$('#side').classList.add('hidden');
 $('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
 // azioni sui messaggi
-$('#msgs').addEventListener('click',e=>{const cb=e.target.closest('.pcconf button');if(cb){rispondiConferma(cb.closest('.pcconf').dataset.id,cb.dataset.a);return;}const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
+$('#msgs').addEventListener('click',e=>{const cb=e.target.closest('.pcconf button[data-a]');if(cb){rispondiConferma(cb.closest('.pcconf').dataset.id,cb.dataset.a);return;}
+  const fb=e.target.closest('.pcfile button');if(fb){apriFile(fb.closest('.pcfile'));return;}
+  const sb=e.target.closest('[data-shot]');if(sb){sb.disabled=true;guardaScreenshot(sb.dataset.shot);return;}
+  const im=e.target.closest('img[data-big]');if(im){window.open(im.dataset.big,'_blank');return;}const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
   if(b.dataset.act==='copy')(navigator.clipboard?navigator.clipboard.writeText(stripThink(raw)):Promise.reject()).then(()=>toast('Copiato ✓','ok'),()=>toast('Copia non riuscita','err'));
   else if(b.dataset.act==='speak'){const w=ttsOn;ttsOn=true;say(raw);ttsOn=w;}
   else if(b.dataset.act==='regen')regen(d);});
@@ -6548,10 +7534,12 @@ $('#main').addEventListener('drop',e=>{e.preventDefault();const f=e.dataTransfer
 $('#inp').addEventListener('paste',e=>{const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(x=>x.type.startsWith('image/'));if(it){e.preventDefault();attachFile(it.getAsFile());}});
 if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();}
 if(PC_MODE)document.body.classList.add('pc');
-ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;
+ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;$('#optvita').checked=OPT.vita!==false;
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
 // il personaggio arriva quando si chiude la schermata di avvio (prima sarebbe coperto: niente GPU sprecata)
-Promise.resolve(bootP).then(()=>avatarInit()).then(()=>{if(AV)setTimeout(()=>AV.gesture('wave'),600);});updateStageBar();
+Promise.resolve(bootP).then(()=>avatarInit()).then(()=>{if(AV)setTimeout(salutoIniziale,600);});updateStageBar();
+setInterval(()=>{if(AV)AV.setTimeOfDay(new Date().getHours());},600000);
+$('#inp').addEventListener('input',()=>{zepAttivo();const n=Date.now();if(AV&&n-(window._typT||0)>2500){window._typT=n;AV.react('typing');}});
 setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);setInterval(checkSeguiti,20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSeguiti();});
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
@@ -6572,8 +7560,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 11.0 — Server avviato            ║
-║  Zep 3D · comandi del PC · voce · agente · app   ║
+║           MAIK 12.0 — Server avviato            ║
+║  Zep vivo · labiale · gesti · PC · voce · agente ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -6625,7 +7613,8 @@ def main():
     print(f"  Endpoint principali:")
     print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
     print(f"    POST /vedi          — visione: descrive un frame webcam")
-    print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*  [NUOVO v11]")
+    print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
+    print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")
     print(f"    GET/POST /documenti · GET /documenti/cerca?q= · /seguiti   [NUOVO v10]")
     print(f"    GET  /promemoria /promemoria/scaduti · GET/POST /lista")

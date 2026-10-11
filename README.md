@@ -46,6 +46,55 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🧍 Novità V11 — Zep, il tuo personaggio 3D (sul PC, versione server)
+
+Al posto della sfera c'è un **personaggio 3D animato** nel browser: il tuo, oppure **Zep**, il robottino integrato.
+Si usa con `maik_server.py` su un **PC** (Chrome o Edge, schermo largo). Su telefono e su schermi piccoli resta la sfera di sempre,
+e `index.html` rimane la versione V10 che funziona ovunque.
+
+```bash
+python maik_server.py            # si apre come finestra-app (Chrome/Edge), non come una scheda
+python maik_server.py --no-app   # oppure in una scheda normale
+```
+
+| | Cosa fa |
+|---|---|
+| 🧍 **Il tuo personaggio** | Carica un **.vrm** (es. da **VRoid Studio**, gratis: *Esporta → VRM*) o un **.glb** dalla barra laterale (**📤 Carica**) o **trascinandolo sul personaggio**. Con i VRM usa espressioni, visemi e sguardo veri; con i .glb riconosce le ossa (Mixamo, Blender…), le forme del viso (ARKit/Ready Player Me) e le animazioni contenute nel file. Senza file c'è **Zep**, disegnato da codice. Resta salvato in `dati_maik/avatar/`. |
+| 🗣️ **Parla davvero** | Dice la risposta **frase per frase mentre la scrive**, con la **bocca a tempo parola per parola**, i **sottotitoli** sotto di lui, palpebre, respiro, piccoli movimenti della testa, **emozioni** prese dalla risposta e **gesti** (saluta, annuisce, scuote la testa, festeggia, alza le spalle). Il codice non lo legge ad alta voce. |
+| 🎙️ **Conversazione a voce** | **M** (o 🎙️): parli e risponde a voce, a mani libere. **Puoi interromperlo** mentre parla (la sua voce nel microfono viene riconosciuta e ignorata). Oppure **tieni premuto Spazio** per parlare e lascialo per mandare. |
+| 👀 **Ti guarda** | Segue il **mouse** con lo sguardo. Con la webcam (**C** o 👀) segue **il tuo viso**: con MediaPipe (scaricato la prima volta) si accorge anche quando **sorridi** e ti sorride; altrimenti usa il rilevamento volti del browser o il movimento. Quando torni dopo un po' ti saluta con la mano. |
+| 🖥️ **Usa il tuo PC** (con conferma) | «**apri youtube**», «**cerca** la ricetta della carbonara **su youtube**», «**apri la calcolatrice**», «**apri la cartella download**», «**come sta il pc?**» (CPU, RAM, disco, batteria, da quanto è acceso). Anche a parole tue: l'agente usa gli strumenti `apri_sito`, `cerca_web`, `apri_app`, `apri_cartella`, `info_pc`. **Prima di aprire qualcosa chiede sempre conferma** con una scheda **✓ Sì · ✓ Sì, sempre · ✕ No** (o dicendo/scrivendo «sì» / «no»). |
+| 🗗 **Sempre a portata** | **P**: **mini-finestra sempre in primo piano** con Zep, sottotitoli e casella per scrivere (Chrome/Edge 116+). **F**: *Solo Zep* a tutto schermo. **S**: *guarda il mio schermo* (una foto dello schermo da far vedere al modello visione). **Z**: inquadratura busto/intero. **?**: tutte le scorciatoie. Sul personaggio: trascina per girarlo, rotellina per lo zoom, doppio clic per rimetterlo a posto. |
+
+**La prima volta serve internet**: Three.js, three-vrm e MediaPipe vengono scaricati dal CDN e salvati in `dati_maik/lib/`; poi il personaggio funziona anche offline.
+Se proprio non si possono scaricare, MAIK usa la sfera.
+
+> **ZEPETO**: l'app non permette di esportare i personaggi in 3D. Per un personaggio simile, crealo con **VRoid Studio** (gratis, Windows/Mac)
+> ed esportalo in **.vrm**; va bene anche qualsiasi **.glb** (Mixamo, Sketchfab, Blender…).
+
+### Sicurezza dei comandi del PC
+- Solo **siti http(s)**, le **app note** (calcolatrice, blocco note, esplora file, impostazioni, Chrome, Edge, Firefox, Spotify, Word, Excel,
+  PowerPoint, VS Code, Discord, Steam, posta…) e le **cartelle personali** (desktop, documenti, download, immagini, musica, video). Niente comandi arbitrari.
+- Le conferme valgono **solo dalla finestra di MAIK su questo PC**: un altro sito o un altro dispositivo in rete vengono bloccati
+  (controllo di Origin e Host, solo indirizzi locali).
+- Per aggiungere le tue app crea `dati_maik/app_pc.json`, per esempio: `{"photoshop": "C:/Program Files/Adobe/Photoshop/Photoshop.exe"}`.
+- «Sì, sempre» si può annullare: `POST /pc/fiducia {"azzera": true}` (o cancellando `pc_fiducia` da `dati_maik/ricordi.json`).
+
+| Variabile | Effetto |
+|---|---|
+| `MAIK_PC=0` | spegne i comandi del PC |
+| `MAIK_PC_FINTO=1` | prova: le azioni vengono solo registrate, non apre niente |
+| `MAIK_PC_REMOTO=1` | permette le conferme anche da altri dispositivi (sconsigliato) |
+| `MAIK_APP=0` (o `--no-app`) | apre MAIK in una scheda normale invece che come finestra-app |
+| `MAIK_CDN` | da dove scaricare Three.js la prima volta (predefinito: jsDelivr) |
+| `MAIK_AVATAR_MAX_MB` | dimensione massima del personaggio (predefinita: 100 MB) |
+
+Nuovi endpoint: `GET /pc/info` · `GET /pc/attesa` · `POST /pc/conferma {id, si, sempre}` · `POST /pc/fiducia` · `GET /pc/registro` ·
+`GET/POST /avatar` (il file grezzo, intestazione `X-Nome`) · `GET /avatar/info` · `POST /avatar/elimina` · `GET /lib/…` (librerie in cache).
+`/chat/stream` restituisce anche `"conferme"`.
+
+---
+
 ## 🤖 Novità V10 — agente, documenti, chat, amico vero, app (client e server)
 
 | | Cosa cambia |
@@ -181,7 +230,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V10 — `maik_server.py`
+## MAIK — Server V11 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

@@ -5439,11 +5439,11 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  MaikKit.boot({version:'V11 · ZEP',key:'maik_boot_v11',checks:[
+  return MaikKit.boot({version:'V11 · ZEP',key:'maik_boot_v11',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
-    {label:'Personaggio 3D',run:async()=>{if(!PC_MODE)return{ok:true,text:'sfera (schermo piccolo)'};try{const r=await fetch('/lib/three.module.min.js',{method:'HEAD'});const a=await (await fetch('/avatar/info')).json();return r.ok?{ok:true,text:a.presente?'il tuo: '+a.nome:'Zep (robot integrato)'}:{ok:false,text:'serve internet la prima volta'};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Personaggio 3D',run:async()=>{if(!PC_MODE)return{ok:true,text:'sfera (schermo piccolo)'};try{const r=await fetch('/lib/three.module.min.js');const a=await (await fetch('/avatar/info')).json();return r.ok?{ok:true,text:a.presente?'il tuo: '+a.nome:'Zep (robot integrato)'}:{ok:false,text:'serve internet la prima volta'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Comandi del PC',run:async()=>{try{const r=await (await fetch('/pc/registro')).json();return r.attivo?{ok:true,text:'attivi · sempre con conferma'+(r.finto?' (prova)':'')}:{ok:false,text:'spenti (MAIK_PC=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Agente e strumenti',run:async()=>{try{const s=await (await fetch('/stato')).json();return s.agente?{ok:true,text:'attivo · 10 strumenti'}:{ok:false,text:'spento (MAIK_AGENTE=0)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -5862,7 +5862,7 @@ $('#tmodal').addEventListener('click',e=>{if(e.target.id==='tmodal')closeTools()
 $('#mmodal').addEventListener('click',e=>{if(e.target.id==='mmodal')closeMem();});
 window.addEventListener('resize',()=>{sphSize();const a=area.getBoundingClientRect();SPH.x=Math.max(0,Math.min(SPH.x,a.width-SPH.size));SPH.y=Math.max(0,Math.min(SPH.y,a.height-SPH.size));sphPos();});
 themeRGB=MaikKit.applyTheme(OPT.theme);renderThemes();$('#optwake').checked=!!OPT.wake;$('#optboot').checked=OPT.boot!==false;
-runBoot();pal=MaikKit.palette(palCmds);
+const bootP=runBoot();pal=MaikKit.palette(palCmds);
 // sul telefono si parte con la chat libera; toccando la chat la barra laterale si richiude
 if(innerWidth<=760)$('#side').classList.add('hidden');
 $('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
@@ -5880,7 +5880,8 @@ if(window.speechSynthesis){speechSynthesis.getVoices();speechSynthesis.onvoicesc
 if(PC_MODE)document.body.classList.add('pc');
 ttsOn=OPT.voce!=null?!!OPT.voce:PC_MODE;$('#optbarge').checked=OPT.barge!==false;
 initReco();sphInit();sphLoop();stato();cfg();profilo();loadPr();checkLearn();
-avatarInit().then(()=>{if(AV)setTimeout(()=>AV.gesture('wave'),600);});updateStageBar();
+// il personaggio arriva quando si chiude la schermata di avvio (prima sarebbe coperto: niente GPU sprecata)
+Promise.resolve(bootP).then(()=>avatarInit()).then(()=>{if(AV)setTimeout(()=>AV.gesture('wave'),600);});updateStageBar();
 setInterval(stato,15000);setInterval(checkScaduti,4000);setInterval(checkLearn,20000);setInterval(loadPr,30000);setInterval(checkSeguiti,20000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSeguiti();});
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto

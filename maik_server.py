@@ -95,10 +95,14 @@ EREDITA DA v5.0:
     umore tracker, ricerca, obiettivi/sogni, relazioni, reset selettivo.
 """
 
+import io
 import os
 import re
 import sys
+import wave
+import tempfile
 import ast
+import base64
 import shlex
 import ctypes
 import platform
@@ -175,6 +179,15 @@ che avete vissuto insieme, citalo con calore.""",
     "modello_viso_url": _env("MAIK_MODELLO_VISO_URL", "https://storage.googleapis.com/mediapipe-models/"
                              "face_landmarker/face_landmarker/float16/1/face_landmarker.task"),
     "avatar_max_mb": int(_env("MAIK_AVATAR_MAX_MB", "100")),
+    # v13: gesti delle mani (MediaPipe), voce neurale (Piper), avvisi del PC, routine
+    "modello_mani_url": _env("MAIK_MODELLO_MANI_URL", "https://storage.googleapis.com/mediapipe-models/"
+                             "gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task"),
+    "piper": _env("MAIK_PIPER", ""),                     # comando di Piper se non è installato come modulo Python
+    "voci_url": _env("MAIK_VOCI_URL", "https://huggingface.co/rhasspy/piper-voices/resolve/main/").rstrip("/") + "/",
+    "voce": _env("MAIK_VOCE", ""),                       # voce Piper predefinita (es. it_IT-paola-medium)
+    "avvisi": _env("MAIK_AVVISI", "1") not in ("0", "no", "false"),
+    "avvisi_ogni": int(_env("MAIK_AVVISI_OGNI", "60")),  # secondi tra un controllo e l'altro
+    "info_finta": _env("MAIK_INFO_FINTA", ""),           # test: JSON che sostituisce parti di info_pc()
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -2298,7 +2311,7 @@ CARTELLE_PC = {"desktop": ("Desktop", "Scrivania"), "scrivania": ("Desktop", "Sc
                "scaricati": ("Downloads", "Scaricati"), "immagini": ("Pictures", "Immagini"), "foto": ("Pictures", "Immagini"),
                "musica": ("Music", "Musica"), "video": ("Videos", "Video", "Movies"), "home": ("",), "utente": ("",)}
 ICONE_PC = {"sito": "🌐", "cerca": "🔎", "app": "🖥️", "cartella": "📁", "info": "💻",
-            "volume": "🔊", "media": "⏯️", "screenshot": "📸", "file": "📄", "scrivi": "⌨️", "blocca": "🔒"}
+            "volume": "🔊", "media": "⏯️", "screenshot": "📸", "file": "📄", "scrivi": "⌨️", "blocca": "🔒", "routine": "⚡"}
 
 
 def _sistema():
@@ -2385,6 +2398,12 @@ def info_pc():
             out["acceso_s"] = int(time.time()) - int(re.search(r"sec = (\d+)", bt).group(1))
     except Exception:
         pass
+    if CONFIG["info_finta"]:            # prove: valori finti (JSON, oppure @file da rileggere ogni volta)
+        try:
+            f = CONFIG["info_finta"]
+            out.update(json.loads(Path(f[1:]).read_text(encoding="utf-8") if f.startswith("@") else f))
+        except Exception:
+            pass
     parti = [f"💻 {out['sistema']}"]
     if "cpu" in out:
         parti.append(f"CPU {out['cpu']}% ({out['core']} core)")
@@ -2782,7 +2801,7 @@ def _png_finto(w=320, h=180):
 class ComandiPC:
     """Prepara le azioni sul PC, aspetta la conferma, poi le esegue (o le simula con MAIK_PC_FINTO=1)."""
 
-    TIPI = ("sito", "cerca", "app", "cartella", "volume", "media", "screenshot", "file", "scrivi", "blocca")
+    TIPI = ("sito", "cerca", "app", "cartella", "volume", "media", "screenshot", "file", "scrivi", "blocca", "routine")
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -2906,7 +2925,24 @@ class ComandiPC:
                     {"testo": testo})
         if tipo == "blocca":
             return "bloccare il PC (per rientrare servirà la tua password)", {}
+        if tipo == "routine":                                # v13: più azioni con una conferma sola
+            r = ROUTINE.trova(args.get("id") or args.get("nome"))
+            if not r:
+                return None, f"non trovo la routine «{args.get('nome') or args.get('id') or '?'}» (dimmi «che routine ho?»)"
+            an = [ROUTINE.analizza(p) for p in r["passi"]]
+            elenco = " · ".join(a["descrizione"] for a in an if a["ok"])[:240]
+            return (f"fare la routine «{r['nome']}» ({len(r['passi'])} {'passo' if len(r['passi']) == 1 else 'passi'}: {elenco})",
+                    {"id": r["id"], "nome": r["nome"], "scrivi": any(a.get("tipo") == "scrivi" for a in an)})
         return None, f"azione sul PC «{tipo}» sconosciuta"
+
+    @staticmethod
+    def _chiave(tipo, det):
+        """Per cosa vale «sì, sempre»: un tipo di azione, oppure una routine precisa."""
+        return f"routine:{det.get('id')}" if tipo == "routine" else tipo
+
+    @staticmethod
+    def _senza_fiducia(tipo, det):
+        return tipo in SENZA_FIDUCIA or (tipo == "routine" and bool(det.get("scrivi")))
 
     @staticmethod
     def _azione_volume(args):
@@ -2957,8 +2993,8 @@ class ComandiPC:
         if not desc:
             return {"ok": False, "esito": det}
         fiducia = set((memoria.ricordi.get("pc_fiducia") if memoria else None) or [])
-        if subito and tipo in fiducia and tipo not in SENZA_FIDUCIA:
-            return self.esegui_dettagli(tipo, det, desc)
+        if subito and self._chiave(tipo, det) in fiducia and not self._senza_fiducia(tipo, det):
+            return self.esegui_dettagli(tipo, det, desc, memoria)
         pid = uuid.uuid4().hex[:10]
         with self._lock:
             ora = time.time()
@@ -2968,7 +3004,7 @@ class ComandiPC:
             self.attesa[pid] = {"id": pid, "tipo": tipo, "descrizione": desc, "dettagli": det, "creato": ora,
                                 "icona": ICONE_PC.get(tipo, "🖥️")}
         return {"ok": True, "esito": f"{desc}: aspetto il tuo ok", "conferma": {"id": pid, "tipo": tipo,
-                "descrizione": desc, "icona": ICONE_PC.get(tipo, "🖥️"), "sempre": tipo not in SENZA_FIDUCIA}}
+                "descrizione": desc, "icona": ICONE_PC.get(tipo, "🖥️"), "sempre": not self._senza_fiducia(tipo, det)}}
 
     def conferma(self, pid, si=True, sempre=False, memoria=None):
         with self._lock:
@@ -2977,18 +3013,18 @@ class ComandiPC:
             return {"ok": False, "esito": "Questa richiesta è scaduta o è già stata gestita."}
         if not si:
             return {"ok": True, "esito": f"Ok, non lo faccio ({az['descrizione']}).", "annullata": True}
-        if sempre and memoria is not None and az["tipo"] not in SENZA_FIDUCIA:
-            fid = sorted(set(memoria.ricordi.get("pc_fiducia") or []) | {az["tipo"]})
+        if sempre and memoria is not None and not self._senza_fiducia(az["tipo"], az["dettagli"]):
+            fid = sorted(set(memoria.ricordi.get("pc_fiducia") or []) | {self._chiave(az["tipo"], az["dettagli"])})
             memoria.imposta_ricordo("pc_fiducia", fid)
-        return self.esegui_dettagli(az["tipo"], az["dettagli"], az["descrizione"])
+        return self.esegui_dettagli(az["tipo"], az["dettagli"], az["descrizione"], memoria)
 
     def esegui(self, tipo, det, desc):
         return self.esegui_dettagli(tipo, det, desc)["esito"]
 
-    def esegui_dettagli(self, tipo, det, desc):
-        """Esegue davvero. → {ok, esito, [immagine, analizza], [tra]}"""
+    def esegui_dettagli(self, tipo, det, desc, memoria=None):
+        """Esegue davvero. → {ok, esito, [immagine, analizza], [tra], [esiti, voce]}"""
         voce = {"quando": datetime.datetime.now().isoformat(timespec="seconds"), "tipo": tipo, "descrizione": desc}
-        extra, esito = {}, None
+        extra, esito, fallita = {}, None, False
         try:
             finto = CONFIG["pc_finto"]
             if finto:
@@ -3000,6 +3036,11 @@ class ComandiPC:
                 if _dentro(cartella, [os.path.realpath(str(Path.home()))]):
                     cartella = os.path.relpath(cartella, str(Path.home()))
                 esito = f"📸 Fatto: screenshot salvato in {cartella.replace(os.sep, '/')}."
+            elif tipo == "routine":                         # v13: ogni passo della routine (simulati con MAIK_PC_FINTO)
+                r = ROUTINE.esegui(det["id"], memoria)
+                extra = {"esiti": r["esiti"], "voce": r.get("voce", "")}
+                voce["passi"] = len(r["esiti"])
+                esito, fallita = r["esito"], not r["ok"]
             elif tipo == "scrivi":
                 voce["caratteri"] = len(det["testo"])
                 if not finto:
@@ -3037,7 +3078,7 @@ class ComandiPC:
             elif tipo == "blocca":
                 esegui_piano(piano_blocca(_sistema()))
             esito = esito or f"✅ Fatto: {desc}."
-            ok = True
+            ok = not fallita
         except Exception as e:
             voce["errore"] = str(e)[:120]
             esito, ok, extra = f"⚠️ Non ci sono riuscito ({desc}): {str(e)[:100]}", False, {}
@@ -3097,6 +3138,17 @@ class ComandiPC:
 
     # ── frasi dirette (anche senza Ollama): «apri youtube», «cerca X su google», «come sta il pc?» ──
     _PREFISSI = (r"^(?:ehi |ok |hey )?(?:maik|zep)[,!]?\s+", r"^(?:per favore |puoi |potresti |mi puoi |riesci a )")
+    _capire = False
+
+    @classmethod
+    def capisci(cls, testo):
+        """Cosa farebbe questa frase, SENZA farlo: {"intento": (tipo, args)} · {"info": True} · {"testo"…} · None."""
+        c = cls()
+        c._capire = True
+        try:
+            return c.router(testo)
+        except Exception:
+            return None
 
     def router(self, testo, memoria=None):
         t = re.sub(r"\s+", " ", (testo or "").strip())
@@ -3105,7 +3157,7 @@ class ComandiPC:
         tl = t.lower().rstrip(" .!?")
         if re.search(r"\b(?:come sta il (?:pc|computer)|stato del (?:pc|computer)|quanta (?:ram|memoria)|"
                      r"(?:uso|carico) della cpu|quanta batteria|batteria del (?:pc|computer)|spazio (?:libero|su disco|sul disco))\b", tl):
-            return {"testo": info_pc()["testo"]}
+            return {"info": True} if self._capire else {"testo": info_pc()["testo"]}
         dovi = r"(google|youtube|you tube|maps|google maps|wikipedia|amazon|spotify|immagini)"
         m = re.match(r"^(?:cerca(?:mi)?|trova(?:mi)?)\s+su\s+" + dovi + r"\s+(.+)$", tl)      # «cerca su youtube X»
         if m:
@@ -3200,6 +3252,10 @@ class ComandiPC:
     def _risposta_file(self, q, memoria, apri=False, silenzioso=False):
         q = re.sub(r"\s+", " ", q).strip()
         trovati = cerca_file(q)
+        if self._capire:
+            if trovati and (len(trovati) == 1 or trovati[0]["punti"] >= trovati[1]["punti"] + 3) and apri:
+                return {"intento": ("file", {"percorso": trovati[0]["percorso"]})}
+            return None if silenzioso else {"testo": "più file o nessuno: dimmi il nome preciso", "file": trovati}
         if not trovati:
             return None if silenzioso else {"testo": f"🔎 Non ho trovato niente per «{q}» nelle tue cartelle "
                                                       "(desktop, documenti, download, immagini, musica, video)."}
@@ -3215,6 +3271,8 @@ class ComandiPC:
                          f"{elenco}{altri}. Quale apro? 👇", "file": trovati}
 
     def _risposta(self, tipo, args, memoria):
+        if self._capire:
+            return {"intento": (tipo, args)}
         r = self.prepara(tipo, args, memoria)
         if r.get("eseguita"):                                 # ti fidi già: fatto subito
             return {"testo": r["esito"], **({"schermata": {"immagine": r["immagine"], "analizza": r.get("analizza")}}
@@ -3226,6 +3284,534 @@ class ComandiPC:
 
 
 PC = ComandiPC()
+
+
+# ════════════════════════════════════════════════════════════
+# ROUTINE (v13) — più azioni insieme con UNA conferma: «modalità lavoro», «routine buongiorno»,
+# anche a un orario («ogni giorno alle 7:30»). Ogni passo è una frase che MAIK sa già fare.
+# ════════════════════════════════════════════════════════════
+GIORNI_BREVI = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+_RE_PASSO_MAIK = re.compile(r"\b(?:briefing|meteo|che tempo fa|timer|ricordami|avvisami|promemoria|lista|che ore sono|"
+                            r"che giorno [eè]|prendi nota|annota|modalit[aà] (?:coach|prof|comico|zen|genio|amico))\b", re.I)
+_RE_PASSO_DI = re.compile(r"^(?:di['’]|dimmi|d[iì]|saluta(?:mi)?|annuncia)\s*[:,]?\s+(.+)$", re.I)
+_VERBI_PASSO = (r"apri|avvia|lancia|metti|alza|abbassa|cerca|fai|dimmi|di['’]|blocca|trova|muto|togli|riprendi|canzone|"
+                r"pausa|ricordami|avvisami|briefing|meteo|timer|digita|scrivi|vai|mostrami|prossima|controlla|come")
+
+
+class Routines:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.notizie = []                  # per la GUI: routine a orario da confermare o già fatte
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "routine.json")
+
+    def elenco(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            return [r for r in d if isinstance(r, dict) and r.get("id")] if isinstance(d, list) else []
+        except Exception:
+            return []
+
+    def _salva(self, lista):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(lista, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def _norm_nome(n):
+        n = _senza_accenti(str(n or "").lower()).strip(" .!?\"'«»")
+        return re.sub(r"^(?:la|il|lo|l'|routine|modalita|scena)\s+", "", n).strip()
+
+    def trova(self, chi):
+        if not chi:
+            return None
+        n = self._norm_nome(chi)
+        for r in self.elenco():
+            if r["id"] == chi or self._norm_nome(r["nome"]) == n:
+                return r
+        return None
+
+    @staticmethod
+    def dividi(testo):
+        """«apri gmail, apri la calcolatrice e metti il volume al 30» → 3 passi."""
+        t = re.sub(r"[ \t]+", " ", str(testo or "")).strip()
+        parti = re.split(r"\s*(?:[,;\n]|\be poi\b|\bpoi\b|(?<=\w)\s+e\s+(?=(?:" + _VERBI_PASSO + r")\b))\s*", t, flags=re.I)
+        return [p.strip(" .") for p in parti if p and p.strip(" .")][:12]
+
+    @staticmethod
+    def analizza(passo):
+        """Cosa farà un passo (senza farlo). → {passo, genere: pc|info|di|maik|?, descrizione, ok, [tipo, args]}"""
+        passo = str(passo or "").strip()
+        m = _RE_PASSO_DI.match(passo)
+        if m:
+            return {"passo": passo, "genere": "di", "descrizione": f"dire «{m.group(1)[:60]}»", "ok": True}
+        r = ComandiPC.capisci(passo)
+        if r:
+            if r.get("intento"):
+                tipo, args = r["intento"]
+                desc, det = PC.descrivi(tipo, args)
+                if tipo == "routine":
+                    return {"passo": passo, "genere": "?", "descrizione": "una routine dentro un'altra non si può", "ok": False}
+                if desc:
+                    return {"passo": passo, "genere": "pc", "tipo": tipo, "args": args, "descrizione": desc, "ok": True}
+                return {"passo": passo, "genere": "pc", "descrizione": str(det), "ok": False}
+            if r.get("info"):
+                return {"passo": passo, "genere": "info", "descrizione": "dirti come sta il PC", "ok": True}
+            return {"passo": passo, "genere": "?", "descrizione": "trovo più file (o nessuno): scrivi il nome preciso", "ok": False}
+        if _RE_PASSO_MAIK.search(passo):
+            return {"passo": passo, "genere": "maik", "descrizione": passo, "ok": True}
+        return {"passo": passo, "genere": "?", "descrizione": "questo non lo so ancora fare", "ok": False}
+
+    def salva(self, nome, passi, orario=None, giorni=None, rid=None, tipo="routine"):
+        nome = re.sub(r"\s+", " ", str(nome or "")).strip(" .!?\"'«»:")[:40]
+        passi = [re.sub(r"\s+", " ", str(p)).strip()[:200] for p in (passi or []) if str(p).strip()][:12]
+        if len(nome) < 2:
+            return None, "dai un nome alla routine"
+        if not passi:
+            return None, "una routine ha bisogno di almeno un passo"
+        if orario:
+            m = re.fullmatch(r"(\d{1,2})[:.](\d{2})", str(orario).strip())
+            if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+                return None, "orario non valido (es. 07:30)"
+            orario = f"{int(m.group(1)):02d}:{m.group(2)}"
+        giorni = sorted({int(g) for g in (giorni if giorni is not None else range(7)) if str(g).isdigit() and 0 <= int(g) <= 6}) or list(range(7))
+        with self._lock:
+            lista = self.elenco()
+            esiste = next((r for r in lista if (rid and r["id"] == rid) or self._norm_nome(r["nome"]) == self._norm_nome(nome)), None)
+            if esiste:
+                esiste.update(nome=nome, passi=passi, orario=orario or None, giorni=giorni, tipo=tipo)
+                r = esiste
+            else:
+                if len(lista) >= 40:
+                    return None, "hai già 40 routine: eliminane qualcuna"
+                r = {"id": uuid.uuid4().hex[:8], "nome": nome, "passi": passi, "orario": orario or None, "giorni": giorni,
+                     "tipo": tipo, "creata": datetime.datetime.now().isoformat(timespec="seconds")}
+                lista.append(r)
+            self._salva(lista)
+        return r, None
+
+    def elimina(self, chi):
+        with self._lock:
+            lista = self.elenco()
+            r = self.trova(chi)
+            if not r:
+                return False
+            self._salva([x for x in lista if x["id"] != r["id"]])
+        return True
+
+    def programma(self, chi, orario, giorni=None):
+        r = self.trova(chi)
+        if not r:
+            return None, f"non trovo la routine «{chi}»"
+        return self.salva(r["nome"], r["passi"], orario, giorni if giorni is not None else r.get("giorni"), r["id"], r.get("tipo", "routine"))
+
+    def esegui(self, rid, memoria=None):
+        """Fa tutti i passi (le azioni sul PC passano da PC.esegui_dettagli: con MAIK_PC_FINTO restano simulate)."""
+        r = self.trova(rid)
+        if not r:
+            return {"ok": False, "esito": "routine non trovata", "esiti": []}
+        memoria = memoria or MOTORE.memoria
+        esiti, voce = [], []
+        for passo in r["passi"]:
+            a = self.analizza(passo)
+            try:
+                if a["genere"] == "pc" and a["ok"]:
+                    desc, det = PC.descrivi(a["tipo"], a["args"])
+                    x = PC.esegui_dettagli(a["tipo"], det, desc, memoria)
+                    esiti.append(dict({"passo": passo, "ok": x["ok"], "esito": x["esito"]}, **({"immagine": x["immagine"]} if x.get("immagine") else {})))
+                    if a["tipo"] in ("app", "sito", "cerca") and not CONFIG["pc_finto"]:
+                        time.sleep(0.4)                      # lascia aprire una cosa alla volta
+                elif a["genere"] == "info":
+                    t = info_pc()["testo"]
+                    esiti.append({"passo": passo, "ok": True, "esito": t}); voce.append(t)
+                elif a["genere"] == "di":
+                    t = _RE_PASSO_DI.match(passo).group(1)
+                    esiti.append({"passo": passo, "ok": True, "esito": "💬 " + t}); voce.append(t)
+                elif a["genere"] == "maik":
+                    out = Azioni.prova(passo, memoria)
+                    esiti.append({"passo": passo, "ok": bool(out), "esito": out or f"non ci sono riuscito: «{passo}»"})
+                    if out:
+                        voce.append(out)
+                else:
+                    esiti.append({"passo": passo, "ok": False, "esito": f"«{passo}»: {a['descrizione']}"})
+            except Exception as e:
+                esiti.append({"passo": passo, "ok": False, "esito": f"«{passo}»: errore {str(e)[:80]}"})
+        with self._lock:
+            lista = self.elenco()
+            for x in lista:
+                if x["id"] == r["id"]:
+                    x["ultima"] = datetime.datetime.now().isoformat(timespec="seconds")
+            self._salva(lista)
+        n_ok = sum(1 for e in esiti if e["ok"])
+        return {"ok": n_ok > 0, "esiti": esiti, "voce": "\n".join(voce),
+                "esito": f"⚡ Routine «{r['nome']}»: {n_ok} su {len(esiti)} fatt{'o' if len(esiti) == 1 else 'i'}."}
+
+    def dovute(self, ora=None):
+        """Routine a orario arrivate adesso (entro 30 minuti), non ancora fatte oggi."""
+        ora = ora or datetime.datetime.now()
+        out = []
+        for r in self.elenco():
+            if not r.get("orario") or ora.weekday() not in (r.get("giorni") or range(7)):
+                continue
+            hh, mm = map(int, r["orario"].split(":"))
+            t = ora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if t <= ora < t + datetime.timedelta(minutes=30) and r.get("fatta_il") != ora.date().isoformat():
+                out.append(r)
+        return out
+
+    def controlla_programmate(self, memoria, ora=None):
+        ora = ora or datetime.datetime.now()
+        for r in self.dovute(ora):
+            with self._lock:
+                lista = self.elenco()
+                for x in lista:
+                    if x["id"] == r["id"]:
+                        x["fatta_il"] = ora.date().isoformat()
+                self._salva(lista)
+            p = PC.prepara("routine", {"id": r["id"]}, memoria)       # se ti fidi la fa subito, altrimenti chiede
+            n = {"nome": r["nome"], "quando": ora.isoformat(timespec="seconds")}
+            if p.get("conferma"):
+                n.update(tipo="conferma", conferma=p["conferma"], testo=f"⏰ È l'ora della routine «{r['nome']}». La faccio?")
+            else:
+                n.update(tipo="fatta", ok=p.get("ok"), esito=p.get("esito"), esiti=p.get("esiti") or [], voce=p.get("voce", ""),
+                         testo=f"⏰ Ho fatto la routine «{r['nome']}», come ogni volta.")
+            with self._lock:
+                self.notizie = (self.notizie + [n])[-20:]
+
+    def prendi_notizie(self):
+        with self._lock:
+            n, self.notizie = self.notizie, []
+        return n
+
+    @staticmethod
+    def descrivi_orario(r):
+        if not r.get("orario"):
+            return ""
+        g = r.get("giorni") or list(range(7))
+        quando = ("ogni giorno" if len(g) == 7 else "nei giorni feriali" if g == [0, 1, 2, 3, 4] else
+                  "nel weekend" if g == [5, 6] else ", ".join(GIORNI_BREVI[i] for i in g))
+        return f"{quando} alle {r['orario']}"
+
+    # ── frasi: «crea la modalità lavoro: …», «modalità lavoro», «che routine ho?», «ogni giorno alle 7:30 la routine X» ──
+    def router(self, testo, memoria=None):
+        t = re.sub(r"\s+", " ", (testo or "").strip())
+        for p in ComandiPC._PREFISSI:
+            t = re.sub(p, "", t, flags=re.I)
+        tl = t.lower().rstrip(" .!?")
+        nome_re = r"[«\"']?([\wàèéìòù' -]{2,30}?)[»\"']?"
+        m = re.match(r"^(?:crea|creami|fai|fammi|salva|nuova|imposta|aggiungi|prepara)\s+(?:una\s+|la\s+)?(?:nuova\s+)?(modalit[aà]|routine|scena)\s+"
+                     r"(?:chiamata\s+|di\s+nome\s+|che\s+si\s+chiama\s+)?" + nome_re + r"\s*[:,]\s*(.+)$", t, re.I | re.S)
+        if m:
+            r, err = self.salva(m.group(2), self.dividi(m.group(3)), tipo="modalità" if m.group(1).lower().startswith("modal") else "routine")
+            if not r:
+                return {"testo": "🤔 " + err[:1].upper() + err[1:] + "."}
+            an = [self.analizza(p) for p in r["passi"]]
+            righe = "\n".join(("✓ " if a["ok"] else "✗ ") + (a["descrizione"] if a["ok"] else f"«{a['passo']}»: {a['descrizione']}") for a in an)
+            parola = "modalità" if r["tipo"] == "modalità" else "routine"
+            return {"testo": f"⚡ Ho salvato la {parola} «{r['nome']}» ({len(an)} {'passo' if len(an) == 1 else 'passi'}):\n{righe}\n\n"
+                             f"Quando vuoi dimmi «{parola} {r['nome']}»: ti chiedo conferma una volta sola e faccio tutto.", "routine": r}
+        if re.search(r"\b(?:che|quali|le mie|elenca(?:mi)?\s+le|mostrami\s+le)\s+(?:routine|modalit[aà])\b|^(?:routine|modalit[aà])$", tl):
+            lista = self.elenco()
+            if not lista:
+                return {"testo": "Non hai ancora routine. Prova: «crea la modalità lavoro: apri gmail, apri la calcolatrice e metti il volume al 30» ⚡"}
+            righe = "\n".join(f"- **{r['nome']}** · {len(r['passi'])} passi" + (f" · ⏰ {self.descrivi_orario(r)}" if r.get("orario") else "") for r in lista)
+            return {"testo": f"⚡ Le tue routine:\n{righe}"}
+        m = re.match(r"^(?:elimina|cancella|togli|rimuovi)\s+(?:la\s+)?(?:routine|modalit[aà])\s+(.+)$", tl)
+        if m:
+            nome = m.group(1)
+            return {"testo": f"🗑️ Routine «{nome}» eliminata." if self.elimina(nome) else f"🤔 Non trovo la routine «{nome}»."}
+        m = re.search(r"(?:routine|modalit[aà])\s+([\wàèéìòù' -]{2,30}?)\s+(ogni\s+giorno\s+|tutti\s+i\s+giorni\s+|nei\s+giorni\s+feriali\s+|(?:nel|il)\s+weekend\s+)?"
+                      r"alle\s+(\d{1,2})(?:[:.](\d{2}))?(\s+nei\s+giorni\s+feriali|\s+(?:nel|il)\s+weekend)?$", tl) or \
+            re.search(r"^(ogni\s+giorno\s+|tutti\s+i\s+giorni\s+|nei\s+giorni\s+feriali\s+|(?:nel|il)\s+weekend\s+)?alle\s+(\d{1,2})(?:[:.](\d{2}))?\s+"
+                      r"(?:fai|avvia|esegui|attiva|lancia)\s+(?:la\s+)?(?:routine|modalit[aà])\s+([\wàèéìòù' -]{2,30})()$", tl)
+        if m:
+            g = m.groups()
+            if g[0] and not g[0].strip().isdigit() and not tl.startswith(("ogni", "tutti", "nei", "nel", "il ", "alle")):
+                nome, quando, hh, mm, dopo = g[0], g[1] or "", g[2], g[3], g[4] or ""
+            else:
+                quando, hh, mm, nome, dopo = g[0] or "", g[1], g[2], g[3], ""
+            q = (quando + " " + dopo).lower()
+            giorni = [0, 1, 2, 3, 4] if "feriali" in q else [5, 6] if "weekend" in q else list(range(7))
+            r, err = self.programma(nome.strip(), f"{int(hh):02d}:{mm or '00'}", giorni)
+            if not r:
+                return {"testo": "🤔 " + err[:1].upper() + err[1:] + "."}
+            return {"testo": f"⏰ Ok: la routine «{r['nome']}» {self.descrivi_orario(r)}. A quell'ora ti chiedo conferma (o la faccio da sola, se le hai detto «sì, sempre»).", "routine": r}
+        m = re.match(r"^(?:attiva|avvia|fai|esegui|lancia|parti\s+con|metti|inizia)?\s*(?:la\s+)?(modalit[aà]|routine)\s+([\wàèéìòù' -]{2,30})$", tl)
+        if m and self.trova(m.group(2)):
+            return PC._risposta("routine", {"nome": m.group(2)}, memoria)
+        return None
+
+
+ROUTINE = Routines()
+
+
+# ════════════════════════════════════════════════════════════
+# AVVISI DEL PC (v13) — batteria bassa, disco pieno, RAM o CPU al limite: Zep ti avvisa (al massimo ogni 30 min)
+# ════════════════════════════════════════════════════════════
+class MonitorPC:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.coda, self.ultimo, self.conta = [], {}, {}
+
+    def controlla(self, d=None):
+        d = d or info_pc()
+        nuovi = []
+        b = d.get("batteria")
+        if b is not None and not d.get("in_carica"):
+            if b <= 10:
+                nuovi.append(("batteria_critica", f"🪫 Batteria al {b}%! Attacca subito il caricabatterie.", "alta"))
+            elif b <= 20:
+                nuovi.append(("batteria", f"🔋 Batteria al {b}%: tra poco conviene attaccare il caricabatterie.", "media"))
+        if d.get("disco_tot"):
+            lib = d.get("disco_lib", 0)
+            if lib < 3 * 1024 ** 3 or lib / d["disco_tot"] < 0.05:
+                nuovi.append(("disco", f"💾 Il disco è quasi pieno: restano solo {_gb(lib)} GB liberi.", "media"))
+        if d.get("ram_tot"):
+            p = round(100 * (d["ram_tot"] - d.get("ram_lib", 0)) / d["ram_tot"])
+            self.conta["ram"] = self.conta.get("ram", 0) + 1 if p >= 92 else 0
+            if self.conta["ram"] >= 2:
+                nuovi.append(("ram", f"🧠 La memoria (RAM) è quasi piena ({p}%): chiudere qualche programma aiuterebbe.", "media"))
+        if "cpu" in d:
+            self.conta["cpu"] = self.conta.get("cpu", 0) + 1 if d["cpu"] >= 95 else 0
+            if self.conta["cpu"] >= 3:
+                nuovi.append(("cpu", f"🔥 Il processore è al massimo da qualche minuto ({d['cpu']}%).", "bassa"))
+        ora = time.time()
+        with self._lock:
+            for tipo, testo, liv in nuovi:
+                if ora - self.ultimo.get(tipo, 0) < 1800:
+                    continue
+                self.ultimo[tipo] = ora
+                self.coda = (self.coda + [{"tipo": tipo, "testo": testo, "livello": liv,
+                                           "quando": datetime.datetime.now().isoformat(timespec="seconds")}])[-10:]
+        return nuovi
+
+    def prendi(self):
+        with self._lock:
+            c, self.coda = self.coda, []
+        return c
+
+
+MONITOR = MonitorPC()
+
+
+# ════════════════════════════════════════════════════════════
+# VOCE NEURALE (v13) — Piper, gratis e offline. Se c'è il modulo Python (pip install piper-tts) la voce
+# resta caricata in memoria e dà anche i tempi di ogni fonema (labiale perfetto); altrimenti si usa il
+# comando «piper» (MAIK_PIPER). Le voci si scaricano una volta in dati_maik/voci.
+# ════════════════════════════════════════════════════════════
+VOCI_PIPER = {
+    "it_IT-paola-medium": {"nome": "Paola", "qualita": "naturale", "mb": 63},
+    "it_IT-riccardo-x_low": {"nome": "Riccardo", "qualita": "leggera e veloce", "mb": 28},
+}
+
+
+class VoceNeurale:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._voci = {}                    # nome → PiperVoice già caricata
+        self._cache = {}                   # (voce, velocità, testo) → risultato (ultimi 40)
+        self.download = None               # {voce, perc, errore, fatto}
+
+    @staticmethod
+    def cartella():
+        return os.path.join(DATA_DIR, "voci")
+
+    @staticmethod
+    def modulo():
+        try:
+            import importlib.util
+            return importlib.util.find_spec("piper") is not None
+        except Exception:
+            return False
+
+    def comando(self):
+        if CONFIG["piper"]:
+            return shlex.split(CONFIG["piper"], posix=_sistema() != "win")
+        return ["piper"] if shutil.which("piper") else None
+
+    def motore(self):
+        return "piper" if self.modulo() else "comando" if self.comando() else None
+
+    def scaricate(self):
+        try:
+            return sorted(n[:-5] for n in os.listdir(self.cartella()) if n.endswith(".onnx") and
+                          os.path.exists(os.path.join(self.cartella(), n + ".json")))
+        except OSError:
+            return []
+
+    def scelta(self, memoria=None):
+        giu = self.scaricate()
+        for v in (CONFIG["voce"], (memoria.ricordi.get("voce_neurale") if memoria else None)):
+            if v and v in giu:
+                return v
+        return giu[0] if giu else None
+
+    def info(self, memoria=None):
+        return {"motore": self.motore(), "scaricate": self.scaricate(), "voce": self.scelta(memoria),
+                "voci": [dict(id=k, **v) for k, v in VOCI_PIPER.items()], "download": self.download,
+                "pronta": bool(self.motore() and self.scelta(memoria))}
+
+    @staticmethod
+    def url_voce(voce, est):
+        lingua, nome, qualita = voce.split("-")
+        return f"{CONFIG['voci_url']}{lingua.split('_')[0]}/{lingua}/{nome}/{qualita}/{voce}{est}"
+
+    def scarica(self, voce):
+        if voce not in VOCI_PIPER:
+            return False, "voce sconosciuta"
+        if self.download and not self.download.get("fatto"):
+            return False, "sto già scaricando una voce"
+        self.download = {"voce": voce, "perc": 0, "errore": None, "fatto": False}
+        threading.Thread(target=self._scarica, args=(voce,), daemon=True).start()
+        return True, None
+
+    def _scarica(self, voce):
+        d = self.download
+        try:
+            os.makedirs(self.cartella(), exist_ok=True)
+            for est in (".onnx.json", ".onnx"):
+                dest = os.path.join(self.cartella(), voce + est)
+                req = urllib.request.Request(self.url_voce(voce, est), headers={"User-Agent": f"MAIK/{VERSIONE}"})
+                with urllib.request.urlopen(req, timeout=60) as r, open(dest + ".part", "wb") as f:
+                    tot, fatto = int(r.headers.get("Content-Length") or 0), 0
+                    while True:
+                        blocco = r.read(256 * 1024)
+                        if not blocco:
+                            break
+                        f.write(blocco); fatto += len(blocco)
+                        if est == ".onnx" and tot:
+                            d["perc"] = round(100 * fatto / tot)
+                os.replace(dest + ".part", dest)
+            d.update(perc=100, fatto=True)
+        except Exception as e:
+            d.update(errore=str(e)[:160], fatto=True)
+
+    def sintetizza(self, testo, voce=None, velocita=1.0, memoria=None):
+        """→ {wav (bytes), durata_ms, fonemi [[fonema, inizio_ms, durata_ms]] o None} · solleva un errore se non si può."""
+        testo = re.sub(r"\s+", " ", str(testo or "")).strip()[:600]
+        voce = voce if voce in self.scaricate() else self.scelta(memoria)
+        if not testo:
+            raise ValueError("testo vuoto")
+        if not voce:
+            raise RuntimeError("nessuna voce Piper scaricata")
+        velocita = max(0.5, min(2.0, float(velocita or 1.0)))
+        chiave = (voce, round(velocita, 2), testo)
+        if chiave in self._cache:
+            return self._cache[chiave]
+        modello = os.path.join(self.cartella(), voce + ".onnx")
+        motore = self.motore()
+        with self._lock:
+            if motore == "piper":
+                ris = self._con_modulo(voce, modello, testo, velocita)
+            elif motore == "comando":
+                ris = self._con_comando(modello, testo, velocita)
+            else:
+                raise RuntimeError("Piper non è installato (pip install piper-tts)")
+            self._cache[chiave] = ris
+            while len(self._cache) > 40:
+                self._cache.pop(next(iter(self._cache)))
+        return ris
+
+    def _con_modulo(self, voce, modello, testo, velocita):
+        from piper import PiperVoice, SynthesisConfig           # pip install piper-tts
+        v = self._voci.get(voce)
+        if v is None:
+            try:
+                v = PiperVoice.load(modello, include_alignments=True)
+            except TypeError:
+                v = PiperVoice.load(modello)
+            self._voci = {voce: v}                               # una voce alla volta in memoria
+        cfg = SynthesisConfig(length_scale=1.0 / velocita)
+        try:
+            pezzi = list(v.synthesize(testo, cfg, include_alignments=True))
+        except TypeError:
+            pezzi = list(v.synthesize(testo, cfg))
+        if not pezzi:
+            raise RuntimeError("Piper non ha prodotto audio")
+        sr, audio, fonemi, campioni = pezzi[0].sample_rate, [], [], 0
+        for p in pezzi:
+            audio.append(p.audio_int16_bytes)
+            al = getattr(p, "phoneme_alignments", None)
+            if al:
+                pos = campioni
+                for a in al:
+                    fonemi.append([a.phoneme, round(1000 * pos / sr), round(1000 * a.num_samples / sr)])
+                    pos += a.num_samples
+            campioni += len(p.audio_int16_bytes) // 2
+        return {"wav": self._wav(b"".join(audio), sr), "durata_ms": round(1000 * campioni / sr), "fonemi": fonemi or None}
+
+    def _con_comando(self, modello, testo, velocita):
+        cmd = self.comando()
+        fd, tmp = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        try:
+            r = subprocess.run(cmd + ["-m", modello, "-f", tmp, "--length-scale", f"{1.0 / velocita:.3f}"],
+                               input=testo.encode("utf-8"), capture_output=True, timeout=60,
+                               **({"creationflags": 0x08000000} if os.name == "nt" else {}))
+            if r.returncode != 0 or not os.path.getsize(tmp):
+                raise RuntimeError((r.stderr or b"").decode("utf-8", "replace").strip()[-160:] or "Piper non ha funzionato")
+            with open(tmp, "rb") as f:
+                wav = f.read()
+            with wave.open(io.BytesIO(wav)) as w:
+                durata = round(1000 * w.getnframes() / w.getframerate())
+            return {"wav": wav, "durata_ms": durata, "fonemi": None}
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _wav(pcm, sr):
+        b = io.BytesIO()
+        with wave.open(b, "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm)
+        return b.getvalue()
+
+
+VOCE = VoceNeurale()
+
+
+# ── v13: le tue animazioni .vrma (VRM Animation) per i personaggi .vrm ──
+def _cartella_animazioni():
+    return os.path.join(DATA_DIR, "animazioni")
+
+
+def animazioni_elenco():
+    try:
+        nomi = sorted(n for n in os.listdir(_cartella_animazioni()) if n.lower().endswith(".vrma"))
+    except OSError:
+        return []
+    return [{"file": n, "nome": n[:-5].replace("_", " "), "dimensione": _dim_umana(os.path.getsize(os.path.join(_cartella_animazioni(), n)))} for n in nomi]
+
+
+def salva_animazione(nome, dati):
+    if len(dati) < 20 or dati[:4] != b"glTF" or struct.unpack("<I", dati[4:8])[0] != 2:
+        return None, "Non è un file .vrma valido (serve un glTF binario)."
+    lung = struct.unpack("<I", dati[12:16])[0]
+    if b"VRMC_vrm_animation" not in dati[20:20 + lung]:
+        return None, "Il file non contiene un'animazione VRM (VRMC_vrm_animation)."
+    base = re.sub(r"[^\w\- ]+", "", os.path.splitext(os.path.basename(str(nome or "animazione")))[0]).strip().replace(" ", "_")[:40] or "animazione"
+    os.makedirs(_cartella_animazioni(), exist_ok=True)
+    if len(animazioni_elenco()) >= 30:
+        return None, "Hai già 30 animazioni: eliminane qualcuna."
+    with open(os.path.join(_cartella_animazioni(), base + ".vrma"), "wb") as f:
+        f.write(dati)
+    return {"file": base + ".vrma", "nome": base.replace("_", " ")}, None
+
+
+def elimina_animazione(nome):
+    n = os.path.basename(str(nome or ""))
+    p = os.path.join(_cartella_animazioni(), n)
+    if n.lower().endswith(".vrma") and os.path.isfile(p):
+        os.remove(p)
+        return True
+    return False
 
 
 # ════════════════════════════════════════════════════════════
@@ -3256,7 +3842,7 @@ Regole: usa i tag solo quando servono; JSON valido su una riga; "quando" in ital
 STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file"}
 STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
                 "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
-                "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca"}
+                "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca", "esegui_routine": "routine"}
 PROMPT_AGENTE_PC = """COMPUTER — puoi usare il PC della persona. Ogni azione chiede SEMPRE la sua conferma con un pulsante:
 tu proponila con il tag e dillo in modo naturale («te lo apro, conferma qui sotto»).
 [[azione:{"tipo":"apri_sito","sito":"youtube"}]]   [[azione:{"tipo":"cerca_web","q":"ricetta carbonara","dove":"youtube"}]]
@@ -3267,12 +3853,13 @@ tu proponila con il tag e dillo in modo naturale («te lo apro, conferma qui sot
 [[azione:{"tipo":"apri_file","percorso":"percorso esatto preso dai risultati di cerca_file"}]]
 [[azione:{"tipo":"scrivi_testo","testo":"..."}]]  ← SOLO se la persona ti chiede di scrivere/digitare nel PC al posto suo
 [[azione:{"tipo":"blocca_pc"}]]
+[[azione:{"tipo":"esegui_routine","nome":"lavoro"}]]  ← una routine/modalità salvata dalla persona (più azioni, una conferma)
 Dati (scrivi solo il tag e aspetta il risultato):
 [[azione:{"tipo":"info_pc"}]] ← CPU, RAM, disco, batteria   [[azione:{"tipo":"cerca_file","q":"contratto affitto"}]] ← file per nome
 ("dove" per cerca_web: google, youtube, maps, wikipedia, amazon, immagini, spotify)"""
 ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥️", "apri_cartella": "📁", "info_pc": "💻",
                    "imposta_volume": "🔊", "controlla_musica": "⏯️", "screenshot": "📸", "cerca_file": "🗂️",
-                   "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒",
+                   "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
                    "cerca_documenti": "📚", "cerca_memoria": "🧠"}
@@ -3359,7 +3946,8 @@ class Agente:
                 "cerca": "cerca_web", "google": "cerca_web", "pc": "info_pc", "stato_pc": "info_pc",
                 "volume": "imposta_volume", "musica": "controlla_musica", "media": "controlla_musica",
                 "schermata": "screenshot", "file": "apri_file", "trova_file": "cerca_file", "digita": "scrivi_testo",
-                "scrivi": "scrivi_testo", "blocca": "blocca_pc"}.get(tipo, tipo)
+                "scrivi": "scrivi_testo", "blocca": "blocca_pc", "routine": "esegui_routine", "modalita": "esegui_routine",
+                "modalità": "esegui_routine"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -3540,8 +4128,10 @@ class MotoreAI:
                          f"cita la fonte tra parentesi quadre, es. [{fonti[0]['nome']}]) ---\n{blocchi}\n--- FINE DOCUMENTI ---")
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
+            routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
             strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
-                         + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else ""))
+                         + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
+                         + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
             strumenti = ("Le azioni pratiche (timer, promemoria, lista, calcoli, ora nel mondo, briefing) le fai quando "
                          "te le chiedono con frasi come «metti un timer di 10 minuti» o «ricordami alle 18 di…»: "
@@ -3690,7 +4280,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         cmd = self._gestisci_comando(testo)
         if cmd:
             return cmd
-        pc = PC.router(testo, self.memoria) if CONFIG["pc"] else None
+        pc = (ROUTINE.router(testo, self.memoria) or PC.router(testo, self.memoria)) if CONFIG["pc"] else None
         if pc:
             self.memoria.salva_scambio(testo, pc["testo"])
             return self._meta(ok=True, risposta=pc["testo"], azione=True, **self._meta_pc(pc))
@@ -3714,7 +4304,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
     def _meta_pc(pc):
         """Per la GUI: schede di conferma, file trovati (con «apri»), screenshot già fatti."""
         return {"conferme": [pc["conferma"]] if pc.get("conferma") else [], "file": pc.get("file") or [],
-                "schermate": [pc["schermata"]] if pc.get("schermata") else []}
+                "schermate": [pc["schermata"]] if pc.get("schermata") else [], **({"routine": pc["routine"]} if pc.get("routine") else {})}
 
     def _lascia_all_agente(self, testo):
         return CONFIG["agente"] and multi_intento(testo) and self.cervello.disponibile()
@@ -3740,7 +4330,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             cmd = self._gestisci_comando(testo)
             if cmd:
                 return {"done": True, "comando": cmd}
-            pc = PC.router(testo, self.memoria) if CONFIG["pc"] else None     # v11: «apri youtube», «come sta il pc?»
+            pc = (ROUTINE.router(testo, self.memoria) or PC.router(testo, self.memoria)) if CONFIG["pc"] else None   # v11-13: PC e routine
             if pc:
                 on_token(pc["testo"])
                 self.memoria.salva_scambio(testo, pc["testo"], sid)
@@ -3955,6 +4545,7 @@ LIB_FISSE = {
     "three.module.min.js": f"three@{VERSIONE_THREE}/build/three.module.min.js",
     "three-vrm.module.min.js": f"@pixiv/three-vrm@{VERSIONE_VRM}/lib/three-vrm.module.min.js",
     "mp/vision_bundle.mjs": f"@mediapipe/tasks-vision@{VERSIONE_MP}/vision_bundle.mjs",
+    "three-vrm-animation.module.min.js": f"@pixiv/three-vrm-animation@{VERSIONE_VRM}/lib/three-vrm-animation.module.min.js",
 }
 _RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs|environments)/[A-Za-z0-9_-]{1,60}\.js")
 _RE_LIB_MP = re.compile(r"mp/wasm/vision_wasm(?:_nosimd)?_internal\.(?:js|wasm)")
@@ -3971,6 +4562,8 @@ def sorgente_lib(nome):
         return CONFIG["cdn"] + f"@mediapipe/tasks-vision@{VERSIONE_MP}/wasm/" + nome[len("mp/wasm/"):]
     if nome == "mp/face_landmarker.task":
         return CONFIG["modello_viso_url"]
+    if nome == "mp/gesture_recognizer.task":
+        return CONFIG["modello_mani_url"]
     return None
 
 
@@ -4259,6 +4852,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"file": [], "errore": "Solo da questo computer."}, 403)
                 else:
                     self._json({"file": cerca_file(qs.get("q", "")) if CONFIG["pc"] else []})
+            # ── v13: routine, avvisi, voce neurale, animazioni ──
+            elif base == "/routine":
+                self._json({"routine": [dict(r, analisi=[ROUTINE.analizza(p) for p in r["passi"]], quando=ROUTINE.descrivi_orario(r))
+                                        for r in ROUTINE.elenco()]})
+            elif base == "/routine/notizie":
+                self._json({"notizie": ROUTINE.prendi_notizie() if self._richiesta_locale() else []})
+            elif base == "/pc/avvisi":
+                self._json({"avvisi": MONITOR.prendi() if self._richiesta_locale() else []})
+            elif base == "/voce/info":
+                self._json(VOCE.info(MOTORE.memoria))
+            elif base == "/animazioni":
+                self._json({"animazioni": animazioni_elenco()})
+            elif base.startswith("/animazioni/"):
+                n = os.path.basename(urllib.parse.unquote(base[len("/animazioni/"):]))
+                p = os.path.join(_cartella_animazioni(), n)
+                if not n.lower().endswith(".vrma") or not os.path.isfile(p):
+                    self.send_error(404)
+                else:
+                    self._servi_file(p, "model/gltf-binary", "no-cache")
             elif base == "/avatar/info":
                 info = _avatar_info()
                 self._json({"presente": bool(info), **(info or {})})
@@ -4288,6 +4900,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         base = self.path.split("?")[0]
         try:
+            if base == "/animazioni":                               # v13: animazione .vrma (file grezzo)
+                lung = int(self.headers.get("Content-Length", 0) or 0)
+                if not self._richiesta_locale():
+                    self._json({"ok": False, "errore": "Solo da questo computer."}, 403); return
+                if lung <= 0 or lung > 20 * 1024 * 1024:
+                    self._json({"ok": False, "errore": "Il file deve essere tra 1 byte e 20 MB."}, 413); return
+                info, errore = salva_animazione(urllib.parse.unquote(self.headers.get("X-Nome", "animazione.vrma")), self.rfile.read(lung))
+                self._json({"ok": bool(info), "animazione": info, "errore": errore}); return
             if base == "/avatar":                                   # v11: il tuo personaggio 3D (file grezzo)
                 lung = int(self.headers.get("Content-Length", 0) or 0)
                 if not self._richiesta_locale():
@@ -4412,12 +5032,42 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/documenti/elimina":
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
 
-            elif base in ("/pc/conferma", "/pc/fiducia", "/pc/prepara", "/avatar/elimina"):
+            elif base in ("/pc/conferma", "/pc/fiducia", "/pc/prepara", "/avatar/elimina", "/routine", "/routine/elimina",
+                          "/routine/esegui", "/voce", "/voce/scarica", "/voce/imposta", "/animazioni/elimina"):
                 c = self._read_json_body()
                 if not self._richiesta_locale():
                     self._json({"ok": False, "esito": "🔒 I comandi del PC si confermano solo da questo computer."}, 403)
                 elif base == "/avatar/elimina":
                     self._json({"ok": elimina_avatar()})
+                elif base == "/routine":
+                    passi = c.get("passi")
+                    passi = ROUTINE.dividi(passi) if isinstance(passi, str) else passi if isinstance(passi, list) else []
+                    r, errore = ROUTINE.salva(c.get("nome"), passi, c.get("orario") or None, c.get("giorni"), c.get("id"),
+                                              "modalità" if c.get("tipo") == "modalità" else "routine")
+                    self._json({"ok": bool(r), "routine": r, "errore": errore,
+                                "analisi": [ROUTINE.analizza(p) for p in r["passi"]] if r else []})
+                elif base == "/routine/elimina":
+                    self._json({"ok": ROUTINE.elimina(str(c.get("id", "")))})
+                elif base == "/routine/esegui":
+                    self._json(PC.prepara("routine", {"id": str(c.get("id", ""))}, MOTORE.memoria) if CONFIG["pc"]
+                               else {"ok": False, "esito": "I comandi del PC sono spenti."})
+                elif base == "/voce":
+                    try:
+                        r = VOCE.sintetizza(c.get("testo", ""), c.get("voce"), c.get("velocita", 1.0), MOTORE.memoria)
+                        self._json({"ok": True, "audio": base64.b64encode(r["wav"]).decode("ascii"), "durata_ms": r["durata_ms"], "fonemi": r["fonemi"]})
+                    except Exception as e:
+                        self._json({"ok": False, "errore": str(e)[:200]})
+                elif base == "/voce/scarica":
+                    ok, errore = VOCE.scarica(str(c.get("voce", "")))
+                    self._json({"ok": ok, "errore": errore, "info": VOCE.info(MOTORE.memoria)})
+                elif base == "/voce/imposta":
+                    v = str(c.get("voce", ""))
+                    ok = v in VOCE.scaricate()
+                    if ok:
+                        MOTORE.memoria.imposta_ricordo("voce_neurale", v)
+                    self._json({"ok": ok, "info": VOCE.info(MOTORE.memoria)})
+                elif base == "/animazioni/elimina":
+                    self._json({"ok": elimina_animazione(c.get("file"))})
                 elif base == "/pc/conferma":
                     self._json(PC.conferma(str(c.get("id", "")), bool(c.get("si", True)), bool(c.get("sempre")), MOTORE.memoria))
                 elif base == "/pc/prepara":                          # v12: «apri» su un file trovato → di nuovo con conferma
@@ -4431,7 +5081,7 @@ class Handler(BaseHTTPRequestHandler):
                     tipo = str(c.get("tipo", ""))
                     if c.get("azzera"):
                         fid = set()
-                    elif tipo in ComandiPC.TIPI and tipo not in SENZA_FIDUCIA:
+                    elif tipo in ComandiPC.TIPI and tipo not in SENZA_FIDUCIA and tipo != "routine":
                         (fid.add if c.get("attiva") else fid.discard)(tipo)
                     MOTORE.memoria.imposta_ricordo("pc_fiducia", sorted(fid))
                     self._json({"ok": True, "fiducia": sorted(fid)})
@@ -7553,6 +8203,24 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 # ════════════════════════════════════════════════════════════
 # MAIN
 # ════════════════════════════════════════════════════════════
+def _ciclo_sfondo():
+    """In sottofondo: routine a orario (ogni MAIK_ROUTINE_OGNI s) e avvisi del PC (ogni MAIK_AVVISI_OGNI s)."""
+    passo, ultimo_avviso = max(1, int(_env("MAIK_ROUTINE_OGNI", "20"))), 0.0
+    while True:
+        time.sleep(passo)
+        try:
+            if CONFIG["pc"]:
+                ROUTINE.controlla_programmate(MOTORE.memoria)
+        except Exception as e:
+            print(f"  ⚠  routine: {e}")
+        try:
+            if CONFIG["pc"] and CONFIG["avvisi"] and time.time() - ultimo_avviso >= CONFIG["avvisi_ogni"]:
+                ultimo_avviso = time.time()
+                MONITOR.controlla()
+        except Exception as e:
+            print(f"  ⚠  avvisi: {e}")
+
+
 def main():
     if "--no-app" in sys.argv:
         CONFIG["app"] = False
@@ -7623,6 +8291,7 @@ def main():
     print(f"    POST /episodio /obiettivo /relazione /reset /importa\n")
 
     threading.Thread(target=lambda: [icona_png(n) for n in (192, 512)], daemon=True).start()   # icone pronte
+    threading.Thread(target=_ciclo_sfondo, daemon=True).start()                                  # v13: routine e avvisi
     threading.Timer(1.2, lambda: print(f"  Aperto come {apri_finestra(url)}  (--no-app per la scheda normale)")).start()
 
     server = ThreadingHTTPServer((CONFIG["host"], CONFIG["porta"]), Handler)

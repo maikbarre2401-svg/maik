@@ -8762,7 +8762,7 @@ function audioCtx() {
 }
 ['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { if (usaNeurale()) audioCtx(); }, true));   // il browser sblocca l'audio al primo clic/tasto
 function sintesi(s) {
-  const vel = +OPT.velocita || 1, key = vel + '|' + s;
+  const vel = +OPT.velocita || 1, key = ((NEURALE.info && NEURALE.info.voce) || '') + '|' + vel + '|' + s;      // cambi voce → audio nuovo
   if (NEURALE.cache.has(key)) return NEURALE.cache.get(key);
   const p = (async () => {
     const r = await postJ('/voce', { testo: s, velocita: vel });

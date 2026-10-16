@@ -9466,7 +9466,7 @@ async function invia(opt){
     if(INTERPRETE.on&&RE_INT_CHIUDI.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);chiudiInterprete();return;}
     const mi=t.match(RE_INT_APRI);if(mi&&(!mi[1]||linguaDa(mi[1]))){if(opt.text==null)$('#inp').value='';add('me',t);const x=apriInterprete(linguaDa(mi[1])),d=add('ai',x);finalize(d,x,null,null);return;}
   }
-  if(LETTURA.on&&!LETTURA.pausa&&!regen)pausaLettura(true);                                      // una domanda nuova mentre leggo: metto in pausa
+  if(LETTURA.on&&!LETTURA.pausa&&!regen&&(t||att))pausaLettura(true);                                      // una domanda nuova mentre leggo: metto in pausa
   if(!regen&&!att&&t&&!busy){                                                                   // v14: riunione e «quello che ho copiato»
     if(RIU.on&&RE_RIU_FINE.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);fineRiunione();return;}
     if(RE_RIU_INIZIA.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);const x=iniziaRiunione(),d=add('ai',x);finalize(d,x,null,null);return;}

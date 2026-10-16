@@ -10112,7 +10112,7 @@ const bootP=runBoot();pal=MaikKit.palette(palCmds);
 if(innerWidth<=760)$('#side').classList.add('hidden');
 $('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
 // azioni sui messaggi
-$('#msgs').addEventListener('click',e=>{const v14=e.target.closest('[data-q],[data-leggi],[data-cat],[data-todo],[data-riu],[data-bozza]');   // v14: notizie, riunioni
+$('#msgs').addEventListener('click',e=>{const v14=e.target.closest('button[data-q],button[data-leggi],button[data-cat],button[data-todo],button[data-riu],button[data-bozza]');   // v14: notizie, riunioni (solo i bottoni: anche i messaggi hanno data-q)
   if(v14){const ds=v14.dataset;if(ds.q!=null)qs('cerca su internet '+ds.q);else if(ds.leggi){const c=v14.closest('.news');if(c&&c._n)leggiNotizie(c._n,6);}else if(ds.cat)qs('notizie di '+ds.cat);
     else if(ds.todo!=null)ricordaTodo(v14);else if(ds.riu==='copia'){const r=v14.closest('.m')._riunione;(navigator.clipboard?navigator.clipboard.writeText(testoRiunione(r)):Promise.reject()).then(()=>toast('📋 Riassunto copiato','ok'),()=>toast('Copia non riuscita','err'));}
     else if(ds.riu==='leggi'){const r=v14.closest('.m')._riunione;const w=ttsOn;ttsOn=true;say(testoRiunione(r));ttsOn=w;}

@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v13.0                     ║
+║                  MAIK — Server v14.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,20 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v14.0 — MAIK LEGGE INTERNET, LE NOTIZIE E TI FA DA SEGRETARIO:
+  • 🌍 «cerca su internet chi ha vinto…»: cerca (DuckDuckGo → Bing → Wikipedia, senza chiavi), legge le pagine
+    (solo il testo utile, le parti che c'entrano) e risponde citando le fonti [1] [2] cliccabili. L'agente lo fa
+    anche da solo per fatti recenti, prezzi, risultati. Solo indirizzi pubblici: mai la rete di casa.
+  • 📰 «notizie», «ultime notizie di sport/economia/tecnologia…» (RSS ANSA) · tre titoli anche nel briefing.
+  • 📝 Modalità riunione (GUI): Zep ascolta e trascrive, poi riassunto, punti chiave, decisioni e cose da fare
+    (con «ricordamelo»); tutto salvato nei documenti, così poi chiedi «cosa abbiamo deciso alla riunione?».
+    Riunioni lunghe: prima appunti a pezzi, poi il riassunto. Senza Ollama: riassunto «a regole».
+  • 📋 «riassumi / traduci / correggi quello che ho copiato» (GUI, dagli appunti).
+  • Ollama: contesto più grande in automatico quando il prompt è lungo (fonti web, trascrizioni).
+  • Nuovi endpoint: GET /notizie?cat= · POST /riunione · POST /promemoria/aggiungi
+  • Variabili: MAIK_WEB=0 · MAIK_WEB_MOTORI · MAIK_WEB_DDG_URL / _BING_URL / _WIKI_URL · MAIK_NOTIZIE_URL ·
+    MAIK_WEB_CAR_FONTE · MAIK_WEB_LOCALE (solo prove)
 
 NOVITÀ v13.0 — ZEP TI VEDE, PARLA COME UNA PERSONA, È TUO E FA LE COSE DA SOLO:
   • 🖐️ Gesti delle mani dalla webcam (MediaPipe, sul tuo PC): 👋 ti risaluta, 👍 👎 ✌️ 🤟 ✊ ☝️
@@ -143,6 +157,13 @@ import webbrowser
 import urllib.request
 import urllib.parse
 import urllib.error
+import socket
+import ipaddress
+import email.utils
+import concurrent.futures
+import html as _html
+import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -208,6 +229,15 @@ che avete vissuto insieme, citalo con calore.""",
     "avvisi": _env("MAIK_AVVISI", "1") not in ("0", "no", "false"),
     "avvisi_ogni": int(_env("MAIK_AVVISI_OGNI", "60")),  # secondi tra un controllo e l'altro
     "info_finta": _env("MAIK_INFO_FINTA", ""),           # test: JSON che sostituisce parti di info_pc()
+    # v14: internet (ricerca con le fonti, notizie). Solo indirizzi pubblici; MAIK_WEB=0 spegne tutto
+    "web": _env("MAIK_WEB", "1") not in ("0", "no", "false"),
+    "web_locale": _env("MAIK_WEB_LOCALE", "0") in ("1", "si", "sì", "true"),     # SOLO per le prove: permette indirizzi locali
+    "web_motori": [x.strip() for x in _env("MAIK_WEB_MOTORI", "duckduckgo,bing,wikipedia").split(",") if x.strip()],
+    "web_ddg_url": _env("MAIK_WEB_DDG_URL", "https://html.duckduckgo.com/html/"),
+    "web_bing_url": _env("MAIK_WEB_BING_URL", "https://www.bing.com/search"),
+    "web_wiki_url": _env("MAIK_WEB_WIKI_URL", "https://it.wikipedia.org/w/api.php"),
+    "web_car_fonte": int(_env("MAIK_WEB_CAR_FONTE", "2500")),   # quanto testo per fonte arriva al modello
+    "notizie_url": _env("MAIK_NOTIZIE_URL", ""),                 # prove: un indirizzo con {cat} al posto dell'argomento
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -217,7 +247,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "13.0"
+VERSIONE  = "14.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -669,7 +699,7 @@ class Memoria:
         with self._lock:
             sid = sid if self._sessione(sid) else self.PRINCIPALE
             voci = [x for x in self.diario if (x.get("sessione") or self.PRINCIPALE) == sid][-n:]
-            return [{k: x[k] for k in ("quando", "tu", "ai", "azioni", "fonti", "seguito") if k in x} for x in voci]
+            return [{k: x[k] for k in ("quando", "tu", "ai", "azioni", "fonti", "seguito", "fonti_web", "notizie") if k in x} for x in voci]
 
     # ── Documenti (v10): la tua base di conoscenza, con fonti ─
     MAX_DOC_CARATTERI = 400_000
@@ -1265,12 +1295,23 @@ class Cervello:
         except Exception:
             return []
 
+    @staticmethod
+    def contesto_per(caratteri):
+        """v14: Ollama taglia i prompt lunghi (perdendo l'inizio): con fonti web o trascrizioni chiedi più contesto."""
+        stima = caratteri / 3.2 + 900                   # token del prompt + spazio per la risposta
+        if stima <= 3800:
+            return None
+        n = 4096
+        while n < stima * 1.15 and n < 16384:
+            n *= 2
+        return n
+
     def _payload(self, system_prompt, messaggi, stream):
-        return json.dumps({
-            "model": CONFIG["modello"],
-            "messages": [{"role": "system", "content": system_prompt}] + messaggi,
-            "stream": stream,
-        }).encode("utf-8")
+        d = {"model": CONFIG["modello"], "messages": [{"role": "system", "content": system_prompt}] + messaggi, "stream": stream}
+        ctx = self.contesto_per(len(system_prompt) + sum(len(m.get("content", "")) for m in messaggi))
+        if ctx:
+            d["options"] = {"num_ctx": ctx}
+        return json.dumps(d).encode("utf-8")
 
     def pensa(self, system_prompt, messaggi):
         """Risposta completa (non in streaming) — usata per i riassunti."""
@@ -1285,7 +1326,7 @@ class Cervello:
         except Exception as e:
             return f"__ERRORE__ {e}"
 
-    def pensa_json(self, prompt, timeout=120):
+    def pensa_json(self, prompt, timeout=120, num_predict=300):
         """Chiede al modello una risposta in JSON (format: json) e la restituisce come dict, o None."""
         req = urllib.request.Request(
             CONFIG["ollama_url"],
@@ -1294,7 +1335,7 @@ class Cervello:
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0, "num_predict": 300},
+                "options": dict({"temperature": 0, "num_predict": num_predict}, **({"num_ctx": self.contesto_per(len(prompt))} if self.contesto_per(len(prompt)) else {})),
             }).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -1875,6 +1916,8 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 - 🧮 «quanto fa 15% di 230» · «radice di 144» · «3 per 4 più 2»
 - 🕒 «che ore sono a Tokyo?» · «che giorno è?»
 - 🌤️ «che tempo fa a Milano?»
+- 🌍 «cerca su internet chi ha vinto il Giro d'Italia» — leggo le pagine e ti do le fonti
+- 📰 «notizie» · «ultime notizie di sport» · «notizie di tecnologia»
 - ☀️ «briefing» — il riepilogo della tua giornata
 - 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
 - 📝 «prendi nota: …»
@@ -1890,6 +1933,7 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 🤖 E puoi chiedermelo anche a parole tue: «stasera pasta, metti in lista gli ingredienti»,
    «mi fai il conto di 23 per 17?», «che tempo fa a Napoli?» — uso i miei strumenti da solo.
 📚 Carica i tuoi documenti (barra laterale) e chiedimi cosa c'è dentro: ti cito la fonte.
+📝 Sul PC: 📝 modalità riunione (prendo appunti, poi riassunto e cose da fare) · «riassumi quello che ho copiato»
 💬 Più chat separate, una sola memoria · 🔁 se mi dici «domani ho l'esame», dopo ti chiedo com'è andata.
 Per tutto il resto, chiacchieriamo! 💚"""
 
@@ -2153,6 +2197,10 @@ class Azioni:
             d = ottieni_meteo(citta, timeout=4)
             if not d.get("errore"):
                 righe.append(f"{d['emoji']} A {d['citta']}: {d['temp']}°C, {d['descrizione'].lower()}.")
+            if CONFIG["web"]:                                       # v14: i titoli del giorno
+                nz = NOTIZIE.prendi("principali", 3, timeout=3)
+                if nz["ok"]:
+                    righe.append("📰 Le notizie: " + " · ".join(n["titolo"] for n in nz["notizie"]) + " (dimmi «notizie» per le altre)")
         oggi = memoria.promemoria_di_oggi()
         if oggi:
             righe.append("⏰ Oggi:\n" + "\n".join(
@@ -3860,6 +3908,607 @@ def elimina_animazione(nome):
 
 
 # ════════════════════════════════════════════════════════════
+# V14 — MAIK LEGGE INTERNET (ricerca con le fonti), LE NOTIZIE (RSS) E PRENDE APPUNTI DELLE RIUNIONI
+# ════════════════════════════════════════════════════════════
+# Niente chiavi né account: DuckDuckGo (pagina HTML), poi Bing, poi Wikipedia se i primi non rispondono.
+# Le pagine si leggono come farebbe una persona (solo il testo utile) e al modello arrivano numerate:
+# lui risponde citando [1], [2]… e la GUI mostra le fonti cliccabili.
+# Sicurezza: si leggono solo indirizzi pubblici http(s) — mai la rete di casa o il PC stesso (anche dopo un redirect).
+_UA_WEB = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+
+
+def _host_sicuro(url):
+    """http(s) verso un indirizzo pubblico (niente localhost, LAN, link-local…). MAIK_WEB_LOCALE=1 solo per le prove."""
+    try:
+        p = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return False
+    if CONFIG["web_locale"]:
+        return True
+    try:
+        infos = socket.getaddrinfo(p.hostname, p.port or (443 if p.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            return False
+    return bool(infos)
+
+
+class _RedirectSicuro(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _host_sicuro(newurl):
+            raise urllib.error.URLError("redirect verso un indirizzo non permesso")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def scarica_web(url, timeout=8, max_byte=2_000_000, tipi=("html", "xml", "text/plain", "json", "rss", "atom")):
+    """→ (testo, url finale, content-type). Solleva un errore se l'indirizzo non è permesso o la risposta non va bene."""
+    if not _host_sicuro(url):
+        raise ValueError("indirizzo non permesso")
+    req = urllib.request.Request(url, headers={"User-Agent": _UA_WEB, "Accept-Language": "it-IT,it;q=0.9,en;q=0.6",
+                                               "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7"})
+    with urllib.request.build_opener(_RedirectSicuro).open(req, timeout=timeout) as r:
+        tipo = (r.headers.get("Content-Type") or "").lower()
+        if tipi and tipo and not any(t in tipo for t in tipi):
+            raise ValueError(f"contenuto non leggibile ({tipo.split(';')[0]})")
+        corpo = r.read(max_byte + 1)[:max_byte]
+        cs = r.headers.get_content_charset()
+        finale = r.geturl()
+    if not cs:
+        m = re.search(rb"""<meta[^>]+charset=["']?([\w-]+)""", corpo[:3000], re.I) or re.search(rb"""encoding=["']([\w-]+)""", corpo[:200])
+        cs = m.group(1).decode("ascii", "ignore") if m else "utf-8"
+    try:
+        testo = corpo.decode(cs, errors="replace")
+    except LookupError:
+        testo = corpo.decode("utf-8", errors="replace")
+    return testo, finale, tipo
+
+
+class _TestoPagina(HTMLParser):
+    """Il testo «da leggere» di una pagina: niente menu, script, piè di pagina, banner dei cookie."""
+    SALTA = {"script", "style", "noscript", "svg", "nav", "footer", "header", "aside", "form", "iframe", "template",
+             "button", "select", "option", "label", "figure"}
+    BLOCCHI = {"p", "div", "section", "article", "main", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "br",
+               "blockquote", "pre", "dd", "dt", "figcaption", "table", "ul", "ol", "td", "th", "hr"}
+    VUOTI = {"br", "hr", "img", "meta", "link", "input", "source", "wbr"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.salta, self.righe, self.titolo, self.descr, self._titolo = 0, [""], "", "", False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            a = {k: v or "" for k, v in attrs}
+            if (a.get("name") or a.get("property") or "").lower() in ("description", "og:description") and not self.descr:
+                self.descr = a.get("content", "")
+        if tag in self.SALTA and tag not in self.VUOTI:
+            self.salta += 1
+        elif tag == "title":
+            self._titolo = True
+        if tag in self.BLOCCHI:
+            self.righe.append("")
+
+    def handle_endtag(self, tag):
+        if tag in self.SALTA and self.salta:
+            self.salta -= 1
+        elif tag == "title":
+            self._titolo = False
+        if tag in self.BLOCCHI:
+            self.righe.append("")
+
+    def handle_data(self, d):
+        if self._titolo:
+            self.titolo += d
+        elif not self.salta:
+            self.righe[-1] += d
+
+
+_RE_RIGA_INUTILE = re.compile(r"\b(?:cookie|privacy|consenso|accett[ao]|iscriviti|newsletter|abbonati|abbonamento|accedi|login|"
+                              r"tutti i diritti|riproduzione riservata|p\.? ?iva|condividi|seguici|pubblicit[aà]|leggi anche)\b", re.I)
+
+
+def testo_leggibile(html_testo):
+    """→ (titolo, descrizione, testo): solo le righe vere (≥ 6 parole), senza doppioni né avvisi dei cookie."""
+    p = _TestoPagina()
+    try:
+        p.feed(html_testo)
+        p.close()
+    except Exception:
+        pass
+    righe, viste = [], set()
+    for r in p.righe:
+        r = re.sub(r"\s+", " ", r).strip()
+        if len(r.split()) < 6 or (len(r) < 160 and _RE_RIGA_INUTILE.search(r)):
+            continue
+        k = r.lower()[:120]
+        if k not in viste:
+            viste.add(k)
+            righe.append(r)
+    return re.sub(r"\s+", " ", p.titolo).strip(), re.sub(r"\s+", " ", p.descr).strip(), "\n".join(righe)
+
+
+def estratto_rilevante(testo, domanda, max_car=2500):
+    """Da una pagina lunga, i paragrafi che c'entrano con la domanda (nell'ordine originale)."""
+    if len(testo) <= max_car:
+        return testo
+    par = [x for x in testo.split("\n") if x.strip()]
+    chiavi = {w for w in _token(domanda) if len(w) > 2}
+    punti = []
+    for i, x in enumerate(par):
+        parole = set(_token(x))
+        punti.append((len(chiavi & parole) * 3 + (2 if i < 3 else 0) + min(len(x), 400) / 400, i))
+    scelti, tot = set(), 0
+    for _, i in sorted(punti, reverse=True):
+        if tot + len(par[i]) > max_car and scelti:
+            continue
+        scelti.add(i)
+        tot += len(par[i]) + 1
+        if tot >= max_car:
+            break
+    return "\n".join(par[i] for i in sorted(scelti))[:max_car]
+
+
+class _RisultatiDDG(HTMLParser):
+    """Risultati della pagina HTML di DuckDuckGo (a.result__a = titolo e link, .result__snippet = estratto)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ris, self._campo, self._tag, self._ad = [], None, None, 0
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: v or "" for k, v in attrs}
+        cls = a.get("class", "").split()
+        if tag == "div" and "result--ad" in cls:
+            self._ad = 1
+        if tag == "a" and "result__a" in cls:
+            self.ris.append({"titolo": "", "url": _url_vero(a.get("href", "")), "estratto": "", "ad": bool(self._ad)})
+            self._campo, self._tag, self._ad = "titolo", "a", 0
+        elif "result__snippet" in cls and self.ris:
+            self._campo, self._tag = "estratto", tag
+
+    def handle_endtag(self, tag):
+        if self._campo and tag == self._tag:
+            self._campo = None
+
+    def handle_data(self, d):
+        if self._campo:
+            self.ris[-1][self._campo] += d
+
+
+class _RisultatiBing(HTMLParser):
+    """Risultati di Bing (li.b_algo: h2 > a = titolo e link, il primo <p> = estratto)."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.ris, self._in, self._campo, self._h2 = [], 0, None, False
+
+    def handle_starttag(self, tag, attrs):
+        a = {k: v or "" for k, v in attrs}
+        if tag == "li" and "b_algo" in a.get("class", "").split():
+            self._in = 1
+            self.ris.append({"titolo": "", "url": "", "estratto": ""})
+        elif self._in and tag == "h2":
+            self._h2 = True
+        elif self._in and self._h2 and tag == "a" and not self.ris[-1]["url"]:
+            self.ris[-1]["url"], self._campo = _url_vero(a.get("href", "")), "titolo"
+        elif self._in and tag == "p" and not self.ris[-1]["estratto"]:
+            self._campo = "estratto"
+
+    def handle_endtag(self, tag):
+        if tag == "h2":
+            self._h2 = False
+            if self._campo == "titolo":
+                self._campo = None
+        elif tag == "p" and self._campo == "estratto":
+            self._campo = None
+        elif tag == "li" and self._in:
+            self._in, self._campo = 0, None
+
+    def handle_data(self, d):
+        if self._campo:
+            self.ris[-1][self._campo] += d
+
+
+def _url_vero(href):
+    """I motori di ricerca passano dai loro redirect: tira fuori l'indirizzo vero."""
+    href = _html.unescape(href or "").strip()
+    if href.startswith("//"):
+        href = "https:" + href
+    try:
+        u = urllib.parse.urlsplit(href)
+        q = urllib.parse.parse_qs(u.query)
+    except ValueError:
+        return href
+    if "uddg" in q:                                            # DuckDuckGo: //duckduckgo.com/l/?uddg=https%3A…
+        return q["uddg"][0]
+    if "bing.com" in (u.hostname or "") and u.path.startswith("/ck/") and q.get("u"):   # Bing: /ck/a?…&u=a1aHR0cHM6…
+        v = q["u"][0]
+        v = v[2:] if v.startswith("a1") else v
+        try:
+            return base64.urlsafe_b64decode(v + "=" * (-len(v) % 4)).decode("utf-8")
+        except Exception:
+            return href
+    return href
+
+
+def _sito(url):
+    h = (urllib.parse.urlsplit(url).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
+
+
+class RicercaWeb:
+    def __init__(self):
+        self._cache, self._lock = {}, threading.Lock()
+
+    # ── i motori: ognuno → [{titolo, url, estratto}] ──
+    def _duckduckgo(self, q):
+        html_t, _, _ = scarica_web(CONFIG["web_ddg_url"] + "?" + urllib.parse.urlencode({"q": q, "kl": "it-it"}), timeout=8)
+        p = _RisultatiDDG()
+        p.feed(html_t)
+        return [r for r in p.ris if not r["ad"] and "duckduckgo.com/y.js" not in r["url"]]
+
+    def _bing(self, q):
+        html_t, _, _ = scarica_web(CONFIG["web_bing_url"] + "?" + urllib.parse.urlencode({"q": q, "setlang": "it", "cc": "IT"}), timeout=8)
+        p = _RisultatiBing()
+        p.feed(html_t)
+        return p.ris
+
+    def _wikipedia(self, q):
+        t, _, _ = scarica_web(CONFIG["web_wiki_url"] + "?" + urllib.parse.urlencode(
+            {"action": "query", "list": "search", "srsearch": q, "format": "json", "srlimit": 5, "utf8": 1}), timeout=8)
+        base = CONFIG["web_wiki_url"].rsplit("/w/", 1)[0]
+        return [{"titolo": x["title"], "url": f"{base}/wiki/" + urllib.parse.quote(x["title"].replace(" ", "_")),
+                 "estratto": re.sub(r"<[^>]+>", "", _html.unescape(x.get("snippet", "")))}
+                for x in json.loads(t).get("query", {}).get("search", [])]
+
+    def cerca(self, q):
+        """→ (risultati, motore, errori). Prova i motori in ordine finché uno risponde."""
+        errori = []
+        for nome in CONFIG["web_motori"]:
+            f = getattr(self, "_" + nome, None)
+            if not f:
+                continue
+            try:
+                ris = [dict(r, titolo=re.sub(r"\s+", " ", r["titolo"]).strip(), estratto=re.sub(r"\s+", " ", r["estratto"]).strip())
+                       for r in f(q) if r.get("url", "").startswith(("http://", "https://"))]
+            except Exception as e:
+                errori.append(f"{nome}: {str(e)[:80]}")
+                continue
+            if ris:
+                return ris, nome, errori
+            errori.append(f"{nome}: nessun risultato")
+        return [], "", errori
+
+    def leggi(self, url, domanda="", max_car=None):
+        """Il testo utile di una pagina (le parti che c'entrano con la domanda). '' se non si può leggere."""
+        max_car = max_car or CONFIG["web_car_fonte"]
+        try:
+            if "wikipedia.org/wiki/" in url or url.startswith(CONFIG["web_wiki_url"].rsplit("/w/", 1)[0] + "/wiki/"):
+                titolo = urllib.parse.unquote(url.rsplit("/wiki/", 1)[1]).replace("_", " ")
+                t, _, _ = scarica_web(CONFIG["web_wiki_url"] + "?" + urllib.parse.urlencode(
+                    {"action": "query", "prop": "extracts", "explaintext": 1, "titles": titolo, "format": "json", "redirects": 1}), timeout=8)
+                pagine = json.loads(t).get("query", {}).get("pages", {})
+                testo = "\n".join(re.sub(r"\n{2,}", "\n", p.get("extract", "")) for p in pagine.values())
+                testo = "\n".join(x for x in testo.split("\n") if len(x.split()) >= 6 and not x.startswith("=="))
+            else:
+                html_t, _, tipo = scarica_web(url, timeout=8)
+                testo = html_t if "text/plain" in tipo else testo_leggibile(html_t)[2]
+        except Exception:
+            return ""
+        return estratto_rilevante(testo, domanda, max_car)
+
+    def ricerca(self, domanda, pagine=3):
+        """Cerca, legge le prime pagine (una per sito, in parallelo) → {ok, q, motore, fonti:[{n, titolo, url, sito, estratto, testo, letta}]}."""
+        q = re.sub(r"\s+", " ", str(domanda or "")).strip(" ?!.")[:150]
+        if len(q) < 2:
+            return {"ok": False, "q": q, "errore": "domanda vuota", "fonti": []}
+        chiave = q.lower()
+        with self._lock:
+            c = self._cache.get(chiave)
+            if c and time.time() - c[0] < 900:
+                return c[1]
+        ris, motore, errori = self.cerca(q)
+        if not ris:
+            return {"ok": False, "q": q, "errore": "; ".join(errori) or "nessun risultato", "fonti": []}
+        scelti, siti = [], set()
+        for r in ris:
+            s = _sito(r["url"])
+            if s and s not in siti:
+                siti.add(s)
+                scelti.append(r)
+            if len(scelti) >= pagine:
+                break
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(scelti))) as ex:
+            testi = list(ex.map(lambda r: self.leggi(r["url"], q), scelti))
+        fonti = [{"n": i, "titolo": (r["titolo"] or _sito(r["url"]))[:140], "url": r["url"], "sito": _sito(r["url"]),
+                  "estratto": r["estratto"][:300], "testo": (t or r["estratto"])[:CONFIG["web_car_fonte"]], "letta": bool(t)}
+                 for i, (r, t) in enumerate(zip(scelti, testi), 1)]
+        out = {"ok": True, "q": q, "motore": motore, "fonti": fonti}
+        with self._lock:
+            self._cache[chiave] = (time.time(), out)
+            if len(self._cache) > 60:
+                self._cache.pop(next(iter(self._cache)))
+        return out
+
+    @staticmethod
+    def dati_per_modello(x, n0=1):
+        """Le fonti numerate come le vede il modello (n0 = da che numero partire)."""
+        return "\n\n".join(f"[{f['n'] + n0 - 1}] {f['titolo']} — {f['sito']}\n{f['testo']}" for f in x["fonti"])
+
+    @staticmethod
+    def senza_modello(x):
+        """Risposta senza Ollama: i risultati, con l'estratto."""
+        righe = [f"🌍 Ecco cosa ho trovato su internet per «{x['q']}»:"]
+        for f in x["fonti"]:
+            pezzo = (f["estratto"] or f["testo"])[:220].rsplit(" ", 1)[0]
+            righe.append(f"- **{f['titolo']}** [{f['n']}] — {pezzo}…")
+        return "\n".join(righe)
+
+
+WEB = RicercaWeb()
+
+# «cerca su internet chi ha vinto…», «cerca online …», «cerca X sul web»
+_RE_CERCA_INTERNET = re.compile(
+    r"^(?:(?:ehi|ok|dai)\s+)?(?:(?:maik|zep)[,!]?\s+)?(?:(?:puoi|potresti)\s+)?(?:cerca(?:mi|re)?|trova(?:mi|re)?|guarda|controlla|verifica)\s+"
+    r"(?:su|in|sul|nel(?:la)?)\s+(?:internet|(?:il\s+)?web|rete)\s*[:,]?\s+(?P<a>.+)$"
+    r"|^(?:(?:maik|zep)[,!]?\s+)?(?:cerca(?:mi)?|trova(?:mi)?)\s+online\s+(?P<b>.+)$"
+    r"|^(?:(?:maik|zep)[,!]?\s+)?(?:cerca(?:mi)?|trova(?:mi)?)\s+(?P<c>.+?)\s+(?:su|in|sul)\s+(?:internet|(?:il\s+)?web|rete)$", re.I)
+
+
+def domanda_internet(testo):
+    m = _RE_CERCA_INTERNET.match((testo or "").strip().rstrip(" ?!."))
+    return (m.group("a") or m.group("b") or m.group("c")).strip() if m else None
+
+
+# ── 📰 NOTIZIE: i feed RSS dell'ANSA, per argomento ──
+FEED_NOTIZIE = {
+    "principali": "https://www.ansa.it/sito/ansait_rss.xml",
+    "mondo": "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
+    "politica": "https://www.ansa.it/sito/notizie/politica/politica_rss.xml",
+    "economia": "https://www.ansa.it/sito/notizie/economia/economia_rss.xml",
+    "sport": "https://www.ansa.it/sito/notizie/sport/sport_rss.xml",
+    "tecnologia": "https://www.ansa.it/sito/notizie/tecnologia/tecnologia_rss.xml",
+    "cultura": "https://www.ansa.it/sito/notizie/cultura/cultura_rss.xml",
+    "scienza": "https://www.ansa.it/canale_scienza/notizie/scienza_rss.xml",
+}
+_SINONIMI_NOTIZIE = {"esteri": "mondo", "internazionali": "mondo", "dal mondo": "mondo", "tech": "tecnologia", "hi-tech": "tecnologia",
+                     "calcio": "sport", "sportive": "sport", "economiche": "economia", "finanza": "economia", "borsa": "economia",
+                     "politiche": "politica", "spettacolo": "cultura", "spettacoli": "cultura", "cinema": "cultura",
+                     "scientifiche": "scienza", "spazio": "scienza", "salute": "scienza"}
+_RE_NOTIZIE = re.compile(r"^(?:(?:ehi|ok|dai)\s+)?(?:(?:maik|zep)[,!]?\s+)?(?:(?:mi\s+)?(?:dai|dammi|dici|leggi|dimmi|leggimi|fammi\s+sentire|raccontami)\s+)?"
+                         r"(?:le\s+|delle\s+|i\s+|gli\s+)?(?:ultime\s+)?(?:notizie|news|titoli(?:\s+(?:di\s+oggi|dei\s+giornali))?)"
+                         r"(?:\s+(?:di\s+oggi|del\s+giorno|di\s+adesso|recenti|importanti|principali|in\s+breve))?"
+                         r"(?:\s+(?:di|su|sul|sulla|dello|della|dal|dalla|del|in|sport)\s*(?P<cat>[\wàèéìòù -]{2,25}?))?"
+                         r"(?:\s+(?:di\s+oggi|del\s+giorno))?$"
+                         r"|^(?:che|quali)\s+notizie\s+ci\s+sono(?:\s+(?:oggi|di|su)\s*(?P<cat2>[\wàèéìòù -]{0,25}?))?$"
+                         r"|^cosa\s+succede\s+(?:oggi\s+)?nel\s+mondo$|^(?:novit[aà]|notizie)\s+di\s+oggi$", re.I)
+
+
+def _categoria_notizie(testo):
+    t = _senza_accenti((testo or "").lower())
+    for k in FEED_NOTIZIE:
+        if k in t:
+            return k
+    for k, v in _SINONIMI_NOTIZIE.items():
+        if _senza_accenti(k) in t:
+            return v
+    return "mondo" if "mondo" in t else "principali"
+
+
+def _testo_breve(x, n=220):
+    x = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", _html.unescape(x or ""))).strip()
+    return x if len(x) <= n else x[:n].rsplit(" ", 1)[0] + "…"
+
+
+class Notizie:
+    def __init__(self):
+        self._cache, self._lock = {}, threading.Lock()
+
+    @staticmethod
+    def url(cat):
+        if CONFIG["notizie_url"]:
+            return CONFIG["notizie_url"].replace("{cat}", cat)
+        return FEED_NOTIZIE.get(cat, FEED_NOTIZIE["principali"])
+
+    @staticmethod
+    def leggi_feed(xml_testo, fonte=""):
+        """RSS 2.0 o Atom → [{titolo, link, quando, descrizione}]. Niente DOCTYPE/ENTITY (XML «bomba»)."""
+        if re.search(r"<!\s*(?:DOCTYPE|ENTITY)", xml_testo[:5000], re.I):
+            raise ValueError("feed con DOCTYPE/ENTITY rifiutato")
+        radice = ET.fromstring(re.sub(r"^\s*<\?xml[^>]*\?>", "", xml_testo))     # già decodificato: niente «encoding=» doppio
+        tag = lambda e: e.tag.rsplit("}", 1)[-1] if isinstance(e.tag, str) else ""
+        out = []
+        for it in radice.iter():
+            if tag(it) not in ("item", "entry"):
+                continue
+            c = {}
+            for x in it:
+                c.setdefault(tag(x), x)
+            titolo = _testo_breve(c["title"].text if "title" in c else "", 200)
+            link = ""
+            for x in it:                                      # RSS: <link>url</link> · Atom: <link rel="alternate" href="url"/>
+                if tag(x) == "link":
+                    if (x.text or "").strip():
+                        link = x.text.strip()
+                        break
+                    if x.get("href") and x.get("rel", "alternate") == "alternate":
+                        link = x.get("href").strip()
+                        break
+            quando = None
+            for k in ("pubDate", "published", "updated", "date"):
+                if k in c and c[k].text:
+                    try:
+                        quando = email.utils.parsedate_to_datetime(c[k].text.strip())
+                    except (TypeError, ValueError):
+                        try:
+                            quando = datetime.datetime.fromisoformat(c[k].text.strip().replace("Z", "+00:00"))
+                        except ValueError:
+                            quando = None
+                    break
+            descr = _testo_breve((c.get("description") if c.get("description") is not None else c.get("summary")).text
+                                 if (c.get("description") is not None or c.get("summary") is not None) else "")
+            if titolo:
+                out.append({"titolo": titolo, "link": link if link.startswith(("http://", "https://")) else "",
+                            "quando": quando.astimezone().strftime("%H:%M") if quando and quando.tzinfo else (quando.strftime("%H:%M") if quando else ""),
+                            "ts": quando.timestamp() if quando and quando.tzinfo else 0, "descrizione": descr, "fonte": fonte})
+        return out
+
+    def prendi(self, cat="principali", n=8, timeout=6):
+        """→ {ok, categoria, notizie, [errore]}. Cache di 10 minuti (anche per gli errori: niente attese ripetute)."""
+        cat = cat if cat in FEED_NOTIZIE else "principali"
+        with self._lock:
+            c = self._cache.get(cat)
+            if c and time.time() - c[0] < (600 if c[1]["ok"] else 120):
+                return dict(c[1], notizie=c[1]["notizie"][:n])
+        try:
+            xml_t, _, _ = scarica_web(self.url(cat), timeout=timeout, max_byte=1_500_000)
+            ns = self.leggi_feed(xml_t, "ANSA" if "ansa.it" in self.url(cat) else _sito(self.url(cat)))
+            if any(x["ts"] for x in ns):
+                ns.sort(key=lambda x: -x["ts"])
+            out = {"ok": bool(ns), "categoria": cat, "notizie": ns[:15], **({} if ns else {"errore": "feed vuoto"})}
+        except Exception as e:
+            out = {"ok": False, "categoria": cat, "notizie": [], "errore": str(e)[:120]}
+        with self._lock:
+            self._cache[cat] = (time.time(), out)
+        return dict(out, notizie=out["notizie"][:n])
+
+    def router(self, testo):
+        """«notizie», «ultime notizie di sport», «che notizie ci sono oggi?», «cosa succede nel mondo»."""
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        m = _RE_NOTIZIE.match(t)
+        if not m or not CONFIG["web"]:
+            return None
+        cat = _categoria_notizie(m.group("cat") or m.group("cat2") or t)
+        x = self.prendi(cat, 6)
+        nome = "principali" if cat == "principali" else cat
+        if not x["ok"]:
+            return {"testo": f"📰 Non riesco a prendere le notizie {'' if cat == 'principali' else 'di ' + cat + ' '}adesso (sei offline?).",
+                    "notizie": dict(x, titolo=nome)}
+        righe = [f"📰 Le notizie {'principali' if cat == 'principali' else 'di ' + cat} di adesso:"]
+        righe += [f"- **{n['titolo']}**" + (f" ({n['quando']})" if n["quando"] else "") for n in x["notizie"]]
+        righe.append("Vuoi che ti approfondisca una notizia? Dimmi «cerca su internet …» 🌍")
+        return {"testo": "\n".join(righe), "notizie": dict(x, titolo=nome)}
+
+
+NOTIZIE = Notizie()
+
+
+# ── 📝 RIUNIONI: la trascrizione diventa riassunto, decisioni e cose da fare (e un documento) ──
+PROMPT_RIUNIONE = """Sei la segretaria di una riunione. Leggi la TRASCRIZIONE (fatta col riconoscimento vocale: può avere errori,
+correggili col buon senso) e rispondi SOLO con un oggetto JSON:
+{{"titolo": "max 6 parole", "riassunto": "3-5 frasi", "punti": ["punto chiave"], "decisioni": ["decisione presa"],
+"cose_da_fare": [{{"cosa": "compito", "chi": "nome o stringa vuota", "quando": "scadenza in italiano semplice o stringa vuota"}}]}}
+In italiano. Non inventare niente che non sia nella trascrizione. Usa liste vuote se non c'è niente.
+
+TRASCRIZIONE:
+{testo}"""
+PROMPT_RIUNIONE_PEZZO = ("Prendi appunti dettagliati (elenco puntato) di questa PARTE di una riunione: tieni nomi, numeri, "
+                         "date, decisioni e compiti. Solo gli appunti, in italiano.\n\nPARTE {i} DI {n}:\n{testo}")
+_RE_COMPITO = re.compile(r"\b(?:devo|dobbiamo|deve|devi|dovete|bisogna|occorre|entro|ricordati|ricordatevi|da fare|"
+                         r"manda|mander[oòà]|mandare|invia|inviare|chiama|chiamare|prepara|preparare|controlla|controllare|"
+                         r"sistemare|scrivere|scrive|si occupa|ci pensa|me ne occupo|faccio io)\b", re.I)
+_RE_DECISIONE = re.compile(r"\b(?:abbiamo deciso|decidiamo|si decide|deciso di|confermato|confermiamo|approvat[oa]|"
+                           r"siamo d'accordo|d'accordo su|resta deciso|si fa cos[iì]|scegliamo|abbiamo scelto)\b", re.I)
+_RE_SCADENZA = re.compile(r"\b(?:entro|per|prima di)\s+(" + _QUANDO_EV + r"|(?:il\s+)?\d{1,2}(?:\s+\w+)?|fine\s+(?:mese|settimana))\b"
+                          r"|\b(" + _QUANDO_EV + r")\b", re.I)
+
+
+def _frasi(testo):
+    return [f.strip() for f in re.split(r"(?<=[.!?])\s+|\n+", testo) if len(f.strip().split()) >= 3]
+
+
+def riunione_senza_modello(testo):
+    """Se il modello non c'è: riassunto «a regole» (le prime frasi, le frasi con decisioni e compiti)."""
+    fr = _frasi(testo)
+    compiti, decisioni = [], []
+    for f in fr:
+        if _RE_DECISIONE.search(f):
+            decisioni.append(f)
+        elif _RE_COMPITO.search(f):
+            m = _RE_SCADENZA.search(f)
+            chi = re.match(r"^([A-ZÀ-Ý][a-zà-ÿ]+)\s+(?:deve|si occupa|ci pensa|manda|prepara|chiama|scrive|invia)\b", f)
+            compiti.append({"cosa": f.rstrip("."), "chi": chi.group(1) if chi else "", "quando": (m.group(1) or m.group(2)) if m else ""})
+    lunghe = sorted((f for f in fr if f not in decisioni), key=len, reverse=True)[:4]
+    return {"titolo": "", "riassunto": " ".join(fr[:3])[:500], "punti": [f for f in fr if f in lunghe][:4],
+            "decisioni": decisioni[:8], "cose_da_fare": compiti[:10]}
+
+
+def _pulisci_riunione(d):
+    """Controlla e accorcia quello che arriva dal modello (tipi giusti, niente roba vuota)."""
+    s = lambda x, n: re.sub(r"\s+", " ", str(x or "")).strip()[:n]
+    out = {"titolo": s(d.get("titolo"), 60), "riassunto": s(d.get("riassunto"), 900),
+           "punti": [s(x, 200) for x in (d.get("punti") or []) if s(x, 200)][:10] if isinstance(d.get("punti"), list) else [],
+           "decisioni": [s(x, 200) for x in (d.get("decisioni") or []) if s(x, 200)][:10] if isinstance(d.get("decisioni"), list) else [],
+           "cose_da_fare": []}
+    for c in (d.get("cose_da_fare") or []) if isinstance(d.get("cose_da_fare"), list) else []:
+        if isinstance(c, str):
+            c = {"cosa": c}
+        if isinstance(c, dict) and s(c.get("cosa"), 160):
+            out["cose_da_fare"].append({"cosa": s(c.get("cosa"), 160), "chi": s(c.get("chi"), 40), "quando": s(c.get("quando"), 40)})
+    out["cose_da_fare"] = out["cose_da_fare"][:12]
+    return out
+
+
+def riassumi_riunione(testo, durata=0, titolo="", memoria=None, cervello=None):
+    """→ {ok, titolo, riassunto, punti, decisioni, cose_da_fare, parole, durata, fonte: ia|regole, documento}"""
+    testo = re.sub(r"[ \t]+", " ", str(testo or "")).strip()[:60000]
+    parole = len(testo.split())
+    if parole < 5:
+        return {"ok": False, "errore": "Non ho sentito abbastanza: la riunione è troppo corta."}
+    d, fonte = None, "regole"
+    if cervello and cervello.disponibile():
+        materiale = testo
+        if len(testo) > 7000:                              # riunione lunga: prima appunti a pezzi, poi il riassunto
+            pezzi, cur = [], ""
+            for f in re.split(r"(?<=[.!?])\s+", testo):
+                if len(cur) + len(f) > 6000 and cur:
+                    pezzi.append(cur)
+                    cur = ""
+                cur += f + " "
+            if cur.strip():
+                pezzi.append(cur)
+            note = []
+            for i, p in enumerate(pezzi[:10], 1):
+                r = pulisci_pensiero(cervello.pensa("Prendi appunti.", [{"role": "user", "content": PROMPT_RIUNIONE_PEZZO.format(i=i, n=len(pezzi), testo=p)}]))
+                note.append(r if r and not r.startswith("__ERRORE") else p[:1500])
+            materiale = "\n".join(note)
+        d = cervello.pensa_json(PROMPT_RIUNIONE.format(testo=materiale[:9000]), timeout=240, num_predict=900)
+        if isinstance(d, dict) and (d.get("riassunto") or d.get("cose_da_fare")):
+            fonte = "ia"
+        else:
+            d = None
+    out = _pulisci_riunione(d or riunione_senza_modello(testo))
+    ora = datetime.datetime.now()
+    out["titolo"] = s_t = (re.sub(r"\s+", " ", str(titolo or "")).strip()[:60] or out["titolo"] or f"Riunione del {ora.day} {MESI_IT[ora.month - 1]}")
+    for c in out["cose_da_fare"]:
+        q = parse_quando(c["quando"])[0] if c["quando"] else None
+        c["quando_iso"] = q.isoformat(timespec="minutes") if q else ""
+    out.update(ok=True, parole=parole, durata=int(durata or 0), fonte=fonte)
+    if memoria is not None:
+        mm = int(durata or 0) // 60
+        corpo = [f"RIUNIONE — {s_t}", f"{data_it(ora)}, ore {ora.strftime('%H:%M')}" + (f" · durata {mm} min" if mm else "") + f" · {parole} parole", "",
+                 "RIASSUNTO", out["riassunto"] or "—", ""]
+        for nome, lista in (("PUNTI CHIAVE", out["punti"]), ("DECISIONI", out["decisioni"])):
+            if lista:
+                corpo += [nome] + [f"- {x}" for x in lista] + [""]
+        if out["cose_da_fare"]:
+            corpo += ["COSE DA FARE"] + [f"- {c['cosa']}" + (f" ({c['chi']})" if c["chi"] else "") + (f" — entro {c['quando']}" if c["quando"] else "")
+                                         for c in out["cose_da_fare"]] + [""]
+        corpo += ["TRASCRIZIONE", testo]
+        nome_doc = re.sub(r"[\\/:*?\"<>|]+", " ", f"Riunione {ora.strftime('%Y-%m-%d %H.%M')} — {s_t}")[:76] + ".txt"
+        info, _ = memoria.aggiungi_documento(nome_doc, "\n".join(corpo))
+        out["documento"] = info
+    return out
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -3884,7 +4533,11 @@ Se ti servono dati che non sai, scrivi SOLO il tag e fermati: riceverai i risult
 Regole: usa i tag solo quando servono; JSON valido su una riga; "quando" in italiano semplice
 («tra 20 minuti», «domani alle 9», «venerdì alle 18:30»). Non dire mai di aver fatto qualcosa senza il tag."""
 
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file"}
+PROMPT_AGENTE_WEB = """INTERNET — per fatti recenti, notizie, risultati, prezzi, orari, persone o cose che non sai con certezza,
+NON inventare: scrivi solo il tag e aspetta (leggo io le pagine e ti do le fonti numerate da citare come [1], [2]).
+[[azione:{"tipo":"cerca_internet","q":"domanda precisa con le parole giuste"}]]
+[[azione:{"tipo":"notizie","categoria":"principali"}]]  (principali, mondo, politica, economia, sport, tecnologia, cultura, scienza)"""
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie"}
 STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
                 "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
                 "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca", "esegui_routine": "routine"}
@@ -3907,7 +4560,7 @@ ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥�
                    "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
-                   "cerca_documenti": "📚", "cerca_memoria": "🧠"}
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰"}
 
 
 class FiltroTag:
@@ -3982,8 +4635,9 @@ class Agente:
         return pulito, richieste[:6]
 
     @staticmethod
-    def esegui(a, memoria):
-        """Esegue una richiesta dopo averla controllata. Ritorna {tipo, ok, icona, esito, [dati], [fonti]}."""
+    def esegui(a, memoria, n0=1):
+        """Esegue una richiesta dopo averla controllata. Ritorna {tipo, ok, icona, esito, [dati], [fonti], [fonti_web]}.
+        n0 = da che numero partono le fonti web (se in una risposta si cerca più volte)."""
         tipo = str(a.get("tipo", "")).strip().lower().replace("-", "_")
         tipo = {"reminder": "promemoria", "spesa": "lista", "calcolo": "calcola", "calc": "calcola",
                 "documenti": "cerca_documenti", "memoria": "cerca_memoria", "orario": "ora",
@@ -3992,7 +4646,8 @@ class Agente:
                 "volume": "imposta_volume", "musica": "controlla_musica", "media": "controlla_musica",
                 "schermata": "screenshot", "file": "apri_file", "trova_file": "cerca_file", "digita": "scrivi_testo",
                 "scrivi": "scrivi_testo", "blocca": "blocca_pc", "routine": "esegui_routine", "modalita": "esegui_routine",
-                "modalità": "esegui_routine"}.get(tipo, tipo)
+                "modalità": "esegui_routine", "internet": "cerca_internet", "ricerca_web": "cerca_internet", "web": "cerca_internet",
+                "cerca_online": "cerca_internet", "ricerca": "cerca_internet", "news": "notizie", "giornale": "notizie"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -4104,6 +4759,23 @@ class Agente:
                     righe.append(" · ".join(str(v)[:120] for k, v in x.items() if k != "tipo"))
                 return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} ricordi",
                             dati=("\n".join(righe) if righe else f"nessun ricordo su «{q}»"))
+            if tipo in ("cerca_internet", "notizie") and not CONFIG["web"]:
+                return dict(r, esito="internet è spento (MAIK_WEB=0)", dati="niente internet: rispondi con quello che sai e dillo")
+            if tipo == "cerca_internet":                # v14: legge le pagine e le passa numerate
+                q = s("q", 150) or s("domanda", 150) or s("query", 150)
+                x = WEB.ricerca(q)
+                if not x["ok"]:
+                    return dict(r, esito=f"«{q}»: internet non risponde", dati=f"ricerca «{q}» non riuscita ({x.get('errore', '')[:80]}): rispondi con quello che sai e dillo")
+                fw = [{"n": f["n"] + n0 - 1, "titolo": f["titolo"], "url": f["url"], "sito": f["sito"], "estratto": f["estratto"]} for f in x["fonti"]]
+                return dict(r, ok=True, esito=f"«{q}»: {len(fw)} fonti", dati=RicercaWeb.dati_per_modello(x, n0), fonti_web=fw)
+            if tipo == "notizie":
+                cat = _categoria_notizie(s("categoria", 30) or s("argomento", 30) or s("q", 30))
+                x = NOTIZIE.prendi(cat, 8)
+                if not x["ok"]:
+                    return dict(r, esito=f"notizie di {cat} non disponibili", dati="notizie non disponibili (offline?)")
+                dati = "\n".join(f"- {n['titolo']}" + (f" ({n['quando']})" if n["quando"] else "") + (f": {n['descrizione']}" if n["descrizione"] else "")
+                                 for n in x["notizie"])
+                return dict(r, ok=True, esito=f"{len(x['notizie'])} notizie ({cat})", dati=dati, notizie=dict(x, titolo=cat))
             if tipo in STRUMENTI_PC or tipo == "cerca_file":
                 if not CONFIG["pc"]:
                     return dict(r, esito="i comandi del PC sono spenti (MAIK_PC=0)")
@@ -4174,7 +4846,7 @@ class MotoreAI:
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
             routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
-            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
+            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
                          + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
                          + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
@@ -4329,6 +5001,10 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         if pc:
             self.memoria.salva_scambio(testo, pc["testo"])
             return self._meta(ok=True, risposta=pc["testo"], azione=True, **self._meta_pc(pc))
+        nz = NOTIZIE.router(testo)
+        if nz:
+            self.memoria.salva_scambio(testo, nz["testo"])
+            return self._meta(ok=True, risposta=nz["testo"], azione=True, notizie=nz["notizie"])
         azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
         if azione:
             self.memoria.salva_scambio(testo, azione)
@@ -4380,6 +5056,12 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 on_token(pc["testo"])
                 self.memoria.salva_scambio(testo, pc["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **self._meta_pc(pc))
+            nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
+            if nz:
+                on_token(nz["testo"])
+                self.memoria.salva_scambio(testo, nz["testo"], sid, extra={"notizie": {"titolo": nz["notizie"].get("titolo"), "categoria": nz["notizie"].get("categoria"),
+                                                                                  "ok": nz["notizie"].get("ok"), "notizie": [{k: n[k] for k in ("titolo", "link", "quando")} for n in nz["notizie"].get("notizie", [])]}})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, notizie=nz["notizie"])
             # azioni pratiche: istantanee, anche offline (più richieste insieme → l'agente)
             azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
             if azione:
@@ -4396,6 +5078,20 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             msg = (f"{testo or 'Analizza questo file e dimmi cosa contiene.'}\n\n"
                    f"📎 File «{nome}»:\n```\n{contenuto}\n```")
         fonti = self.memoria.cerca_documenti(testo, k=3) if testo and not allegato else []
+        fonti_web, web = [], None
+        q_web = domanda_internet(testo) if testo and not allegato and CONFIG["web"] else None
+        if q_web:                                               # v14: «cerca su internet …» → leggo e rispondo con le fonti
+            avvisa({"lavoro": {"tipo": "cerca_internet", "icona": "🌍", "testo": f"Cerco su internet: «{q_web}»…"}})
+            web = WEB.ricerca(q_web)
+            avvisa({"strumento": {"tipo": "cerca_internet", "ok": web["ok"], "icona": "🌍",
+                                  "esito": f"«{q_web}»: {len(web['fonti'])} fonti" if web["ok"] else f"«{q_web}»: internet non risponde"}})
+            if web["ok"]:
+                fonti_web = [{k: f[k] for k in ("n", "titolo", "url", "sito", "estratto")} for f in web["fonti"]]
+                msg = (f"{testo}\n\n[RISULTATI DA INTERNET per «{q_web}» — la persona non li vede]\n{RicercaWeb.dati_per_modello(web)}\n\n"
+                       "Rispondi alla domanda usando queste fonti e citale col numero tra parentesi quadre, es. [1] o [2]. "
+                       "Se le fonti non bastano o non sono d'accordo, dillo.")
+            else:
+                msg = f"{testo}\n\n[La ricerca su internet non è riuscita: rispondi con quello che sai e di' che non hai potuto controllare online.]"
         system = self._system_prompt(testo or nome, fonti)
         messaggi = self._costruisci_messaggi(msg, sid)
         stat = {}
@@ -4404,10 +5100,14 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         risposta = self.cervello.pensa_stream(system, messaggi, filtro, stat)
         if agente:
             filtro.fine()
+        if (not risposta or risposta.startswith("__ERRORE")) and fonti_web:     # senza modello: i risultati così come sono
+            risposta = RicercaWeb.senza_modello(web)
+            on_token(risposta)
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
         finale, azioni = pulisci_pensiero(risposta) or risposta, []
+        notizie_meta = None
         if agente:
             finale, richieste = Agente.estrai(pulisci_pensiero(risposta))
             info = [a for a in richieste if str(a.get("tipo", "")).lower() in STRUMENTI_INFO][:3]
@@ -4418,9 +5118,15 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 # secondo giro: il modello riceve i risultati veri e finisce la risposta
                 risultati = []
                 for a in info:
-                    r = Agente.esegui(a, self.memoria)
+                    t_a = str(a.get("tipo", "")).lower()
+                    if t_a in ("cerca_internet", "notizie"):           # Zep si mette a cercare mentre leggo
+                        avvisa({"lavoro": {"tipo": t_a, "icona": ICONE_STRUMENTI[t_a],
+                                           "testo": f"Cerco su internet: «{str(a.get('q') or a.get('domanda') or '')[:80]}»…" if t_a == "cerca_internet" else "Leggo le notizie…"}})
+                    r = Agente.esegui(a, self.memoria, n0=len(fonti_web) + 1)
                     risultati.append(r)
                     azioni.append(r)
+                    fonti_web += r.get("fonti_web") or []
+                    notizie_meta = r.get("notizie") or notizie_meta
                     avvisa({"strumento": {k: r.get(k) for k in ("tipo", "ok", "icona", "esito")}})
                     for f in r.get("fonti") or []:
                         if not any(f["nome"] == x["nome"] and f["pezzo"] == x["pezzo"] for x in fonti):
@@ -4430,7 +5136,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                     {"role": "assistant", "content": finale or "(controllo…)"},
                     {"role": "user", "content": "[RISULTATI DEGLI STRUMENTI — la persona non li vede]\n" + dati +
                      "\n\nOra continua la risposta alla persona usando questi dati, in modo naturale e senza "
-                     "ripetere quello che hai già scritto. Non scrivere altri tag per meteo/ora/calcoli/ricerche."}]
+                     "ripetere quello che hai già scritto. Non scrivere altri tag per meteo/ora/calcoli/ricerche."
+                     + (" Cita le fonti web col numero tra parentesi quadre, es. [1]." if fonti_web else "")}]
                 if finale:
                     on_token("\n\n")
                 filtro2, stat2 = FiltroTag(on_token), {}
@@ -4458,15 +5165,17 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         schermate = [a["schermata"] for a in azioni if a.get("schermata")]
         fonti_meta = [{"nome": f["nome"], "pezzo": f["pezzo"], "anteprima": f.get("testo", "")[:200],
                        "citata": f["nome"].lower() in finale.lower()} for f in fonti]
+        fonti_web = [dict(f, citata=f"[{f['n']}]" in finale) for f in fonti_web]
         # in memoria va la risposta senza il "ragionamento" <think> e senza tag (risparmia contesto)
         self.memoria.salva_scambio(testo + (f" [📎 {nome}]" if allegato else ""), finale, sid,
-                                   extra={"azioni": chip, "fonti": [{"nome": f["nome"], "pezzo": f["pezzo"]} for f in fonti_meta]})
+                                   extra={"azioni": chip, "fonti": [{"nome": f["nome"], "pezzo": f["pezzo"]} for f in fonti_meta],
+                                          **({"fonti_web": [{k: f[k] for k in ("n", "titolo", "url", "sito")} for f in fonti_web]} if fonti_web else {})})
         if nuovo:
             threading.Thread(target=self._dopo_risposta, args=(testo,), daemon=True).start()
         titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
         return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
                           seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme, file=file_trovati,
-                          schermate=schermate)
+                          schermate=schermate, fonti_web=fonti_web, **({"notizie": notizie_meta} if notizie_meta else {}))
 
     def stato(self):
         return {
@@ -4901,6 +5610,8 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/routine":
                 self._json({"routine": [dict(r, analisi=[ROUTINE.analizza(p) for p in r["passi"]], quando=ROUTINE.descrivi_orario(r))
                                         for r in ROUTINE.elenco()]})
+            elif base == "/notizie":                                  # v14: notizie per argomento (RSS)
+                self._json(NOTIZIE.prendi(_categoria_notizie(qs.get("cat", "")), 10) if CONFIG["web"] else {"ok": False, "notizie": [], "errore": "MAIK_WEB=0"})
             elif base == "/routine/notizie":
                 self._json({"notizie": ROUTINE.prendi_notizie() if self._richiesta_locale() else []})
             elif base == "/pc/avvisi":
@@ -5074,6 +5785,18 @@ class Handler(BaseHTTPRequestHandler):
                 info, errore = MOTORE.memoria.aggiungi_documento(c.get("nome", ""), c.get("contenuto", ""))
                 self._json({"ok": bool(info), "documento": info, "errore": errore})
 
+            elif base == "/riunione":                                 # v14: trascrizione → riassunto, decisioni, cose da fare
+                c = self._read_json_body()
+                self._json(riassumi_riunione(c.get("testo", ""), c.get("durata", 0), c.get("titolo", ""), MOTORE.memoria, MOTORE.cervello))
+            elif base == "/promemoria/aggiungi":                      # v14: «ricordamelo» dalle cose da fare
+                c = self._read_json_body()
+                testo = re.sub(r"\s+", " ", str(c.get("testo", ""))).strip()[:160]
+                quando = parse_quando(str(c.get("quando", "")))[0] if c.get("quando") else None
+                if len(testo) < 2:
+                    self._json({"ok": False, "errore": "promemoria vuoto"})
+                else:
+                    p = MOTORE.memoria.aggiungi_promemoria(testo, quando, "promemoria")
+                    self._json({"ok": True, "promemoria": p, "quando": fmt_quando(quando) if quando else "senza orario"})
             elif base == "/documenti/elimina":
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
 
@@ -9132,8 +9855,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 13.0 — Server avviato            ║
-║ gesti · specchio · voce neurale · routine · PC  ║
+║           MAIK 14.0 — Server avviato            ║
+║ internet · notizie · riunioni · gesti · PC      ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

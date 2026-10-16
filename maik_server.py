@@ -7154,7 +7154,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .letb button,.intb button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
   #letpausa{background:var(--accent);color:#050a0f;border:none;min-width:96px}#letinfo{margin-left:auto;color:var(--dim);font:11px 'Share Tech Mono',monospace}
   #interprete{border-color:rgba(0,255,136,.55)}#intlingua{background:rgba(0,0,0,.3);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:2px 4px;font:12px inherit;font-family:inherit}
-  .intauto{display:flex;align-items:center;gap:3px;color:var(--dim);font-size:11px;letter-spacing:0;white-space:nowrap}.inth b,.leth b{white-space:nowrap}#intlingua{min-width:0;max-width:130px}
+  .intauto{display:flex;align-items:center;gap:3px;color:var(--dim);font-size:11px;letter-spacing:0;white-space:nowrap}.inth b,.leth b{white-space:nowrap}#intlingua{min-width:0;max-width:160px}.inth{gap:6px}
   .m.seguito.calav .mc::before{content:'📅 DAL TUO CALENDARIO';color:var(--accent)}
   #intlog{flex:1;min-height:90px;overflow:auto;padding:8px 12px;font-size:13px;line-height:1.4}
   .intv{padding:6px 8px;border-radius:9px;margin-bottom:6px;background:rgba(var(--accent-rgb),.07)}.intv.altro{background:rgba(0,255,136,.07)}

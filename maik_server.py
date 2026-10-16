@@ -5961,18 +5961,21 @@ class Abitudini:
     def _fatto(d, a, giorno):
         return d["log"].get(giorno.isoformat(), {}).get(a["id"], 0)
 
-    def serie(self, a, d=None, oggi=None):
-        """→ (serie attuale, record). Giornaliere: giorni previsti di fila; «N volte a settimana»: settimane di fila."""
-        d = d or self._carica()
-        oggi = oggi or datetime.date.today()
+    @staticmethod
+    def _inizio(a, d, oggi):
+        """Da quando conta: la creazione, o il primo giorno segnato «a posteriori» se viene prima."""
         try:
             creata = datetime.date.fromisoformat(a.get("creata", oggi.isoformat()))
         except ValueError:
             creata = oggi
-        segnati = [g for g, v in d["log"].items() if v.get(a["id"])]          # anche i giorni segnati «a posteriori» prima di crearla
-        if segnati:
-            creata = min(creata, datetime.date.fromisoformat(min(segnati)))
-        inizio = max(creata, oggi - datetime.timedelta(days=730))
+        segnati = [g for g, v in d["log"].items() if v.get(a["id"])]
+        return min(creata, datetime.date.fromisoformat(min(segnati))) if segnati else creata
+
+    def serie(self, a, d=None, oggi=None):
+        """→ (serie attuale, record). Giornaliere: giorni previsti di fila; «N volte a settimana»: settimane di fila."""
+        d = d or self._carica()
+        oggi = oggi or datetime.date.today()
+        inizio = max(self._inizio(a, d, oggi), oggi - datetime.timedelta(days=730))
         if a.get("settimanale"):
             n = a["settimanale"]
             sett = []
@@ -6014,10 +6017,11 @@ class Abitudini:
         d = d or self._carica()
         oggi = oggi or datetime.date.today()
         cur, rec = self.serie(a, d, oggi)
+        inizio = self._inizio(a, d, oggi)
         sett = []
         for i in range(6, -1, -1):
             g = oggi - datetime.timedelta(days=i)
-            sett.append({"data": g.isoformat(), "fatto": self._fatto(d, a, g), "previsto": self._previsto(a, g)})
+            sett.append({"data": g.isoformat(), "fatto": self._fatto(d, a, g), "previsto": g >= inizio and self._previsto(a, g)})   # prima che esistesse non conta
         lun = oggi - datetime.timedelta(days=oggi.weekday())
         questa = sum(1 for i in range(oggi.weekday() + 1) if self._fatto(d, a, lun + datetime.timedelta(days=i)) >= a.get("obiettivo", 1))
         return dict(a, oggi=self._fatto(d, a, oggi), previsto_oggi=self._previsto(a, oggi), fatta_oggi=self._fatto(d, a, oggi) >= a.get("obiettivo", 1),
@@ -8029,7 +8033,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V15</title>
+<title>MAIK // Zep V16</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -8354,10 +8358,41 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #calcount{margin-top:8px;color:var(--dim);font-size:12px}.calnew{margin-top:12px}.calnew summary{cursor:pointer;color:var(--accent);font-weight:600}
   .calnew .rrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}.calnew .rrow .tfield{flex:1;min-width:110px;margin:0}.calnew label{display:flex;gap:4px;align-items:center;font-size:12.5px;color:var(--dim)}
   @media (max-width:760px){.calweek{grid-template-columns:1fr}.calday{min-height:0}#lettura,#interprete{width:calc(100% - 28px)}}
+
+  /* ===== V16: spese, abitudini, settimana ===== */
+  .spbar{flex:1;height:7px;border-radius:5px;background:rgba(var(--accent-rgb),.12);overflow:hidden;min-width:40px}.spbar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+  .spbar.ok i{background:var(--green)}.spbar.warn i{background:#f59e0b}.spbar.ko i{background:#ef4444}
+  .spcard,.abcard,.wkcard{border:1px solid rgba(var(--accent-rgb),.3);border-radius:12px;background:rgba(0,0,0,.18);padding:10px 12px;margin-top:6px}
+  .sph{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}.sph b{color:#fff}.sph span{font:600 16px 'Share Tech Mono',monospace;color:var(--accent)}
+  .spbud{margin:4px 0 8px}.spbud small{display:block;color:var(--dim);font-size:12px;margin-top:3px}.spbud b.ko,b.ko{color:#ef4444}
+  .sprow{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0}.sprow span{flex:0 0 132px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sprow b{flex:0 0 auto;font:12px 'Share Tech Mono',monospace;min-width:74px;text-align:right}
+  .sprow small{color:var(--dim);font-size:11px}.spconf{color:var(--dim);font-size:12px;margin-top:5px}
+  .spf{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.spf button,.abctl button,.abnew button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
+  .abit{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(var(--accent-rgb),.08)}.abit:last-of-type{border-bottom:none}.abit.fatta .abem{filter:drop-shadow(0 0 6px var(--green))}
+  .abem{font-size:24px;flex:0 0 auto}.abtx{flex:1;min-width:0}.abtx b{color:#fff;font-size:13.5px}.abtx small{display:block;color:var(--dim);font-size:11.5px}
+  .abfire{font:600 12px 'Share Tech Mono',monospace;color:#f59e0b;margin-left:4px}
+  .abweek{display:flex;gap:4px;margin-top:4px}.abd{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:9px 'Share Tech Mono',monospace;border:1.5px solid rgba(var(--accent-rgb),.35);color:var(--dim)}
+  .abd.si{background:var(--green);border-color:var(--green);color:#04130b}.abd.mezzo{background:linear-gradient(90deg,var(--green) 50%,transparent 50%);border-color:var(--green)}.abd.off{opacity:.3;border-style:dashed}.abd.oggi{box-shadow:0 0 0 2px rgba(var(--accent-rgb),.6)}
+  .abctl{display:flex;align-items:center;gap:6px;flex:0 0 auto}.abctl button{padding:3px 9px;font-size:14px}.abctl button.ok{border-color:var(--green);color:var(--green);font-size:12.5px}.abprog{font:600 13px 'Share Tech Mono',monospace;min-width:34px;text-align:center}
+  .abit .nx{flex:0 0 auto}.abnew{display:flex;gap:6px}.abnew input{flex:1;margin:0}#abtesta{display:flex;align-items:center;gap:10px;margin:10px 0 4px;font-size:13px}#abtesta .spbar{max-width:220px}
+  .wkcard{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.wksez{background:rgba(var(--accent-rgb),.06);border-radius:10px;padding:8px 10px;min-width:0}
+  .wksez>b{display:block;font:11px 'Share Tech Mono',monospace;letter-spacing:1px;color:var(--accent);margin-bottom:3px}.wksez small{color:var(--dim);font-size:11.5px}.wkbig{font:600 19px 'Share Tech Mono',monospace;color:#fff;margin-bottom:3px}.wkbig small{font-family:inherit}
+  .wkcard .spf{grid-column:1/-1;margin-top:0}
+  .m.seguito.abav .mc::before{content:'✅ LE TUE ABITUDINI';color:var(--green)}
+  .spgrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px;align-items:start;margin:8px 0}
+  #spgiorni{width:100%;height:80px;display:block}#spgiorni rect.si{fill:var(--accent)}#spgiorni rect.no{fill:rgba(var(--accent-rgb),.18)}#spgiorni rect.oggi{fill:#f59e0b}
+  #spconf{color:var(--dim);font-size:12px}.sptot{margin-left:auto;font:600 15px 'Share Tech Mono',monospace;color:var(--accent)}
+  .spv{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(var(--accent-rgb),.08);font-size:13px}.spv .spd{font:11px 'Share Tech Mono',monospace;color:var(--dim);flex:0 0 44px}
+  .spv .spn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.spv .spn small{color:#f59e0b}.spv b{font:12.5px 'Share Tech Mono',monospace}
+  #splista{max-height:230px;overflow:auto;margin-top:8px}
+  .coriandolo{position:absolute;top:-12px;width:9px;height:14px;border-radius:2px;z-index:30;pointer-events:none;animation:cade 2.4s cubic-bezier(.25,.6,.4,1) forwards}
+  @keyframes cade{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(105vh) rotate(720deg);opacity:.2}}
+  #letlingua{margin-left:2px}.dhit .sem{color:var(--green);font-size:11px;margin-left:6px}#docsem{margin-top:6px;font-size:12px}
+  @media (max-width:760px){.spgrid,.wkcard{grid-template-columns:1fr}.sprow span{flex-basis:96px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V15</span></div>
+  <div class="logo">M A I K <span>// V16</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -8433,6 +8468,8 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <button id="sblook" onclick="openLook()" title="Personalizza (A): nome, colori, accessori, voce" aria-label="Personalizza">🎨</button>
         <button id="sbriu" onclick="toggleRiunione()" title="Modalità riunione (N): ascolto, prendo appunti, poi riassunto e cose da fare" aria-label="Modalità riunione">📝</button>
         <button id="sbcal" onclick="openCal()" title="Calendario (E): la settimana, importa .ics, avvisi prima degli impegni" aria-label="Calendario">📅</button>
+        <button id="sbspese" onclick="openSpese()" title="Le tue spese (D): mese, budget, categorie, bollette" aria-label="Spese">💶</button>
+        <button id="sbabit" onclick="openAbitudini()" title="Le tue abitudini (O): serie di giorni 🔥" aria-label="Abitudini">✅</button>
         <button id="sbint" onclick="toggleInterprete()" title="Interprete (T): tu parli italiano, io lo ripeto nell'altra lingua (e viceversa)" aria-label="Interprete">🗣️</button>
         <button id="sbroutine" onclick="openRoutine()" title="Routine e modalità (R)" aria-label="Routine e modalità">⚡</button>
         <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
@@ -8440,7 +8477,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="caption" aria-live="polite"></div>
       <div id="gesto" aria-hidden="true"></div>
       <div id="lettura" role="region" aria-label="Lettura ad alta voce">
-        <div class="leth"><b>📖 LEGGO</b><span id="letsito"></span><button type="button" class="ib" onclick="fermaLettura()" aria-label="Smetti di leggere" title="Smetti di leggere">✕</button></div>
+        <div class="leth"><b>📖 LEGGO</b><span id="letlingua"></span><span id="letsito"></span><button type="button" class="ib" onclick="fermaLettura()" aria-label="Smetti di leggere" title="Smetti di leggere">✕</button></div>
         <div id="lettitolo"></div>
         <div class="letbar"><i id="letprog"></i></div>
         <div id="letfrase"></div>
@@ -8482,6 +8519,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('cosa ho domani?')">📆 cosa ho domani?</button>
       <button onclick="q('leggimi questo articolo ')">📖 leggimi una pagina</button>
       <button onclick="toggleInterprete()">🗣️ interprete</button>
+      <button onclick="openSpese()">💶 spese</button>
+      <button onclick="qs('quanto ho speso questo mese?')">🧮 quanto ho speso?</button>
+      <button onclick="openAbitudini()">✅ abitudini</button>
+      <button onclick="qs('com\'è andata la settimana?')">📊 la mia settimana</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -8523,6 +8564,36 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<div class="ov" id="spmodal">
+  <div class="mod" style="max-width:760px">
+    <div class="modh"><div class="modt">💶 LE TUE SPESE</div><button class="ib" onclick="closeSpese()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="calnav"><button type="button" onclick="speseMese(-1)" aria-label="Mese prima">◀</button><b id="spmese"></b><button type="button" onclick="speseMese(1)" aria-label="Mese dopo">▶</button><span class="sptot" id="sptot"></span></div>
+      <div id="spbudget"></div>
+      <div class="spgrid"><div id="spcat"></div><div><svg id="spgiorni" viewBox="0 0 310 80" preserveAspectRatio="none" role="img" aria-label="Spese giorno per giorno"></svg><div id="spconf"></div></div></div>
+      <details class="calnew" open><summary>＋ Nuova spesa</summary>
+        <div class="rrow"><input class="tfield" id="spimp" placeholder="€ 0,00" inputmode="decimal" style="flex:0 0 96px;min-width:0" onkeydown="if(event.key==='Enter')spSalva()"><input class="tfield" id="spdesc" maxlength="80" placeholder="Cosa (es. benzina, pizza, bolletta luce)" onkeydown="if(event.key==='Enter')spSalva()"><select class="tfield" id="spcatsel" style="flex:0 0 auto"></select><input class="tfield" type="date" id="spdata" style="flex:0 0 auto"><button class="tbtn solid" type="button" onclick="spSalva()" style="flex:0 0 auto">💶 Aggiungi</button></div>
+        <div class="rrow"><button class="tbtn" type="button" onclick="$('#spdocin').click()" style="flex:0 0 auto">📄 Da una bolletta o uno scontrino</button><input type="file" id="spdocin" accept=".pdf,.docx,.odt,.txt" style="display:none" onchange="spDocumento(this.files[0]);this.value=''">
+          <label style="margin-left:auto">🎯 Budget del mese <input class="tfield" id="spbud" placeholder="es. 800" inputmode="decimal" style="width:90px;margin:0 4px"> €</label><button class="tbtn" type="button" onclick="spBudget()" style="flex:0 0 auto">Salva</button></div>
+      </details>
+      <div id="splista"></div>
+      <div class="note" style="margin-top:10px">Puoi anche dirmelo in chat: «ho speso 23 € di benzina», «ieri pizza 18 euro», «quanto ho speso di spesa a settembre?», «budget trasporti 150 euro». Con una bolletta in PDF: allegala e dimmi «aggiungila alle spese» (la scadenza va in calendario).</div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="abmodal">
+  <div class="mod" style="max-width:640px">
+    <div class="modh"><div class="modt">✅ LE TUE ABITUDINI</div><button class="ib" onclick="closeAbitudini()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="abnew"><input class="tfield" id="abtesto" maxlength="120" placeholder="es. bere 8 bicchieri d'acqua al giorno · palestra lun mer ven alle 19" onkeydown="if(event.key==='Enter')abCrea()"><button class="tbtn solid" type="button" onclick="abCrea()">＋ Aggiungi</button></div>
+      <div id="abtesta"></div>
+      <div id="ablista"></div>
+      <div class="note" style="margin-top:10px">Dimmi «ho fatto palestra», «ho bevuto 2 bicchieri», «ho letto»: segno io. Se hai messo un orario e non l'hai ancora fatta, te lo ricordo. 🔥 = giorni di fila (i giorni di riposo non la spezzano).</div>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="kmodal">
   <div class="mod" style="max-width:520px">
     <div class="modh"><div class="modt">⌨️ SCORCIATOIE</div><button class="ib" onclick="closeKeys()" aria-label="Chiudi">✕</button></div>
@@ -8546,6 +8617,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>E</kbd> calendario (eventi della settimana)</div>
       <div><kbd>T</kbd> interprete (italiano ⇄ un'altra lingua)</div>
       <div><kbd>L</kbd> mentre leggo: pausa / riprendi</div>
+      <div><kbd>D</kbd> le tue spese · <kbd>O</kbd> le tue abitudini · <kbd>W</kbd> com'è andata la settimana</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
@@ -8570,6 +8642,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="docres"></div>
       <div id="doclist"></div>
       <div id="docspace" class="note"></div>
+      <div id="docsem" class="note"></div>
     </div>
   </div>
 </div>
@@ -8912,7 +8985,7 @@ const MaikKit = (() => {
       if (h.includes(q)) return 3 - (h.indexOf(q) === 0 ? 0 : 1); let i = 0; for (const ch of h) if (ch === q[i]) i++; return i === q.length ? 1 : 0; };
     function render() {
       const q = norm(input.value.trim());
-      shown = cmds.map(c => [c, score(c, q)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 60);
+      shown = cmds.map(c => [c, score(c, q)]).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(x => x[0]).slice(0, 150);
       sel = Math.min(sel, Math.max(0, shown.length - 1));
       list.innerHTML = shown.length ? shown.map((c, i) => `<div class="mk-pal-item${i === sel ? ' sel' : ''}" role="option" data-i="${i}"><span class="ic">${c.ic || '•'}</span><span>${esc(c.label)}</span><span class="hint">${esc(c.hint || '')}</span></div>`).join('')
                                  : '<div class="mk-pal-empty">Nessun comando trovato</div>';
@@ -8993,7 +9066,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V15 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V16 — il personaggio 3D di MAIK (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -9003,6 +9076,7 @@ const MaikKit = (() => {
    si veste (colori e accessori), balla le tue animazioni .vrma e muove la bocca sull'audio vero (Piper).
    V14: cerca su internet con la lente d'ingrandimento e prende appunti col blocco note e la penna.
    V15: legge ad alta voce dal tablet (pagine web, articoli, documenti): scorre col dito e ogni tanto ti guarda.
+   V16: fa i conti con la calcolatrice (sul display il totale delle tue spese).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -9291,6 +9365,8 @@ window.ZepKit = (() => {
     cerca: { dur: 3.2, lungo: 1, arms: 'R', f(a, w, P) { const sw = Math.sin(a.t * 1.6); armTo(P.armR, CERCA_POSE[P.robot ? 0 : 1](sw), w); P.hand.R = ['fist', w]; P.look = [0.3 * sw, 0.08, w]; P.head.z -= 0.06 * sw * w; P.head.y += 0.12 * sw * w; P.face.brow += 0.35 * w; P.face.wide += 0.3 * w; P.props.lente = Math.max(P.props.lente, w); } },
     // v15: legge dal tablet (tenuto come il blocco note); il dito scorre la pagina, ogni tanto alza gli occhi verso di te
     legge: { dur: 6, lungo: 1, arms: 'B', f(a, w, P) { const sc = Math.pow(Math.max(0, Math.sin(a.t * 1.05 - 0.4)), 10), su = Math.pow(Math.max(0, Math.sin(a.t * 0.42 + 1.2)), 14), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { sx: pr.sx + 0.06 - 0.09 * sc, ey: pr.ey + 0.04 * sc, wr: pr.wr + 0.15 }), w); P.hand.L = ['open', w]; P.hand.R = ['point', w]; P.look = [0.04, -0.7 + 0.78 * su, w]; P.head.x += 0.13 * (1 - su) * w; P.head.z -= 0.03 * w; P.face.brow += 0.12 * w + 0.25 * su * w; P.face.smile += 0.15 * su * w; P.props.tablet = Math.max(P.props.tablet, w); P.props.scorri = sc; } },
+    // v16: fa i conti con la calcolatrice (tenuta come il blocco note), il dito che batte sui tasti
+    conta: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const tap = Math.pow(Math.max(0, Math.sin(a.t * 11)), 3) * (1 - Math.pow(Math.max(0, Math.sin(a.t * 0.5 + 0.8)), 12)), su = Math.pow(Math.max(0, Math.sin(a.t * 0.5 + 0.8)), 12), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { sx: pr.sx + 0.03 + 0.05 * tap, ey: pr.ey - 0.03 * tap, wr: pr.wr + 0.2 }), w); P.hand.L = ['open', w]; P.hand.R = ['point', w]; P.look = [0.03, -0.72 + 0.8 * su, w]; P.head.x += 0.14 * (1 - su) * w; P.face.brow += 0.2 * w + 0.2 * su * w; P.face.squint += 0.15 * w * (1 - su); P.face.smile += 0.2 * su * w; P.props.calcolatrice = Math.max(P.props.calcolatrice, w); } },
     scrive: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const su = Math.pow(Math.max(0, Math.sin(a.t * 0.8 - 1.2)), 8), sc = Math.sin(a.t * 9) * (1 - su), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { ey: pr.ey + 0.07 * sc, sx: pr.sx + 0.035 * Math.sin(a.t * 3.1) * (1 - su) }), w); P.hand.L = ['open', w]; P.hand.R = ['pinch', w]; P.look = [0.05 + 0.06 * sc, -0.75 + 0.85 * su, w]; P.head.x += 0.16 * (1 - su) * w; P.head.z += 0.05 * w; P.face.squint += 0.25 * w * (1 - su); P.face.brow += 0.3 * su * w; P.props.blocco = Math.max(P.props.blocco, w); P.props.penna = Math.max(P.props.penna, w); } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
@@ -10024,7 +10100,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0 },
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0 },
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -10150,6 +10226,7 @@ window.ZepKit = (() => {
                          // inclinato verso Zep e verso di te, la punta della penna sul foglio)
       lente: [0, 0, 0, 2.419, 0.664, 0.694], blocco: [-0.021, -0.136, 0.075, 0.288, 1.019, 0.667], penna: [-0.036, -0.039, 0.009, 2.908, 0.018, -2.408],
       tablet: [-0.021, -0.136, 0.075, 0.288, 1.019, 0.667],     // v15: il tablet sta dove sta il blocco note
+      calcolatrice: [-0.021, -0.12, 0.075, 0.288, 1.019, 0.667], // v16: anche la calcolatrice
     };
     function propsRobot(B) {
       if (B.props) return B.props;
@@ -10195,11 +10272,33 @@ window.ZepKit = (() => {
       add(new THREE.CircleGeometry(0.0045, 12), mat(0x0d0f14), 0, 0.129, 0.0067, T);
       T.userData.tex = tt; T.userData.schermo = sch; T.userData.testata = testata;
       B.L.hand.add(T); pr.tablet = T;
+      // 🧮 v16: calcolatrice: display (con il totale) e tasti
+      const C = new THREE.Group(); C.name = 'prop-calcolatrice';
+      add(new THREE.BoxGeometry(0.165, 0.24, 0.018), mat(0x2a2f3d, { roughness: 0.5 }), 0, 0, 0, C);
+      const dc = document.createElement('canvas'); dc.width = 256; dc.height = 80;
+      const dt = new THREE.CanvasTexture(dc); dt.colorSpace = THREE.SRGBColorSpace;
+      add(new THREE.PlaneGeometry(0.142, 0.046), new THREE.MeshBasicMaterial({ map: dt }), 0, 0.083, 0.0095, C);
+      const kc = document.createElement('canvas'); kc.width = 128; kc.height = 128; const kg = kc.getContext('2d');
+      kg.fillStyle = '#2a2f3d'; kg.fillRect(0, 0, 128, 128);
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) { kg.fillStyle = c === 3 ? '#f59e0b' : r === 3 && c === 2 ? '#22c55e' : '#e5e7eb'; kg.beginPath(); kg.roundRect ? kg.roundRect(6 + c * 30, 6 + r * 30, 26, 26, 6) : kg.rect(6 + c * 30, 6 + r * 30, 26, 26); kg.fill(); }
+      const kt = new THREE.CanvasTexture(kc); kt.colorSpace = THREE.SRGBColorSpace;
+      add(new THREE.PlaneGeometry(0.142, 0.142), new THREE.MeshBasicMaterial({ map: kt }), 0, -0.028, 0.0095, C);
+      C.userData.display = { canvas: dc, tex: dt };
+      B.L.hand.add(C); pr.calcolatrice = C;
+      disegnaDisplay(C, S.calcTesto);
       for (const k in pr) pr[k].visible = false;
       return (B.props = pr);
     }
+    function disegnaDisplay(C, testo) {            // v16: il numero sul display della calcolatrice
+      const { canvas, tex } = C.userData.display, g = canvas.getContext('2d');
+      g.fillStyle = '#b7d3a8'; g.fillRect(0, 0, canvas.width, canvas.height);
+      g.fillStyle = '#1f2a1a'; g.textAlign = 'right'; g.textBaseline = 'middle';
+      const t = String(testo == null ? '0' : testo).slice(0, 14);
+      g.font = 'bold ' + (t.length > 9 ? 34 : 46) + 'px monospace'; g.fillText(t, canvas.width - 12, canvas.height / 2 + 2);
+      tex.needsUpdate = true;
+    }
     function aggiornaProps(B, props) {
-      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02)) return;
+      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02 || props.calcolatrice > 0.02)) return;
       const pr = propsRobot(B);
       for (const k in pr) {
         const w = clamp(props[k] || 0, 0, 1), o = pr[k], q = PROP_POS[k];
@@ -10509,6 +10608,9 @@ window.ZepKit = (() => {
       // v14: ferma un gesto lungo (es. «cerca» finché leggo internet, «scrive» durante la riunione) · è in corso?
       endAct(k) { let n = 0; for (const a of S.acts) if (a.k === k && a.out == null) { a.out = 0.3; n++; } return n; },
       acting(k) { return S.acts.some(a => a.k === k && a.out == null); },
+      // v16: cosa c'è scritto sul display della calcolatrice (es. «345,60 €»)
+      calcolatrice(testo) { S.calcTesto = testo; const B = rig && rig.robot; if (B && B.props && B.props.calcolatrice) disegnaDisplay(B.props.calcolatrice, testo); },
+      get testoCalcolatrice() { return S.calcTesto; },
       get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
       get paused() { return paused; },
       step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
@@ -10698,7 +10800,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -10732,7 +10834,7 @@ async function attachFile(f){if(!f)return;try{
   renderAtt();$('#inp').focus();}catch(e){toast('Non riesco a leggere il file','err');}}
 function onAttIn(e){attachFile(e.target.files[0]);e.target.value='';}
 function renderAtt(){const el=$('#attprev');if(!att){el.classList.remove('on');el.innerHTML='';return;}el.classList.add('on');
-  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span>'+(att.kind==='text'?'<button class="tbtn" type="button" id="att2doc" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="attToDocs()" title="Così MAIK lo ricorda sempre e lo cita">📚 salva nei documenti</button>':'')+'<button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato"'+(att.kind==='text'?' style="margin-left:4px"':'')+'>✕</button>';}
+  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span>'+(att.kind==='text'&&/bollett|fattur|scontrin|importo|totale|scadenza/i.test(att.content)?'<button class="tbtn" type="button" id="att2spese" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="qs(/scontrin|ricevut/i.test(att.name+att.content.slice(0,300))?\'aggiungi questo scontrino alle spese\':\'aggiungi questa bolletta alle spese\')" title="Importo e scadenza nelle spese (e in calendario)">💶 alle spese</button>':'')+(att.kind==='text'?'<button class="tbtn" type="button" id="att2doc" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="attToDocs()" title="Così MAIK lo ricorda sempre e lo cita">📚 salva nei documenti</button>':'')+'<button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato"'+(att.kind==='text'?' style="margin-left:4px"':'')+'>✕</button>';}
 function clearAtt(){att=null;renderAtt();}
 
 // ---------- NUCLEO NEURALE (MaikKit.core: nitido su ogni schermo, reagisce a voce e stati) ----------
@@ -10971,6 +11073,10 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('🇪🇸','Interprete: spagnolo',()=>{const t=apriInterprete('spagnolo');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore español'),
     c('🇫🇷','Interprete: francese',()=>{const t=apriInterprete('francese');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore français'),
     c('🇩🇪','Interprete: tedesco',()=>{const t=apriInterprete('tedesco');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore deutsch'),
+    c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
+    c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
+    c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('📊','Com\'è andata la settimana?',()=>qs('com\'è andata la settimana?'),'W','riepilogo resoconto'),
     c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
   RUT.forEach(r=>L.push(c(r.tipo==='modalità'?'🎛️':'⚡','Avvia: '+r.nome,()=>rAvvia(r.id),r.quando||'routine','routine modalità')));
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
@@ -10978,7 +11084,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V15 · ZEP',key:'maik_boot_v15',checks:[
+  return MaikKit.boot({version:'V16 · ZEP',key:'maik_boot_v16',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -10988,6 +11094,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Spese e abitudini',run:async()=>{try{const [s,a]=await Promise.all([fetch('/spese').then(r=>r.json()),fetch('/abitudini').then(r=>r.json())]);return{ok:true,text:euroIt(s.totale)+' questo mese · '+(a.abitudini||[]).length+' abitudini'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Calendario',run:async()=>{try{const r=await (await fetch('/calendario?giorni=1')).json();return{ok:true,text:r.totale?r.totale+' eventi · oggi '+r.agenda.n:'vuoto (importa un .ics con 📅)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Internet e notizie',run:async()=>{try{const r=await (await fetch('/notizie')).json();return r.ok?{ok:true,text:'collegato · '+(r.notizie||[]).length+' notizie ANSA'}:{ok:true,text:r.errore==='MAIK_WEB=0'?'spento (MAIK_WEB=0)':'offline: cerco quando torna la rete'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce neurale',run:async()=>{const I=await voceInfo();return !I?{ok:false,text:'errore'}:I.pronta?{ok:true,text:'Piper · '+I.voce}:{ok:true,text:I.motore?'Piper c\'è: scarica una voce da 🎨':'voce del browser (Piper non installato)'};}},
@@ -10996,7 +11103,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 15 🧍 Ora **leggo tutto**: trascina un **PDF o un Word** 📄 (nei 📚 documenti o come allegato) e chiedimi cosa c\'è dentro. Mandami un **link**: «**riassumi questa pagina** https://…» oppure «**leggimi questo articolo** https://…» e te lo leggo a voce dal mio tablet 📖 (dimmi «pausa», «continua», «salta»). Il tuo **calendario** 📅: importa il file .ics di Google o Outlook, chiedimi «**cosa ho domani?**» o «**aggiungi al calendario** dentista giovedì alle 15» e ti avviso 15 minuti prima. «**Fammi da interprete in inglese**» 🗣️: tu parli italiano e io lo ripeto in inglese, e viceversa. E sempre: internet con le fonti 🌍, notizie 📰, riunioni 📝, routine ⚡ e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 16 🧍 Ora **ti organizzo la vita**: dimmi «**ho speso 23 € di benzina**» e tengo i conti 💶 (con Zep e la sua calcolatrice 🧮), «**quanto ho speso questo mese?**», «**imposta il budget a 800 euro**» e ti avviso prima di sforare. Allegami una **bolletta** e dimmi «**aggiungila alle spese**»: importo e scadenza, che va anche in calendario 📅. Le tue **abitudini** ✅: «**nuova abitudine: palestra lun mer ven alle 19**», poi «**ho fatto palestra**» e conto i giorni di fila 🔥 (ai traguardi festeggiamo 🎉). «**com\'è andata la settimana?**» 📊. Nei documenti ora cerco anche **per significato** 🧠, e leggo a voce gli articoli **in inglese** con la voce inglese 📖. E sempre: PDF e Word, calendario, interprete 🗣️, internet con le fonti, riunioni e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -11038,7 +11145,8 @@ function closeDocs(){$('#dmodal').classList.remove('open');}
 async function loadDocs(){let r;try{r=await (await fetch('/documenti')).json();}catch(e){$('#doclist').innerHTML='<div class="note">Server non raggiungibile</div>';return;}
   const D=r.documenti||[];$('#doccount').textContent=D.length?' ('+D.length+')':'';
   $('#doclist').innerHTML=D.length?'<h4 style="margin:14px 0 4px">Documenti ('+D.length+')</h4>'+D.map(d=>'<div class="memrow doc" data-id="'+escA(d.id)+'"><span class="tag">'+esc(((/\.(\w{1,4})$/.exec(d.nome)||[])[1]||'txt'))+'</span><span class="txt"><b>'+esc(d.nome)+'</b><small class="dmeta">'+d.caratteri.toLocaleString('it-IT')+' caratteri · '+d.n_pezzi+' pezz'+(d.n_pezzi===1?'o':'i')+' · '+fmtD(d.aggiunto)+'</small></span><button class="nx" onclick="docDel(\''+escA(d.id)+'\')" title="Elimina" aria-label="Elimina il documento">✕</button></div>').join(''):'<div class="note">Ancora nessun documento: caricane uno e poi chiedi a MAIK di quello che c\'è dentro.</div>';
-  $('#docspace').textContent=r.caratteri?'Spazio usato: '+Math.max(1,Math.round(100*r.caratteri/r.limite))+'%':'';}
+  $('#docspace').textContent=r.caratteri?'Spazio usato: '+Math.max(1,Math.round(100*r.caratteri/r.limite))+'%':'';
+  const sm=r.semantica;$('#docsem').innerHTML=!sm?'':sm.attiva?'🧠 Cerco anche <b>per significato</b> ('+esc(sm.modello)+(sm.totale?' · '+sm.pronti+'/'+sm.totale+' pezzi pronti':'')+')':'🧠 Ricerca per significato spenta'+(sm.errore?': '+esc(sm.errore):'')+' — cerco per parole.';}
 async function docSave(nome,contenuto){try{const r=await postJ('/documenti',{nome,contenuto});
   if(r.ok){toast('📚 '+r.documento.nome+': '+r.documento.n_pezzi+' pezz'+(r.documento.n_pezzi===1?'o':'i')+(r.documento.tagliato?' (tagliato)':''),'ok');return true;}
   toast(r.errore||'Documento non salvato','err');}catch(e){toast('Errore di rete','err');}return false;}
@@ -11056,7 +11164,7 @@ let docT;
 function docSearch(){clearTimeout(docT);docT=setTimeout(async()=>{const v=$('#docq').value.trim(),box=$('#docres');if(!v){box.innerHTML='';return;}
   try{const r=await (await fetch('/documenti/cerca?q='+encodeURIComponent(v))).json();const h=r.risultati||[];
     const words=v.split(/\s+/).filter(w=>w.length>2).map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));const rx=words.length?new RegExp('('+words.join('|')+')','gi'):null;
-    box.innerHTML=h.length?h.slice(0,4).map(x=>{let t=esc(x.testo.slice(0,260))+(x.testo.length>260?'…':'');if(rx)t=t.replace(rx,'<mark>$1</mark>');return '<div class="dhit"><b>📄 '+esc(x.nome)+' · parte '+x.pezzo+'</b><br>'+t+'</div>';}).join(''):'<div class="note">Nessun risultato</div>';}catch(e){}},250);}
+    box.innerHTML=h.length?h.slice(0,4).map(x=>{let t=esc(x.testo.slice(0,260))+(x.testo.length>260?'…':'');if(rx)t=t.replace(rx,'<mark>$1</mark>');return '<div class="dhit"><b>📄 '+esc(x.nome)+' · parte '+x.pezzo+'</b>'+(x.per_significato?'<span class="sem">🧠 per significato</span>':'')+'<br>'+t+'</div>';}).join(''):'<div class="note">Nessun risultato</div>';}catch(e){}},250);}
 async function attToDocs(){if(!att||att.kind!=='text')return;if(await docSave(att.name,att.full||att.content)){const b=$('#att2doc');if(b){b.textContent='✓ nei documenti';b.disabled=true;}profilo();}}
 
 // ---------- V10: APP INSTALLABILE ----------
@@ -11353,7 +11461,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -11888,7 +11996,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK // ' + n + ' V15'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK // ' + n + ' V16'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -12363,6 +12471,7 @@ function leggiPagina(p) {
   if (GIOCO.on) toggleGioco(false);
   if (LETTURA.on) fineLettura(false);
   Object.assign(LETTURA, { on: true, pausa: false, frasi, i: 0, inCorso: -1, pagina: p });
+  letturaLingua(p);                                                       // v16: un articolo inglese lo legge una voce inglese
   document.body.classList.add('lettura');
   $('#lettitolo').textContent = p.titolo || 'Senza titolo'; $('#letsito').textContent = sitoBreve(p.sito || '');
   if (AV) AV.act('legge', { dur: 900 });
@@ -12376,8 +12485,11 @@ function letturaAvanti() {
   if (!LETTURA.on || LETTURA.pausa || LETTURA.inCorso >= 0) return;
   if (LETTURA.i >= LETTURA.frasi.length) { fineLettura(true); return; }
   LETTURA.inCorso = LETTURA.i;
-  VOICE.q.push(LETTURA.frasi[LETTURA.i].t); pump();
-  const nx = LETTURA.frasi[LETTURA.i + 1]; if (nx && usaNeurale()) sintesi(nx.t).catch(() => {});    // la prossima frase è già pronta
+  if (LETTURA.cod) parlaFraseLettura(LETTURA.frasi[LETTURA.i].t);         // v16: con la voce della lingua della pagina
+  else {
+    VOICE.q.push(LETTURA.frasi[LETTURA.i].t); pump();
+    const nx = LETTURA.frasi[LETTURA.i + 1]; if (nx && usaNeurale()) sintesi(nx.t).catch(() => {});    // la prossima frase è già pronta
+  }
   letturaRender();
 }
 // chiamata da speechDone: finita una frase → la prossima (con una pausa più lunga tra i paragrafi)
@@ -12391,12 +12503,13 @@ function letturaFineFrase() {
 }
 // qualcuno ha zittito Zep (una risposta nuova, un avviso, «stop»…): metto in pausa e riprendo dalla stessa frase
 function letturaInterrotta() {
+  LETTURA.utt = null;
   if (LETTURA.inCorso >= 0) LETTURA.i = LETTURA.inCorso;
   LETTURA.inCorso = -1; LETTURA.pausa = true;
   if (AV) AV.endAct('legge');
   letturaRender(); updateStageBar();
 }
-function zittisci() { LETTURA.interno = true; try { stopSpeech(); } finally { LETTURA.interno = false; } }
+function zittisci() { LETTURA.interno = true; LETTURA.utt = null; try { stopSpeech(); } finally { LETTURA.interno = false; } }
 function pausaLettura(forza) {
   if (!LETTURA.on) { toast('📖 Non sto leggendo niente: «leggimi questo articolo https://…»'); return; }
   const p = forza != null ? !!forza : !LETTURA.pausa;
@@ -12651,8 +12764,269 @@ function parlaLingua(testo, cod) {
   });
 }
 
+// ============================================================
+// V16 — MAIK TI ORGANIZZA LA VITA: spese e bollette, abitudini con le serie, la tua settimana, letture in altre lingue
+// ============================================================
+const euroIt = v => (Math.round((+v || 0) * 100) / 100).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const GIORNI_BREVI = ['lun', 'mar', 'mer', 'gio', 'ven', 'sab', 'dom'];
+
+// ---------- 🧮 Zep fa i conti con la calcolatrice ----------
+function zepConta(totale, secondi) {
+  if (!AV) return;
+  if (AV.calcolatrice) AV.calcolatrice(euroIt(totale));
+  if (LETTURA.on || RIU.on) return;
+  AV.act('conta', { dur: secondi || 4 });
+}
+
+// ---------- 🎉 coriandoli sul palco (traguardi delle abitudini) ----------
+function coriandoli(n) {
+  const area = $('#sphere-area'); if (!area) return;
+  const colori = ['#00e5ff', '#7c3aed', '#22c55e', '#f59e0b', '#ef4444', '#ec4899'];
+  for (let i = 0; i < (n || 60); i++) {
+    const c = document.createElement('i'); c.className = 'coriandolo';
+    c.style.left = (5 + Math.random() * 90) + '%'; c.style.background = colori[i % colori.length];
+    c.style.animationDelay = (Math.random() * 0.6) + 's'; c.style.animationDuration = (1.8 + Math.random() * 1.4) + 's';
+    c.style.transform = 'rotate(' + Math.round(Math.random() * 360) + 'deg)';
+    area.appendChild(c); setTimeout(() => c.remove(), 3800);
+  }
+}
+function festeggiaAbitudine(st) {
+  if (!st) return;
+  if (st.traguardo) {
+    coriandoli(70); beep(3); if (core) core.pulse(2);
+    toast('🏆 ' + st.emoji + ' ' + st.nome + ': ' + st.traguardo + (st.settimanale ? ' settimane' : ' giorni') + ' di fila!', 'ok');
+    if (AV) { AV.gesture('celebrate'); AV.emote('happy', 3500); }
+  } else if (st.appena_fatta) {
+    if (AV) { AV.gesture('nod'); AV.emote('happy', 1800); }
+    if (core) core.pulse(1.2);
+  }
+}
+
+// ---------- 💶 SPESE: schede in chat ----------
+function barra(perc, cls) { return '<div class="spbar' + (cls ? ' ' + cls : '') + '"><i style="width:' + Math.max(0, Math.min(100, perc)).toFixed(1) + '%"></i></div>'; }
+function budgetHTML(b) {
+  if (!b) return '';
+  const cls = b.perc >= 100 ? 'ko' : b.perc >= 80 ? 'warn' : 'ok';
+  return '<div class="spbud">' + barra(b.perc, cls) + '<small>🎯 ' + euroIt(b.usato) + ' su ' + euroIt(b.totale) + ' (' + b.perc + '%) · '
+    + (b.resta >= 0 ? 'restano <b>' + euroIt(b.resta) + '</b>' : '<b class="ko">superato di ' + euroIt(-b.resta) + '</b>') + '</small></div>';
+}
+function speseHTML(s) {
+  const max = Math.max(1, ...(s.per_categoria || []).map(c => c.totale));
+  return '<div class="spcard"><div class="sph"><b>💶 ' + esc(s.titolo || 'Spese') + '</b><span>' + euroIt(s.totale) + '</span></div>' + budgetHTML(s.budget)
+    + (s.per_categoria || []).slice(0, 8).map(c => '<div class="sprow"><span>' + c.emoji + ' ' + esc(c.nome) + '</span>' + barra(100 * c.totale / max) + '<b>' + euroIt(c.totale) + '</b></div>').join('')
+    + (s.prima ? '<div class="spconf">' + (s.totale <= s.prima ? '📉' : '📈') + ' periodo prima: ' + euroIt(s.prima) + '</div>' : '')
+    + '<div class="spf"><button type="button" data-sp="apri">💶 Apri le spese</button></div></div>';
+}
+function addSpese(d, obj) {
+  if (obj.spese) {
+    const primo = (d.dataset.raw || '').split('\n')[0];
+    mc(d).innerHTML = renderAI(primo) + speseHTML(obj.spese);
+    zepConta(obj.spese.totale, 5);
+  }
+  if (obj.spesa) {
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-sp="annulla" data-id="' + escA(obj.spesa.id) + '">↩ Annulla</button><button type="button" class="agc calb" data-sp="apri">💶 Le spese</button>');
+    zepConta(obj.spesa.importo, 3.5);
+  }
+  if (obj.budget && !obj.spese) agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-sp="apri">💶 Le spese</button>');
+  if ($('#spmodal').classList.contains('open')) loadSpese();
+}
+
+// ---------- ✅ ABITUDINI: schede in chat ----------
+function puntiniHTML(a) {
+  const oggi = isoG(new Date());
+  return '<div class="abweek">' + (a.settimana || []).map(g => {
+    const d = new Date(g.data + 'T12:00'), fatto = g.fatto >= a.obiettivo, parz = g.fatto > 0 && !fatto;
+    const cls = fatto ? 'si' : parz ? 'mezzo' : g.previsto ? 'no' : 'off';
+    return '<span class="abd ' + cls + (g.data === oggi ? ' oggi' : '') + '" title="' + GIORNI_BREVI[(d.getDay() + 6) % 7] + ' ' + d.getDate() + ': ' + (fatto ? 'fatto ✓' : parz ? g.fatto + '/' + a.obiettivo : g.previsto ? 'non fatto' : 'riposo') + '">'
+      + GIORNI_BREVI[(d.getDay() + 6) % 7][0] + '</span>';
+  }).join('') + '</div>';
+}
+function quandoAbitudine(a) {
+  const q = a.settimanale ? a.settimanale + ' volte a settimana' : a.giorni.length === 7 ? 'ogni giorno' : a.giorni.map(g => GIORNI_BREVI[g]).join(' ');
+  return q + (a.ora ? ' · alle ' + a.ora : '') + (a.obiettivo > 1 ? ' · ' + a.obiettivo + ' ' + (a.unita || 'volte') : '');
+}
+function progressoAbitudine(a) {
+  if (a.settimanale) return a.questa_settimana + '/' + a.settimanale;
+  return a.obiettivo > 1 ? a.oggi + '/' + a.obiettivo : (a.fatta_oggi ? '✓' : '—');
+}
+function abitudineHTML(a, conBottoni) {
+  const fuoco = a.serie ? '<span class="abfire" title="record: ' + a.record + '">🔥 ' + a.serie + '</span>' : '';
+  const fatta = a.fatta_oggi || (a.settimanale && a.questa_settimana >= a.settimanale);
+  return '<div class="abit' + (fatta ? ' fatta' : '') + '" data-id="' + escA(a.id) + '"><span class="abem">' + a.emoji + '</span><div class="abtx"><b>' + esc(a.nome) + '</b> ' + fuoco
+    + '<small>' + esc(quandoAbitudine(a)) + (a.record > a.serie ? ' · record ' + a.record : '') + '</small>' + puntiniHTML(a) + '</div>'
+    + '<div class="abctl">' + (a.obiettivo > 1 ? '<button type="button" data-ab="meno" title="Uno in meno" aria-label="Uno in meno">−</button>' : '')
+    + '<span class="abprog">' + progressoAbitudine(a) + '</span>'
+    + (a.obiettivo > 1 ? '<button type="button" data-ab="piu" title="Uno in più" aria-label="Uno in più">+</button>'
+      : a.fatta_oggi ? '<button type="button" data-ab="meno" title="Annulla" aria-label="Annulla">↩</button>' : '<button type="button" class="ok" data-ab="piu">✓ Fatto</button>')
+    + '</div>' + (conBottoni ? '<button type="button" class="nx" data-ab="elimina" title="Elimina l\'abitudine" aria-label="Elimina">✕</button>' : '') + '</div>';
+}
+function addAbitudini(d, obj) {
+  if (obj.abitudine) {
+    const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = '<div class="abcard">' + abitudineHTML(obj.abitudine) + '<div class="spf"><button type="button" data-ab="apri">✅ Le mie abitudini</button></div></div>';
+    d.insertBefore(w, d.querySelector('.acts'));
+    festeggiaAbitudine(obj.abitudine);
+  }
+  if (obj.abitudini) {
+    const primo = (d.dataset.raw || '').split('\n')[0];
+    mc(d).innerHTML = renderAI(primo) + '<div class="abcard">' + obj.abitudini.map(a => abitudineHTML(a)).join('') + '<div class="spf"><button type="button" data-ab="apri">✅ Gestisci le abitudini</button></div></div>';
+  }
+  if ($('#abmodal').classList.contains('open')) loadAbitudini();
+}
+async function abSegna(id, n, el) {
+  let r; try { r = await postJ('/abitudini/segna', { id, n }); } catch (e) { r = { ok: false }; }
+  if (!r.ok) { toast('Abitudine non trovata', 'err'); return null; }
+  const html = abitudineHTML(r.abitudine, !!(el && el.closest('#ablista')));
+  if (el) { const row = el.closest('.abit'); if (row) row.outerHTML = html; }
+  document.querySelectorAll('#msgs .abit[data-id="' + id + '"]').forEach(x => { if (!el || !x.contains(el)) x.outerHTML = abitudineHTML(r.abitudine); });
+  if (n > 0) { festeggiaAbitudine(r.abitudine); toast(r.testo.replace(/\*\*/g, '').split('\n')[0], 'ok'); }
+  return r;
+}
+
+// ---------- 📊 la tua settimana ----------
+function settimanaHTML(s) {
+  const tot = s.abitudini.reduce((a, x) => a + x.fatti, 0), prev = s.abitudini.reduce((a, x) => a + x.previsti, 0) || 1;
+  const sezione = (t, c) => '<div class="wksez"><b>' + t + '</b>' + c + '</div>';
+  return '<div class="wkcard">'
+    + sezione('💶 Spese', '<div class="wkbig">' + euroIt(s.spese.totale) + (s.spese.prima ? ' <small>' + (s.spese.totale <= s.spese.prima ? '📉' : '📈') + ' prima ' + euroIt(s.spese.prima) + '</small>' : '') + '</div>'
+      + (s.spese.top || []).map(c => '<small>' + c.emoji + ' ' + esc(c.nome) + ' ' + euroIt(c.totale) + '</small>').join(' · '))
+    + (s.abitudini.length ? sezione('✅ Abitudini', '<div class="wkbig">' + Math.round(100 * tot / prev) + '%</div>' + barra(100 * tot / prev, tot / prev >= 0.8 ? 'ok' : tot / prev >= 0.5 ? 'warn' : 'ko')
+      + s.abitudini.map(a => '<small>' + a.emoji + ' ' + a.fatti + '/' + a.previsti + (a.serie >= 3 ? ' 🔥' + a.serie : '') + '</small>').join(' · ')) : '')
+    + sezione('📅 Impegni', '<div class="wkbig">' + s.eventi.passati + '</div>' + (s.eventi.prossimi.length ? '<small>in arrivo: ' + s.eventi.prossimi.slice(0, 3).map(p => esc(p.titolo) + ' (' + esc(p.quando) + ')').join(', ') + '</small>' : ''))
+    + sezione('✨ Il resto', '<small>' + [s.riunioni ? '📝 ' + s.riunioni + ' riunioni' : '', s.documenti ? '📚 ' + s.documenti + ' documenti' : '', s.chiacchierate ? '💬 ' + s.chiacchierate + ' messaggi' : '', s.umore != null ? '💙 umore ' + s.umore + '/10' : ''].filter(Boolean).join(' · ') + '</small>')
+    + '<div class="spf"><button type="button" data-wk="leggi">🔊 Leggimela</button><button type="button" data-sp="apri">💶 Spese</button><button type="button" data-ab="apri">✅ Abitudini</button></div></div>';
+}
+function addSettimana(d, obj) {
+  if (!obj.settimana) return;
+  const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = settimanaHTML(obj.settimana);
+  d.insertBefore(w, d.querySelector('.acts'));
+  if (AV) { AV.gesture('nod'); AV.emote('happy', 2000); }
+}
+function addV16(d, obj) { addSpese(d, obj); addAbitudini(d, obj); addSettimana(d, obj); }
+
+// ---------- 💶 SPESE: la finestra (mese, budget, categorie, giorni, elenco, nuova spesa, bolletta) ----------
+const SPV = { mese: null, cat: [] };
+async function openSpese() { $('#spmodal').classList.add('open'); SPV.mese = SPV.mese || isoG(new Date()).slice(0, 7); if (!$('#spdata').value) $('#spdata').value = isoG(new Date()); await loadSpese(); }
+function closeSpese() { $('#spmodal').classList.remove('open'); }
+function speseMese(n) { const [a, m] = SPV.mese.split('-').map(Number), d = new Date(a, m - 1 + n, 1); SPV.mese = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); loadSpese(); }
+async function loadSpese() {
+  let r; try { r = await (await fetch('/spese?mese=' + SPV.mese)).json(); } catch (e) { $('#splista').innerHTML = '<div class="note">Server non raggiungibile</div>'; return null; }
+  const [a, m] = SPV.mese.split('-').map(Number), nomeMese = new Date(a, m - 1, 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  $('#spmese').textContent = nomeMese; $('#sptot').textContent = euroIt(r.totale) + ' · ' + r.n + ' spes' + (r.n === 1 ? 'a' : 'e');
+  if (!SPV.cat.length && r.categorie) { SPV.cat = r.categorie; $('#spcatsel').innerHTML = '<option value="">🪄 categoria da sola</option>' + r.categorie.map(c => '<option value="' + c.chiave + '">' + c.emoji + ' ' + esc(c.nome) + '</option>').join(''); }
+  $('#spbudget').innerHTML = r.budget ? budgetHTML(r.budget) : '<div class="note" style="margin:0">🎯 Nessun budget: impostalo qui sotto (o dimmi «imposta il budget a 800 euro») e ti avviso all\'80%.</div>';
+  if (r.budget_impostati && r.budget_impostati.totale && !$('#spbud').value) $('#spbud').value = String(r.budget_impostati.totale).replace('.', ',');
+  const max = Math.max(1, ...r.per_categoria.map(c => c.totale));
+  $('#spcat').innerHTML = r.per_categoria.length ? r.per_categoria.map(c => {
+    const bc = (r.budget_categorie || []).find(x => x.chiave === c.chiave);
+    return '<div class="sprow"><span>' + c.emoji + ' ' + esc(c.nome) + '</span>' + barra(100 * c.totale / max, bc && c.totale > bc.budget ? 'ko' : '') + '<b>' + euroIt(c.totale) + '</b>' + (bc ? '<small>/ ' + euroIt(bc.budget) + '</small>' : '') + '</div>';
+  }).join('') : '<div class="note" style="margin:0">Nessuna spesa in questo mese.</div>';
+  // le spese giorno per giorno (barre)
+  const giorni = new Date(a, m, 0).getDate(), oggi = isoG(new Date()), vals = [];
+  for (let g = 1; g <= giorni; g++) { const k = SPV.mese + '-' + String(g).padStart(2, '0'); vals.push([k, r.per_giorno[k] || 0]); }
+  const vmax = Math.max(1, ...vals.map(v => v[1])), bw = 310 / giorni;
+  $('#spgiorni').innerHTML = vals.map(([k, v], i) => { const h = v ? Math.max(3, 70 * v / vmax) : 1.5; return '<rect x="' + (i * bw + 1).toFixed(1) + '" y="' + (76 - h).toFixed(1) + '" width="' + Math.max(1, bw - 2).toFixed(1) + '" height="' + h.toFixed(1) + '" class="' + (k === oggi ? 'oggi' : v ? 'si' : 'no') + '"><title>' + (+k.slice(8)) + ' ' + nomeMese.split(' ')[0] + ': ' + euroIt(v) + '</title></rect>'; }).join('');
+  $('#spconf').textContent = r.prima ? 'Mese prima: ' + euroIt(r.prima) + ' (' + (r.totale >= r.prima ? '+' : '') + Math.round(100 * (r.totale - r.prima) / r.prima) + '%)' : '';
+  $('#splista').innerHTML = r.voci.length ? r.voci.map(v => { const c = SPV.cat.find(x => x.chiave === v.categoria) || { emoji: '📦' }; return '<div class="spv"><span class="spd">' + v.data.slice(8) + '/' + v.data.slice(5, 7) + '</span><span>' + c.emoji + '</span><span class="spn">' + esc(v.descrizione) + (v.scadenza ? ' <small>scade ' + v.scadenza.slice(8) + '/' + v.scadenza.slice(5, 7) + '</small>' : '') + '</span><b>' + euroIt(v.importo) + '</b><button type="button" class="nx" data-spdel="' + escA(v.id) + '" title="Elimina" aria-label="Elimina la spesa">✕</button></div>'; }).join('') : '';
+  return r;
+}
+async function spSalva() {
+  const imp = $('#spimp').value.trim(), desc = $('#spdesc').value.trim();
+  if (!imp) { toast('💶 Scrivi quanto hai speso', 'err'); $('#spimp').focus(); return null; }
+  let r; try { r = await postJ('/spese/aggiungi', { importo: imp, descrizione: desc, categoria: $('#spcatsel').value, data: $('#spdata').value }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) { toast('💶 ' + (r.errore || 'Spesa non salvata'), 'err'); return r; }
+  toast('💶 ' + r.spesa.descrizione + ' ' + euroIt(r.spesa.importo), 'ok'); if (r.spesa.avviso) toast(r.spesa.avviso, 'err');
+  $('#spimp').value = ''; $('#spdesc').value = ''; SPV.mese = r.spesa.data.slice(0, 7); await loadSpese();
+  return r;
+}
+async function spBudget() {
+  const v = $('#spbud').value.trim().replace(/\./g, '').replace(',', '.');
+  try { await postJ('/spese/budget', { importo: +v || 0 }); } catch (e) {}
+  toast(+v ? '🎯 Budget del mese: ' + euroIt(+v) : '🎯 Budget tolto', 'ok'); loadSpese();
+}
+async function spDocumento(f) {
+  if (!f) return null;
+  const testo = await estraiFile(f); if (!testo) return null;
+  let r; try { r = await postJ('/spese/documento', { testo, nome: f.name, scontrino: /scontrin|ricevut/i.test(f.name) }); } catch (e) { r = { ok: false, testo: 'server non raggiungibile' }; }
+  const t = r.testo || ''; toast(t.replace(/\*\*/g, '').slice(0, 140), r.spesa ? 'ok' : 'err');
+  if (r.spesa) { const d = add('ai', t); finalize(d, t, null, null); addSpese(d, r); addAgenda(d, r); loadSpese(); }
+  return r;
+}
+
+// ---------- ✅ ABITUDINI: la finestra ----------
+async function openAbitudini() { $('#abmodal').classList.add('open'); await loadAbitudini(); }
+function closeAbitudini() { $('#abmodal').classList.remove('open'); }
+async function loadAbitudini() {
+  let r; try { r = await (await fetch('/abitudini')).json(); } catch (e) { $('#ablista').innerHTML = '<div class="note">Server non raggiungibile</div>'; return null; }
+  const A = r.abitudini || [];
+  const fatte = A.filter(a => a.fatta_oggi || (a.settimanale && a.questa_settimana >= a.settimanale)).length, prev = A.filter(a => a.previsto_oggi).length;
+  $('#abtesta').innerHTML = A.length ? 'Oggi: <b>' + fatte + '/' + prev + '</b> fatte' + barra(prev ? 100 * fatte / prev : 0, fatte >= prev && prev ? 'ok' : '') : '';
+  $('#ablista').innerHTML = A.length ? A.map(a => abitudineHTML(a, true)).join('') : '<div class="note">Ancora nessuna abitudine. Scrivine una qui sopra, come la diresti a me: «bere 8 bicchieri d\'acqua al giorno», «palestra lun mer ven alle 19», «leggere 3 volte a settimana».</div>';
+  return r;
+}
+async function abCrea() {
+  const t = $('#abtesto').value.trim(); if (!t) { toast('✅ Scrivi l\'abitudine', 'err'); return null; }
+  let r; try { r = await postJ('/abitudini/crea', { testo: t }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) { toast('✅ ' + (r.errore || 'Abitudine non salvata'), 'err'); return r; }
+  toast('✅ ' + r.abitudine.emoji + ' ' + r.abitudine.nome + ' · ' + quandoAbitudine(r.abitudine), 'ok'); $('#abtesto').value = ''; loadAbitudini();
+  return r;
+}
+async function checkAbAvvisi() {
+  let r; try { r = await (await fetch('/abitudini/avvisi')).json(); } catch (e) { return; }
+  (r.avvisi || []).forEach(a => {
+    const piano = a.testo.replace(/\*\*/g, '');
+    const d = add('ai', a.testo, 'seguito abav'); finalize(d, a.testo, null, null);
+    const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = '<div class="pcconf"><div class="pcb"><button type="button" data-abfatto="' + escA(a.id) + '">✓ Fatto!</button><button type="button" data-ab="apri">✅ Abitudini</button></div></div>';
+    d.insertBefore(w, d.querySelector('.acts'));
+    toast(piano, 'ok'); notify('✅ MAIK', piano.replace(/^⏰\s*/, '')); beep(1);
+    if (AV) AV.gesture('wave');
+    say(piano);
+  });
+}
+
+// ---------- 📖 letture in altre lingue: la voce della lingua della pagina ----------
+const LINGUE_LETTURA = { en: ['en-US', '🇬🇧', 'inglese'], es: ['es-ES', '🇪🇸', 'spagnolo'], fr: ['fr-FR', '🇫🇷', 'francese'], de: ['de-DE', '🇩🇪', 'tedesco'] };
+function voceDellaLingua(cod) {
+  if (!window.speechSynthesis) return null;
+  const vs = speechSynthesis.getVoices(), base = cod.slice(0, 2).toLowerCase(), l = x => String(x.lang || '').replace('_', '-').toLowerCase();
+  return vs.find(x => l(x) === cod.toLowerCase() && /natural|neural|online/i.test(x.name)) || vs.find(x => l(x) === cod.toLowerCase()) || vs.find(x => l(x).startsWith(base));
+}
+function letturaLingua(p) {
+  LETTURA.cod = null; LETTURA.voce = null; LETTURA.utt = null;
+  const L = p && LINGUE_LETTURA[p.lingua];
+  $('#letlingua').textContent = L ? L[1] : '';
+  if (!L) return;
+  const v = voceDellaLingua(L[0]);
+  if (!v) { toast('🔇 La pagina è in ' + L[2] + ' ma sul PC non c\'è una voce ' + L[2] + ': la leggo con la voce italiana', 'err'); return; }
+  LETTURA.cod = L[0]; LETTURA.voce = v;
+}
+function parlaFraseLettura(t) {
+  const u = new SpeechSynthesisUtterance(t); u.lang = LETTURA.cod; u.voice = LETTURA.voce; u.rate = +OPT.velocita || 1;
+  LETTURA.utt = u;
+  let fatto = false;
+  const fine = () => { if (fatto) return; fatto = true; clearTimeout(g); if (LETTURA.utt !== u) return; LETTURA.utt = null; speechDone(); };
+  u.onstart = () => { if (LETTURA.utt !== u) return; speaking = true; SPH.state = 'speaking'; caption(t); if (AV) { AV.setState('speaking'); AV.speakLine(t, { rate: u.rate }); } };
+  u.onboundary = e => { if (LETTURA.utt !== u) return; if (core) core.pulse(1); if (AV && e.charIndex != null) AV.sync(e.charIndex); };
+  u.onend = u.onerror = fine;
+  const g = setTimeout(fine, 5000 + t.length * 130);
+  speechSynthesis.speak(u);
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();}});
+$('#spmodal').addEventListener('click',e=>{if(e.target.id==='spmodal')closeSpese();});
+$('#abmodal').addEventListener('click',e=>{if(e.target.id==='abmodal')closeAbitudini();});
+$('#splista').addEventListener('click',async e=>{const b=e.target.closest('button[data-spdel]');if(!b)return;if(!confirm('Eliminare questa spesa?'))return;try{await postJ('/spese/elimina',{id:b.dataset.spdel});}catch(x){}loadSpese();});
+$('#ablista').addEventListener('click',async e=>{const b=e.target.closest('button[data-ab]');if(!b)return;const id=b.closest('.abit').dataset.id;
+  if(b.dataset.ab==='elimina'){if(!confirm('Eliminare questa abitudine (e le sue serie)?'))return;try{await postJ('/abitudini/elimina',{id});}catch(x){}loadAbitudini();}
+  else{await abSegna(id,b.dataset.ab==='piu'?1:-1,b);loadAbitudini();}});
+$('#msgs').addEventListener('click',async e=>{const b=e.target.closest('button[data-sp],button[data-ab],button[data-wk],button[data-abfatto]');if(!b)return;     // v16: spese, abitudini, settimana dalla chat
+  const ds=b.dataset;
+  if(ds.sp==='apri')openSpese();
+  else if(ds.sp==='annulla'){b.disabled=true;const r=await postJ('/spese/elimina',{id:ds.id}).catch(()=>({ok:false}));if(r.ok){b.textContent='✓ annullata';toast('💶 Spesa tolta','ok');if($('#spmodal').classList.contains('open'))loadSpese();}else{b.disabled=false;toast('Non trovata','err');}}
+  else if(ds.ab==='apri')openAbitudini();
+  else if(ds.ab==='piu'||ds.ab==='meno')await abSegna(b.closest('.abit').dataset.id,ds.ab==='piu'?1:-1,b);
+  else if(ds.abfatto){b.disabled=true;const r=await abSegna(ds.abfatto,1,null);if(r){b.textContent='✓ '+(r.abitudine.serie>1?'🔥 '+r.abitudine.serie:'fatto');}}
+  else if(ds.wk==='leggi'){const d=b.closest('.m');const w=ttsOn;ttsOn=true;say((d.dataset.raw||'').replace(/\*\*/g,''));ttsOn=w;}});
 $('#calmodal').addEventListener('click',e=>{if(e.target.id==='calmodal')closeCal();});
 $('#calweek').addEventListener('click',e=>{const b=e.target.closest('button[data-evdel]');if(b){e.stopPropagation();calElimina(b.dataset.evdel,b.dataset.ric==='1');return;}
   const g=e.target.closest('.calday');if(g&&!e.target.closest('.calev')){$('#cald').value=g.dataset.giorno;$('.calnew').open=true;$('#calt').focus();}});
@@ -12715,7 +13089,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);})();
 </script>
 </body></html>"""
 

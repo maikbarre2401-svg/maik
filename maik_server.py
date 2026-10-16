@@ -6848,7 +6848,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V14</title>
+<title>MAIK // Zep V15</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -7139,10 +7139,44 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .todo{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(var(--accent-rgb),.08)}.todo small{color:var(--dim)}
   .todo button,.riuf button{flex:0 0 auto;border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:4px 9px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
   .todo button.ok{border-color:var(--green);color:var(--green)}.riuf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;font-size:12px;color:var(--dim)}.riuf span{flex:1 1 100%}
+
+  /* ===== V15: lettura col tablet, calendario, interprete ===== */
+  button.agc{cursor:pointer;font-family:inherit}button.agc.leggi{padding:3px 6px;margin-left:-2px;background:rgba(var(--accent-rgb),.08);border-color:rgba(var(--accent-rgb),.45)}
+  button.agc.leggi:hover,button.agc.calb:hover{background:rgba(var(--accent-rgb),.22)}button.agc.calb{background:rgba(var(--accent-rgb),.08);border-color:rgba(var(--accent-rgb),.45);color:var(--text)}
+  #lettura,#interprete{display:none;position:absolute;left:14px;top:52px;z-index:23;width:min(380px,44%);max-height:calc(100% - 170px);flex-direction:column;border-radius:14px;background:rgba(var(--bg-rgb),.74);border:1px solid rgba(var(--accent-rgb),.55);backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  body.lettura #lettura,body.interprete #interprete{display:flex}body.lettura #rps,body.interprete #rps{display:none!important}
+  .leth,.inth{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);font:12px 'Share Tech Mono',monospace;letter-spacing:1px}
+  .leth span{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.leth .ib,.inth .ib{margin-left:auto}
+  #lettitolo{padding:8px 12px 0;font-weight:700;color:#fff;font-size:14px;line-height:1.3}
+  .letbar{margin:8px 12px 0;height:4px;border-radius:4px;background:rgba(var(--accent-rgb),.15);overflow:hidden}#letprog{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+  #letfrase{padding:10px 12px;font-size:14.5px;line-height:1.5;min-height:52px;max-height:150px;overflow:auto}#lettura.pausa #letfrase{opacity:.6}
+  .letb,.intb{display:flex;gap:6px;align-items:center;padding:8px 12px;border-top:1px solid var(--border);flex-wrap:wrap}
+  .letb button,.intb button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
+  #letpausa{background:var(--accent);color:#050a0f;border:none;min-width:96px}#letinfo{margin-left:auto;color:var(--dim);font:11px 'Share Tech Mono',monospace}
+  #interprete{border-color:rgba(0,255,136,.55)}#intlingua{background:rgba(0,0,0,.3);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:2px 4px;font:12px inherit;font-family:inherit}
+  .intauto{display:flex;align-items:center;gap:3px;color:var(--dim);font-size:11px;letter-spacing:0;white-space:nowrap}.inth b,.leth b{white-space:nowrap}#intlingua{min-width:0;max-width:130px}
+  .m.seguito.calav .mc::before{content:'📅 DAL TUO CALENDARIO';color:var(--accent)}
+  #intlog{flex:1;min-height:90px;overflow:auto;padding:8px 12px;font-size:13px;line-height:1.4}
+  .intv{padding:6px 8px;border-radius:9px;margin-bottom:6px;background:rgba(var(--accent-rgb),.07)}.intv.altro{background:rgba(0,255,136,.07)}
+  .intv .into{color:var(--dim);font-size:12px}.intv .intt b{color:#fff;font-size:14px}.intv .intt button{border:none;background:none;cursor:pointer;font-size:12px;padding:0 2px}
+  .intv.ascolto{color:var(--accent);font-size:12.5px}.intv.ascolto i{color:var(--text)}
+  .intb button{flex:1;padding:8px 10px;font-size:13px}.intb button.on{background:#ff3c5a;color:#fff;border-color:#ff3c5a;animation:pl 1.2s infinite}.intb input{flex:1;margin:0}
+  .calnav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}.calnav>button:not(.tbtn){border:1px solid var(--border);background:rgba(var(--accent-rgb),.08);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font-family:inherit}
+  .calnav b{font:12px 'Share Tech Mono',monospace;letter-spacing:1px;color:#fff;margin:0 6px}.calnav .tbtn{margin-left:auto;flex:0 0 auto}
+  .calweek{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+  .calday{border:1px solid rgba(var(--accent-rgb),.18);border-radius:10px;padding:6px;min-height:120px;background:rgba(0,0,0,.15);cursor:pointer;min-width:0}
+  .calday:hover{border-color:rgba(var(--accent-rgb),.45)}.calday.oggi{border-color:var(--accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.25)}
+  .calday h6{margin:0 0 5px;font:10.5px 'Share Tech Mono',monospace;color:var(--dim);letter-spacing:1px}.calday.oggi h6{color:var(--accent)}
+  .calev{position:relative;font-size:12px;line-height:1.3;padding:4px 16px 4px 6px;border-radius:7px;background:rgba(var(--accent-rgb),.13);border-left:3px solid var(--accent);margin-bottom:4px;overflow-wrap:anywhere;cursor:default}
+  .calev b{display:block;font:10.5px 'Share Tech Mono',monospace;color:var(--accent)}.calev small{display:block;color:var(--dim)}.calev.tg{border-left-color:var(--green)}.calev.tg b{color:var(--green)}
+  .calev button{position:absolute;top:2px;right:1px;border:none;background:none;color:var(--dim);cursor:pointer;font-size:10.5px;padding:1px 3px}.calev button:hover{color:#ff5c7a}
+  #calcount{margin-top:8px;color:var(--dim);font-size:12px}.calnew{margin-top:12px}.calnew summary{cursor:pointer;color:var(--accent);font-weight:600}
+  .calnew .rrow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}.calnew .rrow .tfield{flex:1;min-width:110px;margin:0}.calnew label{display:flex;gap:4px;align-items:center;font-size:12.5px;color:var(--dim)}
+  @media (max-width:760px){.calweek{grid-template-columns:1fr}.calday{min-height:0}#lettura,#interprete{width:calc(100% - 28px)}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V14</span></div>
+  <div class="logo">M A I K <span>// V15</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -7217,11 +7251,26 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <button id="sbgame" onclick="toggleGioco()" title="Sasso, carta, forbici (J)" aria-label="Sasso, carta, forbici">✊</button>
         <button id="sblook" onclick="openLook()" title="Personalizza (A): nome, colori, accessori, voce" aria-label="Personalizza">🎨</button>
         <button id="sbriu" onclick="toggleRiunione()" title="Modalità riunione (N): ascolto, prendo appunti, poi riassunto e cose da fare" aria-label="Modalità riunione">📝</button>
+        <button id="sbcal" onclick="openCal()" title="Calendario (E): la settimana, importa .ics, avvisi prima degli impegni" aria-label="Calendario">📅</button>
+        <button id="sbint" onclick="toggleInterprete()" title="Interprete (T): tu parli italiano, io lo ripeto nell'altra lingua (e viceversa)" aria-label="Interprete">🗣️</button>
         <button id="sbroutine" onclick="openRoutine()" title="Routine e modalità (R)" aria-label="Routine e modalità">⚡</button>
         <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
       </div>
       <div id="caption" aria-live="polite"></div>
       <div id="gesto" aria-hidden="true"></div>
+      <div id="lettura" role="region" aria-label="Lettura ad alta voce">
+        <div class="leth"><b>📖 LEGGO</b><span id="letsito"></span><button type="button" class="ib" onclick="fermaLettura()" aria-label="Smetti di leggere" title="Smetti di leggere">✕</button></div>
+        <div id="lettitolo"></div>
+        <div class="letbar"><i id="letprog"></i></div>
+        <div id="letfrase"></div>
+        <div class="letb"><button type="button" onclick="letturaSalta(-1)" title="Indietro (inizio del paragrafo)" aria-label="Indietro">⏮</button><button type="button" id="letpausa" onclick="pausaLettura()">⏸ Pausa</button><button type="button" onclick="letturaSalta(1)" title="Salta al paragrafo dopo" aria-label="Avanti">⏭</button><span id="letinfo"></span></div>
+      </div>
+      <div id="interprete" role="region" aria-label="Interprete">
+        <div class="inth"><b>🗣️ INTERPRETE</b><select id="intlingua" onchange="interpreteLingua(this.value)" aria-label="Lingua dell'altra persona"></select><label class="intauto" title="Dopo ogni traduzione ascolto l'altra persona da solo"><input type="checkbox" id="intauto"> a turno</label><button type="button" class="ib" onclick="chiudiInterprete()" aria-label="Chiudi l'interprete">✕</button></div>
+        <div id="intlog" aria-live="polite"></div>
+        <div class="intb"><button type="button" id="intio" onclick="interpreteAscolta('io')">🎤 Parlo io 🇮🇹</button><button type="button" id="intaltro" onclick="interpreteAscolta('altro')">🎤</button></div>
+        <div class="intb"><input class="tfield" id="inttesto" placeholder="✍️ …oppure scrivi in italiano e premi Invio" onkeydown="if(event.key==='Enter')interpreteScritto()"></div>
+      </div>
       <div id="riunione" role="region" aria-label="Riunione: appunti dal vivo">
         <div class="riuh2"><span class="rec"></span><b>📝 RIUNIONE</b><span id="riustato">● ascolto</span><span id="riutempo">0:00</span></div>
         <input class="tfield" id="riutitolo" maxlength="60" placeholder="Titolo (facoltativo): es. lancio del sito">
@@ -7248,6 +7297,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="toggleRiunione()">📝 riunione</button>
       <button onclick="qs('riassumi quello che ho copiato')">📋 riassumi gli appunti</button>
       <button onclick="q('cerca su internet ')">🌍 cerca su internet</button>
+      <button onclick="openCal()">📅 calendario</button>
+      <button onclick="qs('cosa ho domani?')">📆 cosa ho domani?</button>
+      <button onclick="q('leggimi questo articolo ')">📖 leggimi una pagina</button>
+      <button onclick="toggleInterprete()">🗣️ interprete</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -7255,7 +7308,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="attprev" aria-live="polite"></div>
     <div id="bar">
       <button id="attbtn" onclick="$('#attin').click()" title="Allega un'immagine (MAIK la guarda) o un file di testo" aria-label="Allega un file">📎</button>
-      <input type="file" id="attin" accept="image/*,.txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r" style="display:none" onchange="onAttIn(event)">
+      <input type="file" id="attin" accept="image/*,.pdf,.docx,.odt,.ics,.txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r" style="display:none" onchange="onAttIn(event)">
       <button class="micbtn" id="mic" onclick="toggleMic()" title="Voce" aria-label="Parla con MAIK">🎤</button>
       <input id="inp" placeholder="Scrivi a Maik…" onkeydown="if(event.key==='Enter')invia()">
       <button id="stopbtn" onclick="stopGen()" title="Ferma" aria-label="Ferma la risposta">■</button>
@@ -7269,6 +7322,23 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   <div class="mod" style="max-width:560px">
     <div class="modh"><div class="modt">🧠 MEMORIA DI MAIK</div><button class="ib" onclick="closeMem()" aria-label="Chiudi">✕</button></div>
     <div class="modb"><input class="sfield" id="memf" placeholder="Filtra i ricordi…" oninput="renderMem()" style="margin-bottom:10px"><div id="membody"></div></div>
+  </div>
+</div>
+
+<div class="ov" id="calmodal">
+  <div class="mod" style="max-width:820px">
+    <div class="modh"><div class="modt">📅 IL TUO CALENDARIO</div><button class="ib" onclick="closeCal()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="calnav"><button type="button" onclick="calSposta(-7)" aria-label="Settimana prima">◀</button><button type="button" onclick="calOggi()">Oggi</button><button type="button" onclick="calSposta(7)" aria-label="Settimana dopo">▶</button><b id="calrange"></b>
+        <button class="tbtn" type="button" onclick="$('#icsin').click()">⬆️ Importa .ics</button><input type="file" id="icsin" accept=".ics,text/calendar" style="display:none" onchange="importaIcs(this.files[0]);this.value=''"></div>
+      <div id="calweek" class="calweek"></div>
+      <div id="calcount"></div>
+      <details class="calnew" open><summary>＋ Nuovo impegno</summary>
+        <div class="rrow"><input class="tfield" id="calt" maxlength="120" placeholder="Cosa (es. dentista, cena da Marco)" onkeydown="if(event.key==='Enter')calSalva()"><input class="tfield" type="date" id="cald" style="flex:0 0 auto"><input class="tfield" type="time" id="calh" value="09:00" style="flex:0 0 auto"></div>
+        <div class="rrow"><input class="tfield" id="call" maxlength="120" placeholder="📍 Dove (facoltativo)"><select class="tfield" id="caldur" style="flex:0 0 auto"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 ora</option><option value="90">1 ora e ½</option><option value="120">2 ore</option><option value="240">4 ore</option></select><label><input type="checkbox" id="caltg"> tutto il giorno</label><button class="tbtn solid" type="button" onclick="calSalva()" style="flex:0 0 auto">📅 Aggiungi</button></div>
+      </details>
+      <div class="note" style="margin-top:10px">Da <b>Google Calendar</b> (Impostazioni → Importa ed esporta → Esporta), <b>Outlook</b> o <b>iPhone</b> salva il calendario come file <b>.ics</b> e importalo qui (reimportarlo aggiorna gli eventi, niente doppioni). Poi chiedimi «cosa ho domani?», «impegni della settimana», «aggiungi al calendario …». Ti avviso prima di ogni impegno.</div>
+    </div>
   </div>
 </div>
 
@@ -7292,6 +7362,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>A</kbd> personalizza: nome, colori, accessori, voce</div>
       <div><kbd>R</kbd> routine e modalità</div>
       <div><kbd>N</kbd> modalità riunione: prendo appunti, poi riassunto e cose da fare</div>
+      <div><kbd>E</kbd> calendario (eventi della settimana)</div>
+      <div><kbd>T</kbd> interprete (italiano ⇄ un'altra lingua)</div>
+      <div><kbd>L</kbd> mentre leggo: pausa / riprendi</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
@@ -7304,9 +7377,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   <div class="mod" style="max-width:600px">
     <div class="modh"><div class="modt">📚 I TUOI DOCUMENTI</div><button class="ib" onclick="closeDocs()" aria-label="Chiudi">✕</button></div>
     <div class="modb">
-      <div class="ddrop" id="ddrop"><span>⬆️ Trascina qui i tuoi file di testo (appunti, ricette, contratti, manuali, codice…)</span>
+      <div class="ddrop" id="ddrop"><span>⬆️ Trascina qui i tuoi file: <b>PDF</b>, <b>Word</b>, OpenOffice, testo (contratti, manuali, bollette, appunti, codice…)</span>
         <button class="tbtn solid" type="button" onclick="$('#docin').click()">📂 Scegli i file</button>
-        <input type="file" id="docin" multiple accept=".txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r,.srt,.tex,.rtf,text/*" style="display:none" onchange="docFiles(this.files);this.value=''"></div>
+        <input type="file" id="docin" multiple accept=".pdf,.docx,.odt,.ics,.txt,.md,.csv,.tsv,.json,.js,.ts,.py,.html,.htm,.css,.xml,.yml,.yaml,.ini,.toml,.log,.sql,.java,.c,.h,.cpp,.cs,.go,.rs,.rb,.php,.sh,.bat,.ps1,.r,.srt,.tex,.rtf,text/*" style="display:none" onchange="docFiles(this.files);this.value=''"></div>
       <details class="dpaste"><summary>✍️ oppure incolla un testo</summary>
         <input class="tfield" id="dpn" placeholder="Titolo (es. appunti di biologia)">
         <textarea class="tfield" id="dpt" style="min-height:90px" placeholder="Incolla qui il testo…"></textarea>
@@ -7739,7 +7812,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V14 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V15 — il personaggio 3D di MAIK (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -7748,6 +7821,7 @@ const MaikKit = (() => {
    passeggia, reagisce se lo tocchi. V13: fa da specchio alle tue espressioni, gioca a sasso-carta-forbici,
    si veste (colori e accessori), balla le tue animazioni .vrma e muove la bocca sull'audio vero (Piper).
    V14: cerca su internet con la lente d'ingrandimento e prende appunti col blocco note e la penna.
+   V15: legge ad alta voce dal tablet (pagine web, articoli, documenti): scorre col dito e ogni tanto ti guarda.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -8034,6 +8108,8 @@ window.ZepKit = (() => {
     lookup: { dur: 1.8, f(a, w, P) { P.look = [0.1, 0.95, w]; P.head.x -= 0.15 * w; P.face.brow += 0.5 * w; } },
     // v14: cerca su internet (con la lente d'ingrandimento) e prende appunti (blocco note e penna)
     cerca: { dur: 3.2, lungo: 1, arms: 'R', f(a, w, P) { const sw = Math.sin(a.t * 1.6); armTo(P.armR, CERCA_POSE[P.robot ? 0 : 1](sw), w); P.hand.R = ['fist', w]; P.look = [0.3 * sw, 0.08, w]; P.head.z -= 0.06 * sw * w; P.head.y += 0.12 * sw * w; P.face.brow += 0.35 * w; P.face.wide += 0.3 * w; P.props.lente = Math.max(P.props.lente, w); } },
+    // v15: legge dal tablet (tenuto come il blocco note); il dito scorre la pagina, ogni tanto alza gli occhi verso di te
+    legge: { dur: 6, lungo: 1, arms: 'B', f(a, w, P) { const sc = Math.pow(Math.max(0, Math.sin(a.t * 1.05 - 0.4)), 10), su = Math.pow(Math.max(0, Math.sin(a.t * 0.42 + 1.2)), 14), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { sx: pr.sx + 0.06 - 0.09 * sc, ey: pr.ey + 0.04 * sc, wr: pr.wr + 0.15 }), w); P.hand.L = ['open', w]; P.hand.R = ['point', w]; P.look = [0.04, -0.7 + 0.78 * su, w]; P.head.x += 0.13 * (1 - su) * w; P.head.z -= 0.03 * w; P.face.brow += 0.12 * w + 0.25 * su * w; P.face.smile += 0.15 * su * w; P.props.tablet = Math.max(P.props.tablet, w); P.props.scorri = sc; } },
     scrive: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const su = Math.pow(Math.max(0, Math.sin(a.t * 0.8 - 1.2)), 8), sc = Math.sin(a.t * 9) * (1 - su), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { ey: pr.ey + 0.07 * sc, sx: pr.sx + 0.035 * Math.sin(a.t * 3.1) * (1 - su) }), w); P.hand.L = ['open', w]; P.hand.R = ['pinch', w]; P.look = [0.05 + 0.06 * sc, -0.75 + 0.85 * su, w]; P.head.x += 0.16 * (1 - su) * w; P.head.z += 0.05 * w; P.face.squint += 0.25 * w * (1 - su); P.face.brow += 0.3 * su * w; P.props.blocco = Math.max(P.props.blocco, w); P.props.penna = Math.max(P.props.penna, w); } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
@@ -8767,7 +8843,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0 },
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0 },
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -8892,6 +8968,7 @@ window.ZepKit = (() => {
     const PROP_POS = {   // [x, y, z, rx, ry, rz] nel sistema della mano (calcolati perché la lente stia davanti all'occhio, il blocco
                          // inclinato verso Zep e verso di te, la punta della penna sul foglio)
       lente: [0, 0, 0, 2.419, 0.664, 0.694], blocco: [-0.021, -0.136, 0.075, 0.288, 1.019, 0.667], penna: [-0.036, -0.039, 0.009, 2.908, 0.018, -2.408],
+      tablet: [-0.021, -0.136, 0.075, 0.288, 1.019, 0.667],     // v15: il tablet sta dove sta il blocco note
     };
     function propsRobot(B) {
       if (B.props) return B.props;
@@ -8925,11 +9002,23 @@ window.ZepKit = (() => {
       add(new THREE.ConeGeometry(0.006, 0.018, 12), mat(0xc9ccd6, { metalness: 0.9 }), 0, -0.064, 0, Pn).rotation.x = Math.PI;
       add(new THREE.SphereGeometry(0.007, 10, 8), B.glow2, 0, 0.056, 0, Pn);
       B.Rr.hand.add(Pn); pr.penna = Pn;
+      // 📱 v15: tablet con lo schermo acceso (righe di testo che scorrono mentre legge)
+      const T = new THREE.Group(); T.name = 'prop-tablet';
+      add(new THREE.BoxGeometry(0.2, 0.275, 0.012), mat(0x1b1f2a, { metalness: 0.6, roughness: 0.3 }), 0, 0, 0, T);
+      const tc = document.createElement('canvas'); tc.width = 128; tc.height = 256; const h = tc.getContext('2d');
+      h.fillStyle = '#f4f7fb'; h.fillRect(0, 0, 128, 256);
+      for (let y = 10, par = 0; y < 250; y += 11) { if (Math.random() < 0.16 && y > 20) { y += 6; par++; continue; } h.fillStyle = par % 3 === 1 ? '#5b6b85' : '#2d3748'; h.fillRect(10, y, 108 - (Math.random() < 0.2 ? 40 * Math.random() : 0), 4); }
+      const tt = new THREE.CanvasTexture(tc); tt.colorSpace = THREE.SRGBColorSpace; tt.wrapS = tt.wrapT = THREE.RepeatWrapping; tt.repeat.set(1, 0.62);
+      const sch = add(new THREE.PlaneGeometry(0.176, 0.222), new THREE.MeshBasicMaterial({ map: tt }), 0, -0.014, 0.0066, T);
+      const testata = add(new THREE.PlaneGeometry(0.176, 0.022), B.glow2, 0, 0.108, 0.0067, T);
+      add(new THREE.CircleGeometry(0.0045, 12), mat(0x0d0f14), 0, 0.129, 0.0067, T);
+      T.userData.tex = tt; T.userData.schermo = sch; T.userData.testata = testata;
+      B.L.hand.add(T); pr.tablet = T;
       for (const k in pr) pr[k].visible = false;
       return (B.props = pr);
     }
     function aggiornaProps(B, props) {
-      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02)) return;
+      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02)) return;
       const pr = propsRobot(B);
       for (const k in pr) {
         const w = clamp(props[k] || 0, 0, 1), o = pr[k], q = PROP_POS[k];
@@ -8937,6 +9026,7 @@ window.ZepKit = (() => {
         if (!o.visible) continue;
         o.position.set(q[0], q[1], q[2]); o.rotation.set(q[3], q[4], q[5]);
         o.scale.setScalar(0.2 + 0.8 * smooth(w));
+        if (k === 'tablet') { const tx = o.userData.tex; tx.offset.y = (tx.offset.y + 1 - 0.0007 - 0.012 * (props.scorri || 0)) % 1; }   // il testo scorre (più in fretta quando passa il dito)
       }
     }
 
@@ -9371,6 +9461,12 @@ let busy=false,ctl=null,att=null;
 async function invia(opt){
   opt=opt||{};const regen=!!opt.regen;
   const t=(opt.text!=null?opt.text:$('#inp').value).trim();
+  if(!regen&&!att&&t&&!busy){                                                                   // v15: comandi della lettura e interprete
+    if(comandoLettura(t)){if(opt.text==null)$('#inp').value='';return;}
+    if(INTERPRETE.on&&RE_INT_CHIUDI.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);chiudiInterprete();return;}
+    const mi=t.match(RE_INT_APRI);if(mi&&(!mi[1]||linguaDa(mi[1]))){if(opt.text==null)$('#inp').value='';add('me',t);const x=apriInterprete(linguaDa(mi[1])),d=add('ai',x);finalize(d,x,null,null);return;}
+  }
+  if(LETTURA.on&&!LETTURA.pausa&&!regen)pausaLettura(true);                                      // una domanda nuova mentre leggo: metto in pausa
   if(!regen&&!att&&t&&!busy){                                                                   // v14: riunione e «quello che ho copiato»
     if(RIU.on&&RE_RIU_FINE.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);fineRiunione();return;}
     if(RE_RIU_INIZIA.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);const x=iniziaRiunione(),d=add('ai',x);finalize(d,x,null,null);return;}
@@ -9421,7 +9517,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -9449,7 +9545,9 @@ function regen(d){if(busy)return;const q=d.dataset.q;if(q==null){toast('Questa r
 async function attachFile(f){if(!f)return;try{
   if(/^image\//.test(f.type))att={kind:'image',name:f.name||'immagine',dataUrl:await MaikKit.shrinkImage(f)};
   else if(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type)){if(f.size>400000){toast('File troppo grande (massimo 400 KB)','err');return;}const raw=await f.text();att={kind:'text',name:f.name,content:raw.slice(0,12000),cut:raw.length>12000,full:raw};}
-  else{toast('Posso leggere immagini e file di testo (txt, md, csv, codice…)','err');return;}
+  else if(/\.ics$/i.test(f.name||'')){importaIcs(f);return;}                                     // v15: un calendario → lo importo
+  else if(DOC_EXT.test(f.name||'')){const x=await estraiFile(f);if(!x)return;att={kind:'text',name:f.name,content:x.slice(0,12000),cut:x.length>12000,full:x};}   // v15: PDF, Word, OpenOffice
+  else{toast('Posso leggere immagini, PDF, Word e file di testo (txt, md, csv, codice…)','err');return;}
   renderAtt();$('#inp').focus();}catch(e){toast('Non riesco a leggere il file','err');}}
 function onAttIn(e){attachFile(e.target.files[0]);e.target.value='';}
 function renderAtt(){const el=$('#attprev');if(!att){el.classList.remove('on');el.innerHTML='';return;}el.classList.add('on');
@@ -9684,6 +9782,14 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('📋','Riassumi quello che ho copiato',()=>qs('riassumi quello che ho copiato'),'appunti','clipboard copia'),
     c('🇬🇧','Traduci in inglese quello che ho copiato',()=>qs('traduci in inglese quello che ho copiato'),'appunti','clipboard traduzione'),
     c('✍️','Correggi quello che ho copiato',()=>qs('correggi gli errori di quello che ho copiato'),'appunti','clipboard grammatica'),
+    c('📅','Calendario',()=>openCal(),'E','agenda eventi impegni settimana'),c('📆','Cosa ho domani?',()=>qs('cosa ho domani?'),'agenda','impegni calendario'),
+    c('🗓️','Impegni della settimana',()=>qs('impegni di questa settimana'),'agenda','calendario'),c('⬆️','Importa un calendario (.ics)',()=>{openCal();$('#icsin').click();},'Google/Outlook','ics calendario importa'),
+    c('📖','Leggimi una pagina…',()=>q('leggimi questo articolo '),'link','leggi ad alta voce articolo url'),c('🔗','Riassumi una pagina…',()=>q('riassumi questa pagina '),'link','url riassunto sito'),
+    c('📄','Carica un PDF o un Word',()=>openDocs(),'documenti','pdf docx odt word documento'),
+    c('🗣️','Interprete: inglese',()=>{const t=apriInterprete('inglese');const d=add('ai',t);finalize(d,t,null,null);},'T','traduttore english traduci a voce'),
+    c('🇪🇸','Interprete: spagnolo',()=>{const t=apriInterprete('spagnolo');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore español'),
+    c('🇫🇷','Interprete: francese',()=>{const t=apriInterprete('francese');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore français'),
+    c('🇩🇪','Interprete: tedesco',()=>{const t=apriInterprete('tedesco');const d=add('ai',t);finalize(d,t,null,null);},'','traduttore deutsch'),
     c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
   RUT.forEach(r=>L.push(c(r.tipo==='modalità'?'🎛️':'⚡','Avvia: '+r.nome,()=>rAvvia(r.id),r.quando||'routine','routine modalità')));
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
@@ -9691,7 +9797,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V14 · ZEP',key:'maik_boot_v14',checks:[
+  return MaikKit.boot({version:'V15 · ZEP',key:'maik_boot_v15',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -9701,6 +9807,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Calendario',run:async()=>{try{const r=await (await fetch('/calendario?giorni=1')).json();return{ok:true,text:r.totale?r.totale+' eventi · oggi '+r.agenda.n:'vuoto (importa un .ics con 📅)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Internet e notizie',run:async()=>{try{const r=await (await fetch('/notizie')).json();return r.ok?{ok:true,text:'collegato · '+(r.notizie||[]).length+' notizie ANSA'}:{ok:true,text:r.errore==='MAIK_WEB=0'?'spento (MAIK_WEB=0)':'offline: cerco quando torna la rete'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce neurale',run:async()=>{const I=await voceInfo();return !I?{ok:false,text:'errore'}:I.pronta?{ok:true,text:'Piper · '+I.voce}:{ok:true,text:I.motore?'Piper c\'è: scarica una voce da 🎨':'voce del browser (Piper non installato)'};}},
     {label:'Routine',run:async()=>{try{const r=await (await fetch('/routine')).json();const a=r.routine||[],o=a.filter(x=>x.orario).length;return{ok:true,text:a.length?a.length+' salvat'+(a.length===1?'a':'e')+(o?' · '+o+' a orario':''):'nessuna (⚡ per crearne)'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -9708,7 +9815,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 14 🧍 Ora **leggo internet**: «**cerca su internet chi ha vinto il Giro**» e ti rispondo citando le **fonti** 🌍 [1] [2] (cliccabili). «**notizie**», «**ultime notizie di sport**» 📰. **Ti faccio da segretario**: premi 📝 (tasto **N**) in riunione, io ascolto e prendo appunti col mio blocco note, poi ti do **riassunto, decisioni e cose da fare** (con «ricordamelo»). «**riassumi / traduci / correggi quello che ho copiato**» 📋. E resto il tuo Zep: gesti delle mani, specchio, sasso-carta-forbici, routine ⚡, voce neurale, il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 15 🧍 Ora **leggo tutto**: trascina un **PDF o un Word** 📄 (nei 📚 documenti o come allegato) e chiedimi cosa c\'è dentro. Mandami un **link**: «**riassumi questa pagina** https://…» oppure «**leggimi questo articolo** https://…» e te lo leggo a voce dal mio tablet 📖 (dimmi «pausa», «continua», «salta»). Il tuo **calendario** 📅: importa il file .ics di Google o Outlook, chiedimi «**cosa ho domani?**» o «**aggiungi al calendario** dentista giovedì alle 15» e ti avviso 15 minuti prima. «**Fammi da interprete in inglese**» 🗣️: tu parli italiano e io lo ripeto in inglese, e viceversa. E sempre: internet con le fonti 🌍, notizie 📰, riunioni 📝, routine ⚡ e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -9716,7 +9823,7 @@ async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).s
 async function loadHistory(){let r;try{r=await (await fetch('/sessioni/storia?id='+encodeURIComponent(CUR))).json();}catch(e){return 0;}
   const sc=r.scambi||[];
   sc.forEach(x=>{if(x.tu){const m=x.tu.match(/^([\s\S]*?)\s*\[📎 ([^\]]+)\]$/);add('me',m?m[1]:x.tu,null,{file:m?m[2]:null});}
-    const d=add('ai',x.ai,x.seguito?'seguito':null);finalize(d,x.ai,null,x.tu&&!/\[📎/.test(x.tu)?x.tu:null);addChips(d,x.azioni,x.fonti);addFontiWeb(d,x.fonti_web);if(x.notizie)addNotizie(d,x.notizie,true);});
+    const d=add('ai',x.ai,x.seguito?'seguito':null);finalize(d,x.ai,null,x.tu&&!/\[📎/.test(x.tu)?x.tu:null);addChips(d,x.azioni,x.fonti);addFontiWeb(d,x.fonti_web);addLeggiFonti(d,x.fonti_web);if(x.notizie)addNotizie(d,x.notizie,true);});
   $('#msgs').scrollTop=1e9;return sc.length;}
 async function switchChat(id,force){if(busy){toast('Aspetta che finisca di rispondere','err');return;}if(id===CUR&&!force)return;
   CUR=id;LS.set('maik_srv_chat',id);$('#msgs').innerHTML='';loadChats();
@@ -9755,7 +9862,9 @@ async function docSave(nome,contenuto){try{const r=await postJ('/documenti',{nom
   if(r.ok){toast('📚 '+r.documento.nome+': '+r.documento.n_pezzi+' pezz'+(r.documento.n_pezzi===1?'o':'i')+(r.documento.tagliato?' (tagliato)':''),'ok');return true;}
   toast(r.errore||'Documento non salvato','err');}catch(e){toast('Errore di rete','err');}return false;}
 async function docFiles(files){const L=[...(files||[])].slice(0,10);for(const f of L){
-  if(!(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type))){toast('«'+f.name+'»: solo file di testo','err');continue;}
+  if(/\.ics$/i.test(f.name||'')){await importaIcs(f);continue;}
+  if(DOC_EXT.test(f.name||'')){const x=await estraiFile(f);if(x)await docSave(f.name,x);continue;}                       // v15: PDF, Word, OpenOffice
+  if(!(MaikKit.TEXT_EXT.test(f.name||'')||/^text\//.test(f.type))){toast('«'+f.name+'»: posso leggere PDF, Word e file di testo','err');continue;}
   if(f.size>2000000){toast('«'+f.name+'» è troppo grande (max 2 MB)','err');continue;}
   await docSave(f.name,await f.text());}loadDocs();}
 async function docPaste(){const t=$('#dpt').value.trim();if(!t){toast('Incolla prima un testo','err');return;}
@@ -9830,7 +9939,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
   if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
-  const umore = AV && RIU.on ? (RIU.pausa ? 'riunione in pausa ⏸' : 'prende appunti 📝') : AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
+  const umore = AV && window.LETTURA && LETTURA.on ? (LETTURA.pausa ? 'lettura in pausa ⏸' : 'legge 📖') : AV && window.INTERPRETE && INTERPRETE.on ? (INTERPRETE.rec ? 'ascolta 🎤' : 'interprete 🗣️') : AV && RIU.on ? (RIU.pausa ? 'riunione in pausa ⏸' : 'prende appunti 📝') : AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
   const txt = umore || AV_STATE_TXT[s] || s;
   if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
 }
@@ -9897,11 +10006,12 @@ function pumpBrowser() {
   VOICE.cur = u; speechSynthesis.speak(u);
 }
 function speechDone() {
+  if (window.LETTURA && LETTURA.on && !LETTURA.pausa && letturaFineFrase()) return;     // v15: sto leggendo → la frase dopo
   speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; if (AV) AV.stopSpeaking(); captionOff();
   if (buonanotte) { buonanotte = false; setTimeout(() => { if (AV && !speaking) AV.react('goodnight'); }, 600); }
   if (handsFree() && !busy) setTimeout(() => { if (handsFree() && !speaking && !busy && !listening) startReco(); }, 350);
 }
-function stopSpeech() { const c = VOICE.cur; VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; if (c && c.src) { try { c.src.stop(); } catch (e) {} } clearInterval(NEURALE.timer); try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
+function stopSpeech() { if (window.LETTURA && LETTURA.on && !LETTURA.pausa && !LETTURA.interno) letturaInterrotta(); const c = VOICE.cur; VOICE.q = []; VOICE.cur = null; VOICE.spoken = 0; if (c && c.src) { try { c.src.stop(); } catch (e) {} } clearInterval(NEURALE.timer); try { speechSynthesis.cancel(); } catch (e) {} if (speaking) { speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; } if (AV) AV.stopSpeaking(); captionOff(); }
 let capT = 0;
 function caption(t, you) {
   clearTimeout(capT);
@@ -10051,7 +10161,7 @@ function updateStageBar() {
   const set = (id, on) => { const b = $(id); if (b) b.classList.toggle('on', !!on); };
   set('#sbtts', ttsOn); $('#sbtts').textContent = ttsOn ? '🔊' : '🔇';
   set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus')); set('#sbmusic', MUSIC.on);
-  set('#sbgest', gestiOn() && camOn); set('#sbmirror', SPECCHIO.on); set('#sbgame', GIOCO.on); set('#sbriu', RIU.on);
+  set('#sbgest', gestiOn() && camOn); set('#sbmirror', SPECCHIO.on); set('#sbgame', GIOCO.on); set('#sbriu', RIU.on); set('#sbint', window.INTERPRETE && INTERPRETE.on);
 }
 document.addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable;
@@ -10062,7 +10172,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -10597,7 +10707,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK // ' + n + ' V14'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK // ' + n + ' V15'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -10849,9 +10959,10 @@ let cercaT = 0;
 function lavoroInCorso(l) {
   if (!l) return;
   caption((l.icona || '🌍') + ' ' + (l.testo || 'Cerco…')); clearTimeout(cercaT);
-  if (AV) { AV.act('cerca', { dur: 40 }); cercaT = setTimeout(() => AV && AV.endAct('cerca'), 40000); }
+  const k = l.tipo === 'leggi_pagina' ? 'legge' : 'cerca';                       // v15: una pagina la leggo dal tablet
+  if (AV) { AV.act(k, { dur: 40 }); cercaT = setTimeout(() => AV && !(k === 'legge' && LETTURA.on) && AV.endAct(k), 40000); }
 }
-function lavoroFinito() { clearTimeout(cercaT); if (AV) AV.endAct('cerca'); }
+function lavoroFinito() { clearTimeout(cercaT); if (AV) { AV.endAct('cerca'); if (!LETTURA.on) AV.endAct('legge'); } }
 
 // ---------- 📰 notizie: la scheda con i titoli (clic = l'articolo, 🌍 = approfondisci) ----------
 function notizieHTML(n) {
@@ -11008,8 +11119,368 @@ async function leggiAppunti() {
   return String(t || '').replace(/\r\n/g, '\n').trim();
 }
 
+// ============================================================
+// V15 — MAIK LEGGE TUTTO: PDF e Word, pagine dai link (anche a voce, col tablet), il tuo calendario, l'interprete
+// ============================================================
+
+// ---------- 📄 PDF, WORD, OPENOFFICE: testo dal file (pdf.js nel browser, se no il lettore del server) ----------
+const DOC_EXT = /\.(pdf|docx|odt)$/i;
+let PDFJS = null;
+async function pdfjs() {
+  if (PDFJS) return PDFJS;
+  const m = await import('/lib/pdf.min.mjs');
+  m.GlobalWorkerOptions.workerSrc = '/lib/pdf.worker.min.mjs';
+  return (PDFJS = m);
+}
+async function testoPdfBrowser(f) {
+  const lib = await pdfjs();
+  const doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), isEvalSupported: false }).promise;
+  const pagine = [];
+  try {
+    for (let i = 1; i <= Math.min(doc.numPages, 300); i++) {
+      const c = await (await doc.getPage(i)).getTextContent(), righe = [];
+      let riga = '';
+      for (const it of c.items) { riga += it.str || ''; if (it.hasEOL) { righe.push(riga); riga = ''; } }
+      if (riga) righe.push(riga);
+      pagine.push(righe.map(r => r.replace(/[ \t]+/g, ' ').trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim());
+    }
+  } finally { try { doc.destroy(); } catch (e) {} }
+  return pagine.filter(Boolean).join('\n\n').trim();
+}
+async function estraiFile(f) {
+  if (f.size > 25e6) { toast('«' + f.name + '» è troppo grande (massimo 25 MB)', 'err'); return null; }
+  toast('📄 Leggo «' + f.name + '»…');
+  let testo = '', err = '';
+  if (/\.pdf$/i.test(f.name)) { try { testo = await testoPdfBrowser(f); } catch (e) { err = ''; } }
+  if (testo.replace(/\s+/g, '').length < 20) {                 // Word/OpenOffice, pdf.js non c'è (offline) o PDF senza testo: ci pensa il server
+    try {
+      const r = await (await fetch('/documenti/estrai', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nome': encodeURIComponent(f.name) }, body: f })).json();
+      if (r.ok) testo = r.testo; else { testo = ''; err = r.errore || 'non riesco a leggerlo'; }
+    } catch (e) { err = 'server non raggiungibile'; }
+  }
+  if (!testo) { toast('📄 «' + f.name + '»: ' + (err || 'non riesco a leggerlo'), 'err'); return null; }
+  return testo;
+}
+
+// ---------- 📖 LETTURA AD ALTA VOCE: Zep legge dal tablet, frase per frase (pausa, avanti, indietro) ----------
+var LETTURA = { on: false, pausa: false, frasi: [], i: 0, inCorso: -1, pagina: null, timer: 0, interno: false };
+function letturaFrasi(testo) {
+  const out = []; let par = 0;
+  String(testo || '').split(/\n+/).forEach(p => {
+    const s = sentences(cleanSpeech(p)); if (!s.length) return;
+    s.forEach(t => { if (t.length <= 260) out.push({ t, par }); else (t.match(/[^,;:]{1,240}(?:[,;:]\s*|$)/g) || []).forEach(x => x.trim() && out.push({ t: x.trim(), par })); });   // frasi lunghissime: a pezzi
+    par++;
+  });
+  return out;
+}
+function leggiPagina(p) {
+  if (RIU.on) { toast('📝 Sto prendendo appunti della riunione: te la leggo dopo', 'err'); return false; }
+  const frasi = letturaFrasi(p && p.testo);
+  if (!frasi.length) { toast('📖 Non c\'è testo da leggere', 'err'); return false; }
+  if (!voceDisponibile()) { toast('🔇 Su questo browser non ho una voce per leggere', 'err'); return false; }
+  if (INTERPRETE.on) chiudiInterprete();
+  if (GIOCO.on) toggleGioco(false);
+  if (LETTURA.on) fineLettura(false);
+  Object.assign(LETTURA, { on: true, pausa: false, frasi, i: 0, inCorso: -1, pagina: p });
+  document.body.classList.add('lettura');
+  $('#lettitolo').textContent = p.titolo || 'Senza titolo'; $('#letsito').textContent = sitoBreve(p.sito || '');
+  if (AV) AV.act('legge', { dur: 900 });
+  clearInterval(LETTURA.timer);
+  LETTURA.timer = setInterval(() => { if (AV && LETTURA.on && !LETTURA.pausa && !AV.acting('legge')) AV.act('legge', { dur: 900 }); }, 1500);
+  letturaRender(); updateStageBar();
+  if (!(speaking || VOICE.cur || VOICE.q.length)) letturaAvanti();      // se sto ancora dicendo «Ti leggo…», parto appena finisco
+  return true;
+}
+function letturaAvanti() {
+  if (!LETTURA.on || LETTURA.pausa || LETTURA.inCorso >= 0) return;
+  if (LETTURA.i >= LETTURA.frasi.length) { fineLettura(true); return; }
+  LETTURA.inCorso = LETTURA.i;
+  VOICE.q.push(LETTURA.frasi[LETTURA.i].t); pump();
+  const nx = LETTURA.frasi[LETTURA.i + 1]; if (nx && usaNeurale()) sintesi(nx.t).catch(() => {});    // la prossima frase è già pronta
+  letturaRender();
+}
+// chiamata da speechDone: finita una frase → la prossima (con una pausa più lunga tra i paragrafi)
+function letturaFineFrase() {
+  if (VOICE.q.length || VOICE.cur) return false;
+  const prima = LETTURA.inCorso;
+  if (prima >= 0) { LETTURA.i = prima + 1; LETTURA.inCorso = -1; }
+  const a = LETTURA.frasi[prima], b = LETTURA.frasi[LETTURA.i];
+  setTimeout(letturaAvanti, a && b && a.par !== b.par ? 450 : 90);
+  return true;
+}
+// qualcuno ha zittito Zep (una risposta nuova, un avviso, «stop»…): metto in pausa e riprendo dalla stessa frase
+function letturaInterrotta() {
+  if (LETTURA.inCorso >= 0) LETTURA.i = LETTURA.inCorso;
+  LETTURA.inCorso = -1; LETTURA.pausa = true;
+  if (AV) AV.endAct('legge');
+  letturaRender(); updateStageBar();
+}
+function zittisci() { LETTURA.interno = true; try { stopSpeech(); } finally { LETTURA.interno = false; } }
+function pausaLettura(forza) {
+  if (!LETTURA.on) { toast('📖 Non sto leggendo niente: «leggimi questo articolo https://…»'); return; }
+  const p = forza != null ? !!forza : !LETTURA.pausa;
+  if (p === LETTURA.pausa) return;
+  if (p) { if (LETTURA.inCorso >= 0) LETTURA.i = LETTURA.inCorso; LETTURA.inCorso = -1; LETTURA.pausa = true; zittisci(); if (AV) AV.endAct('legge'); }
+  else { LETTURA.pausa = false; if (AV) AV.act('legge', { dur: 900 }); letturaAvanti(); }
+  letturaRender(); updateStageBar();
+}
+function letturaSalta(dir) {
+  if (!LETTURA.on) return;
+  const F = LETTURA.frasi, cur = Math.min(LETTURA.inCorso >= 0 ? LETTURA.inCorso : LETTURA.i, F.length - 1), par = F[cur].par;
+  let j;
+  if (dir > 0) { j = F.findIndex(f => f.par > par); if (j < 0) j = F.length; }
+  else { const ini = F.findIndex(f => f.par === par), meta = dir < 0 && cur === ini && ini > 0 ? F[ini - 1].par : par; j = F.findIndex(f => f.par === meta); }   // indietro: inizio del paragrafo (o quello prima, se sono già all'inizio) · 0: ripeti il paragrafo
+  zittisci(); LETTURA.inCorso = -1; LETTURA.i = j;
+  if (!LETTURA.pausa) letturaAvanti(); else letturaRender();
+}
+function fineLettura(finita) {
+  if (!LETTURA.on) return;
+  LETTURA.on = false; LETTURA.pausa = false; LETTURA.inCorso = -1; clearInterval(LETTURA.timer);
+  if (!finita) zittisci();
+  document.body.classList.remove('lettura');
+  if (AV) { AV.endAct('legge'); if (finita) AV.gesture('nod'); }
+  if (finita) { toast('📖 Finito: «' + ((LETTURA.pagina && LETTURA.pagina.titolo) || '') + '»', 'ok'); speechDone(); }
+  updateStageBar();
+}
+function fermaLettura() { fineLettura(false); }
+function letturaRender() {
+  if (!LETTURA.on || !LETTURA.frasi.length) return;
+  const F = LETTURA.frasi, n = F.length, cur = Math.min(LETTURA.inCorso >= 0 ? LETTURA.inCorso : LETTURA.i, n - 1);
+  const resto = F.slice(cur).reduce((a, f) => a + (f.t.match(/\S+/g) || []).length, 0), min = Math.max(1, Math.round(resto / 160 / (+OPT.velocita || 1)));
+  $('#letprog').style.width = (100 * cur / n).toFixed(1) + '%';
+  $('#letinfo').textContent = (cur + 1) + '/' + n + ' · ancora ~' + min + ' min';
+  $('#letfrase').textContent = F[cur].t;
+  $('#letpausa').textContent = LETTURA.pausa ? '▶ Riprendi' : '⏸ Pausa';
+  $('#lettura').classList.toggle('pausa', LETTURA.pausa);
+}
+// a voce o scritto mentre leggo: «pausa», «continua», «salta», «indietro», «basta»
+const RE_LET_PAUSA = /^(?:(?:maik|zep)[,!]?\s+)?(?:pausa|aspetta|fermati|ferma(?:ti)?\s+un\s+attimo|un\s+attimo)[!. ]*$/i;
+const RE_LET_VAI = /^(?:(?:maik|zep)[,!]?\s+)?(?:continua|riprendi|prosegui|vai\s+avanti|vai)(?:\s+a\s+leggere)?[!. ]*$/i;
+const RE_LET_STOP = /^(?:(?:maik|zep)[,!]?\s+)?(?:basta(?:\s+leggere|\s+cos[iì])?|stop|smetti\s+di\s+leggere|chiudi\s+la\s+lettura|non\s+leggere\s+pi[uù])[!. ]*$/i;
+const RE_LET_SALTA = /^(?:(?:maik|zep)[,!]?\s+)?(?:salta|avanti|paragrafo\s+successivo|prossimo\s+paragrafo)[!. ]*$/i;
+const RE_LET_INDIETRO = /^(?:(?:maik|zep)[,!]?\s+)?(?:indietro|torna\s+indietro|paragrafo\s+precedente)[!. ]*$/i;
+const RE_LET_RIPETI = /^(?:(?:maik|zep)[,!]?\s+)?(?:ripeti|rileggi)(?:\s+(?:quest[oa]|il\s+paragrafo))?[!. ]*$/i;
+function comandoLettura(t) {
+  if (!LETTURA.on) return false;
+  if (RE_LET_PAUSA.test(t)) pausaLettura(true);
+  else if (RE_LET_VAI.test(t)) pausaLettura(false);
+  else if (RE_LET_STOP.test(t)) fermaLettura();
+  else if (RE_LET_SALTA.test(t)) letturaSalta(1);
+  else if (RE_LET_INDIETRO.test(t)) letturaSalta(-1);
+  else if (RE_LET_RIPETI.test(t)) letturaSalta(0);
+  else return false;
+  return true;
+}
+// 📖 su una fonte web: apro la pagina e la leggo
+async function leggiUrl(url, btn) {
+  if (btn) btn.disabled = true;
+  lavoroInCorso({ tipo: 'leggi_pagina', icona: '📖', testo: 'Apro la pagina…' });
+  let r; try { r = await postJ('/pagina', { url }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  lavoroFinito(); if (btn) btn.disabled = false;
+  if (!r.ok) { toast('📖 ' + (r.errore || 'pagina non leggibile'), 'err'); return null; }
+  const t = '📖 Ti leggo «' + r.titolo + '» (' + sitoBreve(r.sito) + ', ' + r.parole.toLocaleString('it-IT') + ' parole).';
+  const d = add('ai', t); finalize(d, t, null, null);
+  leggiPagina(r);
+  return r;
+}
+function addLeggiFonti(d, fw) {
+  if (!fw || !fw.length) return;
+  const g = agEl(d);
+  fw.slice(0, 4).forEach(f => {
+    const a = [...g.querySelectorAll('a.agc.web')].find(x => x.getAttribute('href') === f.url);
+    const b = '<button type="button" class="agc leggi" data-pagina="' + escA(f.url) + '" title="Leggimela a voce: «' + escA(f.titolo || f.sito || '') + '»" aria-label="Leggimi la fonte ' + f.n + '">📖</button>';
+    if (a) a.insertAdjacentHTML('afterend', b); else g.insertAdjacentHTML('beforeend', b);
+  });
+}
+
+// ---------- 📅 CALENDARIO: settimana, importa .ics, aggiungi/elimina, avvisi prima degli impegni ----------
+const isoG = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+function lunedi(d) { const x = new Date(d); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; }
+const CALV = { da: null };
+async function openCal() {
+  $('#calmodal').classList.add('open');
+  CALV.da = CALV.da || lunedi(new Date());
+  if (!$('#cald').value) $('#cald').value = isoG(new Date());
+  await loadCal();
+}
+function closeCal() { $('#calmodal').classList.remove('open'); }
+function calSposta(n) { CALV.da = new Date(CALV.da); CALV.da.setDate(CALV.da.getDate() + n); loadCal(); }
+function calOggi() { CALV.da = lunedi(new Date()); loadCal(); }
+async function loadCal() {
+  if (!CALV.da) CALV.da = lunedi(new Date());
+  let r; try { r = await (await fetch('/calendario?da=' + isoG(CALV.da) + '&giorni=7')).json(); } catch (e) { $('#calweek').innerHTML = '<div class="note">Server non raggiungibile</div>'; return null; }
+  const ric = {}; (r.eventi || []).forEach(e => { if (e.ricorrente) ric[e.id] = 1; });
+  const oggi = isoG(new Date()), fine = new Date(CALV.da); fine.setDate(fine.getDate() + 6);
+  $('#calrange').textContent = CALV.da.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' }) + ' – ' + fine.toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+  $('#calweek').innerHTML = r.agenda.giorni.map(g => {
+    const d = new Date(g.data + 'T12:00');
+    return '<div class="calday' + (g.data === oggi ? ' oggi' : '') + '" data-giorno="' + g.data + '" title="Clicca per aggiungere un impegno in questo giorno"><h6>' + esc(d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric' }).toUpperCase()) + '</h6>'
+      + g.eventi.map(e => '<div class="calev' + (e.ora === 'tutto il giorno' ? ' tg' : '') + '" title="' + escA(e.titolo + (e.luogo ? ' — ' + e.luogo : '')) + '"><b>' + esc(e.ora) + (ric[e.id] ? ' 🔁' : '') + '</b>' + esc(e.titolo)
+        + (e.luogo ? '<small>📍 ' + esc(e.luogo) + '</small>' : '') + '<button type="button" data-evdel="' + escA(e.id) + '" data-ric="' + (ric[e.id] ? 1 : 0) + '" title="Elimina" aria-label="Elimina «' + escA(e.titolo) + '»">✕</button></div>').join('') + '</div>';
+  }).join('');
+  $('#calcount').textContent = r.totale ? r.totale + ' event' + (r.totale === 1 ? 'o' : 'i') + ' in calendario · ti avviso prima di ogni impegno' : 'Calendario vuoto: importa un file .ics o aggiungi un impegno qui sotto';
+  return r;
+}
+async function calSalva() {
+  const titolo = $('#calt').value.trim(), data = $('#cald').value, tg = $('#caltg').checked;
+  if (!titolo) { toast('📅 Scrivi cosa devi fare', 'err'); $('#calt').focus(); return null; }
+  if (!data) { toast('📅 Scegli il giorno', 'err'); return null; }
+  let r; try { r = await postJ('/calendario/evento', { titolo, inizio: data + 'T' + (tg ? '00:00' : ($('#calh').value || '09:00')), durata: +$('#caldur').value || 60, luogo: $('#call').value.trim(), tutto_giorno: tg }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) { toast('📅 ' + (r.errore || 'Impegno non salvato'), 'err'); return r; }
+  toast('📅 Aggiunto: ' + r.evento.titolo, 'ok'); $('#calt').value = ''; $('#call').value = '';
+  CALV.da = lunedi(new Date(data + 'T12:00')); await loadCal();
+  return r;
+}
+async function calElimina(id, ricorrente) {
+  if (!confirm(ricorrente ? 'È un impegno che si ripete: eliminare tutta la serie?' : 'Eliminare questo impegno?')) return;
+  try { await postJ('/calendario/elimina', { id }); } catch (e) {}
+  loadCal();
+}
+async function importaIcs(f) {
+  if (!f) return null;
+  let r; try { r = await (await fetch('/calendario/importa', { method: 'POST', headers: { 'Content-Type': 'text/calendar', 'X-Nome': encodeURIComponent(f.name || 'calendario.ics') }, body: f })).json(); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (r.ok) toast('📅 ' + (r.importati ? 'Importati ' + r.importati + ' event' + (r.importati === 1 ? 'o' : 'i') : '') + (r.importati && r.aggiornati ? ', ' : '') + (r.aggiornati ? r.aggiornati + ' aggiornat' + (r.aggiornati === 1 ? 'o' : 'i') : '') + ' · totale ' + r.totale, 'ok');
+  else toast('📅 ' + (r.errore || 'Calendario non importato'), 'err');
+  if ($('#calmodal').classList.contains('open')) loadCal();
+  return r;
+}
+function addAgenda(d, obj) {
+  if (!obj.agenda && !obj.evento) return;
+  agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-cal="apri">📅 Apri il calendario</button>'
+    + (obj.evento ? '<button type="button" class="agc calb" data-cal="annulla" data-id="' + escA(obj.evento.id) + '">↩ Annulla</button>' : ''));
+  if ($('#calmodal').classList.contains('open')) loadCal();
+}
+async function checkCalAvvisi() {
+  let r; try { r = await (await fetch('/calendario/avvisi')).json(); } catch (e) { return; }
+  (r.avvisi || []).forEach(a => {
+    const piano = a.testo.replace(/\*\*/g, '');
+    const d = add('ai', a.testo, 'seguito calav'); finalize(d, a.testo, null, null);
+    toast(piano, 'ok'); notify('📅 MAIK', piano.replace(/^📅\s*/, '')); beep(2);
+    if (core) core.pulse(1.5); if (AV) { AV.gesture('wave'); AV.emote('happy', 2000); }
+    say(piano);
+  });
+}
+
+// ---------- 🗣️ INTERPRETE: parli italiano e Zep lo ripete nell'altra lingua (e viceversa) ----------
+const LINGUE_INT = { inglese: ['en-US', '🇬🇧', 'English'], spagnolo: ['es-ES', '🇪🇸', 'Español'], francese: ['fr-FR', '🇫🇷', 'Français'], tedesco: ['de-DE', '🇩🇪', 'Deutsch'],
+  portoghese: ['pt-PT', '🇵🇹', 'Português'], rumeno: ['ro-RO', '🇷🇴', 'Română'], albanese: ['sq-AL', '🇦🇱', 'Shqip'], polacco: ['pl-PL', '🇵🇱', 'Polski'],
+  ucraino: ['uk-UA', '🇺🇦', 'Українська'], russo: ['ru-RU', '🇷🇺', 'Русский'], arabo: ['ar-SA', '🇸🇦', 'العربية'], cinese: ['zh-CN', '🇨🇳', '中文'], giapponese: ['ja-JP', '🇯🇵', '日本語'] };
+var INTERPRETE = { on: false, lingua: 'inglese', rec: null, chi: null, interim: '', log: [] };
+const RE_INT_APRI = /^(?:(?:ehi|ok)\s+)?(?:(?:maik|zep)[,!]?\s+)?(?:(?:fammi|fai|mi\s+fai)\s+(?:da\s+|l['’]\s*)interprete|(?:modalit[aà]\s+)?interprete|traduttore(?:\s+simultaneo)?|(?:apri|attiva|avvia)\s+(?:l['’]\s*interprete|il\s+traduttore|la\s+modalit[aà]\s+interprete)|traduci\s+(?:mentre|quello\s+che)\s+parl\w+)(?:\s+(?:in|per|con|dall['’]|dal|col|con\s+l['’]|con\s+un[ao]?)?\s*([\p{L}]+))?[!. ]*$/iu;
+const RE_INT_CHIUDI = /^(?:(?:maik|zep)[,!]?\s+)?(?:basta|chiudi|stop|fine|esci\s+da(?:ll['’])?)\s+(?:l['’]\s*)?(?:interprete|traduttore|traduzioni|modalit[aà]\s+interprete)[!. ]*$/i;
+function linguaDa(p) {
+  const x = String(p || '').toLowerCase();
+  const T = [[/^(?:ingl|english|eng)/, 'inglese'], [/^(?:spagn|espa|castig)/, 'spagnolo'], [/^(?:franc|fran[cç]ais)/, 'francese'], [/^(?:tedesc|deutsch|german)/, 'tedesco'], [/^portog/, 'portoghese'],
+    [/^(?:rumen|romen)/, 'rumeno'], [/^albanes/, 'albanese'], [/^polac/, 'polacco'], [/^ucrain/, 'ucraino'], [/^russ/, 'russo'], [/^arab/, 'arabo'], [/^cines/, 'cinese'], [/^giappon/, 'giapponese']];
+  const m = T.find(([r]) => r.test(x)); return m ? m[1] : null;
+}
+function apriInterprete(lingua) {
+  if (RIU.on) { toast('📝 Prima finisci la riunione', 'err'); return '📝 Prima finisci la riunione (poi ti faccio da interprete).'; }
+  if (LETTURA.on) fineLettura(false);
+  if (GIOCO.on) toggleGioco(false);
+  if (conv) toggleConv();
+  if (listening) { try { reco.stop(); } catch (e) {} }
+  if (lingua && LINGUE_INT[lingua]) INTERPRETE.lingua = lingua;
+  INTERPRETE.on = true; document.body.classList.add('interprete');
+  $('#intlingua').value = INTERPRETE.lingua; interpreteRender(); updateStageBar();
+  if (AV) AV.gesture('wave');
+  const [, flag, nome] = LINGUE_INT[INTERPRETE.lingua];
+  return '🗣️ Ti faccio da interprete: **italiano ⇄ ' + INTERPRETE.lingua + '** ' + flag + '. Premi **🎤 Parlo io** e parla in italiano: lo ripeto in ' + INTERPRETE.lingua
+    + '. Quando risponde l\'altra persona premi **🎤 ' + flag + ' ' + nome + '**: te lo dico in italiano. Con «a turno» ascolto da solo una volta per uno.';
+}
+function chiudiInterprete() {
+  if (!INTERPRETE.on) return;
+  const r = INTERPRETE.rec; INTERPRETE.rec = null; if (r) try { r.stop(); } catch (e) {}
+  INTERPRETE.on = false; document.body.classList.remove('interprete'); updateStageBar();
+  const L = INTERPRETE.log.filter(v => v.trad);
+  if (L.length) {      // la conversazione tradotta resta in chat
+    const t = '🗣️ **Conversazione tradotta** (italiano ⇄ ' + INTERPRETE.lingua + ', ' + L.length + ' frasi)\n\n' + L.map(v => '- ' + (v.chi === 'io' ? '🇮🇹 ' : v.flag + ' ') + v.orig + ' → ' + (v.chi === 'io' ? v.flag + ' ' : '🇮🇹 ') + v.trad).join('\n');
+    const d = add('ai', t); finalize(d, t, null, null);
+  }
+  INTERPRETE.log = [];
+}
+function toggleInterprete() { if (INTERPRETE.on) chiudiInterprete(); else { const t = apriInterprete(); const d = add('ai', t); finalize(d, t, null, null); } }
+function interpreteLingua(l) { if (LINGUE_INT[l]) { INTERPRETE.lingua = l; interpreteRender(); } }
+function interpreteRender() {
+  const L = INTERPRETE.lingua, [, flag, nome] = LINGUE_INT[L], N = INTERPRETE.log.length, da = Math.max(0, N - 6);
+  $('#intaltro').innerHTML = '🎤 ' + flag + ' ' + esc(nome);
+  $('#intlog').innerHTML = (N || INTERPRETE.rec ? '' : '<div class="note">Premi 🎤 e parla: traduco e lo ripeto a voce nell\'altra lingua.</div>')
+    + INTERPRETE.log.slice(da).map((v, k) => '<div class="intv ' + v.chi + '"><div class="into">' + (v.chi === 'io' ? '🇮🇹 ' : v.flag + ' ') + esc(v.orig) + '</div><div class="intt">'
+      + (v.err ? '⚠️ ' + esc(v.err) : v.trad == null ? '… <span class="cursor"></span>' : (v.chi === 'io' ? v.flag : '🇮🇹') + ' <b>' + esc(v.trad) + '</b> <button type="button" data-ripeti="' + (da + k) + '" title="Ripeti a voce" aria-label="Ripeti">🔊</button>') + '</div></div>').join('')
+    + (INTERPRETE.rec ? '<div class="intv ascolto">🎤 ' + (INTERPRETE.chi === 'io' ? 'Ti ascolto (italiano)…' : 'Ascolto (' + esc(nome) + ')…') + ' <i>' + esc(INTERPRETE.interim || '') + '</i></div>' : '');
+  $('#intlog').scrollTop = 1e9;
+  $('#intio').classList.toggle('on', !!INTERPRETE.rec && INTERPRETE.chi === 'io');
+  $('#intaltro').classList.toggle('on', !!INTERPRETE.rec && INTERPRETE.chi === 'altro');
+}
+function interpreteAscolta(chi) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast('🎤 Il riconoscimento vocale serve Chrome o Edge: scrivi la frase qui sotto', 'err'); return false; }
+  if (INTERPRETE.rec) { const r0 = INTERPRETE.rec; INTERPRETE.rec = null; try { r0.stop(); } catch (e) {} if (INTERPRETE.chi === chi) { interpreteRender(); return false; } }   // premuto di nuovo: smetto
+  stopSpeech();
+  const r = new SR(); let finale = '';
+  r.lang = chi === 'io' ? 'it-IT' : LINGUE_INT[INTERPRETE.lingua][0]; r.continuous = false; r.interimResults = true;
+  INTERPRETE.chi = chi; INTERPRETE.interim = '';
+  r.onresult = e => {
+    let it = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) { const x = e.results[i][0].transcript; if (e.results[i].isFinal) finale += x + ' '; else it += x; }
+    INTERPRETE.interim = it; interpreteRender();
+    if (finale.trim() && !it) try { r.stop(); } catch (e) {}          // frase finita: traduco
+  };
+  r.onerror = e => { if (/not-allowed|service-not-allowed/.test(e.error)) toast('🎤 Mi serve il microfono (oppure scrivi qui sotto)', 'err'); };
+  r.onend = () => { if (INTERPRETE.rec !== r) return; INTERPRETE.rec = null; INTERPRETE.interim = ''; interpreteRender(); const t = finale.trim(); if (t) interpreteTraduci(t, chi); };
+  try { r.start(); } catch (e) { return false; }
+  INTERPRETE.rec = r; interpreteRender();
+  caption(chi === 'io' ? '🎤 Parla pure in italiano…' : '🎤 ' + LINGUE_INT[INTERPRETE.lingua][2] + '…', true);
+  return true;
+}
+function interpreteScritto() { const i = $('#inttesto'), t = i.value.trim(); if (!t) return; i.value = ''; interpreteTraduci(t, 'io'); }
+async function interpreteTraduci(testo, chi) {
+  const L = INTERPRETE.lingua, [cod, flag] = LINGUE_INT[L], da = chi === 'io' ? 'italiano' : L, a = chi === 'io' ? L : 'italiano';
+  const v = { chi, orig: testo, trad: null, err: null, flag, cod: chi === 'io' ? cod : 'it-IT' };
+  INTERPRETE.log.push(v); if (INTERPRETE.log.length > 60) INTERPRETE.log.shift();
+  interpreteRender(); captionOff(0);
+  let r; try { r = await postJ('/traduci', { testo, da, a }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!INTERPRETE.on) return r;
+  if (!r.ok) { v.err = r.errore || 'traduzione non riuscita'; interpreteRender(); toast('🗣️ ' + v.err, 'err'); return r; }
+  v.trad = r.traduzione; interpreteRender();
+  await parlaLingua(v.trad, v.cod);
+  if (INTERPRETE.on && $('#intauto').checked && !INTERPRETE.rec) interpreteAscolta(chi === 'io' ? 'altro' : 'io');     // a turno: ora tocca all'altro
+  return r;
+}
+// dice una frase in un'altra lingua con una voce del browser di quella lingua (l'italiano con la voce di Zep)
+function parlaLingua(testo, cod) {
+  return new Promise(res => {
+    if (cod === 'it-IT' && usaNeurale()) {
+      const w = ttsOn; ttsOn = true; say(testo); ttsOn = w;
+      const t0 = Date.now(), giro = () => (VOICE.cur || VOICE.q.length || speaking) && Date.now() - t0 < 60000 ? setTimeout(giro, 200) : res(true); setTimeout(giro, 300); return;
+    }
+    if (!window.speechSynthesis) { res(false); return; }
+    const vs = speechSynthesis.getVoices(), base = cod.slice(0, 2).toLowerCase(), lang = x => String(x.lang || '').replace('_', '-').toLowerCase();
+    const v = cod === 'it-IT' ? (sceltaVoce() || itVoice()) : vs.find(x => lang(x) === cod.toLowerCase() && /natural|neural|online/i.test(x.name)) || vs.find(x => lang(x) === cod.toLowerCase()) || vs.find(x => lang(x).startsWith(base));
+    if (!v) { toast('🔇 Sul PC non c\'è una voce in ' + (Object.keys(LINGUE_INT).find(k => LINGUE_INT[k][0] === cod) || cod) + ': mostra la traduzione scritta', 'err'); res(false); return; }
+    stopSpeech();
+    const u = new SpeechSynthesisUtterance(testo); u.lang = cod; u.voice = v; u.rate = +OPT.velocita || 1;
+    let fatto = false, g = 0;
+    const fine = () => { if (fatto) return; fatto = true; clearTimeout(g); speaking = false; if (SPH.state === 'speaking') SPH.state = 'idle'; if (AV) AV.stopSpeaking(); captionOff(); res(true); };
+    u.onstart = () => { speaking = true; SPH.state = 'speaking'; caption(testo); if (AV) { AV.setState('speaking'); AV.speakLine(testo, { rate: u.rate }); } };
+    u.onboundary = e => { if (core) core.pulse(1); if (AV && e.charIndex != null) AV.sync(e.charIndex); };
+    u.onend = u.onerror = fine;
+    g = setTimeout(fine, 5000 + testo.length * 130);
+    speechSynthesis.speak(u);
+  });
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();}});
+$('#calmodal').addEventListener('click',e=>{if(e.target.id==='calmodal')closeCal();});
+$('#calweek').addEventListener('click',e=>{const b=e.target.closest('button[data-evdel]');if(b){e.stopPropagation();calElimina(b.dataset.evdel,b.dataset.ric==='1');return;}
+  const g=e.target.closest('.calday');if(g&&!e.target.closest('.calev')){$('#cald').value=g.dataset.giorno;$('.calnew').open=true;$('#calt').focus();}});
+$('#msgs').addEventListener('click',e=>{const b=e.target.closest('button[data-pagina],button[data-cal]');if(!b)return;     // v15: 📖 leggimi una fonte · 📅 calendario dalla chat
+  if(b.dataset.pagina)leggiUrl(b.dataset.pagina,b);
+  else if(b.dataset.cal==='apri')openCal();
+  else if(b.dataset.cal==='annulla'){b.disabled=true;postJ('/calendario/elimina',{id:b.dataset.id}).then(r=>{if(r.ok){b.textContent='✓ annullato';toast('📅 Impegno tolto dal calendario','ok');if($('#calmodal').classList.contains('open'))loadCal();}else{b.disabled=false;toast('Non trovato','err');}},()=>{b.disabled=false;});}});
+$('#intlog').addEventListener('click',e=>{const b=e.target.closest('button[data-ripeti]');if(!b)return;const v=INTERPRETE.log[+b.dataset.ripeti];if(v&&v.trad)parlaLingua(v.trad,v.cod);});
+$('#intlingua').innerHTML=Object.keys(LINGUE_INT).map(k=>'<option value="'+k+'">'+LINGUE_INT[k][1]+' '+k+'</option>').join('');
 $('#rmodal').addEventListener('click',e=>{if(e.target.id==='rmodal')closeRoutine();});
 $('#rlist').addEventListener('click',e=>{const b=e.target.closest('button[data-r]');if(!b)return;const id=b.closest('.rcard').dataset.id;if(b.dataset.r==='run')rAvvia(id);else if(b.dataset.r==='edit')rModifica(id);else rElimina(id);});
 $('#rps').addEventListener('click',e=>{const b=e.target.closest('button[data-m]');if(b)giocoTesto(b.dataset.m);});
@@ -11063,7 +11534,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);})();
 </script>
 </body></html>"""
 

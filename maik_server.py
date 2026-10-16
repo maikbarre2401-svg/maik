@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v14.0                     ║
+║                  MAIK — Server v15.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v15.0 — MAIK LEGGE TUTTO E FA L'INTERPRETE:
+  • 📄 PDF, Word (.docx) e OpenOffice (.odt) nei documenti e come allegati (PDF anche con pdf.js nel browser).
+  • 🔗 Un link nel messaggio: «riassumi questa pagina https://…», «cosa dice questo articolo?»; «leggimi
+    questo articolo …» → Zep lo legge a voce col tablet in mano (pausa, riprendi, salta). Anche PDF online.
+  • 📅 Calendario: importi il tuo .ics (Google, Outlook, Apple), anche eventi ricorrenti; «cosa ho domani?»,
+    «impegni di questa settimana», «aggiungi al calendario dentista giovedì alle 15»; avviso 15 minuti prima;
+    gli impegni di oggi nel briefing.
+  • 🗣️ Interprete (GUI): parli in italiano e Zep lo dice in inglese/spagnolo/francese/tedesco… e viceversa.
+  • Nuovi endpoint: POST /documenti/file · POST /documenti/estrai · GET /calendario · GET /calendario/avvisi ·
+    POST /calendario/importa · POST /calendario/evento · POST /calendario/elimina · POST /traduci · POST /pagina
+  • Variabili: MAIK_CAL_AVVISO (minuti prima, 15)
 
 NOVITÀ v14.0 — MAIK LEGGE INTERNET, LE NOTIZIE E TI FA DA SEGRETARIO:
   • 🌍 «cerca su internet chi ha vinto…»: cerca (DuckDuckGo → Bing → Wikipedia, senza chiavi), legge le pagine
@@ -163,6 +175,11 @@ import email.utils
 import concurrent.futures
 import html as _html
 import xml.etree.ElementTree as ET
+import zipfile
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:                 # Python vecchio: gli orari col fuso del file restano come sono
+    ZoneInfo = None
 from html.parser import HTMLParser
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -238,6 +255,8 @@ che avete vissuto insieme, citalo con calore.""",
     "web_wiki_url": _env("MAIK_WEB_WIKI_URL", "https://it.wikipedia.org/w/api.php"),
     "web_car_fonte": int(_env("MAIK_WEB_CAR_FONTE", "2500")),   # quanto testo per fonte arriva al modello
     "notizie_url": _env("MAIK_NOTIZIE_URL", ""),                 # prove: un indirizzo con {cat} al posto dell'argomento
+    # v15: calendario (avviso N minuti prima degli eventi)
+    "cal_avviso": int(_env("MAIK_CAL_AVVISO", "15")),
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -247,7 +266,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "14.0"
+VERSIONE  = "15.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1918,6 +1937,8 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 - 🌤️ «che tempo fa a Milano?»
 - 🌍 «cerca su internet chi ha vinto il Giro d'Italia» — leggo le pagine e ti do le fonti
 - 📰 «notizie» · «ultime notizie di sport» · «notizie di tecnologia»
+- 🔗 «riassumi questa pagina https://…» · «leggimi questo articolo https://…»
+- 📅 «cosa ho domani?» · «impegni di questa settimana» · «aggiungi al calendario dentista giovedì alle 15»
 - ☀️ «briefing» — il riepilogo della tua giornata
 - 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
 - 📝 «prendi nota: …»
@@ -1934,6 +1955,7 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
    «mi fai il conto di 23 per 17?», «che tempo fa a Napoli?» — uso i miei strumenti da solo.
 📚 Carica i tuoi documenti (barra laterale) e chiedimi cosa c'è dentro: ti cito la fonte.
 📝 Sul PC: 📝 modalità riunione (prendo appunti, poi riassunto e cose da fare) · «riassumi quello che ho copiato»
+📄 Documenti anche PDF e Word · 📅 importa il tuo calendario (.ics) · 🗣️ interprete: «fammi da interprete in inglese»
 💬 Più chat separate, una sola memoria · 🔁 se mi dici «domani ho l'esame», dopo ti chiedo com'è andata.
 Per tutto il resto, chiacchieriamo! 💚"""
 
@@ -2201,6 +2223,9 @@ class Azioni:
                 nz = NOTIZIE.prendi("principali", 3, timeout=3)
                 if nz["ok"]:
                     righe.append("📰 Le notizie: " + " · ".join(n["titolo"] for n in nz["notizie"]) + " (dimmi «notizie» per le altre)")
+        ag = CAL.agenda(ora, 1)                                     # v15: il calendario di oggi
+        if ag["n"]:
+            righe.append("📅 In calendario oggi: " + " · ".join(f"{e['ora']} {e['titolo']}" for e in ag["giorni"][0]["eventi"][:6]))
         oggi = memoria.promemoria_di_oggi()
         if oggi:
             righe.append("⏰ Oggi:\n" + "\n".join(
@@ -3950,6 +3975,12 @@ class _RedirectSicuro(urllib.request.HTTPRedirectHandler):
 
 def scarica_web(url, timeout=8, max_byte=2_000_000, tipi=("html", "xml", "text/plain", "json", "rss", "atom")):
     """→ (testo, url finale, content-type). Solleva un errore se l'indirizzo non è permesso o la risposta non va bene."""
+    corpo, cs, finale, tipo = scarica_web_grezzo(url, timeout, max_byte, tipi)
+    return decodifica_web(corpo, cs), finale, tipo
+
+
+def scarica_web_grezzo(url, timeout=8, max_byte=2_000_000, tipi=("html", "xml", "text/plain", "json", "rss", "atom")):
+    """→ (byte, charset dell'intestazione, url finale, content-type)."""
     if not _host_sicuro(url):
         raise ValueError("indirizzo non permesso")
     req = urllib.request.Request(url, headers={"User-Agent": _UA_WEB, "Accept-Language": "it-IT,it;q=0.9,en;q=0.6",
@@ -3961,14 +3992,17 @@ def scarica_web(url, timeout=8, max_byte=2_000_000, tipi=("html", "xml", "text/p
         corpo = r.read(max_byte + 1)[:max_byte]
         cs = r.headers.get_content_charset()
         finale = r.geturl()
+    return corpo, cs, finale, tipo
+
+
+def decodifica_web(corpo, cs=None):
     if not cs:
         m = re.search(rb"""<meta[^>]+charset=["']?([\w-]+)""", corpo[:3000], re.I) or re.search(rb"""encoding=["']([\w-]+)""", corpo[:200])
         cs = m.group(1).decode("ascii", "ignore") if m else "utf-8"
     try:
-        testo = corpo.decode(cs, errors="replace")
+        return corpo.decode(cs, errors="replace")
     except LookupError:
-        testo = corpo.decode("utf-8", errors="replace")
-    return testo, finale, tipo
+        return corpo.decode("utf-8", errors="replace")
 
 
 class _TestoPagina(HTMLParser):
@@ -4509,6 +4543,773 @@ def riassumi_riunione(testo, durata=0, titolo="", memoria=None, cervello=None):
 
 
 # ════════════════════════════════════════════════════════════
+# V15 — MAIK LEGGE TUTTO: PDF e Word, le pagine dai link, il tuo calendario (.ics) e fa l'interprete
+# ════════════════════════════════════════════════════════════
+_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_ODT_TESTO = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
+_ODT_TAB = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
+
+
+def _xml_sicuro(dati):
+    if re.search(rb"<!\s*(?:DOCTYPE|ENTITY)", dati[:20000], re.I):
+        raise ValueError("XML con DOCTYPE/ENTITY rifiutato")
+    return ET.fromstring(dati)
+
+
+def _zip_leggi(dati, nome, max_mb=40):
+    with zipfile.ZipFile(io.BytesIO(dati)) as z:
+        info = z.getinfo(nome)
+        if info.file_size > max_mb * 1024 * 1024:
+            raise ValueError("file troppo grande una volta aperto")
+        return z.read(info)
+
+
+def testo_da_docx(dati):
+    """Word (.docx): paragrafi, tabelle (celle separate da «|»), a capo e tabulazioni."""
+    radice = _xml_sicuro(_zip_leggi(dati, "word/document.xml"))
+    corpo = radice.find(_W_NS + "body")
+    righe = []
+
+    def par(p):
+        out = []
+        for e in p.iter():
+            if e.tag == _W_NS + "t" and e.text:
+                out.append(e.text)
+            elif e.tag == _W_NS + "tab":
+                out.append("\t")
+            elif e.tag in (_W_NS + "br", _W_NS + "cr"):
+                out.append("\n")
+        return "".join(out)
+
+    for el in (corpo if corpo is not None else []):
+        if el.tag == _W_NS + "p":
+            righe.append(par(el))
+        elif el.tag == _W_NS + "tbl":
+            for tr in el.iter(_W_NS + "tr"):
+                celle = [" ".join(par(p) for p in tc.iter(_W_NS + "p")).strip() for tc in tr.iter(_W_NS + "tc")]
+                righe.append(" | ".join(celle))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(righe)).strip()
+
+
+def testo_da_odt(dati):
+    """OpenOffice/LibreOffice (.odt): titoli, paragrafi e celle delle tabelle."""
+    radice = _xml_sicuro(_zip_leggi(dati, "content.xml"))
+    righe = []
+    for e in radice.iter():
+        if e.tag in (_ODT_TESTO + "p", _ODT_TESTO + "h"):
+            t = ""
+            for x in e.iter():
+                if x is not e and x.tag == _ODT_TESTO + "s":
+                    t += " " * int(x.get(_ODT_TESTO + "c", "1"))
+                elif x is not e and x.tag == _ODT_TESTO + "tab":
+                    t += "\t"
+                elif x is not e and x.tag == _ODT_TESTO + "line-break":
+                    t += "\n"
+                if x.text and x is e:
+                    t = x.text + t
+                elif x.text:
+                    t += x.text
+                if x.tail and x is not e:
+                    t += x.tail
+            righe.append(t)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(righe)).strip()
+
+
+# ── PDF: estrattore semplice (testo con i font «ToUnicode», stream compressi, object stream) ──
+_PDF_OBJ = re.compile(rb"(\d+)\s+(\d+)\s+obj\b(.*?)\bendobj", re.S)
+
+
+def _pdf_stream(corpo):
+    m = re.search(rb"\bstream\r?\n", corpo)
+    if not m:
+        return corpo, None
+    diz, dati = corpo[:m.start()], corpo[m.end():]
+    fine = dati.rfind(b"endstream")
+    dati = dati[:fine] if fine >= 0 else dati
+    if b"/FlateDecode" in diz:
+        try:
+            dati = zlib.decompressobj().decompress(dati)
+        except zlib.error:
+            return diz, None
+    elif re.search(rb"/Filter\s*/(?!FlateDecode)", diz):
+        return diz, None                                 # immagini e altri filtri: non servono per il testo
+    return diz, dati
+
+
+def _pdf_oggetti(dati):
+    ogg = {}
+    for m in _PDF_OBJ.finditer(dati):
+        diz, st = _pdf_stream(m.group(3))
+        ogg[int(m.group(1))] = (diz, st)
+    for n, (diz, st) in list(ogg.items()):              # PDF ≥ 1.5: oggetti dentro gli «object stream»
+        if st and re.search(rb"/Type\s*/ObjStm", diz):
+            try:
+                quanti = int(re.search(rb"/N\s+(\d+)", diz).group(1)); primo = int(re.search(rb"/First\s+(\d+)", diz).group(1))
+                nums = list(map(int, st[:primo].split()))
+                pos = [(nums[i], nums[i + 1]) for i in range(0, min(len(nums), quanti * 2), 2)]
+                for k, (num, off) in enumerate(pos):
+                    fine = primo + pos[k + 1][1] if k + 1 < len(pos) else len(st)
+                    ogg.setdefault(num, (st[primo + off:fine], None))
+            except (AttributeError, ValueError, IndexError):
+                pass
+    return ogg
+
+
+def _pdf_ref(diz, chiave):
+    m = re.search(rb"/" + chiave + rb"\s+(\d+)\s+\d+\s+R", diz)
+    return int(m.group(1)) if m else None
+
+
+def _pdf_cmap(st):
+    """CMap ToUnicode → (dizionario codice→testo, byte per codice)."""
+    mappa, nbyte = {}, 1
+    hexs = lambda h: bytes.fromhex(h.decode()).decode("utf-16-be", "replace")
+    for blocco in re.findall(rb"beginbfchar(.*?)endbfchar", st, re.S):
+        for a, b in re.findall(rb"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]*)>", blocco):
+            mappa[int(a, 16)] = hexs(b); nbyte = max(nbyte, len(a) // 2)
+    for blocco in re.findall(rb"beginbfrange(.*?)endbfrange", st, re.S):
+        for a, b, resto in re.findall(rb"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*(\[[^\]]*\]|<[0-9A-Fa-f]+>)", blocco):
+            ia, ib = int(a, 16), int(b, 16); nbyte = max(nbyte, len(a) // 2)
+            if ib - ia > 5000:
+                continue
+            if resto.startswith(b"["):
+                for k, h in enumerate(re.findall(rb"<([0-9A-Fa-f]+)>", resto)):
+                    mappa[ia + k] = hexs(h)
+            else:
+                base = bytes.fromhex(resto[1:-1].decode())
+                for k in range(ib - ia + 1):
+                    v = int.from_bytes(base, "big") + k
+                    mappa[ia + k] = v.to_bytes(len(base), "big").decode("utf-16-be", "replace")
+    return mappa, nbyte
+
+
+def _pdf_stringa_lett(s, i):
+    """Stringa letterale (…) da posizione i (dopo «(»): → (bytes, posizione dopo «)»)."""
+    out, liv, n = bytearray(), 1, len(s)
+    esc = {ord("n"): 10, ord("r"): 13, ord("t"): 9, ord("b"): 8, ord("f"): 12, ord("("): 40, ord(")"): 41, ord("\\"): 92}
+    while i < n:
+        c = s[i]
+        if c == 92 and i + 1 < n:
+            d = s[i + 1]
+            if d in esc:
+                out.append(esc[d]); i += 2; continue
+            if 48 <= d <= 55:
+                m = re.match(rb"[0-7]{1,3}", s[i + 1:i + 4]); out.append(int(m.group(0), 8) & 255); i += 1 + len(m.group(0)); continue
+            if d in (10, 13):
+                i += 2; continue
+            i += 1; continue
+        if c == 40:
+            liv += 1
+        elif c == 41:
+            liv -= 1
+            if liv == 0:
+                return bytes(out), i + 1
+        out.append(c); i += 1
+    return bytes(out), i
+
+
+def _pdf_decodifica(b, font):
+    if font:
+        mappa, nb = font
+        if nb == 2:
+            return "".join(mappa.get(int.from_bytes(b[k:k + 2], "big"), "") for k in range(0, len(b) - 1, 2))
+        return "".join(mappa.get(x, chr(x)) for x in b)
+    try:
+        return b.decode("cp1252")
+    except UnicodeDecodeError:
+        return b.decode("latin-1")
+
+
+_PDF_TOK = re.compile(rb"\(|<<|>>|<[0-9A-Fa-f\s]*>|\[|\]|/[^\s/\[\]()<>{}%]+|[-+]?\d*\.?\d+|[A-Za-z'\"*]+|%[^\n\r]*")
+
+
+def _pdf_testo_contenuto(st, fonts):
+    """Esegue (in piccolo) gli operatori di testo: Tf, Tj, TJ, ', ", Td/TD/Tm/T*, ET."""
+    out, linea, font, pila, i, n = [], [], None, [], 0, len(st)
+    ultimo_y = None
+    while i < n:
+        m = _PDF_TOK.match(st, i)
+        if not m:
+            i += 1; continue
+        t = m.group(0); i = m.end()
+        if t == b"(":
+            b, i = _pdf_stringa_lett(st, i); pila.append(("s", b))
+        elif t.startswith(b"<") and t != b"<<":
+            h = re.sub(rb"\s", b"", t[1:-1]); pila.append(("s", bytes.fromhex((h + b"0" * (len(h) % 2)).decode())))
+        elif t == b"[":
+            pila.append(("[", None))
+        elif t == b"]":
+            arr = []
+            while pila and pila[-1][0] != "[":
+                arr.append(pila.pop())
+            if pila:
+                pila.pop()
+            pila.append(("a", list(reversed(arr))))
+        elif t.startswith(b"/"):
+            pila.append(("n", t[1:]))
+        elif re.fullmatch(rb"[-+]?\d*\.?\d+", t):
+            pila.append(("f", float(t)))
+        elif t.startswith(b"%"):
+            continue
+        else:
+            op = t
+            if op == b"Tf" and len(pila) >= 2 and pila[-2][0] == "n":
+                font = fonts.get(pila[-2][1])
+            elif op in (b"Tj", b"'", b'"') and pila and pila[-1][0] == "s":
+                if op != b"Tj":
+                    out.append("".join(linea)); linea = []
+                linea.append(_pdf_decodifica(pila[-1][1], font))
+            elif op == b"TJ" and pila and pila[-1][0] == "a":
+                for k, v in pila[-1][1]:
+                    if k == "s":
+                        linea.append(_pdf_decodifica(v, font))
+                    elif k == "f" and v < -180:
+                        linea.append(" ")
+            elif op in (b"Td", b"TD", b"Tm") and len(pila) >= 2 and pila[-1][0] == "f":
+                y = pila[-1][1]
+                if op == b"Tm" or abs(y) > 0.5:
+                    if op == b"Tm":
+                        if ultimo_y is not None and abs(y - ultimo_y) > 0.5:
+                            out.append("".join(linea)); linea = []
+                        ultimo_y = y
+                    else:
+                        out.append("".join(linea)); linea = []
+                elif linea and not linea[-1].endswith(" "):
+                    linea.append(" ")
+            elif op == b"T*":
+                out.append("".join(linea)); linea = []
+            elif op == b"ET":
+                out.append("".join(linea)); linea = []; ultimo_y = None
+            pila = []
+    out.append("".join(linea))
+    return "\n".join(x.rstrip() for x in out)
+
+
+def testo_da_pdf(dati, max_pagine=300):
+    """PDF «normali» (non scansionati): il testo pagina per pagina. Per i PDF difficili la GUI usa pdf.js."""
+    if not dati.startswith(b"%PDF"):
+        raise ValueError("non è un PDF")
+    if re.search(rb"/Encrypt\b", dati[-4096:] + dati[:4096]):
+        raise ValueError("PDF protetto da password")
+    ogg = _pdf_oggetti(dati)
+    cmaps = {}
+
+    def font_di(num):
+        if num in cmaps:
+            return cmaps[num]
+        diz = ogg.get(num, (b"", None))[0]
+        ref = _pdf_ref(diz, b"ToUnicode")
+        cmaps[num] = _pdf_cmap(ogg[ref][1]) if ref and ogg.get(ref, (b"", None))[1] else None
+        return cmaps[num]
+
+    def risorse(diz):
+        r = re.search(rb"/Resources\s*(<<.*>>|\d+\s+\d+\s+R)", diz, re.S)
+        if not r:
+            return b""
+        v = r.group(1)
+        m = re.match(rb"(\d+)\s+\d+\s+R", v)
+        return ogg.get(int(m.group(1)), (b"", None))[0] if m else v
+
+    def fonts_di(diz_pagina, ereditate):
+        res = risorse(diz_pagina) or ereditate
+        f = re.search(rb"/Font\s*(<<.*?>>|\d+\s+\d+\s+R)", res, re.S)
+        if not f:
+            return {}
+        v = f.group(1)
+        m = re.match(rb"(\d+)\s+\d+\s+R", v)
+        v = ogg.get(int(m.group(1)), (b"", None))[0] if m else v
+        return {k: font_di(int(r)) for k, r in re.findall(rb"/([^\s/<>\[\]]+)\s+(\d+)\s+\d+\s+R", v)}
+
+    pagine = []
+
+    def visita(num, ereditate=b"", visti=None):
+        visti = visti if visti is not None else set()
+        if num in visti or num not in ogg or len(pagine) >= max_pagine:
+            return
+        visti.add(num)
+        diz = ogg[num][0]
+        if re.search(rb"/Type\s*/Pages\b", diz):
+            kids = re.search(rb"/Kids\s*\[(.*?)\]", diz, re.S)
+            for k in re.findall(rb"(\d+)\s+\d+\s+R", kids.group(1) if kids else b""):
+                visita(int(k), risorse(diz) or ereditate, visti)
+        elif re.search(rb"/Type\s*/Page\b", diz):
+            c = re.search(rb"/Contents\s*(\[(?:.*?)\]|\d+\s+\d+\s+R)", diz, re.S)
+            refs = [int(x) for x in re.findall(rb"(\d+)\s+\d+\s+R", c.group(1))] if c else []
+            st = b"\n".join(ogg[r][1] or b"" for r in refs if r in ogg)
+            pagine.append(_pdf_testo_contenuto(st, fonts_di(diz, ereditate)) if st else "")
+
+    radici = [n for n, (d, _) in ogg.items() if re.search(rb"/Type\s*/Catalog\b", d)]
+    for r in radici[:1]:
+        p = _pdf_ref(ogg[r][0], b"Pages")
+        if p:
+            visita(p)
+    if not pagine:                                             # niente albero delle pagine leggibile: tutti gli stream di testo
+        pagine = [_pdf_testo_contenuto(st, {}) for d, st in ogg.values() if st and b"BT" in st and b"ET" in st]
+    testo = "\n\n".join(re.sub(r"[ \t]+\n", "\n", p).strip() for p in pagine)
+    testo = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", testo)
+    return re.sub(r"\n{3,}", "\n\n", testo).strip()
+
+
+TIPI_DOCUMENTO = {".docx": testo_da_docx, ".odt": testo_da_odt, ".pdf": testo_da_pdf}
+
+
+def estrai_testo(nome, dati):
+    """→ (testo, errore). .docx .odt .pdf e i file di testo."""
+    est = os.path.splitext(str(nome or "").lower())[1]
+    try:
+        if est in TIPI_DOCUMENTO:
+            t = TIPI_DOCUMENTO[est](dati)
+        else:
+            if b"\x00" in dati[:2000]:
+                return None, "Non è un file di testo (prova .txt, .docx, .odt o .pdf)."
+            t = dati.decode("utf-8-sig") if not dati.startswith((b"\xff\xfe", b"\xfe\xff")) else dati.decode("utf-16")
+    except UnicodeDecodeError:
+        t = dati.decode("latin-1")
+    except (zipfile.BadZipFile, KeyError):
+        return None, "Il file sembra rovinato (non è un documento valido)."
+    except Exception as e:
+        return None, f"Non riesco a leggere il file: {str(e)[:100]}"
+    t = (t or "").replace("\x00", "").strip()
+    if len(t) < 20 and est == ".pdf":
+        return None, "Nel PDF non c'è testo da leggere (forse è una scansione: fammi una foto e la guardo col modello visione)."
+    return (t, None) if t else (None, "Il documento è vuoto.")
+
+
+# ── 🔗 PAGINE DAI LINK: «riassumi questa pagina https://…», «leggimi questo articolo …» ──
+_RE_URL = re.compile(r"https?://[^\s<>\"'«»]+[^\s<>\"'«».,;:!?)\]]", re.I)
+_RE_LEGGIMI = re.compile(r"\b(?:leggimi|leggimelo|leggimela|leggi\s+(?:ad\s+alta\s+voce|a\s+voce)|leggi\s+per\s+me)\b", re.I)
+
+
+def leggi_pagina(url, max_car=20000):
+    """→ {ok, url, titolo, sito, descrizione, testo, parole} o {ok: False, errore}. Anche i PDF online."""
+    try:
+        if not _host_sicuro(url):
+            return {"ok": False, "url": url, "errore": "indirizzo non permesso (solo siti pubblici)"}
+        corpo, cs, finale, tipo = scarica_web_grezzo(url, timeout=10, max_byte=8_000_000, tipi=("html", "xml", "text/plain", "pdf"))
+        if "pdf" in tipo or corpo[:4] == b"%PDF":
+            testo, titolo, descr = testo_da_pdf(corpo), urllib.parse.unquote(finale.rsplit("/", 1)[-1]), ""
+        else:
+            h = decodifica_web(corpo, cs)
+            titolo, descr, testo = ("", "", h) if "text/plain" in tipo else testo_leggibile(h)
+    except Exception as e:
+        return {"ok": False, "url": url, "errore": str(e)[:120]}
+    testo = testo.strip()
+    if len(testo) < 80:
+        return {"ok": False, "url": url, "errore": "nella pagina non c'è testo da leggere"}
+    return {"ok": True, "url": finale, "titolo": (titolo or _sito(finale))[:160], "sito": _sito(finale), "descrizione": descr[:300],
+            "testo": testo[:max_car], "parole": len(testo.split()), "tagliata": len(testo) > max_car}
+
+
+# ── 📅 CALENDARIO: importa i tuoi .ics (Google, Outlook, Apple), eventi ricorrenti, agenda, avvisi prima ──
+GIORNI_ICS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
+
+
+def _ics_righe(testo):
+    """Righe «spiegate» (le righe che iniziano con uno spazio continuano quella prima)."""
+    out = []
+    for r in testo.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if r[:1] in (" ", "\t") and out:
+            out[-1] += r[1:]
+        elif r:
+            out.append(r)
+    return out
+
+
+def _ics_valore(v):
+    return v.replace("\\n", "\n").replace("\\N", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\").strip()
+
+
+def _ics_data(valore, param):
+    """→ (datetime locale «ingenuo», tutto_il_giorno)."""
+    v = valore.strip()
+    if "VALUE=DATE" in param.upper() or re.fullmatch(r"\d{8}", v):
+        return datetime.datetime.strptime(v[:8], "%Y%m%d"), True
+    d = datetime.datetime.strptime(v[:15], "%Y%m%dT%H%M%S")
+    if v.endswith("Z"):
+        return d.replace(tzinfo=datetime.timezone.utc).astimezone().replace(tzinfo=None), False
+    m = re.search(r"TZID=([^;:]+)", param)
+    if m and ZoneInfo:
+        try:
+            return d.replace(tzinfo=ZoneInfo(m.group(1).strip('"'))).astimezone().replace(tzinfo=None), False
+        except Exception:
+            pass
+    return d, False
+
+
+def _ics_durata(v):
+    m = re.fullmatch(r"([+-])?P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?", v.strip())
+    if not m:
+        return None
+    w, d, h, mi, s = (int(x or 0) for x in m.groups()[1:])
+    return datetime.timedelta(weeks=w, days=d, hours=h, minutes=mi, seconds=s)
+
+
+def leggi_ics(testo):
+    """Gli eventi di un file .ics → [{uid, titolo, inizio, fine, tutto_giorno, luogo, descrizione, rrule, esclusi}]."""
+    eventi, ev, dentro_altro = [], None, 0
+    for r in _ics_righe(testo):
+        nome, _, valore = r.partition(":")
+        chiave, _, param = nome.partition(";")
+        chiave = chiave.upper()
+        if chiave == "BEGIN":
+            if valore.upper() == "VEVENT" and ev is None:
+                ev = {"esclusi": []}
+            elif ev is not None:
+                dentro_altro += 1                               # VALARM dentro l'evento: si salta
+            continue
+        if chiave == "END":
+            if ev is not None and dentro_altro:
+                dentro_altro -= 1
+            elif ev is not None and valore.upper() == "VEVENT":
+                if ev.get("inizio") and ev.get("stato") != "CANCELLED":
+                    eventi.append(ev)
+                ev = None
+            continue
+        if ev is None or dentro_altro:
+            continue
+        try:
+            if chiave == "SUMMARY":
+                ev["titolo"] = _ics_valore(valore)[:120]
+            elif chiave == "LOCATION":
+                ev["luogo"] = _ics_valore(valore)[:120]
+            elif chiave == "DESCRIPTION":
+                ev["descrizione"] = _ics_valore(valore)[:400]
+            elif chiave == "UID":
+                ev["uid"] = valore.strip()[:120]
+            elif chiave == "STATUS":
+                ev["stato"] = valore.strip().upper()
+            elif chiave == "DTSTART":
+                ev["inizio"], ev["tutto_giorno"] = _ics_data(valore, param)
+            elif chiave == "DTEND":
+                ev["fine"] = _ics_data(valore, param)[0]
+            elif chiave == "DURATION":
+                ev["durata"] = _ics_durata(valore)
+            elif chiave == "RRULE":
+                ev["rrule"] = dict(x.split("=", 1) for x in valore.split(";") if "=" in x)
+            elif chiave == "EXDATE":
+                ev["esclusi"] += [_ics_data(x, param)[0] for x in valore.split(",") if x.strip()]
+        except (ValueError, IndexError):
+            continue
+    for e in eventi:
+        if not e.get("fine"):
+            e["fine"] = e["inizio"] + (e.get("durata") or (datetime.timedelta(days=1) if e.get("tutto_giorno") else datetime.timedelta(hours=1)))
+        e.pop("durata", None)
+        e.setdefault("titolo", "(senza titolo)")
+    return eventi
+
+
+class Calendario:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.avvisi = []
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "calendario.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            return d if isinstance(d, dict) else {"eventi": [], "avvisati": {}}
+        except Exception:
+            return {"eventi": [], "avvisati": {}}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def _ser(e):
+        iso = lambda d: d.strftime("%Y-%m-%d" if e.get("tutto_giorno") else "%Y-%m-%dT%H:%M")
+        return {"id": e.get("id") or uuid.uuid4().hex[:10], "uid": e.get("uid", ""), "titolo": e["titolo"], "inizio": iso(e["inizio"]), "fine": iso(e["fine"]),
+                "tutto_giorno": bool(e.get("tutto_giorno")), "luogo": e.get("luogo", ""), "descrizione": e.get("descrizione", ""),
+                "rrule": e.get("rrule") or None, "esclusi": [x.strftime("%Y-%m-%dT%H:%M") for x in e.get("esclusi", [])], "fonte": e.get("fonte", "")}
+
+    @staticmethod
+    def _des(e):
+        p = lambda s: datetime.datetime.fromisoformat(s)
+        return dict(e, inizio=p(e["inizio"]), fine=p(e["fine"]), esclusi=[p(x) for x in e.get("esclusi", [])])
+
+    def eventi(self):
+        return self._carica().get("eventi", [])
+
+    def importa(self, testo, nome="calendario.ics"):
+        """→ (importati, aggiornati). Lo stesso file reimportato aggiorna gli eventi (stesso UID)."""
+        nuovi = leggi_ics(testo)
+        with self._lock:
+            d = self._carica()
+            per_uid = {(e.get("uid"), e["inizio"]): i for i, e in enumerate(d["eventi"]) if e.get("uid")}
+            importati = aggiornati = 0
+            for e in nuovi[:5000]:
+                s = self._ser(dict(e, fonte="ics:" + str(nome)[:60]))
+                k = (s["uid"], s["inizio"])
+                if s["uid"] and k in per_uid:
+                    s["id"] = d["eventi"][per_uid[k]]["id"]
+                    d["eventi"][per_uid[k]] = s
+                    aggiornati += 1
+                else:
+                    d["eventi"].append(s)
+                    importati += 1
+            d["eventi"] = d["eventi"][-8000:]
+            self._salva(d)
+        return importati, aggiornati
+
+    def aggiungi(self, titolo, inizio, durata_min=60, luogo="", tutto_giorno=False):
+        titolo = re.sub(r"\s+", " ", str(titolo or "")).strip(" .,:;")[:120]
+        if len(titolo) < 2:
+            return None, "manca il titolo dell'evento"
+        e = self._ser({"titolo": titolo, "inizio": inizio, "fine": inizio + datetime.timedelta(minutes=durata_min or 60, days=1 if tutto_giorno else 0),
+                       "tutto_giorno": tutto_giorno, "luogo": re.sub(r"\s+", " ", str(luogo or "")).strip()[:120], "fonte": "maik"})
+        with self._lock:
+            d = self._carica()
+            d["eventi"].append(e)
+            self._salva(d)
+        return e, None
+
+    def elimina(self, eid):
+        with self._lock:
+            d = self._carica()
+            prima = len(d["eventi"])
+            d["eventi"] = [e for e in d["eventi"] if e["id"] != eid]
+            self._salva(d)
+            return len(d["eventi"]) < prima
+
+    @staticmethod
+    def _ripeti(e, da, a, limite=1500):
+        """Le date di inizio di un evento (anche ricorrente) che toccano [da, a)."""
+        ini, dur, r = e["inizio"], e["fine"] - e["inizio"], e.get("rrule")
+        esclusi = set(e.get("esclusi") or [])
+        if not r:
+            return [ini] if ini < a and ini + dur > da else []
+        freq, passo = r.get("FREQ", "").upper(), max(1, int(r.get("INTERVAL", "1") or 1))
+        conta = int(r["COUNT"]) if r.get("COUNT", "").isdigit() else None
+        fino = None
+        if r.get("UNTIL"):
+            try:
+                fino = _ics_data(r["UNTIL"], "")[0]
+                fino = fino + datetime.timedelta(days=1) if len(r["UNTIL"]) == 8 else fino
+            except ValueError:
+                fino = None
+        giorni = [GIORNI_ICS.index(x[-2:]) for x in r.get("BYDAY", "").split(",") if x[-2:] in GIORNI_ICS]
+        out, n, k = [], 0, 0
+        while k < limite:
+            if freq == "DAILY":
+                cand = [ini + datetime.timedelta(days=k * passo)]
+            elif freq == "WEEKLY":
+                lun = ini - datetime.timedelta(days=ini.weekday()) + datetime.timedelta(weeks=k * passo)
+                cand = [lun + datetime.timedelta(days=g) for g in sorted(giorni or [ini.weekday()])]
+                cand = [c.replace(hour=ini.hour, minute=ini.minute) for c in cand if c >= ini]
+            elif freq in ("MONTHLY", "YEARLY"):
+                mesi = k * passo * (12 if freq == "YEARLY" else 1)
+                y, m = ini.year + (ini.month - 1 + mesi) // 12, (ini.month - 1 + mesi) % 12 + 1
+                try:
+                    cand = [ini.replace(year=y, month=m)]
+                except ValueError:
+                    cand = []                                   # 31 in un mese corto: salta
+            else:
+                return [ini] if ini < a and ini + dur > da else []
+            fermo = False
+            for c in cand:
+                if (fino and c > fino) or (conta is not None and n >= conta):
+                    fermo = True
+                    break
+                n += 1
+                if c >= a:
+                    fermo = True
+                    break
+                if c + dur > da and c not in esclusi:
+                    out.append(c)
+            if fermo:
+                break
+            k += 1
+        return out
+
+    def occorrenze(self, da, a):
+        """→ [{id, titolo, inizio, fine, tutto_giorno, luogo, ricorrente}] ordinate."""
+        out = []
+        for raw in self.eventi():
+            try:
+                e = self._des(raw)
+            except (ValueError, KeyError):
+                continue
+            for ini in self._ripeti(e, da, a):
+                out.append({"id": raw["id"], "titolo": raw["titolo"], "inizio": ini, "fine": ini + (e["fine"] - e["inizio"]),
+                            "tutto_giorno": raw.get("tutto_giorno", False), "luogo": raw.get("luogo", ""), "ricorrente": bool(raw.get("rrule"))})
+        return sorted(out, key=lambda x: (x["inizio"], not x["tutto_giorno"]))
+
+    @staticmethod
+    def json_occ(o):
+        return dict(o, inizio=o["inizio"].isoformat(timespec="minutes"), fine=o["fine"].isoformat(timespec="minutes"))
+
+    def agenda(self, da, giorni=1):
+        """→ {titolo, giorni: [{data, etichetta, eventi: [{ora, titolo, luogo}]}], n}"""
+        da = da.replace(hour=0, minute=0, second=0, microsecond=0)
+        occ = self.occorrenze(da, da + datetime.timedelta(days=giorni))
+        oggi = datetime.date.today()
+        gg = []
+        for i in range(giorni):
+            g = (da + datetime.timedelta(days=i)).date()
+            ev = [o for o in occ if o["inizio"].date() <= g <= max(o["inizio"], o["fine"] - datetime.timedelta(seconds=1)).date()]
+            et = "Oggi" if g == oggi else "Domani" if g == oggi + datetime.timedelta(days=1) else f"{GIORNI_LUNGHI[g.weekday()].capitalize()} {g.day} {MESI_IT[g.month - 1]}"
+            gg.append({"data": g.isoformat(), "etichetta": et, "eventi": [{"ora": "tutto il giorno" if o["tutto_giorno"] else o["inizio"].strftime("%H:%M"),
+                                                                           "titolo": o["titolo"], "luogo": o["luogo"], "id": o["id"]} for o in ev]})
+        return {"giorni": gg, "n": sum(len(x["eventi"]) for x in gg)}
+
+    @staticmethod
+    def testo_agenda(ag, titolo):
+        if not ag["n"]:
+            return f"📅 {titolo}: niente in calendario. Giornata libera! 🎉" if len(ag["giorni"]) == 1 else f"📅 {titolo}: niente in calendario."
+        righe = [f"📅 {titolo}:"]
+        for g in ag["giorni"]:
+            if not g["eventi"]:
+                continue
+            if len(ag["giorni"]) > 1:
+                righe.append(f"**{g['etichetta']}**")
+            righe += [f"- {e['ora']} · {e['titolo']}" + (f" ({e['luogo']})" if e["luogo"] else "") for e in g["eventi"]]
+        return "\n".join(righe)
+
+    def controlla_avvisi(self, ora=None, minuti=None):
+        """Eventi che iniziano tra poco (MAIK_CAL_AVVISO minuti): un avviso ciascuno."""
+        ora = ora or datetime.datetime.now()
+        minuti = CONFIG["cal_avviso"] if minuti is None else minuti
+        occ = [o for o in self.occorrenze(ora, ora + datetime.timedelta(minutes=minuti)) if not o["tutto_giorno"] and o["inizio"] >= ora - datetime.timedelta(minutes=1)]
+        if not occ:
+            return []
+        nuovi = []
+        with self._lock:
+            d = self._carica()
+            avv = d.setdefault("avvisati", {})
+            for o in occ:
+                k = f"{o['id']}@{o['inizio'].isoformat(timespec='minutes')}"
+                if k in avv:
+                    continue
+                avv[k] = ora.isoformat(timespec="seconds")
+                tra = max(0, round((o["inizio"] - ora).total_seconds() / 60))
+                nuovi.append({"titolo": o["titolo"], "luogo": o["luogo"], "inizio": o["inizio"].strftime("%H:%M"), "tra": tra,
+                              "testo": f"📅 {'Adesso' if tra == 0 else f'Tra {tra} minut' + ('o' if tra == 1 else 'i')}: **{o['titolo']}**"
+                                       + f" alle {o['inizio'].strftime('%H:%M')}" + (f" ({o['luogo']})" if o["luogo"] else "") + "."})
+            if len(avv) > 600:
+                d["avvisati"] = dict(list(avv.items())[-300:])
+            self._salva(d)
+            self.avvisi = (self.avvisi + nuovi)[-20:]
+        return nuovi
+
+    def prendi_avvisi(self):
+        with self._lock:
+            a, self.avvisi = self.avvisi, []
+        return a
+
+    # «cosa ho domani?», «impegni di questa settimana», «agenda», «aggiungi al calendario …», «cancella dal calendario …»
+    _RE_QUANDO = re.compile(r"\b(oggi|domani|dopodomani|questa\s+settimana|(?:la\s+)?settimana\s+prossima|(?:la\s+)?prossima\s+settimana|"
+                            r"luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica|weekend|fine\s+settimana)\b", re.I)
+
+    def router(self, testo):
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        tl = t.lower()
+        m = re.match(r"^(?:(?:maik|zep)[,!]?\s+)?(?:aggiungi|metti|segna|scrivi|inserisci)\s+(?:al|nel|in)\s+(?:calendario|agenda)\s*[:,]?\s+(.+)$", t, re.I) or \
+            re.match(r"^(?:(?:maik|zep)[,!]?\s+)?(?:aggiungi|metti|segna)\s+(.+?)\s+(?:al|nel|in)\s+(?:calendario|agenda)$", t, re.I)
+        if m:
+            resto = m.group(1)
+            luogo = ""
+            ml = re.search(r"\s+(?:in|presso)\s+((?:via|viale|piazza|corso|largo|vicolo)\s+[^,]{2,50})$", resto, re.I)
+            if ml:
+                luogo, resto = ml.group(1).strip(), resto[:ml.start()]
+            quando, titolo = parse_quando(resto)
+            titolo = re.sub(r"\s+", " ", re.sub(r"\b(?:alle|il|la|per|di|a|in)\s*$", "", titolo.strip(" ,"))).strip(" ,:")
+            if not quando:
+                return {"testo": "📅 Quando? Dimmi per esempio «aggiungi al calendario dentista giovedì alle 15»."}
+            e, err = self.aggiungi(titolo[:1].upper() + titolo[1:] if titolo else "Impegno", quando, 60, luogo)
+            if not e:
+                return {"testo": "📅 " + err}
+            return {"testo": f"📅 Aggiunto al calendario: **{e['titolo']}**, {fmt_quando(quando)}. Ti avviso {CONFIG['cal_avviso']} minuti prima.", "evento": e}
+        m = re.match(r"^(?:cancella|elimina|togli|rimuovi)\s+(?:dal|dalla)\s+(?:calendario|agenda)\s+(.+)$", t, re.I)
+        if m:
+            nome = _senza_accenti(m.group(1).lower())
+            for e in self.eventi():
+                if nome in _senza_accenti(e["titolo"].lower()):
+                    self.elimina(e["id"])
+                    return {"testo": f"🗑️ Tolto dal calendario: **{e['titolo']}**."}
+            return {"testo": f"📅 Non trovo «{m.group(1)}» nel calendario."}
+        if not re.search(r"\b(?:cosa\s+(?:ho|devo\s+fare|c'?[eè])|che\s+(?:impegni|cosa\s+ho)|impegni|appuntamenti|agenda|calendario|programma|sono\s+liber[oa]|ho\s+(?:impegni|appuntamenti))\b", tl):
+            return None
+        if re.search(r"\b(?:briefing|lista|spesa|promemoria|timer)\b", tl) or len(tl.split()) > 12:
+            return None
+        q = self._RE_QUANDO.search(tl)
+        oggi = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        if not q:
+            if not re.search(r"\b(?:agenda|calendario|impegni|appuntamenti)\b", tl):
+                return None
+            da, giorni, titolo = oggi, 7, "I prossimi 7 giorni"
+        else:
+            w = _senza_accenti(q.group(1).lower())
+            if w == "oggi":
+                if re.search(r"\bcosa\s+ho\s+(?:in\s+programma\s+)?oggi\b", tl) and not re.search(r"\b(?:calendario|agenda|impegni|appuntamenti)\b", tl):
+                    return None                                   # «cosa ho oggi?» resta il briefing (che ora ha anche il calendario)
+                da, giorni, titolo = oggi, 1, "Oggi"
+            elif w == "domani":
+                da, giorni, titolo = oggi + datetime.timedelta(days=1), 1, "Domani"
+            elif w == "dopodomani":
+                da, giorni, titolo = oggi + datetime.timedelta(days=2), 1, "Dopodomani"
+            elif "prossima" in w:
+                da = oggi + datetime.timedelta(days=7 - oggi.weekday())
+                giorni, titolo = 7, "La settimana prossima"
+            elif "settimana" in w and "fine" not in w:
+                da, giorni, titolo = oggi, 7 - oggi.weekday(), "Questa settimana"
+            elif w in ("weekend", "fine settimana"):
+                da = oggi + datetime.timedelta(days=(5 - oggi.weekday()) % 7)
+                giorni, titolo = 2, "Il weekend"
+            else:
+                g = ["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"].index(w)
+                da = oggi + datetime.timedelta(days=(g - oggi.weekday()) % 7)
+                giorni, titolo = 1, GIORNI_LUNGHI[g].capitalize()
+        ag = self.agenda(da, giorni)
+        return {"testo": self.testo_agenda(ag, titolo), "agenda": dict(ag, titolo=titolo)}
+
+
+CAL = Calendario()
+
+
+# ── 🗣️ INTERPRETE: traduzioni brevi e fedeli ──
+LINGUE = {"inglese": ("en-US", "English"), "spagnolo": ("es-ES", "Spanish"), "francese": ("fr-FR", "French"), "tedesco": ("de-DE", "German"),
+          "portoghese": ("pt-PT", "Portuguese"), "italiano": ("it-IT", "Italian"), "rumeno": ("ro-RO", "Romanian"), "arabo": ("ar-SA", "Arabic"),
+          "cinese": ("zh-CN", "Chinese (Simplified)"), "giapponese": ("ja-JP", "Japanese"), "russo": ("ru-RU", "Russian"), "ucraino": ("uk-UA", "Ukrainian"),
+          "albanese": ("sq-AL", "Albanian"), "polacco": ("pl-PL", "Polish")}
+
+
+def lingua(x):
+    x = _senza_accenti(str(x or "").strip().lower())
+    for k, (cod, en) in LINGUE.items():
+        if x in (k, cod.lower(), cod[:2].lower(), en.lower()):
+            return k
+    return None
+
+
+def traduci(testo, a="inglese", da="italiano", cervello=None):
+    testo = re.sub(r"\s+", " ", str(testo or "")).strip()[:1500]
+    la, ld = lingua(a), lingua(da) or "italiano"
+    if not testo:
+        return {"ok": False, "errore": "niente da tradurre"}
+    if not la:
+        return {"ok": False, "errore": f"lingua «{a}» sconosciuta"}
+    if la == ld:
+        return {"ok": True, "traduzione": testo, "lingua": la, "codice": LINGUE[la][0]}
+    if not cervello or not cervello.disponibile():
+        return {"ok": False, "errore": "per tradurre serve Ollama acceso"}
+    sistema = (f"You are a professional simultaneous interpreter. Translate the user's message from {LINGUE[ld][1]} to {LINGUE[la][1]}. "
+               "Keep the meaning, tone and register; translate names of things but not people's names. "
+               "Reply ONLY with the translation: no quotes, no notes, no explanations.")
+    r = pulisci_pensiero(cervello.pensa(sistema, [{"role": "user", "content": testo}]))
+    if not r or r.startswith("__ERRORE"):
+        return {"ok": False, "errore": "Ollama non risponde"}
+    r = re.sub(r"^(?:translation|traduzione|traducción|traduction|übersetzung)\s*:\s*", "", r.strip(), flags=re.I).strip().strip('"«»“”')
+    return {"ok": True, "traduzione": r[:2000], "lingua": la, "codice": LINGUE[la][0]}
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -4537,7 +5338,11 @@ PROMPT_AGENTE_WEB = """INTERNET — per fatti recenti, notizie, risultati, prezz
 NON inventare: scrivi solo il tag e aspetta (leggo io le pagine e ti do le fonti numerate da citare come [1], [2]).
 [[azione:{"tipo":"cerca_internet","q":"domanda precisa con le parole giuste"}]]
 [[azione:{"tipo":"notizie","categoria":"principali"}]]  (principali, mondo, politica, economia, sport, tecnologia, cultura, scienza)"""
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie"}
+PROMPT_AGENTE_V15 = """PAGINE E CALENDARIO:
+[[azione:{"tipo":"leggi_pagina","url":"https://…"}]]  ← leggo una pagina web (anche quella di una fonte) e te la passo
+[[azione:{"tipo":"calendario","quando":"domani"}]]  ← gli impegni (oggi, domani, questa settimana, lunedì…)
+[[azione:{"tipo":"aggiungi_evento","titolo":"dentista","quando":"giovedì alle 15","luogo":""}]]  ← un impegno nel calendario"""
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie", "leggi_pagina", "calendario"}
 STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
                 "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
                 "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca", "esegui_routine": "routine"}
@@ -4560,7 +5365,7 @@ ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥�
                    "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
-                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰"}
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅"}
 
 
 class FiltroTag:
@@ -4647,7 +5452,9 @@ class Agente:
                 "schermata": "screenshot", "file": "apri_file", "trova_file": "cerca_file", "digita": "scrivi_testo",
                 "scrivi": "scrivi_testo", "blocca": "blocca_pc", "routine": "esegui_routine", "modalita": "esegui_routine",
                 "modalità": "esegui_routine", "internet": "cerca_internet", "ricerca_web": "cerca_internet", "web": "cerca_internet",
-                "cerca_online": "cerca_internet", "ricerca": "cerca_internet", "news": "notizie", "giornale": "notizie"}.get(tipo, tipo)
+                "cerca_online": "cerca_internet", "ricerca": "cerca_internet", "news": "notizie", "giornale": "notizie",
+                "pagina": "leggi_pagina", "apri_pagina": "leggi_pagina", "link": "leggi_pagina", "agenda": "calendario", "impegni": "calendario",
+                "evento": "aggiungi_evento", "appuntamento": "aggiungi_evento"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -4776,6 +5583,26 @@ class Agente:
                 dati = "\n".join(f"- {n['titolo']}" + (f" ({n['quando']})" if n["quando"] else "") + (f": {n['descrizione']}" if n["descrizione"] else "")
                                  for n in x["notizie"])
                 return dict(r, ok=True, esito=f"{len(x['notizie'])} notizie ({cat})", dati=dati, notizie=dict(x, titolo=cat))
+            if tipo == "leggi_pagina":                  # v15: una pagina intera
+                if not CONFIG["web"]:
+                    return dict(r, esito="internet è spento (MAIK_WEB=0)", dati="niente internet")
+                url = s("url", 500)
+                x = leggi_pagina(url, 8000)
+                if not x["ok"]:
+                    return dict(r, esito=f"pagina non leggibile ({x['errore'][:60]})", dati=f"non riesco a leggere {url}: {x['errore']}")
+                fw = [{"n": n0, "titolo": x["titolo"], "url": x["url"], "sito": x["sito"], "estratto": x["descrizione"]}]
+                return dict(r, ok=True, esito=f"«{x['titolo'][:50]}» ({x['parole']} parole)", dati=f"[{n0}] {x['titolo']} — {x['sito']}\n{x['testo']}", fonti_web=fw)
+            if tipo == "calendario":
+                q = s("quando", 40) or s("giorno", 40) or "questa settimana"
+                rr = CAL.router("cosa ho " + q + " in calendario") or CAL.router("agenda")
+                return dict(r, ok=True, esito=f"impegni: {q}", dati=rr["testo"], agenda=rr.get("agenda"))
+            if tipo == "aggiungi_evento":
+                titolo, qt = s("titolo", 120) or s("testo", 120), s("quando", 60)
+                quando = parse_quando(qt)[0] if qt else None
+                if not quando:
+                    return dict(r, esito="evento senza data")
+                e, err = CAL.aggiungi(titolo, quando, int(a.get("durata") or 60) if str(a.get("durata") or "").isdigit() else 60, s("luogo", 120))
+                return dict(r, ok=bool(e), esito=f"«{titolo}» {fmt_quando(quando)}" if e else err)
             if tipo in STRUMENTI_PC or tipo == "cerca_file":
                 if not CONFIG["pc"]:
                     return dict(r, esito="i comandi del PC sono spenti (MAIK_PC=0)")
@@ -4846,7 +5673,7 @@ class MotoreAI:
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
             routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
-            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
+            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
                          + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
                          + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
@@ -5001,6 +5828,10 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         if pc:
             self.memoria.salva_scambio(testo, pc["testo"])
             return self._meta(ok=True, risposta=pc["testo"], azione=True, **self._meta_pc(pc))
+        cal = CAL.router(testo)
+        if cal:
+            self.memoria.salva_scambio(testo, cal["testo"])
+            return self._meta(ok=True, risposta=cal["testo"], azione=True, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -5056,6 +5887,11 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 on_token(pc["testo"])
                 self.memoria.salva_scambio(testo, pc["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **self._meta_pc(pc))
+            cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
+            if cal:
+                on_token(cal["testo"])
+                self.memoria.salva_scambio(testo, cal["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -5078,8 +5914,30 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             msg = (f"{testo or 'Analizza questo file e dimmi cosa contiene.'}\n\n"
                    f"📎 File «{nome}»:\n```\n{contenuto}\n```")
         fonti = self.memoria.cerca_documenti(testo, k=3) if testo and not allegato else []
-        fonti_web, web = [], None
-        q_web = domanda_internet(testo) if testo and not allegato and CONFIG["web"] else None
+        fonti_web, web, pagina = [], None, None
+        url = _RE_URL.search(testo or "") if testo and not allegato and CONFIG["web"] else None
+        if url:                                                 # v15: un link nel messaggio → leggo la pagina
+            avvisa({"lavoro": {"tipo": "leggi_pagina", "icona": "📖", "testo": f"Leggo la pagina {_sito(url.group(0))}…"}})
+            pagina = leggi_pagina(url.group(0))
+            avvisa({"strumento": {"tipo": "leggi_pagina", "ok": pagina["ok"], "icona": "📖",
+                                  "esito": f"«{pagina['titolo'][:50]}» ({pagina['parole']} parole)" if pagina["ok"] else f"pagina non leggibile ({pagina['errore'][:50]})"}})
+            if not pagina["ok"]:
+                t = f"🔗 Non riesco ad aprire quel link ({pagina['errore']}). Se è una pagina privata o richiede l'accesso, copiane il testo e chiedimi «riassumi quello che ho copiato» 📋"
+                on_token(t)
+                self.memoria.salva_scambio(testo, t, sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid)
+            fonti_web = [{"n": 1, "titolo": pagina["titolo"], "url": pagina["url"], "sito": pagina["sito"], "estratto": pagina["descrizione"]}]
+            minuti = max(1, round(pagina["parole"] / 160))
+            if _RE_LEGGIMI.search(testo):                         # «leggimi questo articolo»: lo legge la GUI, a voce
+                t = f"📖 Ti leggo «{pagina['titolo']}» ({pagina['sito']}): {pagina['parole']} parole, circa {minuti} minut{'o' if minuti == 1 else 'i'}. Puoi mettere in pausa quando vuoi."
+                on_token(t)
+                self.memoria.salva_scambio(testo, t, sid, extra={"fonti_web": fonti_web})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, fonti_web=fonti_web,
+                                  pagina={k: pagina[k] for k in ("titolo", "url", "sito", "testo", "parole", "tagliata")})
+            richiesta = re.sub(r"\s+", " ", _RE_URL.sub("", testo)).strip(" :,-") or "Riassumi questa pagina in modo chiaro: di cosa parla e i punti principali."
+            msg = (f"{richiesta}\n\n[PAGINA WEB [1]: {pagina['titolo']} — {pagina['sito']} — la persona l'ha condivisa]\n{pagina['testo'][:12000]}\n[FINE PAGINA]\n\n"
+                   "Rispondi usando il contenuto della pagina (se citi qualcosa, scrivi [1]). Se la pagina non c'entra con la richiesta, dillo.")
+        q_web = domanda_internet(testo) if testo and not allegato and CONFIG["web"] and not url else None
         if q_web:                                               # v14: «cerca su internet …» → leggo e rispondo con le fonti
             avvisa({"lavoro": {"tipo": "cerca_internet", "icona": "🌍", "testo": f"Cerco su internet: «{q_web}»…"}})
             web = WEB.ricerca(q_web)
@@ -5101,13 +5959,17 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         if agente:
             filtro.fine()
         if (not risposta or risposta.startswith("__ERRORE")) and fonti_web:     # senza modello: i risultati così come sono
-            risposta = RicercaWeb.senza_modello(web)
+            if pagina:
+                par = [x for x in pagina["testo"].split("\n") if len(x.split()) > 8][:4]
+                risposta = f"📖 **{pagina['titolo']}** [1] — senza il modello non posso riassumerla, ecco come comincia:\n\n" + "\n\n".join(par)
+            else:
+                risposta = RicercaWeb.senza_modello(web)
             on_token(risposta)
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
         finale, azioni = pulisci_pensiero(risposta) or risposta, []
-        notizie_meta = None
+        notizie_meta = agenda_meta = None
         if agente:
             finale, richieste = Agente.estrai(pulisci_pensiero(risposta))
             info = [a for a in richieste if str(a.get("tipo", "")).lower() in STRUMENTI_INFO][:3]
@@ -5127,6 +5989,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                     azioni.append(r)
                     fonti_web += r.get("fonti_web") or []
                     notizie_meta = r.get("notizie") or notizie_meta
+                    agenda_meta = r.get("agenda") or agenda_meta
                     avvisa({"strumento": {k: r.get(k) for k in ("tipo", "ok", "icona", "esito")}})
                     for f in r.get("fonti") or []:
                         if not any(f["nome"] == x["nome"] and f["pezzo"] == x["pezzo"] for x in fonti):
@@ -5175,7 +6038,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
         return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
                           seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme, file=file_trovati,
-                          schermate=schermate, fonti_web=fonti_web, **({"notizie": notizie_meta} if notizie_meta else {}))
+                          schermate=schermate, fonti_web=fonti_web, **({"notizie": notizie_meta} if notizie_meta else {}),
+                          **({"agenda": agenda_meta} if agenda_meta else {}))
 
     def stato(self):
         return {
@@ -5295,11 +6159,14 @@ def icona_png(n):
 # Three.js, three-vrm e MediaPipe arrivano dal CDN la PRIMA volta e restano in dati_maik/lib:
 # poi l'avatar funziona anche senza internet. Solo questi file (niente proxy aperto).
 VERSIONE_THREE, VERSIONE_VRM, VERSIONE_MP = "0.169.0", "3.1.6", "0.10.14"
+VERSIONE_PDFJS = "4.10.38"
 LIB_FISSE = {
     "three.module.min.js": f"three@{VERSIONE_THREE}/build/three.module.min.js",
     "three-vrm.module.min.js": f"@pixiv/three-vrm@{VERSIONE_VRM}/lib/three-vrm.module.min.js",
     "mp/vision_bundle.mjs": f"@mediapipe/tasks-vision@{VERSIONE_MP}/vision_bundle.mjs",
     "three-vrm-animation.module.min.js": f"@pixiv/three-vrm-animation@{VERSIONE_VRM}/lib/three-vrm-animation.module.min.js",
+    "pdf.min.mjs": f"pdfjs-dist@{VERSIONE_PDFJS}/build/pdf.min.mjs",
+    "pdf.worker.min.mjs": f"pdfjs-dist@{VERSIONE_PDFJS}/build/pdf.worker.min.mjs",
 }
 _RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs|environments)/[A-Za-z0-9_-]{1,60}\.js")
 _RE_LIB_MP = re.compile(r"mp/wasm/vision_wasm(?:_nosimd)?_internal\.(?:js|wasm)")
@@ -5610,6 +6477,17 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/routine":
                 self._json({"routine": [dict(r, analisi=[ROUTINE.analizza(p) for p in r["passi"]], quando=ROUTINE.descrivi_orario(r))
                                         for r in ROUTINE.elenco()]})
+            elif base == "/calendario":                               # v15: gli impegni (anche ricorrenti) da una data
+                try:
+                    da = datetime.datetime.fromisoformat(qs.get("da", "")) if qs.get("da") else datetime.datetime.now()
+                except ValueError:
+                    da = datetime.datetime.now()
+                giorni = max(1, min(62, int(qs.get("giorni", "7") or 7) if str(qs.get("giorni", "7")).isdigit() else 7))
+                da = da.replace(hour=0, minute=0, second=0, microsecond=0)
+                self._json({"ok": True, "eventi": [Calendario.json_occ(o) for o in CAL.occorrenze(da, da + datetime.timedelta(days=giorni))],
+                            "agenda": CAL.agenda(da, giorni), "totale": len(CAL.eventi())})
+            elif base == "/calendario/avvisi":
+                self._json({"avvisi": CAL.prendi_avvisi()})
             elif base == "/notizie":                                  # v14: notizie per argomento (RSS)
                 self._json(NOTIZIE.prendi(_categoria_notizie(qs.get("cat", "")), 10) if CONFIG["web"] else {"ok": False, "notizie": [], "errore": "MAIK_WEB=0"})
             elif base == "/routine/notizie":
@@ -5656,6 +6534,24 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         base = self.path.split("?")[0]
         try:
+            if base in ("/documenti/file", "/documenti/estrai", "/calendario/importa"):     # v15: file grezzi (Word, PDF, .ics)
+                lung = int(self.headers.get("Content-Length", 0) or 0)
+                nome = urllib.parse.unquote(self.headers.get("X-Nome", "documento"))[:120]
+                if lung <= 0 or lung > 25 * 1024 * 1024:
+                    self._json({"ok": False, "errore": "Il file deve essere tra 1 byte e 25 MB."}, 413); return
+                dati = self.rfile.read(lung)
+                if base == "/calendario/importa":
+                    try:
+                        imp, agg = CAL.importa(dati.decode("utf-8-sig", errors="replace"), nome)
+                    except Exception as e:
+                        self._json({"ok": False, "errore": f"calendario non valido: {str(e)[:80]}"}); return
+                    self._json({"ok": imp + agg > 0, "importati": imp, "aggiornati": agg, "totale": len(CAL.eventi()),
+                                **({} if imp + agg else {"errore": "nel file non ci sono eventi (serve un .ics)"})}); return
+                testo, errore = estrai_testo(nome, dati)
+                if base == "/documenti/estrai" or not testo:
+                    self._json({"ok": bool(testo), "testo": (testo or "")[:60000], "caratteri": len(testo or ""), "errore": errore}); return
+                info, errore = MOTORE.memoria.aggiungi_documento(nome, testo)
+                self._json({"ok": bool(info), "documento": info, "errore": errore, "caratteri": len(testo)}); return
             if base == "/animazioni":                               # v13: animazione .vrma (file grezzo)
                 lung = int(self.headers.get("Content-Length", 0) or 0)
                 if not self._richiesta_locale():
@@ -5785,6 +6681,28 @@ class Handler(BaseHTTPRequestHandler):
                 info, errore = MOTORE.memoria.aggiungi_documento(c.get("nome", ""), c.get("contenuto", ""))
                 self._json({"ok": bool(info), "documento": info, "errore": errore})
 
+            elif base == "/calendario/evento":                        # v15: un impegno a mano (dalla GUI)
+                c = self._read_json_body()
+                quando = None
+                if c.get("inizio"):
+                    try:
+                        quando = datetime.datetime.fromisoformat(str(c["inizio"]))
+                    except ValueError:
+                        quando = None
+                quando = quando or (parse_quando(str(c.get("quando", "")))[0] if c.get("quando") else None)
+                if not quando:
+                    self._json({"ok": False, "errore": "manca la data dell'evento"})
+                else:
+                    e, err = CAL.aggiungi(c.get("titolo", ""), quando, int(c.get("durata") or 60), c.get("luogo", ""), bool(c.get("tutto_giorno")))
+                    self._json({"ok": bool(e), "evento": e, "errore": err})
+            elif base == "/calendario/elimina":
+                self._json({"ok": CAL.elimina(str(self._read_json_body().get("id", "")))})
+            elif base == "/traduci":                                  # v15: interprete
+                c = self._read_json_body()
+                self._json(traduci(c.get("testo", ""), c.get("a", "inglese"), c.get("da", "italiano"), MOTORE.cervello))
+            elif base == "/pagina":                                   # v15: «📖 leggimi» su una fonte
+                c = self._read_json_body()
+                self._json(leggi_pagina(str(c.get("url", ""))[:1000]) if CONFIG["web"] else {"ok": False, "errore": "internet è spento (MAIK_WEB=0)"})
             elif base == "/riunione":                                 # v14: trascrizione → riassunto, decisioni, cose da fare
                 c = self._read_json_body()
                 self._json(riassumi_riunione(c.get("testo", ""), c.get("durata", 0), c.get("titolo", ""), MOTORE.memoria, MOTORE.cervello))
@@ -10164,6 +11082,10 @@ def _ciclo_sfondo():
         except Exception as e:
             print(f"  ⚠  routine: {e}")
         try:
+            CAL.controlla_avvisi()                                # v15: «tra 15 minuti: dentista»
+        except Exception as e:
+            print(f"  ⚠  calendario: {e}")
+        try:
             if CONFIG["pc"] and CONFIG["avvisi"] and time.time() - ultimo_avviso >= CONFIG["avvisi_ogni"]:
                 ultimo_avviso = time.time()
                 MONITOR.controlla()
@@ -10178,8 +11100,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 14.0 — Server avviato            ║
-║ internet · notizie · riunioni · gesti · PC      ║
+║           MAIK 15.0 — Server avviato            ║
+║ PDF · link · calendario · interprete · internet ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

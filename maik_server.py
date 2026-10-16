@@ -5930,7 +5930,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V13</title>
+<title>MAIK // Zep V14</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -6193,10 +6193,38 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .rrow{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}.rrow .tfield{margin-top:0;width:auto;flex:1}
   .m.avviso{border-color:rgba(255,176,32,.6)!important;box-shadow:0 0 18px rgba(255,176,32,.14)}
   .m.avviso .mc::before{content:'⚠️ IL TUO PC';display:block;font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1.5px;color:#ffb020;margin-bottom:4px}
+
+  /* ===== V14: fonti web, notizie, riunioni ===== */
+  a.agc.web{text-decoration:none;background:rgba(var(--accent-rgb),.08);border-color:rgba(var(--accent-rgb),.45);color:var(--text);cursor:pointer}
+  a.agc.web b{color:var(--accent)}a.agc.web.cit{border-color:var(--accent);box-shadow:0 0 10px rgba(var(--accent-rgb),.3)}a.agc.web:hover{background:rgba(var(--accent-rgb),.2)}
+  a.citeweb{display:inline-block;min-width:16px;height:16px;line-height:16px;padding:0 3px;margin:0 1px;border-radius:5px;background:rgba(var(--accent-rgb),.2);border:1px solid rgba(var(--accent-rgb),.55);color:#fff;font:600 10.5px 'Share Tech Mono',monospace;text-align:center;vertical-align:2px;text-decoration:none}
+  a.citeweb:hover{background:var(--accent);color:#050a0f}
+  .news{border:1px solid rgba(var(--accent-rgb),.3);border-radius:12px;background:rgba(0,0,0,.18);overflow:hidden}.news.ko{padding:9px 12px;color:var(--dim)}
+  .newsh{display:flex;justify-content:space-between;padding:7px 12px;font:11px 'Share Tech Mono',monospace;letter-spacing:1.5px;color:var(--accent);border-bottom:1px solid rgba(var(--accent-rgb),.15)}.newsh span{color:var(--dim)}
+  .newsi{display:flex;gap:9px;align-items:flex-start;padding:7px 12px;border-bottom:1px solid rgba(var(--accent-rgb),.07)}.newsi:last-of-type{border-bottom:none}
+  .newsi .nq{font:11px 'Share Tech Mono',monospace;color:var(--dim);min-width:34px;padding-top:2px}.newsi .nt{flex:1;min-width:0;font-size:13.5px;line-height:1.35}
+  .newsi a{color:#fff;text-decoration:none}.newsi a:hover{color:var(--accent);text-decoration:underline}.newsi small{display:block;color:var(--dim);font-size:11.5px;margin-top:2px}
+  .nmore{flex:0 0 auto;border:1px solid var(--border);background:rgba(var(--accent-rgb),.08);border-radius:8px;cursor:pointer;padding:2px 6px}
+  .newsf{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;border-top:1px solid rgba(var(--accent-rgb),.12)}.newsf button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.08);color:var(--text);border-radius:999px;padding:3px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  #riunione{display:none;position:absolute;left:14px;top:52px;z-index:23;width:min(380px,44%);max-height:calc(100% - 170px);flex-direction:column;border-radius:14px;background:rgba(var(--bg-rgb),.72);border:1px solid rgba(255,60,90,.55);backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  body.riunione #riunione{display:flex}body.riunione #rps{display:none!important}
+  #riunione .riuh2{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--border);font:12px 'Share Tech Mono',monospace;letter-spacing:1px}
+  #riunione .rec{width:10px;height:10px;border-radius:50%;background:#ff3c5a;box-shadow:0 0 10px #ff3c5a;animation:pl 1.2s infinite}#riunione.pausa .rec{background:#ffb020;animation:none;box-shadow:none}
+  #riustato{color:var(--dim)}#riutempo{margin-left:auto;color:#fff}
+  #riutitolo{margin:8px 12px 0;width:auto}#riulive{flex:1;min-height:90px;overflow:auto;padding:8px 12px;font-size:13px;line-height:1.45}
+  #riulive small{color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:10px}#riulive .int{color:var(--dim);font-style:italic}
+  #riunione .riub{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--border);flex-wrap:wrap}#riunione .riub input{flex:1;min-width:120px;margin:0}
+  #riunione .riub button{border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:5px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
+  #riunione .riub button.fine{background:var(--accent);color:#050a0f;border:none}
+  .riucard p{margin:6px 0 8px;line-height:1.5}.riuh{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}.riuh b{color:#fff;font-size:15px}.riuh span{color:var(--dim);font:11px 'Share Tech Mono',monospace}
+  .riusez{margin-top:8px}.riusez b{font-size:12.5px;color:var(--accent)}.riusez ul{margin:4px 0 0;padding-left:18px}
+  .todo{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(var(--accent-rgb),.08)}.todo small{color:var(--dim)}
+  .todo button,.riuf button{flex:0 0 auto;border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:4px 9px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
+  .todo button.ok{border-color:var(--green);color:var(--green)}.riuf{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;font-size:12px;color:var(--dim)}.riuf span{flex:1 1 100%}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V13</span></div>
+  <div class="logo">M A I K <span>// V14</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -6270,11 +6298,18 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <button id="sbmirror" onclick="toggleSpecchio()" title="Specchio (I): copio la tua testa e le tue espressioni" aria-label="Specchio">🪞</button>
         <button id="sbgame" onclick="toggleGioco()" title="Sasso, carta, forbici (J)" aria-label="Sasso, carta, forbici">✊</button>
         <button id="sblook" onclick="openLook()" title="Personalizza (A): nome, colori, accessori, voce" aria-label="Personalizza">🎨</button>
+        <button id="sbriu" onclick="toggleRiunione()" title="Modalità riunione (N): ascolto, prendo appunti, poi riassunto e cose da fare" aria-label="Modalità riunione">📝</button>
         <button id="sbroutine" onclick="openRoutine()" title="Routine e modalità (R)" aria-label="Routine e modalità">⚡</button>
         <button id="sbkeys" onclick="openKeys()" title="Scorciatoie da tastiera (?)" aria-label="Scorciatoie">⌨️</button>
       </div>
       <div id="caption" aria-live="polite"></div>
       <div id="gesto" aria-hidden="true"></div>
+      <div id="riunione" role="region" aria-label="Riunione: appunti dal vivo">
+        <div class="riuh2"><span class="rec"></span><b>📝 RIUNIONE</b><span id="riustato">● ascolto</span><span id="riutempo">0:00</span></div>
+        <input class="tfield" id="riutitolo" maxlength="60" placeholder="Titolo (facoltativo): es. lancio del sito">
+        <div id="riulive" aria-live="polite"></div>
+        <div class="riub"><input class="tfield" id="riunota" placeholder="✍️ Aggiungi una nota a mano…" onkeydown="if(event.key==='Enter')notaRiunione()"><button type="button" id="riupausa" onclick="pausaRiunione()">⏸ Pausa</button><button type="button" class="fine" onclick="fineRiunione()">✓ Fine e riassunto</button><button type="button" onclick="annullaRiunione()" title="Annulla (butta via gli appunti)">✕</button></div>
+      </div>
       <div id="rps" role="group" aria-label="Sasso, carta, forbici"><span class="sc" id="rpssc">Tu 0 – 0 Zep</span><button type="button" data-m="sasso" title="Sasso (1)">✊</button><button type="button" data-m="carta" title="Carta (2)">✋</button><button type="button" data-m="forbici" title="Forbici (3)">✌️</button><button type="button" id="rpsgo" title="Un altro giro" onclick="giocaRound()">▶</button><button type="button" class="x" title="Basta giocare" onclick="toggleGioco(false)">✕</button></div>
       <div id="stagedrop">📤 Lascia qui il tuo personaggio (.vrm o .glb)</div>
     </div>
@@ -6291,6 +6326,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('come sta il pc?')">💻 stato del PC</button>
       <button onclick="q('Trova il file ')">🗂️ trova un file</button>
       <button onclick="openRoutine()">⚡ routine</button>
+      <button onclick="qs('notizie')">📰 notizie</button>
+      <button onclick="toggleRiunione()">📝 riunione</button>
+      <button onclick="qs('riassumi quello che ho copiato')">📋 riassumi gli appunti</button>
+      <button onclick="q('cerca su internet ')">🌍 cerca su internet</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -6334,6 +6373,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>J</kbd> sasso, carta, forbici · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> la tua mossa</div>
       <div><kbd>A</kbd> personalizza: nome, colori, accessori, voce</div>
       <div><kbd>R</kbd> routine e modalità</div>
+      <div><kbd>N</kbd> modalità riunione: prendo appunti, poi riassunto e cose da fare</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
@@ -6781,7 +6821,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V13 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V14 — il personaggio 3D di MAIK (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -6789,6 +6829,7 @@ const MaikKit = (() => {
    dalle parole, e una vita sua: si guarda attorno, si annoia, sbadiglia, si addormenta, balla,
    passeggia, reagisce se lo tocchi. V13: fa da specchio alle tue espressioni, gioca a sasso-carta-forbici,
    si veste (colori e accessori), balla le tue animazioni .vrma e muove la bocca sull'audio vero (Piper).
+   V14: cerca su internet con la lente d'ingrandimento e prende appunti col blocco note e la penna.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -7006,6 +7047,10 @@ window.ZepKit = (() => {
   // ey ruota l'avambraccio verso dentro (−) o fuori (+), ez lo alza di lato, wr gira il palmo. Il destro è lo specchio.
   // ============================================================
   const REST = { sx: -0.05, sy: 0, sz: 0.28, ex: -0.3, ey: 0, ez: 0, wr: 0 };
+  // v14: la lente davanti agli occhi (che si sposta piano) · il blocco note davanti al petto e la penna che scrive [robot, umanoide]
+  const CERCA_POSE = [sw => ({ sz: 0.11 * sw, sx: -2.1 + 0.06 * sw, sy: 0, ex: -0.5, ey: -1.7, ez: 0, wr: 0.2 }), sw => ({ sz: 0.06 * sw, sx: -1.0, sy: 0, ex: -1.8, ey: -1.5, ez: 0, wr: 0.2 })];
+  const SCRIVE_POSE = [[{ sz: -0.1, sx: -1.6, sy: 0, ex: -0.9, ey: -1.9, ez: 0, wr: 1.3 }, { sz: -0.1, sx: -1.35, sy: 0, ex: -0.9, ey: -1.6, ez: 0, wr: 0.1 }],
+                       [{ sz: 0.3, sx: -0.6, sy: 0, ex: -1.3, ey: -1.5, ez: 0, wr: 1.3 }, { sz: 0.3, sx: -1.0, sy: 0, ex: -0.8, ey: -1.5, ez: 0, wr: 0.1 }]];
   const TALK = { sx: -0.32, sy: 0, sz: 0.3, ex: -0.95, ey: -0.2, ez: 0, wr: 0.5 };
   const THINK = { sx: -1.35, sy: -0.65, sz: 0.2, ex: -1.75, ey: -0.25, ez: 0, wr: 0.3 };      // mano al mento (robot)
   const THINK_H = { sx: -0.55, sy: -0.35, sz: 0.15, ex: -2.3, ey: -0.55, ez: 0, wr: 0.3 };    // (umanoide)
@@ -7069,6 +7114,9 @@ window.ZepKit = (() => {
     highfive: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.95, sy: -0.1, sz: 0.65, ex: -1.45, ey: 0.15, ez: 0, wr: 1.5 }, w); P.hand.R = ['open', w]; P.face.smile += 0.7 * w; } },
     thumbsdown: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.85, sz: 0.3, ex: -1.4, ey: -0.25, ez: 0, wr: 2.9 }, w); P.hand.R = ['thumb', w]; P.face.frown += 0.7 * w; } },
     lookup: { dur: 1.8, f(a, w, P) { P.look = [0.1, 0.95, w]; P.head.x -= 0.15 * w; P.face.brow += 0.5 * w; } },
+    // v14: cerca su internet (con la lente d'ingrandimento) e prende appunti (blocco note e penna)
+    cerca: { dur: 3.2, lungo: 1, arms: 'R', f(a, w, P) { const sw = Math.sin(a.t * 1.6); armTo(P.armR, CERCA_POSE[P.robot ? 0 : 1](sw), w); P.hand.R = ['fist', w]; P.look = [0.3 * sw, 0.08, w]; P.head.z -= 0.06 * sw * w; P.head.y += 0.12 * sw * w; P.face.brow += 0.35 * w; P.face.wide += 0.3 * w; P.props.lente = Math.max(P.props.lente, w); } },
+    scrive: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const su = Math.pow(Math.max(0, Math.sin(a.t * 0.8 - 1.2)), 8), sc = Math.sin(a.t * 9) * (1 - su), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { ey: pr.ey + 0.07 * sc, sx: pr.sx + 0.035 * Math.sin(a.t * 3.1) * (1 - su) }), w); P.hand.L = ['open', w]; P.hand.R = ['pinch', w]; P.look = [0.05 + 0.06 * sc, -0.75 + 0.85 * su, w]; P.head.x += 0.16 * (1 - su) * w; P.head.z += 0.05 * w; P.face.squint += 0.25 * w * (1 - su); P.face.brow += 0.3 * su * w; P.props.blocco = Math.max(P.props.blocco, w); P.props.penna = Math.max(P.props.penna, w); } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
 
@@ -7801,7 +7849,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0,
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0 },
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -7842,7 +7890,7 @@ window.ZepKit = (() => {
       for (let i = S.acts.length - 1; i >= 0; i--) { const a = S.acts[i]; a.t += dt; a.p = a.t / a.dur; if (a.out != null) a.out -= dt; if (a.p >= 1 || (a.out != null && a.out <= 0)) S.acts.splice(i, 1); }
       for (const a of S.acts) {
         const def = ACT[a.k];
-        let w = (def.add ? 1 : env(a.p)) * clamp(a.amp, 0, 1.5); if (a.out != null) w *= clamp(a.out / 0.25, 0, 1);
+        let w = (def.add ? 1 : def.lungo ? smooth(a.t / 0.45) * smooth((a.dur - a.t) / 0.5) : env(a.p)) * clamp(a.amp, 0, 1.5);   // i gesti lunghi entrano in mezzo secondo if (a.out != null) w *= clamp(a.out / 0.25, 0, 1);
         def.f(a, Math.min(1, w), P);
       }
       if (S.gesture && !S.acts.some(a => a.k === S.gesture)) S.gesture = null;
@@ -7922,6 +7970,58 @@ window.ZepKit = (() => {
       return v;
     }
 
+    // ---------- v14: oggetti in mano al robot (lente, blocco note, penna) ----------
+    const PROP_POS = {   // [x, y, z, rx, ry, rz] nel sistema della mano (calcolati perché la lente stia davanti all'occhio, il blocco
+                         // inclinato verso Zep e verso di te, la punta della penna sul foglio)
+      lente: [0, 0, 0, 2.419, 0.664, 0.694], blocco: [-0.021, -0.136, 0.075, 0.288, 1.019, 0.667], penna: [-0.036, -0.039, 0.009, 2.908, 0.018, -2.408],
+    };
+    function propsRobot(B) {
+      if (B.props) return B.props;
+      const mat = (c, o) => new THREE.MeshPhysicalMaterial(Object.assign({ color: c, roughness: 0.35, metalness: 0.15, clearcoat: 0.5 }, o || {}));
+      const add = (geo, m, x, y, z, p) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); p.add(o); return o; };
+      const pr = {};
+      // 🔍 lente: manico (nel pugno) e la testa rotonda col vetro
+      const L = new THREE.Group(); L.name = 'prop-lente';
+      add(new THREE.CylinderGeometry(0.011, 0.014, 0.2, 16), mat(0x6b4226, { roughness: 0.55, metalness: 0 }), 0, 0.04, 0, L);
+      const testa = new THREE.Group(); testa.position.set(0, 0.23, 0); L.add(testa);       // il vetro arriva davanti all'occhio destro
+      add(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), mat(0x2b2f3a, { metalness: 0.8, roughness: 0.25 }), 0, -0.065, 0, testa);
+      add(new THREE.TorusGeometry(0.062, 0.0095, 12, 44), mat(0x2b2f3a, { metalness: 0.8, roughness: 0.25 }), 0, 0, 0, testa);
+      add(new THREE.CircleGeometry(0.058, 40), new THREE.MeshPhysicalMaterial({ color: 0xd8f3ff, transparent: true, opacity: 0.3, roughness: 0.02, metalness: 0, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false }), 0, 0, 0, testa);
+      add(new THREE.RingGeometry(0.03, 0.04, 24, 1, 0.5, 1.1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, side: THREE.DoubleSide, depthWrite: false }), 0, 0, 0.002, testa);
+      B.Rr.hand.add(L); pr.lente = L;
+      // 📒 blocco note: copertina colorata, fogli con le righe, spirale
+      const N = new THREE.Group(); N.name = 'prop-blocco';
+      add(new THREE.BoxGeometry(0.15, 0.2, 0.01), mat(0x7c3aed, { roughness: 0.6 }), 0, 0, 0, N);
+      const fc = document.createElement('canvas'); fc.width = 128; fc.height = 170; const g = fc.getContext('2d');
+      g.fillStyle = '#fbfaf5'; g.fillRect(0, 0, 128, 170); g.strokeStyle = '#9fc4ef'; g.lineWidth = 2;
+      for (let y = 34; y < 170; y += 14) { g.beginPath(); g.moveTo(8, y); g.lineTo(120, y); g.stroke(); }
+      g.strokeStyle = '#e88'; g.beginPath(); g.moveTo(22, 0); g.lineTo(22, 170); g.stroke();
+      g.strokeStyle = '#334'; g.lineWidth = 2.5; g.beginPath(); for (let i = 0; i < 4; i++) { const y = 46 + i * 14; g.moveTo(28, y - 3); for (let x = 28; x < 70 + 30 * Math.random(); x += 6) g.lineTo(x, y - 3 + 3 * Math.sin(x * 0.7 + i)); } g.stroke();
+      const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace;
+      add(new THREE.BoxGeometry(0.138, 0.185, 0.008), [mat(0xfbfaf5), mat(0xfbfaf5), mat(0xfbfaf5), mat(0xfbfaf5), new THREE.MeshStandardMaterial({ map: ft, roughness: 0.9 }), mat(0xfbfaf5)], 0, -0.004, 0.008, N);
+      for (let i = 0; i < 6; i++) add(new THREE.TorusGeometry(0.008, 0.002, 6, 14), mat(0xbfc6d2, { metalness: 0.9 }), -0.05 + i * 0.02, 0.098, 0.006, N).rotation.y = Math.PI / 2;
+      B.L.hand.add(N); pr.blocco = N;
+      // 🖊️ penna
+      const Pn = new THREE.Group(); Pn.name = 'prop-penna';
+      add(new THREE.CylinderGeometry(0.006, 0.006, 0.11, 12), mat(0x1d2433, { metalness: 0.4 }), 0, 0, 0, Pn);
+      add(new THREE.ConeGeometry(0.006, 0.018, 12), mat(0xc9ccd6, { metalness: 0.9 }), 0, -0.064, 0, Pn).rotation.x = Math.PI;
+      add(new THREE.SphereGeometry(0.007, 10, 8), B.glow2, 0, 0.056, 0, Pn);
+      B.Rr.hand.add(Pn); pr.penna = Pn;
+      for (const k in pr) pr[k].visible = false;
+      return (B.props = pr);
+    }
+    function aggiornaProps(B, props) {
+      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02)) return;
+      const pr = propsRobot(B);
+      for (const k in pr) {
+        const w = clamp(props[k] || 0, 0, 1), o = pr[k], q = PROP_POS[k];
+        o.visible = w > 0.03;
+        if (!o.visible) continue;
+        o.position.set(q[0], q[1], q[2]); o.rotation.set(q[3], q[4], q[5]);
+        o.scale.setScalar(0.2 + 0.8 * smooth(w));
+      }
+    }
+
     function animateRobot(B, P, a) {
       const { t } = a;
       B.R.position.set(P.root.x, 0.035 * Math.sin(t * 1.6) * (1 - 0.6 * S.sleepW) + P.root.py * height, 0);
@@ -7958,6 +8058,7 @@ window.ZepKit = (() => {
       tmpC.copy(S.luci || accent); if (S.dance.w > 0.01) tmpC.offsetHSL(((S.dance.n % 6) / 6) * S.dance.w, 0, 0);
       B.glow.color.copy(tmpC).multiplyScalar(k1); B.glow2.color.copy(accent2).multiplyScalar(k2);
       B.tip.scale.setScalar(1 + 0.4 * pulse + 0.5 * P.antenna);
+      aggiornaProps(B, P.props);
     }
 
     function animateHumanoid(P, a) {
@@ -8216,6 +8317,10 @@ window.ZepKit = (() => {
         rafWin = win; last = performance.now(); raf = rafWin.requestAnimationFrame(loop); resize();
       },
       pause(p) { paused = !!p; },
+      // v14: ferma un gesto lungo (es. «cerca» finché leggo internet, «scrive» durante la riunione) · è in corso?
+      endAct(k) { let n = 0; for (const a of S.acts) if (a.k === k && a.out == null) { a.out = 0.3; n++; } return n; },
+      acting(k) { return S.acts.some(a => a.k === k && a.out == null); },
+      get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
       get paused() { return paused; },
       step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
       snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
@@ -8347,7 +8452,15 @@ function markLast(){document.querySelectorAll('#msgs .m.ai.last').forEach(x=>x.c
 let busy=false,ctl=null,att=null;
 async function invia(opt){
   opt=opt||{};const regen=!!opt.regen;
-  const t=(opt.text!=null?opt.text:$('#inp').value).trim();const A=regen?null:att;
+  const t=(opt.text!=null?opt.text:$('#inp').value).trim();
+  if(!regen&&!att&&t&&!busy){                                                                   // v14: riunione e «quello che ho copiato»
+    if(RIU.on&&RE_RIU_FINE.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);fineRiunione();return;}
+    if(RE_RIU_INIZIA.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);const x=iniziaRiunione(),d=add('ai',x);finalize(d,x,null,null);return;}
+    if(RE_APPUNTI.test(t)){let c;try{c=await leggiAppunti();}catch(e){toast('📋 Non riesco a leggere gli appunti ('+(e.message||'permesso negato')+'): clicca «Consenti» quando il browser te lo chiede','err');return;}
+      if(!c){toast('📋 Gli appunti sono vuoti: copia prima un testo (Ctrl+C)','err');return;}
+      att={kind:'text',name:'appunti.txt',content:c.slice(0,12000),full:c};renderAtt();}
+  }
+  const A=regen?null:att;
   if((!t&&!A)||busy)return;
   if(!regen&&!A&&t&&rispostaVeloce(t)){if(opt.text==null)$('#inp').value='';return;}   // «sì» / «no» alla conferma aperta
   if(!regen&&!A&&t&&giocoTesto(t)){if(opt.text==null)$('#inp').value='';return;}          // ✊ «sasso», «ancora», «basta» durante il gioco
@@ -8381,14 +8494,16 @@ async function invia(opt){
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
         if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
-        if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;}   // 🤖 l'agente sta usando uno strumento
+        if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
+        if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
           else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
           else{
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
-            addChips(bubble,obj.azioni,obj.fonti,obj.seguito);
+            addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
+            addFontiWeb(bubble,obj.fonti_web);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -8645,6 +8760,12 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('✊',GIOCO.on?'Basta sasso, carta, forbici':'Giochiamo a sasso, carta, forbici',()=>toggleGioco(),'J','morra cinese gioco'),
     c('🎨','Personalizza Zep',()=>openLook(),'A','colori accessori cappello occhiali nome voce'),c('🔊','Voce neurale (Piper)',()=>openLook(),'voce','piper naturale offline'),
     c('⚡','Routine e modalità',()=>openRoutine(),'R','automazioni modalità lavoro orario'),c('➕','Nuova routine…',()=>{openRoutine();},'routine','crea'),
+    c('🌍','Cerca su internet…',()=>q('cerca su internet '),'fonti','web google notizie ricerca online'),c('📰','Notizie di oggi',()=>qs('notizie'),'ANSA','giornale titoli'),
+    c('⚽','Notizie di sport',()=>qs('notizie di sport'),'ANSA','calcio'),c('💻','Notizie di tecnologia',()=>qs('notizie di tecnologia'),'ANSA','tech'),
+    c('📝',RIU.on?'Fine riunione e riassunto':'Modalità riunione (appunti)',()=>toggleRiunione(),'N','verbale meeting appunti segretario'),
+    c('📋','Riassumi quello che ho copiato',()=>qs('riassumi quello che ho copiato'),'appunti','clipboard copia'),
+    c('🇬🇧','Traduci in inglese quello che ho copiato',()=>qs('traduci in inglese quello che ho copiato'),'appunti','clipboard traduzione'),
+    c('✍️','Correggi quello che ho copiato',()=>qs('correggi gli errori di quello che ho copiato'),'appunti','clipboard grammatica'),
     c('⌨️','Scorciatoie da tastiera',()=>openKeys(),'?','tasti')];
   RUT.forEach(r=>L.push(c(r.tipo==='modalità'?'🎛️':'⚡','Avvia: '+r.nome,()=>rAvvia(r.id),r.quando||'routine','routine modalità')));
   CHATS.filter(x=>x.id!==CUR).slice(0,8).forEach(x=>L.push(c('💬','Vai alla chat: '+x.titolo,()=>switchChat(x.id),'chat','conversazione')));
@@ -8652,7 +8773,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V13 · ZEP',key:'maik_boot_v13',checks:[
+  return MaikKit.boot({version:'V14 · ZEP',key:'maik_boot_v14',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -8662,13 +8783,14 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Internet e notizie',run:async()=>{try{const r=await (await fetch('/notizie')).json();return r.ok?{ok:true,text:'collegato · '+(r.notizie||[]).length+' notizie ANSA'}:{ok:true,text:r.errore==='MAIK_WEB=0'?'spento (MAIK_WEB=0)':'offline: cerco quando torna la rete'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce neurale',run:async()=>{const I=await voceInfo();return !I?{ok:false,text:'errore'}:I.pronta?{ok:true,text:'Piper · '+I.voce}:{ok:true,text:I.motore?'Piper c\'è: scarica una voce da 🎨':'voce del browser (Piper non installato)'};}},
     {label:'Routine',run:async()=>{try{const r=await (await fetch('/routine')).json();const a=r.routine||[],o=a.filter(x=>x.orario).length;return{ok:true,text:a.length?a.length+' salvat'+(a.length===1?'a':'e')+(o?' · '+o+' a orario':''):'nessuna (⚡ per crearne)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Nucleo neurale',run:async()=>({ok:true,text:'pronto · tema '+(MaikKit.THEMES[OPT.theme]||MaikKit.THEMES.neon).nm})}]});}
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 13 🧍 Ora **ti vedo**: accendi 👀 e riconosco i **gesti delle tue mani** (👋 ciao, 👍, ✌️, 🤟, ✊, ✋ ferma per zittirmi, «**conta le mie dita**»), faccio il tuo **specchio** 🪞 (tasto **I**) e giochiamo a **sasso, carta, forbici** ✊ (tasto **J**). **Personalizzami** 🎨: nome, colori, cappelli, occhiali, cuffie, voce… anche una **voce neurale** naturale e offline (Piper). Crea **routine e modalità** ⚡: «**crea la modalità lavoro: apri gmail, volume al 30**», anche a orario, sempre con la tua conferma. Se la **batteria** è scarica o il **disco** è pieno, ti avviso io. Uso il tuo **PC** chiedendoti conferma: «apri youtube», «**alza il volume**», «**cosa c\'è sul mio schermo?**», «**trova il file contratto**». **Agisco da solo**: chiedimi le cose a parole tue («stasera pasta, metti in lista gli ingredienti», «che tempo fa a Milano?») e uso i miei strumenti. Leggo i tuoi **📚 documenti** e cito la fonte, tengo **più chat** separate e mi ricordo di chiederti **com\'è andata** 🔁. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 14 🧍 Ora **leggo internet**: «**cerca su internet chi ha vinto il Giro**» e ti rispondo citando le **fonti** 🌍 [1] [2] (cliccabili). «**notizie**», «**ultime notizie di sport**» 📰. **Ti faccio da segretario**: premi 📝 (tasto **N**) in riunione, io ascolto e prendo appunti col mio blocco note, poi ti do **riassunto, decisioni e cose da fare** (con «ricordamelo»). «**riassumi / traduci / correggi quello che ho copiato**» 📋. E resto il tuo Zep: gesti delle mani, specchio, sasso-carta-forbici, routine ⚡, voce neurale, il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -8676,7 +8798,7 @@ async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).s
 async function loadHistory(){let r;try{r=await (await fetch('/sessioni/storia?id='+encodeURIComponent(CUR))).json();}catch(e){return 0;}
   const sc=r.scambi||[];
   sc.forEach(x=>{if(x.tu){const m=x.tu.match(/^([\s\S]*?)\s*\[📎 ([^\]]+)\]$/);add('me',m?m[1]:x.tu,null,{file:m?m[2]:null});}
-    const d=add('ai',x.ai,x.seguito?'seguito':null);finalize(d,x.ai,null,x.tu&&!/\[📎/.test(x.tu)?x.tu:null);addChips(d,x.azioni,x.fonti);});
+    const d=add('ai',x.ai,x.seguito?'seguito':null);finalize(d,x.ai,null,x.tu&&!/\[📎/.test(x.tu)?x.tu:null);addChips(d,x.azioni,x.fonti);addFontiWeb(d,x.fonti_web);if(x.notizie)addNotizie(d,x.notizie,true);});
   $('#msgs').scrollTop=1e9;return sc.length;}
 async function switchChat(id,force){if(busy){toast('Aspetta che finisca di rispondere','err');return;}if(id===CUR&&!force)return;
   CUR=id;LS.set('maik_srv_chat',id);$('#msgs').innerHTML='';loadChats();
@@ -8790,7 +8912,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
   if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
-  const umore = AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
+  const umore = AV && RIU.on ? (RIU.pausa ? 'riunione in pausa ⏸' : 'prende appunti 📝') : AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
   const txt = umore || AV_STATE_TXT[s] || s;
   if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
 }
@@ -8813,15 +8935,16 @@ document.addEventListener('mousemove', e => {
 const VOICE = { q: [], cur: null, spoken: 0, last: '' };
 const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu;
 function cleanSpeech(t) {
-  return stripThink(t || '').replace(/```[\s\S]*?(?:```|$)/g, ' (ti ho scritto del codice) ').replace(/\[[^\]\n]{1,80}\.[A-Za-z0-9]{1,5}(?: · parte \d+)?\]/g, '')
+  return stripThink(t || '').replace(/```[\s\S]*?(?:```|$)/g, ' (ti ho scritto del codice) ').replace(/\[[^\]\n]{1,80}\.[A-Za-z0-9]{1,5}(?: · parte \d+)?\]/g, '').replace(/\s?\[\d{1,2}\]/g, '')
     .replace(/https?:\/\/\S+?(?=[.,!?;:»)]*(?:\s|$))/g, 'il link').replace(/[#*_`>|]/g, '').replace(/<[^>]+>/g, '').replace(EMOJI_RE, '').replace(/\s+/g, ' ').trim();
 }
 const sentences = t => (t.match(/[^.!?…]+[.!?…]+["»”)]*\s*|[^.!?…]+$/g) || []).map(s => s.trim()).filter(s => s.length > 1);
 function itVoice() { const vs = speechSynthesis.getVoices(); return vs.find(x => x.lang && x.lang.startsWith('it') && /natural|neural|online/i.test(x.name)) || vs.find(x => x.lang && x.lang.startsWith('it')); }
-function say(t) { if (!ttsOn || !voceDisponibile()) return; stopSpeech(); sentences(cleanSpeech(t)).slice(0, 16).forEach(s => VOICE.q.push(s)); pump(); }
+function say(t) { if (!ttsOn || !voceDisponibile() || RIU.on) return;   // in riunione Zep non parla (finirebbe negli appunti)
+  stopSpeech(); sentences(cleanSpeech(t)).slice(0, 16).forEach(s => VOICE.q.push(s)); pump(); }
 // durante lo streaming: appena c'è una frase completa la dice (niente attesa della risposta intera)
 function feedSpeech(full, done) {
-  if (!ttsOn || !voceDisponibile()) return;
+  if (!ttsOn || !voceDisponibile() || RIU.on) return;
   const txt = cleanSpeech(full);
   const upto = done ? txt.length : Math.max(txt.lastIndexOf('. '), txt.lastIndexOf('! '), txt.lastIndexOf('? '), txt.lastIndexOf('… ')) + 1;
   if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); if (VOICE.cur && VOICE.cur.neurale && VOICE.q.length) sintesi(VOICE.q[0]).catch(() => {}); }
@@ -9010,7 +9133,7 @@ function updateStageBar() {
   const set = (id, on) => { const b = $(id); if (b) b.classList.toggle('on', !!on); };
   set('#sbtts', ttsOn); $('#sbtts').textContent = ttsOn ? '🔊' : '🔇';
   set('#sbconv', conv || friend); set('#sbeyes', TRACK.eyes || camOn); set('#sbpip', !!pipWin); set('#sbfocus', document.body.classList.contains('focus')); set('#sbmusic', MUSIC.on);
-  set('#sbgest', gestiOn() && camOn); set('#sbmirror', SPECCHIO.on); set('#sbgame', GIOCO.on);
+  set('#sbgest', gestiOn() && camOn); set('#sbmirror', SPECCHIO.on); set('#sbgame', GIOCO.on); set('#sbriu', RIU.on);
 }
 document.addEventListener('keydown', e => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable;
@@ -9021,7 +9144,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -9556,7 +9679,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK // ' + n + ' V13'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK // ' + n + ' V14'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -9773,6 +9896,200 @@ function comandoZepV13(t) {
   return null;
 }
 
+// ============================================================
+// V14 — MAIK LEGGE INTERNET (fonti cliccabili), LE NOTIZIE, TI FA DA SEGRETARIO (riunioni) E USA I TUOI APPUNTI
+// ============================================================
+
+// ---------- 🌍 fonti da internet: chip cliccabili e [1] [2] nel testo che portano alla pagina ----------
+function sitoBreve(s) { return String(s || '').replace(/^www\./, ''); }
+function addFontiWeb(d, fw) {
+  if (!fw || !fw.length) return;
+  const g = agEl(d);
+  g.insertAdjacentHTML('beforeend', fw.map(f => '<a class="agc web' + (f.citata ? ' cit' : '') + '" href="' + escA(f.url) + '" target="_blank" rel="noopener noreferrer" title="'
+    + escA((f.titolo || '') + (f.estratto ? ' — ' + f.estratto : '')) + '">🌍 <b>' + f.n + '</b> ' + esc(sitoBreve(f.sito)) + '</a>').join(''));
+  citaWeb(mc(d), fw);
+}
+// «… alta 330 metri [1].» → il numero diventa un link alla fonte (solo fuori dal codice)
+function citaWeb(el, fw) {
+  const per = {}; (fw || []).forEach(f => per[f.n] = f);
+  const giro = n => {
+    if (n.nodeType === 3) {
+      if (!/\[\d{1,2}\]/.test(n.nodeValue)) return;
+      const frag = document.createDocumentFragment(), parti = n.nodeValue.split(/(\[\d{1,2}\])/);
+      for (const p of parti) {
+        const m = p.match(/^\[(\d{1,2})\]$/), f = m && per[+m[1]];
+        if (f) { const a = document.createElement('a'); a.className = 'citeweb'; a.href = f.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = (f.titolo || '') + ' — ' + sitoBreve(f.sito); a.textContent = m[1]; frag.appendChild(a); }
+        else frag.appendChild(document.createTextNode(p));
+      }
+      n.replaceWith(frag);
+    } else if (n.nodeType === 1 && !/^(PRE|CODE|A)$/.test(n.tagName)) [...n.childNodes].forEach(giro);
+  };
+  giro(el);
+}
+// Zep si mette a cercare (con la lente) mentre leggo le pagine
+let cercaT = 0;
+function lavoroInCorso(l) {
+  if (!l) return;
+  caption((l.icona || '🌍') + ' ' + (l.testo || 'Cerco…')); clearTimeout(cercaT);
+  if (AV) { AV.act('cerca', { dur: 40 }); cercaT = setTimeout(() => AV && AV.endAct('cerca'), 40000); }
+}
+function lavoroFinito() { clearTimeout(cercaT); if (AV) AV.endAct('cerca'); }
+
+// ---------- 📰 notizie: la scheda con i titoli (clic = l'articolo, 🌍 = approfondisci) ----------
+function notizieHTML(n) {
+  const cat = n.categoria && n.categoria !== 'principali' ? n.categoria : 'principali';
+  if (!n.ok || !(n.notizie || []).length) return '<div class="news ko">📰 Notizie non disponibili adesso (sei offline?)</div>';
+  return '<div class="news"><div class="newsh">📰 NOTIZIE · ' + esc(cat.toUpperCase()) + '<span>' + esc((n.notizie[0] && n.notizie[0].fonte) || 'ANSA') + '</span></div>'
+    + n.notizie.map((x, i) => '<div class="newsi"><span class="nq">' + esc(x.quando || '') + '</span><div class="nt">' + (x.link ? '<a href="' + escA(x.link) + '" target="_blank" rel="noopener noreferrer">' + esc(x.titolo) + '</a>' : esc(x.titolo))
+      + (x.descrizione ? '<small>' + esc(x.descrizione) + '</small>' : '') + '</div><button type="button" class="nmore" data-q="' + escA(x.titolo) + '" title="Approfondisci su internet">🌍</button></div>').join('')
+    + '<div class="newsf"><button type="button" data-leggi="1">🔊 Leggimele</button>' + ['principali', 'mondo', 'economia', 'sport', 'tecnologia', 'scienza'].filter(c => c !== cat).slice(0, 4).map(c => '<button type="button" data-cat="' + c + '">' + c + '</button>').join('') + '</div></div>';
+}
+function addNotizie(d, n, soloScheda) {
+  if (!n) return;
+  if (soloScheda) { const primo = (d.dataset.raw || '').split('\n')[0]; mc(d).innerHTML = renderAI(primo); }
+  const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = notizieHTML(n); w.firstChild._n = n;
+  d.insertBefore(w, d.querySelector('.acts')); $('#msgs').scrollTop = 1e9;
+}
+function leggiNotizie(n, quante) {
+  const ns = (n.notizie || []).slice(0, quante || 3); if (!ns.length) return;
+  const cat = n.categoria && n.categoria !== 'principali' ? 'di ' + n.categoria : 'principali';
+  stopSpeech(); const was = ttsOn; ttsOn = true;
+  say('Ecco le notizie ' + cat + '. ' + ns.map(x => x.titolo.replace(/[.!?…]+$/, '')).join('. ') + '. Le altre le trovi qui in chat.');
+  ttsOn = was;
+}
+
+// ---------- 📝 MODALITÀ RIUNIONE: ascolto, trascrivo, poi riassunto, decisioni e cose da fare ----------
+const RIU = { on: false, pausa: false, rec: null, finali: [], interim: '', inizio: 0, pausaDa: 0, pausaTot: 0, timer: 0, salvaT: 0, err: 0 };
+const RE_RIU_INIZIA = /^(?:(?:ehi|ok)\s+)?(?:(?:maik|zep)[,!]?\s+)?(?:(?:inizia|avvia|attiva|comincia|apri|fai)\s+(?:la\s+)?(?:modalit[aà]\s+riunione|riunione|verbale)|modalit[aà]\s+riunione|prendi\s+appunti(?:\s+(?:della|di\s+questa)\s+riunione)?|registra\s+la\s+riunione|fammi\s+da\s+segretari[oa])[!. ]*$/i;
+const RE_RIU_FINE = /^(?:(?:maik|zep)[,!]?\s+)?(?:fine\s+(?:della\s+)?riunione|finisci\s+la\s+riunione|chiudi\s+la\s+riunione|basta\s+appunti|stop\s+riunione|riunione\s+finita|fai\s+il\s+riassunto(?:\s+della\s+riunione)?)[!. ]*$/i;
+function riuTesto() { return RIU.finali.map(f => f.t).join(' ').replace(/\s+/g, ' ').trim(); }
+function riuDurata() { return Math.max(0, ((RIU.pausa ? RIU.pausaDa : Date.now()) - RIU.inizio - RIU.pausaTot) / 1000); }
+const mmss = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+function riuRender() {
+  const el = $('#riunione'); if (!el) return;
+  const parole = (riuTesto().match(/\S+/g) || []).length;
+  $('#riutempo').textContent = mmss(riuDurata()) + ' · ' + parole.toLocaleString('it-IT') + ' parole';
+  $('#riustato').textContent = RIU.pausa ? '⏸ in pausa' : RIU.rec ? '● ascolto' : '✍️ solo note a mano';
+  el.classList.toggle('pausa', RIU.pausa);
+  $('#riulive').innerHTML = RIU.finali.slice(-8).map(f => '<div><small>' + mmss(f.s) + '</small> ' + esc(f.t) + '</div>').join('') + (RIU.interim ? '<div class="int">' + esc(RIU.interim) + '…</div>' : '');
+  $('#riulive').scrollTop = 1e9;
+  $('#riupausa').textContent = RIU.pausa ? '▶ Riprendi' : '⏸ Pausa';
+}
+function riuSalvaBozza() { if (RIU.on) LS.set('maik_riunione_bozza', { testo: riuTesto(), durata: Math.round(riuDurata()), titolo: $('#riutitolo').value || '', quando: Date.now() }); }
+function riuAscolta() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return false;
+  const r = new SR(); r.lang = 'it-IT'; r.continuous = true; r.interimResults = true;
+  r.onresult = e => {
+    let it = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const x = e.results[i][0].transcript.trim();
+      if (e.results[i].isFinal) { if (x) { RIU.finali.push({ t: x[0].toUpperCase() + x.slice(1) + (/[.!?]$/.test(x) ? '' : '.'), s: riuDurata() }); if (AV && RIU.finali.length % 6 === 0) AV.gesture('nod'); } }
+      else it += x + ' ';
+    }
+    RIU.interim = it.trim(); RIU.err = 0; riuRender();
+  };
+  r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { RIU.rec = null; toast('🎤 Mi serve il microfono per prendere appunti (o scrivi le note a mano)', 'err'); riuRender(); } };
+  r.onend = () => { RIU.interim = ''; if (RIU.on && !RIU.pausa && RIU.rec === r && ++RIU.err < 30) setTimeout(() => { if (RIU.on && !RIU.pausa && RIU.rec === r) try { r.start(); } catch (e) {} }, 250); riuRender(); };   // Chrome si ferma ogni tanto: riparte
+  try { r.start(); } catch (e) { return false; }
+  RIU.rec = r; return true;
+}
+function iniziaRiunione() {
+  if (RIU.on) { toast('📝 Sto già prendendo appunti'); return '📝 Sto già prendendo appunti.'; }
+  stopSpeech(); if (conv) toggleConv(); if (listening) { try { reco.stop(); } catch (e) {} }
+  if (GIOCO.on) toggleGioco(false);
+  Object.assign(RIU, { on: true, pausa: false, finali: [], interim: '', inizio: Date.now(), pausaTot: 0, err: 0 });
+  $('#riutitolo').value = ''; document.body.classList.add('riunione');
+  const ok = riuAscolta();
+  if (AV) AV.act('scrive', { dur: 900 });
+  clearInterval(RIU.timer); RIU.timer = setInterval(() => { riuRender(); if (AV && RIU.on && !RIU.pausa && !AV.acting('scrive')) AV.act('scrive', { dur: 900 }); }, 1000);
+  clearInterval(RIU.salvaT); RIU.salvaT = setInterval(riuSalvaBozza, 10000);
+  riuRender(); updateStageBar();
+  caption('📝 Prendo appunti… (N per finire)'); captionOff(2500);
+  return ok ? '📝 Modalità riunione: ascolto e prendo appunti. Quando avete finito premi **✓ Fine** (o dimmi «fine riunione»): ti preparo riassunto, decisioni e cose da fare.'
+    : '📝 Modalità riunione senza microfono (il riconoscimento vocale serve Chrome o Edge): scrivi le note a mano nel riquadro e alla fine ti preparo il riassunto.';
+}
+function pausaRiunione() {
+  if (!RIU.on) return;
+  RIU.pausa = !RIU.pausa;
+  if (RIU.pausa) { RIU.pausaDa = Date.now(); if (RIU.rec) try { RIU.rec.stop(); } catch (e) {} if (AV) AV.endAct('scrive'); }
+  else { RIU.pausaTot += Date.now() - RIU.pausaDa; RIU.err = 0; if (RIU.rec) try { RIU.rec.start(); } catch (e) {} if (AV) AV.act('scrive', { dur: 900 }); }
+  riuRender();
+}
+function notaRiunione() {
+  const i = $('#riunota'), v = i.value.trim(); if (!v) return;
+  RIU.finali.push({ t: v[0].toUpperCase() + v.slice(1) + (/[.!?]$/.test(v) ? '' : '.'), s: riuDurata(), mano: true }); i.value = ''; riuRender();
+}
+function chiudiRiunione() {
+  RIU.on = false; clearInterval(RIU.timer); clearInterval(RIU.salvaT);
+  const r = RIU.rec; RIU.rec = null; if (r) try { r.stop(); } catch (e) {}
+  document.body.classList.remove('riunione'); if (AV) AV.endAct('scrive'); updateStageBar();
+}
+function annullaRiunione() {
+  if (RIU.finali.length > 3 && !confirm('Buttare via gli appunti di questa riunione?')) return;
+  chiudiRiunione(); LS.set('maik_riunione_bozza', null); toast('📝 Riunione annullata');
+}
+async function fineRiunione(bozza) {
+  const dati = bozza || { testo: riuTesto(), durata: Math.round(riuDurata()), titolo: $('#riutitolo').value.trim() };
+  if (!bozza) { riuSalvaBozza(); chiudiRiunione(); }
+  if ((dati.testo.match(/\S+/g) || []).length < 5) { toast('📝 Ho sentito troppo poco per un riassunto', 'err'); LS.set('maik_riunione_bozza', null); return null; }
+  const d = add('ai', ''); mc(d).innerHTML = '📝 Preparo il riassunto della riunione… <span class="cursor"></span>';
+  SPH.state = 'thinking'; busy = true; $('#send').disabled = true;
+  let r; try { r = await postJ('/riunione', dati); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  SPH.state = 'idle'; busy = false; $('#send').disabled = false;
+  if (!r.ok) { mc(d).innerHTML = renderAI('📝 ' + (r.errore || 'Non sono riuscito a fare il riassunto') + ' (la trascrizione è salvata: riprova dal menu).'); finalize(d, '', null, null); return r; }
+  LS.set('maik_riunione_bozza', null);
+  mostraRiunione(d, r);
+  return r;
+}
+function testoRiunione(r) {
+  const L = ['📝 ' + r.titolo, '', r.riassunto];
+  if (r.punti.length) L.push('', 'Punti chiave:', ...r.punti.map(x => '- ' + x));
+  if (r.decisioni.length) L.push('', 'Decisioni:', ...r.decisioni.map(x => '- ' + x));
+  if (r.cose_da_fare.length) L.push('', 'Cose da fare:', ...r.cose_da_fare.map(c => '- ' + c.cosa + (c.chi ? ' (' + c.chi + ')' : '') + (c.quando ? ' — ' + c.quando : '')));
+  return L.join('\n');
+}
+function mostraRiunione(d, r) {
+  const min = Math.max(1, Math.round((r.durata || 0) / 60));
+  const lista = (t, a) => a.length ? '<div class="riusez"><b>' + t + '</b><ul>' + a.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '';
+  const html = '<div class="riucard"><div class="riuh">📝 <b>' + esc(r.titolo) + '</b><span>' + min + ' min · ' + (r.parole || 0).toLocaleString('it-IT') + ' parole' + (r.fonte === 'regole' ? ' · riassunto rapido' : '') + '</span></div>'
+    + '<p>' + esc(r.riassunto || '—') + '</p>' + lista('Punti chiave', r.punti) + lista('✅ Decisioni', r.decisioni)
+    + (r.cose_da_fare.length ? '<div class="riusez"><b>📌 Cose da fare</b>' + r.cose_da_fare.map((c, i) => '<div class="todo"><span>' + esc(c.cosa) + (c.chi || c.quando ? ' <small>' + esc([c.chi, c.quando].filter(Boolean).join(' · ')) + '</small>' : '')
+      + '</span><button type="button" data-todo="' + i + '">⏰ Ricordamelo</button></div>').join('') + '</div>' : '')
+    + '<div class="riuf">' + (r.documento ? '<span>📚 Salvata nei documenti: <b>' + esc(r.documento.nome) + '</b></span>' : '') + '<button type="button" data-riu="copia">📋 Copia</button><button type="button" data-riu="leggi">🔊 Leggi</button></div></div>';
+  mc(d).innerHTML = html; d._riunione = r; finalize(d, testoRiunione(r), null, null);
+  const n = r.cose_da_fare.length;
+  say('Ecco il riassunto della riunione «' + r.titolo + '». ' + r.riassunto + (r.decisioni.length ? ' Avete deciso: ' + r.decisioni.slice(0, 3).join('; ') + '.' : '') + (n ? ' Ci sono ' + (n === 1 ? 'una cosa' : n + ' cose') + ' da fare: le trovi qui sotto.' : ''));
+  if (AV) { AV.emote('happy', 2500); AV.gesture('nod'); }
+  $('#msgs').scrollTop = 1e9;
+}
+async function ricordaTodo(btn) {
+  const d = btn.closest('.m'), r = d && d._riunione, c = r && r.cose_da_fare[+btn.dataset.todo]; if (!c) return;
+  btn.disabled = true;
+  let x; try { x = await postJ('/promemoria/aggiungi', { testo: c.cosa + (c.chi ? ' (' + c.chi + ')' : ''), quando: c.quando || '' }); } catch (e) { x = { ok: false }; }
+  if (x.ok) { btn.textContent = '✓ ' + x.quando; btn.classList.add('ok'); toast('⏰ Ti ricorderò: ' + c.cosa + ' (' + x.quando + ')', 'ok'); loadPr(); }
+  else { btn.disabled = false; toast('Promemoria non salvato', 'err'); }
+}
+function toggleRiunione() { if (RIU.on) fineRiunione(); else { const t = iniziaRiunione(); const d = add('ai', t); finalize(d, t, null, null); } }
+// una riunione rimasta a metà (pagina chiusa, PC spento): la riprendo
+function bozzaRiunione() {
+  const b = LS.get('maik_riunione_bozza', null);
+  if (!b || !b.testo || (b.testo.match(/\S+/g) || []).length < 20) return;
+  const t = '📝 Ho trovato gli appunti di una riunione non finita (' + new Date(b.quando).toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ', ' + (b.testo.match(/\S+/g) || []).length + ' parole). Vuoi il riassunto?';
+  const d = add('ai', t); finalize(d, t, null, null);
+  const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = '<div class="pcconf"><div class="pcb"><button type="button" data-bozza="si">📝 Fai il riassunto</button><button type="button" data-bozza="no">🗑 Butta via</button></div></div>';
+  d.insertBefore(w, d.querySelector('.acts'));
+}
+
+// ---------- 📋 QUELLO CHE HAI COPIATO: «riassumi / traduci / correggi quello che ho copiato» ----------
+// («negli appunti della riunione» NON sono gli appunti del PC: serve «quello che ho copiato» o «quello che c'è negli appunti»)
+const RE_APPUNTI = /\b(?:quello|ci[oò]|il\s+testo|la\s+frase|cosa|il\s+pezzo)\s+(?:che\s+)?ho\s+(?:appena\s+)?copiato\b|\b(?:quello|ci[oò]|il\s+testo|cosa)\s+(?:che\s+)?c['’]?[eè]\s+(?:negli\s+appunti|nella\s+clipboard)\b|\b(?:dalla|nella)\s+clipboard\b/i;
+async function leggiAppunti() {
+  if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error('il browser non mi fa leggere gli appunti');
+  const t = await navigator.clipboard.readText();
+  return String(t || '').replace(/\r\n/g, '\n').trim();
+}
+
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();}});
 $('#rmodal').addEventListener('click',e=>{if(e.target.id==='rmodal')closeRoutine();});
@@ -9795,7 +10112,13 @@ const bootP=runBoot();pal=MaikKit.palette(palCmds);
 if(innerWidth<=760)$('#side').classList.add('hidden');
 $('#main').addEventListener('click',()=>{if(innerWidth<=760&&!$('#side').classList.contains('hidden'))toggleSide();});
 // azioni sui messaggi
-$('#msgs').addEventListener('click',e=>{const cb=e.target.closest('.pcconf button[data-a]');if(cb){rispondiConferma(cb.closest('.pcconf').dataset.id,cb.dataset.a);return;}
+$('#msgs').addEventListener('click',e=>{const v14=e.target.closest('[data-q],[data-leggi],[data-cat],[data-todo],[data-riu],[data-bozza]');   // v14: notizie, riunioni
+  if(v14){const ds=v14.dataset;if(ds.q!=null)qs('cerca su internet '+ds.q);else if(ds.leggi){const c=v14.closest('.news');if(c&&c._n)leggiNotizie(c._n,6);}else if(ds.cat)qs('notizie di '+ds.cat);
+    else if(ds.todo!=null)ricordaTodo(v14);else if(ds.riu==='copia'){const r=v14.closest('.m')._riunione;(navigator.clipboard?navigator.clipboard.writeText(testoRiunione(r)):Promise.reject()).then(()=>toast('📋 Riassunto copiato','ok'),()=>toast('Copia non riuscita','err'));}
+    else if(ds.riu==='leggi'){const r=v14.closest('.m')._riunione;const w=ttsOn;ttsOn=true;say(testoRiunione(r));ttsOn=w;}
+    else if(ds.bozza){const b=LS.get('maik_riunione_bozza',null);v14.closest('.pcwrap').remove();if(ds.bozza==='si'&&b)fineRiunione(b);else{LS.set('maik_riunione_bozza',null);toast('🗑 Appunti buttati via');}}
+    return;}
+  const cb=e.target.closest('.pcconf button[data-a]');if(cb){rispondiConferma(cb.closest('.pcconf').dataset.id,cb.dataset.a);return;}
   const fb=e.target.closest('.pcfile button');if(fb){apriFile(fb.closest('.pcfile'));return;}
   const sb=e.target.closest('[data-shot]');if(sb){sb.disabled=true;guardaScreenshot(sb.dataset.shot);return;}
   const im=e.target.closest('img[data-big]');if(im){window.open(im.dataset.big,'_blank');return;}const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
@@ -9822,7 +10145,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();})();
 </script>
 </body></html>"""
 

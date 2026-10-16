@@ -24,6 +24,7 @@ MAIK usa due modelli: uno per **chattare/ragionare** e uno **multimodale per la 
 ```bash
 ollama pull llama3.1     # chat
 ollama pull llava        # visione (per far "vedere" MAIK) — compatibile ovunque
+ollama pull nomic-embed-text   # (V16, facoltativo) ricerca per significato nei documenti
 ```
 
 - Nel **client** (`index.html`): scegli il modello chat e quello visione in **⚙ Impostazioni**.
@@ -43,6 +44,26 @@ e non lo legge ad alta voce né lo salva in memoria.
 
 **Per l'agente (V10)** vanno meglio i modelli che seguono bene le istruzioni: `qwen2.5:7b` / `qwen2.5:14b` o `llama3.1`.
 I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strumenti: MAIK funziona lo stesso, solo che agisce meno da solo.
+
+---
+
+## 🗂️ Novità V16 — MAIK ti organizza la vita: spese, abitudini, la tua settimana (versione server)
+
+| | Cosa fa |
+|---|---|
+| 💶 **Spese** | Basta dirlo: «**ho speso 23,50 € di benzina**», «spesi 40 euro al supermercato», «ho pagato la bolletta della luce 87,40», «ieri ho speso 18 euro di pizza». MAIK capisce importo, cosa e quando, e mette la spesa nella **categoria giusta** (🛒 spesa, 🚗 trasporti, 💡 bollette, 🍕 mangiare fuori, 💊 salute…). Le domande: «**quanto ho speso questo mese?**», «quanto ho speso di benzina?», «… in bollette», «il mese scorso», «a settembre», «oggi», con il confronto con il periodo prima. Zep fa il conto con la sua **calcolatrice** 🧮 e sul display c'è il totale. Ogni spesa ha il suo **↩ Annulla**. |
+| 🎯 **Budget** | «**imposta il budget a 800 euro**» (o «budget trasporti 150 euro» per una categoria): MAIK ti avvisa all'**80%** ⚠️ e quando lo **superi** 🚨, e ti dice quanto ti resta al giorno fino a fine mese. Il budget compare anche nel briefing del mattino. |
+| 💡 **Bollette e scontrini** | Allega una bolletta in PDF (o Word) e dimmi «**aggiungila alle spese**», oppure premi **💶 alle spese** sull'allegato: MAIK trova **importo** e **scadenza** («entro il 15 novembre 2026», «Scadenza: 05/12/2026») e mette la scadenza **in calendario**, quindi quel giorno ti avvisa. Funziona anche con gli scontrini («aggiungi questo scontrino alle spese»). |
+| 💶 **La finestra delle spese** | Tasto **D** o il bottone 💶: il mese con i suoi totali, la barra del budget, le categorie, le spese giorno per giorno, l'elenco (con ✕), il modulo per una spesa nuova e il bottone **📄 Da una bolletta o uno scontrino**. |
+| ✅ **Abitudini** | «**nuova abitudine: bere 8 bicchieri d'acqua al giorno**», «palestra lun mer ven alle 19», «voglio leggere ogni sera alle 22», «andare a correre 3 volte a settimana». Poi «**ho fatto palestra**», «ho bevuto 2 bicchieri», «ho letto»: MAIK segna e conta i **giorni di fila** 🔥, con il record (i giorni di riposo non spezzano la serie). Ai **traguardi** (3, 7, 14, 30… giorni) Zep festeggia con i **coriandoli** 🎉. Se hai messo un orario e non l'hai ancora fatta, te lo **ricorda** con un bottone «✓ Fatto!». Tasto **O** per la finestra con i 7 giorni, i bottoni +/− e il modulo. |
+| 📊 **La tua settimana** | «**com'è andata la settimana?**» (o tasto **W**): spese con il confronto, abitudini (percentuale e serie), impegni fatti e in arrivo, riunioni, documenti, umore. C'è anche **🔊 Leggimela**. Il lunedì te lo ricorda il briefing. |
+| 🧠 **Ricerca per significato** | Nei 📚 documenti MAIK ora cerca anche **per significato**: chiedi «dove ho lasciato la macchina?» e trova «la mia auto è in garage», anche senza parole in comune. Usa gli embedding di Ollama: `ollama pull nomic-embed-text` (una volta). Senza quel modello la ricerca per parole funziona come prima, e la finestra dei documenti ti dice come attivarla. |
+| 📖 **Letture in altre lingue** | «leggimi questo articolo https://…» su una pagina **in inglese, spagnolo, francese o tedesco**: Zep la legge con una **voce di quella lingua**, se ce n'è una installata sul PC (sennò con quella italiana). Nel riquadro della lettura compare la bandierina. |
+
+- **Senza Ollama** funzionano lo stesso spese, budget, bollette (importo e scadenza li legge MAIK da sé), abitudini e riepilogo della settimana. Ollama serve solo per le bollette scritte in modo strano e per la ricerca per significato.
+- **Privacy**: tutto resta sul tuo PC, in `dati_maik/spese.json`, `abitudini.json` e `vettori.json`.
+- Nuovi endpoint: `GET /spese?mese=AAAA-MM` · `POST /spese/aggiungi {importo, descrizione, categoria?, data?}` · `POST /spese/elimina {id}` · `POST /spese/budget {importo, categoria?}` · `POST /spese/documento {testo, nome, scontrino?}` · `GET /abitudini` · `POST /abitudini/crea {testo}` o `{nome, emoji, giorni, ora, obiettivo, settimanale}` · `POST /abitudini/segna {id, n, data?}` · `POST /abitudini/elimina {id}` · `GET /abitudini/avvisi` · `GET /settimana`. `GET /documenti` dice anche lo stato della ricerca per significato (`"semantica"`). `/chat/stream` restituisce anche `"spesa"`, `"spese"`, `"budget"`, `"abitudine"`, `"abitudini"` e `"settimana"`. Nuovi strumenti dell'agente: `aggiungi_spesa`, `spese`, `abitudini`.
+- Variabili: `MAIK_EMBED=0` (spegne la ricerca per significato) · `MAIK_MODELLO_EMBED` (`nomic-embed-text`) · `MAIK_EMBED_SOGLIA` (0.62: più alta = più severa).
 
 ---
 
@@ -316,7 +337,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V15 — `maik_server.py`
+## MAIK — Server V16 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

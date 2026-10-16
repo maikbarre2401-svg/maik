@@ -46,6 +46,23 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 📖 Novità V15 — MAIK legge tutto: PDF, Word, link, il tuo calendario, e ti fa da interprete (versione server)
+
+| | Cosa fa |
+|---|---|
+| 📄 **PDF e Word** | Trascina un **PDF**, un **Word** (.docx) o un file **OpenOffice** (.odt) nei **📚 documenti** o come **📎 allegato**, poi chiedi «quanto devo pagare?», «riassumimi il contratto». I PDF li legge **pdf.js** nel browser; se non c'è (offline) o per Word/OpenOffice c'è il **lettore del server**, in puro Python (anche PDF compressi, con accenti ed €, più pagine). Un PDF **scansionato** (solo immagini) o **protetto da password** te lo dice. |
+| 🔗 **Link** | «**riassumi questa pagina** https://…», «di cosa parla https://…», o mandi **solo il link**: MAIK apre la pagina (anche un **PDF online**) e risponde citandola **[1]**. Mentre la legge, Zep prende il **tablet** 📱. Se la pagina è privata o non si apre, te lo dice e ti suggerisce «riassumi quello che ho copiato». |
+| 📖 **Lettura a voce** | «**leggimi questo articolo** https://…» oppure il bottone **📖** accanto a ogni fonte web: Zep legge **dal tablet**, frase per frase, con il riquadro che mostra titolo, frase e avanzamento. Puoi dire o scrivere «**pausa**», «**continua**», «**salta**», «**indietro**», «**ripeti**», «**basta**», o usare ⏸ ⏭ ⏮ e il tasto **L**. Se fai un'altra domanda o arriva un avviso, la lettura **va in pausa** e riparte dalla stessa frase. |
+| 📅 **Calendario** | Tasto **E** o il bottone 📅: la **settimana**, ⬆️ **importa il file .ics** di **Google Calendar**, **Outlook** o **iPhone** (ricorrenze, eccezioni, fusi orari, eventi di tutto il giorno; reimportarlo **aggiorna** gli eventi, niente doppioni), ＋ nuovo impegno, ✕ elimina. In chat: «**cosa ho domani?**», «impegni di questa settimana», «agenda», «**aggiungi al calendario** cena da Marco venerdì alle 20 in via Roma» (con **↩ Annulla**), «cancella dal calendario palestra». Ti **avvisa 15 minuti prima** (messaggio, voce, notifica) e il **briefing** del mattino dice gli impegni del giorno. Anche l'agente lo usa da solo. |
+| 🗣️ **Interprete** | Tasto **T**, il bottone 🗣️ o «**fammi da interprete in inglese**» (spagnolo, francese, tedesco, portoghese, rumeno, albanese, polacco, ucraino, russo, arabo, cinese, giapponese): premi **🎤 Parlo io** e parli italiano, Zep lo ripete **nell'altra lingua con una voce di quella lingua**; premi **🎤 English** quando risponde l'altra persona e te lo dice in italiano. Con «**a turno**» ascolta da solo una volta per uno. Puoi anche scrivere. Quando chiudi («basta interprete») la conversazione tradotta resta in chat. |
+
+- **Cosa serve**: per tradurre e riassumere serve Ollama acceso (senza Ollama il link mostra comunque l'inizio della pagina, e calendario, PDF e lettura a voce funzionano lo stesso). Per l'interprete a voce serve **Chrome o Edge** e, per ogni lingua, una **voce installata** sul PC (Windows: Impostazioni → Ora e lingua → Voce); se manca, la traduzione resta scritta.
+- **Sicurezza**: i link si aprono solo verso indirizzi **pubblici** (mai la rete di casa), come per la ricerca web. I file Word/OpenOffice con DOCTYPE/ENTITY («bombe» XML) vengono rifiutati. Il calendario resta sul tuo PC in `dati_maik/calendario.json`.
+- Nuovi endpoint: `POST /documenti/file` e `POST /documenti/estrai` (file grezzo, header `X-Nome`, fino a 25 MB) · `GET /calendario?da=AAAA-MM-GG&giorni=7` · `GET /calendario/avvisi` · `POST /calendario/importa` (file .ics grezzo) · `POST /calendario/evento {titolo, inizio | quando, durata?, luogo?, tutto_giorno?}` · `POST /calendario/elimina {id}` · `POST /traduci {testo, da, a}` · `POST /pagina {url}`. `/chat/stream` restituisce anche `"pagina"`, `"agenda"` ed `"evento"`. Nuovi strumenti dell'agente: `leggi_pagina`, `calendario`, `aggiungi_evento`.
+- Variabili: `MAIK_CAL_AVVISO` (minuti di anticipo degli avvisi, 15). pdf.js (4.10.38) viene scaricato una volta dal CDN e poi resta in locale, come Three.js.
+
+---
+
 ## 🌍 Novità V14 — MAIK legge internet, le notizie e ti fa da segretario (versione server)
 
 | | Cosa fa |
@@ -299,7 +316,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V14 — `maik_server.py`
+## MAIK — Server V15 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

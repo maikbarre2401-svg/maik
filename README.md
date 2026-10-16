@@ -46,6 +46,23 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🌍 Novità V14 — MAIK legge internet, le notizie e ti fa da segretario (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🌍 **Ricerca su internet con le fonti** | «**cerca su internet chi ha vinto il Giro d'Italia**», «cerca online il prezzo della PS5»: MAIK cerca (DuckDuckGo, poi Bing, poi Wikipedia — **senza chiavi né account**), **legge le pagine** (solo il testo utile, le parti che c'entrano con la domanda) e risponde citando le fonti **[1] [2]**: i numeri e le fonti sotto la risposta sono **link cliccabili**. Anche **da solo**, quando gli chiedi fatti recenti, prezzi, risultati o cose che non sa con certezza. Mentre legge, Zep prende la **lente d'ingrandimento** 🔍. |
+| 📰 **Notizie** | «**notizie**», «**ultime notizie di sport**», «notizie di tecnologia / economia / mondo…», «cosa succede nel mondo»: i titoli ANSA con l'ora, clic per l'articolo, 🌍 per approfondire, 🔊 per sentirli. Tre titoli anche nel **briefing** del mattino. |
+| 📝 **Modalità riunione** | Tasto **N**, il bottone 📝 o «**modalità riunione**»: Zep prende il **blocco note** e ascolta, la **trascrizione** compare dal vivo (pausa, note scritte a mano). Alla fine (✓ o «fine riunione») ti dà **riassunto, punti chiave, decisioni e cose da fare** con chi e quando, e per ogni cosa un **⏰ Ricordamelo**. La riunione finisce nei **📚 documenti**: dopo puoi chiedere «cosa abbiamo deciso alla riunione sul sito?». Le riunioni lunghe le riassume a pezzi; se chiudi la pagina a metà, la **bozza** non si perde. Durante la riunione Zep **non parla** (finirebbe negli appunti). |
+| 📋 **Quello che hai copiato** | «**riassumi quello che ho copiato**», «**traduci in inglese** quello che ho copiato», «correggi quello che ho copiato»: legge gli appunti del PC (il browser ti chiede il permesso la prima volta) e lavora sul testo. |
+
+- **Sicurezza**: MAIK legge solo indirizzi **pubblici** http(s) — mai la rete di casa o il PC stesso, nemmeno dopo un redirect. I feed con DOCTYPE/ENTITY vengono rifiutati. `MAIK_WEB=0` spegne internet del tutto. Le domande vanno a DuckDuckGo/Bing/Wikipedia come se le cercassi tu.
+- **Senza Ollama** la ricerca mostra comunque i risultati con gli estratti, e la riunione ha un riassunto «a regole» (prime frasi, decisioni, compiti con chi e quando).
+- Con prompt lunghi (fonti web, trascrizioni) MAIK chiede a Ollama **più contesto** in automatico, così non perde l'inizio della domanda.
+- Nuovi endpoint: `GET /notizie?cat=sport` · `POST /riunione {testo, durata, titolo?}` · `POST /promemoria/aggiungi {testo, quando?}`. `/chat/stream` restituisce anche `"fonti_web"` e `"notizie"`, e durante la ricerca manda `{"lavoro": …}`. Nuovi strumenti dell'agente: `cerca_internet`, `notizie`.
+- Variabili: `MAIK_WEB=0` · `MAIK_WEB_MOTORI` (es. `duckduckgo,wikipedia`) · `MAIK_WEB_CAR_FONTE` (testo per fonte, 2500) · `MAIK_NOTIZIE_URL` · `MAIK_WEB_DDG_URL` / `_BING_URL` / `_WIKI_URL`.
+
+---
+
 ## 🖐️ Novità V13 — Zep ti vede, parla come una persona, è tuo e fa le cose da solo (sul PC, versione server)
 
 | | Cosa fa |
@@ -282,7 +299,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V13 — `maik_server.py`
+## MAIK — Server V14 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

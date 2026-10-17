@@ -16475,7 +16475,7 @@ const _tdFatta0 = tdFatta;
 tdFatta = async function (...a) { const r = await _tdFatta0.apply(this, a); setTimeout(checkObAvvisi, 500); return r; };   // la cosa spuntata era una tappa? → 🏆
 
 // ---------- 🗓️ la settimana ----------
-function settimanaHTML(w, compatta) {
+function pianoSettHTML(w, compatta) {
   const giorni = w.giorni.filter(g => !compatta || g.attivita.length || g.eventi.length);
   return '<div class="swgrid' + (compatta ? ' compatta' : '') + '">' + giorni.map(g => '<div class="swday"><div class="swh"><b>' + esc(g.etichetta) + '</b><small>' + (g.occupati ? Math.round(g.occupati / 6) / 10 + ' h' : 'libero') + '</small></div>'
     + '<i class="prbar swload" title="Carico della giornata: ' + g.carico + '%"><b style="width:' + Math.min(100, g.carico) + '%;background:' + (g.carico > 90 ? '#f59e0b' : 'var(--accent)') + '"></b></i>'
@@ -16487,7 +16487,7 @@ async function loadSettimanaTab() {
   let r; try { r = await (await fetch('/prime/settimana')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
   PR.settimana = r.piano_settimana;
   $('#prcorpo').innerHTML = '<div class="swtitle">🗓️ <b>' + esc(r.piano_settimana.periodo) + '</b> · le cose da fare divise nei giorni attorno ai tuoi impegni (prima quelle che scadono, il weekend più leggero)</div>'
-    + settimanaHTML(r.piano_settimana, false) + '<div class="prbtn">' + (r.piano_settimana.da_fissare ? '<button type="button" data-sw="fissa">📌 Fissa i giorni (' + r.piano_settimana.da_fissare + ' senza data)</button>' : '') + '<button type="button" data-pr="todo">📋 Le cose da fare</button></div>';
+    + pianoSettHTML(r.piano_settimana, false) + '<div class="prbtn">' + (r.piano_settimana.da_fissare ? '<button type="button" data-sw="fissa">📌 Fissa i giorni (' + r.piano_settimana.da_fissare + ' senza data)</button>' : '') + '<button type="button" data-pr="todo">📋 Le cose da fare</button></div>';
 }
 async function swFissa(w, b) {
   const assegna = []; w.giorni.forEach(g => g.attivita.forEach(x => { if (x.senza_data) assegna.push({ id: x.id, data: g.data }); }));
@@ -16585,7 +16585,7 @@ function addV20(d, obj) {
   if (obj.piano_settimana) {
     const w = obj.piano_settimana, righe = (d.dataset.raw || '').split('\n');
     d._sett = w;
-    if (w.giorni.some(g => g.attivita.length)) mc(d).innerHTML = renderAI(righe[0]) + settimanaHTML(w, true) + righe.filter(x => /^📌|^⚠️/.test(x)).map(x => '<div class="pnnota">' + renderAI(x) + '</div>').join('');
+    if (w.giorni.some(g => g.attivita.length)) mc(d).innerHTML = renderAI(righe[0]) + pianoSettHTML(w, true) + righe.filter(x => /^📌|^⚠️/.test(x)).map(x => '<div class="pnnota">' + renderAI(x) + '</div>').join('');
     agEl(d).insertAdjacentHTML('beforeend', (w.da_fissare ? '<button type="button" class="agc calb" data-sw="fissa">📌 Fissa i giorni (' + w.da_fissare + ')</button>' : '') + '<button type="button" class="agc calb" data-prtab="settimana">🗓️ Apri la settimana</button>');
   }
   if (obj.tendenze) {

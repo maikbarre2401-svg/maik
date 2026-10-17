@@ -47,6 +47,25 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🍅 Novità V17 — MAIK ti aiuta a fare le cose: cose da fare, concentrazione, il piano della giornata (versione server)
+
+| | Cosa fa |
+|---|---|
+| 📋 **Cose da fare** | «**aggiungi alle cose da fare: chiamare il commercialista entro venerdì, urgente #lavoro**», «metti pagare il bollo oggi nelle cose da fare», «devo finire la relazione entro domani», più cose insieme separate da «;». MAIK capisce **scadenza** («oggi», «domani alle 15», «entro venerdì», «il 3 novembre», «12/1», «fine mese», «la prossima settimana»), **priorità** («urgente», «quando ho tempo»), **progetto** (#lavoro) e **durata** («(30 min)»). Poi: «**cosa devo fare oggi?**» (con gli impegni del calendario e le abitudini, quelle in ritardo per prime), «cosa devo fare domani?», «le mie cose da fare», «**fatto: commercialista**» (o «ho fatto la spesa»), «sposta la relazione a lunedì», «cancella l'attività …». |
+| 📋 **La finestra** | Tasto **K** o il bottone 📋: **Oggi / Tutte / Fatte**, aggiungi scrivendo come parli, ✓ per spuntare, ▶ per concentrarti su quella, ✕ per eliminare. Anche in chat le cose da fare si spuntano con un clic. |
+| 🍅 **Modalità concentrazione** | «**concentrazione 25 minuti sulla relazione**», «pomodoro», tasto **Q** o il bottone 🍅: un timer ad anello sul palco e **Zep si mette le cuffie e lavora al suo portatile** con te 🎧💻. Alla fine ti avvisa (suono, notifica, voce), si stiracchia e partono **5 minuti di pausa** (15 ogni 4 pomodori); poi «▶ Prossimo pomodoro». ⏸ per fermare il tempo, ✓ per chiudere prima, ⏹ per smettere. Il tempo che resta compare anche nel titolo della finestra. I pomodori vengono salvati e legati all'attività (🍅 accanto): «**quanti pomodori ho fatto oggi?**». |
+| 🗓️ **Il piano della giornata** | «**pianificami la giornata**»: MAIK mette in fila gli impegni del calendario (fissi), le abitudini con un orario, il pranzo, e negli spazi liberi le cose da fare (prima quelle in ritardo, in scadenza e urgenti), con le pause. Su ogni attività c'è **▶ Inizia** (parte il pomodoro). Quello che non ci sta te lo dice, con **➡️ Sposta a domani**. La sera prepara il piano di domani. |
+| 🌙 **Chiudiamo la giornata** | «**chiudiamo la giornata**» / «com'è andata oggi?»: le cose fatte, i pomodori, le abitudini, le spese di oggi, cosa resta (con **➡️ Sposta a domani**) e gli impegni di domani. |
+| 📝 **Dalle riunioni** | Nelle cose da fare di una riunione c'è anche **📋 In lista**: va tra le tue cose da fare, con chi e quando. |
+
+- Il **briefing** del mattino dice cosa c'è da fare oggi (e quante cose sono in ritardo); il riepilogo della **settimana** conta anche le cose fatte e i pomodori.
+- Funziona tutto **senza Ollama** (il piano e la chiusura della giornata sono fatti da MAIK con le sue regole). L'agente ha due strumenti nuovi: `aggiungi_attivita` e `attivita`.
+- Nuovi endpoint: `GET /attivita?filtro=oggi|domani|settimana|ritardo|tutte|fatte` · `POST /attivita/aggiungi {testo, quando?}` · `POST /attivita/fatta {id, fatta}` · `POST /attivita/modifica` · `POST /attivita/rimanda {ids, a}` · `POST /attivita/elimina {id}` · `POST /attivita/trova {testo}` · `GET /focus` · `POST /focus/sessione {minuti, attivita, testo, completa}` · `GET /piano` · `GET /giornata`. `/chat/stream` restituisce anche `"attivita"`, `"attivita_lista"`, `"piano"`, `"giornata"` e `"focus"`.
+- Variabili: `MAIK_GIORNATA` (la tua giornata per il piano, es. `8-18`; di default `9-19`). I dati restano in `dati_maik/attivita.json`.
+- La barra dei bottoni sul palco ora sta su due righe: le scorciatoie da tastiera si aprono con **?** o dalla palette (Ctrl+K).
+
+---
+
 ## 🗂️ Novità V16 — MAIK ti organizza la vita: spese, abitudini, la tua settimana (versione server)
 
 | | Cosa fa |
@@ -337,7 +356,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V16 — `maik_server.py`
+## MAIK — Server V17 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

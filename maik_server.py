@@ -7040,7 +7040,10 @@ class Ricordi:
         if t is None:
             t = self._tok[k] = collections.Counter(_parole(self.testo(x)))
             if len(self._tok) > 4000:
-                self._tok.pop(next(iter(self._tok)))
+                try:
+                    self._tok.pop(next(iter(self._tok)))
+                except (RuntimeError, StopIteration, KeyError):      # un'altra richiesta lo sta toccando: pazienza
+                    pass
         return t
 
     # in sottofondo: i vettori delle chiacchierate nuove (16 alla volta)
@@ -14768,6 +14771,7 @@ function mostraIdea(x) {
 }
 async function checkIdee() {
   if (busy || document.hidden) return;                     // la mostro quando mi guardi (resta in coda sul server)
+  if ((window.FOCUS && FOCUS.on && FOCUS.fase === 'lavoro') || (typeof RIU !== 'undefined' && RIU.on) || (window.LETTURA && LETTURA.on) || (window.INTERPRETE && INTERPRETE.on)) return;   // non ti disturbo mentre ti concentri, in riunione, mentre leggo o faccio l'interprete
   let r; try { r = await (await fetch('/proattivo')).json(); } catch (e) { return; }
   (r.idee || []).forEach((x, k) => setTimeout(() => mostraIdea(x), k * 1600));
 }

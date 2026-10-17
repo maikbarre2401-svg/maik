@@ -47,6 +47,21 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🏆 Novità V20 — MAIK PRIME pensa in grande: obiettivi con le tappe, la tua settimana, le tendenze del mese (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🎯 **Obiettivi con le tappe** | Dimmi un obiettivo con una scadenza: «**voglio imparare lo spagnolo entro giugno**», «**nuovo obiettivo: correre una mezza maratona in 4 mesi**», «il mio obiettivo è risparmiare 2000 euro entro dicembre», «leggere 12 libri entro fine anno», «finire la tesi entro il 15/3». MAIK lo divide in **3–6 tappe concrete** (le pensa il modello; senza modello usa tappe generiche), ognuna con la sua data, e mette **la prima nelle cose da fare** (con il progetto dell'obiettivo). Quando la spunti, passa da solo alla tappa dopo. «voglio una pizza per stasera» o «devo finire entro domani» **non** diventano obiettivi. |
+| 🏆 **Il trofeo** | A ogni tappa fatta arriva il messaggio **🏆 Tappa 2 di 6 completata … Prossima: …**, con i coriandoli, la notifica e la voce, e **Zep alza una coppa d'oro** (anche il tuo personaggio VRM). All'ultima tappa: **🏆🎉 Obiettivo raggiunto!** Funziona sia che spunti la cosa da fare (dalla lista, dal centro di controllo, dalla chat), sia che dica «**ho finito la tappa dello spagnolo**». |
+| 🎯 **Seguirli** | «**i miei obiettivi**», «**a che punto sono con lo spagnolo?**» (percentuale, tappe, giorni che mancano e il **ritmo**: 🚀 in anticipo, ✅ in linea, ⚠️ un po' indietro), «cancella l'obiettivo della maratona». Con **⚙️ Controllo ogni lunedì** MAIK crea un'automazione che ogni lunedì alle 9 ti dice a che punto sei. Ha anche ↩ Annulla. |
+| 🗓️ **Il piano della settimana** | «**pianificami la settimana**» (o «organizza la mia settimana»): MAIK divide le cose da fare nei prossimi 7 giorni **attorno ai tuoi impegni del calendario**: quelle che scadono questa settimana (e quelle urgenti) il prima possibile, quelle senza fretta verso la fine, le altre dove c'è più spazio; il **weekend più leggero** e la pausa pranzo libera. Ogni giorno mostra le ore e una barra del carico. Se qualcosa non ci sta prima della scadenza te lo dice. **📌 Fissa i giorni** dà la data alle cose che non l'avevano, e da lì restano in quel giorno. |
+| 📈 **Le tendenze** | «**come sto andando questo mese?**», «le mie tendenze», «i miei progressi»: i **5 numeri del mese** (spese con ▲▼ rispetto allo stesso periodo del mese scorso, abitudini fatte, cose fatte, pomodori, umore medio) e **quello che si nota** («hai speso il 40% in meno 👍», la voce più grossa, l'abitudine che tieni meglio e quella da rinforzare, il giorno più produttivo, l'umore in salita, gli obiettivi indietro). |
+| 🛰️ **Centro di controllo a schede** | Il tasto **Y** ora ha 4 schede: **⚡ Oggi** (come prima, più il riquadro degli obiettivi), **🎯 Obiettivi** (crea, ✓ tappa fatta, controllo ogni lunedì, i 🏆 raggiunti), **🗓️ Settimana** e **📈 Tendenze** con i **grafici di 30 giorni**: spese al giorno, abitudini (%), pomodori, umore, e le spese per voce rispetto al mese scorso. Passa sopra con il mouse e vedi il valore di ogni giorno; c'è anche **la tabella con tutti i dati**. Se un grafico non ha ancora dati, te lo dice e ti spiega come riempirlo. |
+
+- L'agente ha un nuovo strumento, `obiettivo_tappe`: se nella conversazione dici «mi piacerebbe imparare la chitarra entro marzo», lo può creare da solo.
+- Nuovi endpoint: `GET /obiettivi[?tutti=1]` · `GET /obiettivi/avvisi` · `POST /obiettivi/crea {testo}` o `{titolo, scadenza}` · `POST /obiettivi/tappa {id}` · `POST /obiettivi/elimina {id}` · `GET /prime/settimana` · `POST /settimana/applica {assegna: [{id, data}]}` (solo per le cose senza data) · `GET /prime/tendenze?giorni=30` (7–90). `/attivita/fatta` dice anche se era una tappa. `/chat/stream` restituisce `"obiettivo"`, `"obiettivi"`, `"obiettivo_eventi"`, `"piano_settimana"` e `"tendenze"`.
+- I dati: `dati_maik/obiettivi_prime.json`; le tappe sono normali cose da fare in `attivita.json`.
+
 ## ⚡ Novità V19 — MAIK PRIME: lavora da solo, fa ricerche approfondite, ti mostra tutta la giornata (versione server)
 
 > **Nuovo nome:** il programma ora si chiama **MAIK PRIME** e il file è **`maikprime.py`** → `python maikprime.py`.
@@ -396,7 +411,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V19 — `maikprime.py`
+## MAIK PRIME — Server V20 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

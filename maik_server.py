@@ -8319,8 +8319,9 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         ricordi_meta, ricordati = None, []
         if ricordi_dom:                                         # v18: i ricordi trovati vanno al modello, che risponde con le date
             righe, ricordi_meta = ricordi_dom
-            avvisa({"strumento": {"tipo": "cerca_chat", "ok": True, "icona": "💬",
-                                  "esito": f"{len(ricordi_meta['risultati'])} chiacchierat{'a' if len(ricordi_meta['risultati']) == 1 else 'e'} ritrovat{'a' if len(ricordi_meta['risultati']) == 1 else 'e'}"}})
+            n_r = len(ricordi_meta["risultati"])
+            chip_ricordi = {"tipo": "cerca_chat", "ok": True, "icona": "💬", "esito": f"{n_r} chiacchierat{'a' if n_r == 1 else 'e'} ritrovat{'a' if n_r == 1 else 'e'}"}
+            avvisa({"strumento": chip_ricordi})
             msg = (f"{testo}\n\n[RICORDI DELLE VOSTRE CHIACCHIERATE — la persona non li vede]\n{righe}\n\n"
                    "Rispondi usando questi ricordi, con naturalezza e con le date («il 3 ottobre mi avevi detto…»). "
                    "Se non c'entrano con la domanda, di' onestamente che non te lo ricordi.")
@@ -8351,6 +8352,8 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         finale, azioni = pulisci_pensiero(risposta) or risposta, []
         notizie_meta = agenda_meta = spese_meta = None
         passo = 1
+        if ricordi_meta:
+            azioni.append(chip_ricordi)                        # il chip «💬 chiacchierate ritrovate» resta anche riaprendo la chat
         if agente:
             finale, richieste = Agente.estrai(pulisci_pensiero(risposta))
             info = [a for a in richieste if str(a.get("tipo", "")).lower() in STRUMENTI_INFO][:3]
@@ -9375,7 +9378,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V17</title>
+<title>MAIK // Zep V18</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -9758,15 +9761,38 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   body.has-avatar #stagebar #sbkeys{display:none}   /* 20 bottoni su due righe: le scorciatoie restano con «?» e Ctrl+K */
   .pncard .pnnota{margin-top:6px;font-size:11.5px;color:var(--dim)}
   @media (max-width:760px){#pomo{width:calc(100% - 28px)}}
+
+  /* ===== V18: idee proattive, ricordi, passi dell'agente, foto → testo ===== */
+  .m.seguito.idea{border-color:rgba(255,211,77,.6)!important;box-shadow:0 0 22px rgba(255,211,77,.18)}
+  .m.seguito.idea .mc::before{content:'💡 UN\'IDEA PER TE';color:#ffd34d}
+  .idcard{margin-top:6px}.idcard .idb{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}.idlist .idcard{border-top:1px solid rgba(var(--accent-rgb),.1);padding-top:6px}
+  .idcard .idb button{border:1px solid #ffd34d;color:#ffd34d;background:rgba(255,211,77,.08);border-radius:8px;padding:3px 10px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600}
+  .idcard .idb button.idno{border-color:var(--border);color:var(--dim);font-weight:400}.idcard .idb button:disabled{opacity:.45;cursor:default}
+  .idcard .idb button.fatto{opacity:1;background:#ffd34d;color:#1a1300}.idcard .idok{margin-top:6px;font-size:13px;color:var(--green)}
+  .passi{display:inline-flex;align-items:center;gap:6px;font:11px 'Share Tech Mono',monospace;letter-spacing:.5px;color:var(--accent);border:1px solid rgba(var(--accent-rgb),.4);border-radius:999px;padding:2px 10px;margin-bottom:6px}
+  .passi i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:passiP .9s ease-in-out infinite}.passi.fatto{color:var(--dim);border-color:var(--border)}
+  @keyframes passiP{50%{opacity:.25;transform:scale(.6)}}
+  .rccard{border:1px solid rgba(167,139,250,.4);border-radius:12px;background:rgba(0,0,0,.18);padding:4px 12px;margin-top:6px}
+  .rc{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid rgba(var(--accent-rgb),.07);font-size:13px}.rc:last-child{border-bottom:none}
+  .rcq{flex:0 0 52px;font:600 11.5px 'Share Tech Mono',monospace;color:#fff;line-height:1.15}.rcq small{display:block;color:var(--dim);font-weight:400}.rct{flex:1;min-width:0}.rct small{color:var(--dim)}
+  .rcsig{font-size:10.5px;color:#a78bfa;white-space:nowrap}
+  .rc button{flex:0 0 auto;border:1px solid #a78bfa;color:#c4b5fd;background:rgba(167,139,250,.08);border-radius:8px;padding:2px 9px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600}
+  .agc.rcchip{border-color:rgba(167,139,250,.55);color:#c4b5fd}
+  details.ocrdet{margin-top:6px;font-size:12px}details.ocrdet summary{cursor:pointer;color:var(--dim)}details.ocrdet pre{white-space:pre-wrap;max-height:180px;overflow:auto;background:rgba(0,0,0,.25);padding:6px 8px;border-radius:8px;font-size:11.5px}
+  .idsw{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.idsw label{display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer}#idinfo{margin-left:auto;font-size:12px;color:var(--dim)}
+  #idregole{margin:8px 0 2px;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px}#idregole label{display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer}
+  #idmodal h4{margin:16px 0 6px;font-size:13px;letter-spacing:.5px}#rclista{max-height:260px;overflow:auto}
+  @media (max-width:760px){#idregole{grid-template-columns:1fr}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V17</span></div>
+  <div class="logo">M A I K <span>// V18</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
     <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico" aria-label="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
     <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam" aria-label="MAIK guarda dalla webcam">👁️</button>
+    <button class="hbtn" id="sbidea" onclick="openIdee()" title="Idee e ricordi (U): le idee che ti propongo e le nostre chiacchierate" aria-label="Idee e ricordi">💡</button>
     <button class="hbtn" onclick="openTools()" title="Strumenti" aria-label="Strumenti">🧰</button>
     <button class="hbtn" id="sidebtn" onclick="toggleSide()" title="Barra laterale" aria-label="Mostra o nascondi la barra laterale">≡</button>
   </div>
@@ -9906,6 +9932,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('pianificami la giornata')">🗓️ pianificami la giornata</button>
       <button onclick="toggleFocus17()">🍅 concentrazione</button>
       <button onclick="qs('chiudiamo la giornata')">🌙 chiudi la giornata</button>
+      <button onclick="qs('hai qualche idea per me?')">💡 hai qualche idea per me?</button>
+      <button onclick="qs('di cosa abbiamo parlato ieri?')">🧠 di cosa abbiamo parlato ieri?</button>
+      <button onclick="q('ti ricordi cosa ti avevo detto su ')">🧠 ti ricordi…?</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -9947,6 +9976,23 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<div class="ov" id="idmodal">
+  <div class="mod" style="max-width:640px">
+    <div class="modh"><div class="modt">💡 IDEE E RICORDI</div><button class="ib" onclick="closeIdee()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="idsw"><label><input type="checkbox" id="idon"> <b>Idee spontanee</b> — ogni tanto ti propongo qualcosa</label><span id="idinfo"></span></div>
+      <div id="idregole"></div>
+      <div class="spf" style="margin-top:8px"><button type="button" onclick="closeIdee();qs('hai qualche idea per me?')">💡 Hai qualche idea per me?</button></div>
+      <h4>🧠 LE NOSTRE CHIACCHIERATE</h4>
+      <div class="abnew"><input class="tfield" id="rctesto" maxlength="160" placeholder="cerca anche per significato: «il lavoro», «la vacanza», «mio fratello»…" onkeydown="if(event.key==='Enter')rcCerca()"><button class="tbtn solid" type="button" onclick="rcCerca()">🔎 Cerca</button></div>
+      <div id="rcinfo" class="note" style="margin-top:6px"></div>
+      <div id="rclista"></div>
+      <div class="spf" style="margin-top:8px"><button type="button" onclick="closeIdee();qs('di cosa abbiamo parlato ieri?')">🗓️ Di cosa abbiamo parlato ieri?</button><button type="button" onclick="closeIdee();qs('cosa ci siamo detti la settimana scorsa?')">📆 …la settimana scorsa?</button></div>
+      <div class="note" style="margin-top:10px">Le idee arrivano al massimo poche volte al giorno e mai nelle ore di silenzio (sul server: MAIK_PROATTIVO_MAX, MAIK_SILENZIO). In chat: «basta consigli», «riattiva i consigli», «ti ricordi cosa ti avevo detto su …?».</div>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="tdmodal">
   <div class="mod" style="max-width:660px">
     <div class="modh"><div class="modt">📋 LE COSE DA FARE</div><button class="ib" onclick="closeTodo()" aria-label="Chiudi">✕</button></div>
@@ -9969,7 +10015,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div class="spgrid"><div id="spcat"></div><div><svg id="spgiorni" viewBox="0 0 310 80" preserveAspectRatio="none" role="img" aria-label="Spese giorno per giorno"></svg><div id="spconf"></div></div></div>
       <details class="calnew" open><summary>＋ Nuova spesa</summary>
         <div class="rrow"><input class="tfield" id="spimp" placeholder="€ 0,00" inputmode="decimal" style="flex:0 0 96px;min-width:0" onkeydown="if(event.key==='Enter')spSalva()"><input class="tfield" id="spdesc" maxlength="80" placeholder="Cosa (es. benzina, pizza, bolletta luce)" onkeydown="if(event.key==='Enter')spSalva()"><select class="tfield" id="spcatsel" style="flex:0 0 auto"></select><input class="tfield" type="date" id="spdata" style="flex:0 0 auto"><button class="tbtn solid" type="button" onclick="spSalva()" style="flex:0 0 auto">💶 Aggiungi</button></div>
-        <div class="rrow"><button class="tbtn" type="button" onclick="$('#spdocin').click()" style="flex:0 0 auto">📄 Da una bolletta o uno scontrino</button><input type="file" id="spdocin" accept=".pdf,.docx,.odt,.txt" style="display:none" onchange="spDocumento(this.files[0]);this.value=''">
+        <div class="rrow"><button class="tbtn" type="button" onclick="$('#spdocin').click()" style="flex:0 0 auto">📄 Da una bolletta o uno scontrino</button><input type="file" id="spdocin" accept="image/*,.pdf,.docx,.odt,.txt" style="display:none" onchange="spDocumento(this.files[0]);this.value=''">
           <label style="margin-left:auto">🎯 Budget del mese <input class="tfield" id="spbud" placeholder="es. 800" inputmode="decimal" style="width:90px;margin:0 4px"> €</label><button class="tbtn" type="button" onclick="spBudget()" style="flex:0 0 auto">Salva</button></div>
       </details>
       <div id="splista"></div>
@@ -10015,6 +10061,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>L</kbd> mentre leggo: pausa / riprendi</div>
       <div><kbd>D</kbd> le tue spese · <kbd>O</kbd> le tue abitudini · <kbd>W</kbd> com'è andata la settimana</div>
       <div><kbd>K</kbd> le cose da fare · <kbd>Q</kbd> modalità concentrazione (pomodoro)</div>
+      <div><kbd>U</kbd> idee e ricordi (le idee che ti propongo, le nostre chiacchierate)</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
       <div><kbd>Alt</kbd>+<kbd>N</kbd> nuova chat</div>
@@ -10463,7 +10510,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V17 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V18 — il personaggio 3D di MAIK (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -10475,6 +10522,7 @@ const MaikKit = (() => {
    V15: legge ad alta voce dal tablet (pagine web, articoli, documenti): scorre col dito e ogni tanto ti guarda.
    V16: fa i conti con la calcolatrice (sul display il totale delle tue spese).
    V17: si concentra con te: cuffie in testa e lavora al suo portatile (modalità concentrazione).
+   V18: ha un'idea! Alza il dito e sopra la testa gli si accende una lampadina (con le scintille).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -10699,6 +10747,7 @@ window.ZepKit = (() => {
   const LAVORA_ADJ = { sx: 0.15, ey: 0.25, ex: 0.1, sz: 0.12 };     // v17: le mani sulla tastiera del portatile (a partire dalla posa della penna)
   const TALK = { sx: -0.32, sy: 0, sz: 0.3, ex: -0.95, ey: -0.2, ez: 0, wr: 0.5 };
   const THINK = { sx: -1.35, sy: -0.65, sz: 0.2, ex: -1.75, ey: -0.25, ez: 0, wr: 0.3 };      // mano al mento (robot)
+  const IDEA_POSE = [{ sx: -0.55, sy: 0, sz: 0.5, ex: -1.85, ey: -0.1, ez: 0 }, { sx: -1.5, sy: 0, sz: 0.6, ex: -1.6, ey: -0.3, ez: 0 }];   // v18: il dito in alto («eureka!») · robot, umanoide
   const THINK_H = { sx: -0.55, sy: -0.35, sz: 0.15, ex: -2.3, ey: -0.55, ez: 0, wr: 0.3 };    // (umanoide)
   const FACE_POSE = {      // mano alla bocca / sul viso / agli occhi: [robot, umanoide]
     yawn: [{ sx: -1.55, sy: -0.6, sz: 0.25, ex: -1.6, ey: -0.2, ez: 0, wr: 0.4 }, { sx: -0.6, sy: -0.4, sz: 0.15, ex: -2.45, ey: -0.6, ez: 0, wr: 0.4 }],
@@ -10756,6 +10805,9 @@ window.ZepKit = (() => {
     rpsShake: { dur: 1.8, arms: 'R', f(a, w, P) { const b = Math.abs(Math.sin(a.t * Math.PI / 0.6)); armTo(P.armR, { sx: -0.95, sy: -0.2, sz: 0.25, ex: -1.25 - 0.4 * b, ey: -0.25, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.head.x += 0.06 * b * w; P.face.brow += 0.3 * w; } },
     rpsShow: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -1.05, sy: -0.2, sz: 0.25, ex: -0.75, ey: -0.2, ez: 0, wr: a.shape === 'carta' ? 0 : 0.2 }, w); P.hand.R = [a.shape === 'carta' ? 'open' : a.shape === 'forbici' ? 'count2' : 'fist', w]; } },
     fistbump: { dur: 1.5, arms: 'R', f(a, w, P) { const k = smooth(a.p / 0.4); armTo(P.armR, { sx: -1.2 * k - 0.3, sy: -0.15, sz: 0.2, ex: -1.5 + 1.1 * k, ey: -0.1, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.face.smile += 0.6 * w; } },
+    idea: { dur: 3.4, arms: 'R', f(a, w, P) { const su = Math.sin(Math.PI * clamp(a.t / 0.55, 0, 1)); armTo(P.armR, Object.assign({}, IDEA_POSE[P.robot ? 0 : 1], { wr: 0.25 + 0.15 * su }), w); P.hand.R = ['point', w];
+      P.face.brow += (0.6 + 0.4 * su) * w; P.face.wide += (a.t < 0.9 ? 0.7 : 0.25) * w; P.face.smile += 0.75 * w; P.face.mode.happy += 0.35 * w; P.root.py += 0.035 * su * w; P.head.z += 0.07 * w;
+      P.look = [0.12, a.t < 1.3 ? 0.75 : 0.15, w]; P.lampadina = Math.max(P.lampadina, w); P.lampAccesa = a.t < 0.35 ? 0 : a.t < 0.62 ? (Math.sin(a.t * 75) > 0 ? 1 : 0.12) : 1; } },
     victory: { dur: 1.8, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.45, sz: 0.5, ex: -1.9, ey: -0.1, ez: 0, wr: 0.2 }, w); P.hand.R = ['count2', w]; P.face.mode.happy += 0.7 * w; P.face.smile += w; P.head.z += 0.08 * w; } },
     highfive: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.95, sy: -0.1, sz: 0.65, ex: -1.45, ey: 0.15, ez: 0, wr: 1.5 }, w); P.hand.R = ['open', w]; P.face.smile += 0.7 * w; } },
     thumbsdown: { dur: 1.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -0.85, sz: 0.3, ex: -1.4, ey: -0.25, ez: 0, wr: 2.9 }, w); P.hand.R = ['thumb', w]; P.face.frown += 0.7 * w; } },
@@ -11504,7 +11556,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 },
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0,
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -11588,6 +11640,7 @@ window.ZepKit = (() => {
       if (S.sleepW > 0.6 && now - A.zT > 1500) { A.zT = now; spawn('Z', headTop(0.12), { size: 0.06 + Math.random() * 0.03 }); }
       if (P.notes > 0.3 && now - A.noteT > 650) { A.noteT = now; spawn(pick(['♪', '♫']), headTop(rnd(-0.1, 0.12)), { size: 0.06 }); }
       if (P.hearts > 0.3 && now - A.heartT > 450) { A.heartT = now; spawn('♥', headTop(rnd(-0.12, 0.12)), { size: 0.055 }); }
+      aggiornaLampadina(P, dt, now);                                      // v18: 💡
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -11616,6 +11669,46 @@ window.ZepKit = (() => {
       key.intensity = L.ki * (1 - 0.35 * S.sleepW); hemi.intensity = L.hi * (1 - 0.3 * S.sleepW);
       pMat.opacity = 0.7 * L.stars;
       if (Math.abs(S.camX - cam.target.x) > 1e-5) placeCamera();
+    }
+    // ---------- v18: 💡 la lampadina delle idee (nel mondo, sopra la testa: va bene per il robot e per i VRM) ----------
+    let lamp = null, lampScintilla = 0;
+    const ASSE_Y = new THREE.Vector3(0, 1, 0);
+    function creaLampadina() {
+      const G = new THREE.Group(); G.name = 'lampadina';
+      const vetro = new THREE.MeshPhysicalMaterial({ color: 0xfff6c8, emissive: 0xffd34d, emissiveIntensity: 0, roughness: 0.08, metalness: 0, transmission: 0.35, transparent: true, opacity: 0.9, clearcoat: 1 });
+      const bulbo = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 24), vetro); bulbo.scale.set(1, 1.08, 1); bulbo.position.y = 0.55; G.add(bulbo);
+      const collo = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.36, 0.3, 24), vetro); collo.position.y = 0.06; G.add(collo);
+      const metallo = new THREE.MeshPhysicalMaterial({ color: 0xb8c0cc, metalness: 0.85, roughness: 0.3 });
+      for (let i = 0; i < 3; i++) { const g = new THREE.Mesh(new THREE.TorusGeometry(0.255 - i * 0.02, 0.035, 8, 24), metallo); g.rotation.x = Math.PI / 2; g.position.y = -0.12 - i * 0.075; G.add(g); }
+      const attacco = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.2, 0.26, 24), metallo); attacco.position.y = -0.2; G.add(attacco);
+      const punta = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 8), new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.5, roughness: 0.5 })); punta.position.y = -0.35; G.add(punta);
+      const filo = new THREE.MeshBasicMaterial({ color: 0xffb020, toneMapped: false });
+      const fil = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.022, 8, 28, Math.PI * 1.25), filo); fil.position.y = 0.52; fil.rotation.z = Math.PI * 1.12; G.add(fil);
+      for (const sx of [-1, 1]) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.42, 6), metallo); s.position.set(sx * 0.11, 0.3, 0); G.add(s); }
+      const alone = new THREE.Sprite(new THREE.SpriteMaterial({ map: symbolTexture(THREE, '●', '#ffd34d'), transparent: true, depthWrite: false, toneMapped: false, opacity: 0 })); alone.scale.setScalar(2.4); alone.position.y = 0.55; G.add(alone);
+      const luce = new THREE.PointLight(0xffc857, 0, 3, 1.6); luce.position.y = 0.55; G.add(luce);
+      G.userData = { vetro, filo, alone, luce, scala: 0, accesa: 0 };
+      G.visible = false; scene.add(G);
+      return G;
+    }
+    function aggiornaLampadina(P, dt, now) {
+      const w = clamp(P.lampadina || 0, 0, 1);
+      if (!lamp && w < 0.02) return;
+      lamp = lamp || creaLampadina();
+      const U = lamp.userData;
+      U.scala = damp(U.scala, w > 0.02 ? 1 : 0, w > 0.02 ? 9 : 6, dt);
+      U.accesa = w > 0.02 ? (P.lampAccesa >= 1 ? damp(U.accesa, 1, 14, dt) : P.lampAccesa) : damp(U.accesa, 0, 8, dt);
+      lamp.visible = U.scala > 0.02;
+      if (!lamp.visible) return;
+      const p = headTop(0).add(new THREE.Vector3(-0.2 * height, -(kind === 'robot' ? 0.04 : 0.1) * height, 0.03 * height).applyAxisAngle(ASSE_Y, charRoot.rotation.y));   // accanto alla testa, dalla parte del dito alzato (così sta nell'inquadratura)
+      lamp.position.copy(p);
+      const pop = U.scala < 0.98 ? 1 + 0.18 * Math.sin(Math.PI * U.scala) : 1;                 // spunta con un piccolo rimbalzo
+      lamp.scale.setScalar(height * 0.085 * U.scala * pop);
+      lamp.rotation.z = 0.12 * Math.sin(now / 260); lamp.rotation.y = 0.3 * Math.sin(now / 900);
+      const a = U.accesa;
+      U.vetro.emissiveIntensity = 1.6 * a; U.filo.color.setRGB(0.35 + 0.65 * a, 0.25 + 0.6 * a, 0.08 + 0.3 * a);
+      U.alone.material.opacity = 0.55 * a * U.scala; U.luce.intensity = 2.2 * a * U.scala;
+      if (a > 0.8 && w > 0.5 && now - lampScintilla > 380) { lampScintilla = now; const q = p.clone(); q.y += height * 0.03; spawn('✦', q, { size: 0.04, vx: rnd(-0.08, 0.08), vy: 0.12, life: 1.2 }); }
     }
     function headTop(dx = 0) {
       const v = new THREE.Vector3();
@@ -12045,6 +12138,7 @@ window.ZepKit = (() => {
       // v16: cosa c'è scritto sul display della calcolatrice (es. «345,60 €»)
       calcolatrice(testo) { S.calcTesto = testo; const B = rig && rig.robot; if (B && B.props && B.props.calcolatrice) disegnaDisplay(B.props.calcolatrice, testo); },
       get testoCalcolatrice() { return S.calcTesto; },
+      get lampadina() { return lamp ? { visibile: lamp.visible, accesa: +lamp.userData.accesa.toFixed(2), luce: +lamp.userData.luce.intensity.toFixed(2), pos: lamp.position.toArray().map(x => +x.toFixed(3)), schermo: lamp.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, accesa: 0, luce: 0, pos: null }; },
       get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
       get paused() { return paused; },
       step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
@@ -12206,6 +12300,9 @@ async function invia(opt){
   SPH.state='thinking';$('#dot').className='dot busy';
   const bubble=add('ai','');mc(bubble).innerHTML='<span class="cursor"></span>';
   // 🖼️ immagine allegata → modello visione, con la domanda scritta
+  if(A&&A.kind==='image'&&t&&(RE_FOTO_SPESA.test(t)||RE_FOTO_TESTO.test(t))){                      // v18: 📷 scontrino → spese · «trascrivi il testo»
+    await fotoOcr(bubble,A,t);SPH.state='idle';$('#dot').className='dot on';busy=false;$('#send').disabled=false;return;
+  }
   if(A&&A.kind==='image'){
     try{const r=await (await fetch('/vedi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({immagine:A.dataUrl,
         prompt:t?'Guarda attentamente questa immagine e rispondi in italiano, in modo chiaro e amichevole, a questa domanda: '+t:'Descrivi questa immagine in italiano, in modo chiaro e amichevole (3-4 frasi): cosa si vede, i dettagli interessanti e l\'eventuale testo leggibile.'})})).json();
@@ -12226,6 +12323,7 @@ async function invia(opt){
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
         if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
+        if(obj.passo)passoAgente(bubble,obj.passo);                                                // v18: 🤖 passo 2 di 4
         if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
@@ -12235,7 +12333,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -12269,7 +12367,7 @@ async function attachFile(f){if(!f)return;try{
   renderAtt();$('#inp').focus();}catch(e){toast('Non riesco a leggere il file','err');}}
 function onAttIn(e){attachFile(e.target.files[0]);e.target.value='';}
 function renderAtt(){const el=$('#attprev');if(!att){el.classList.remove('on');el.innerHTML='';return;}el.classList.add('on');
-  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span>'+(att.kind==='text'&&/bollett|fattur|scontrin|importo|totale|scadenza/i.test(att.content)?'<button class="tbtn" type="button" id="att2spese" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="qs(/scontrin|ricevut/i.test(att.name+att.content.slice(0,300))?\'aggiungi questo scontrino alle spese\':\'aggiungi questa bolletta alle spese\')" title="Importo e scadenza nelle spese (e in calendario)">💶 alle spese</button>':'')+(att.kind==='text'?'<button class="tbtn" type="button" id="att2doc" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="attToDocs()" title="Così MAIK lo ricorda sempre e lo cita">📚 salva nei documenti</button>':'')+'<button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato"'+(att.kind==='text'?' style="margin-left:4px"':'')+'>✕</button>';}
+  el.innerHTML=(att.kind==='image'?'<img src="'+att.dataUrl+'" alt="">':'<span style="font-size:22px">📄</span>')+'<span>'+esc(att.name)+' · '+(att.kind==='image'?'MAIK la guarderà 👁️':att.content.length.toLocaleString('it-IT')+' caratteri'+(att.cut?' (tagliato)':''))+'</span>'+(att.kind==='text'&&/bollett|fattur|scontrin|importo|totale|scadenza/i.test(att.content)?'<button class="tbtn" type="button" id="att2spese" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="qs(/scontrin|ricevut/i.test(att.name+att.content.slice(0,300))?\'aggiungi questo scontrino alle spese\':\'aggiungi questa bolletta alle spese\')" title="Importo e scadenza nelle spese (e in calendario)">💶 alle spese</button>':'')+(att.kind==='image'?'<button class="tbtn" type="button" id="att2spese" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="qs(\'aggiungi questo scontrino alle spese\')" title="Leggo la foto: importo (e scadenza) nelle spese">💶 alle spese</button><button class="tbtn" type="button" id="att2testo" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:4px" onclick="qs(\'trascrivi il testo di questa foto\')" title="Leggo il testo scritto nella foto">📝 testo</button>':'')+(att.kind==='text'?'<button class="tbtn" type="button" id="att2doc" style="flex:0 0 auto;min-width:0;padding:3px 9px;font-size:11px;margin-left:auto" onclick="attToDocs()" title="Così MAIK lo ricorda sempre e lo cita">📚 salva nei documenti</button>':'')+'<button class="x" type="button" onclick="clearAtt()" aria-label="Rimuovi l\'allegato"'+(att.kind==='text'?' style="margin-left:4px"':'')+'>✕</button>';}
 function clearAtt(){att=null;renderAtt();}
 
 // ---------- NUCLEO NEURALE (MaikKit.core: nitido su ogni schermo, reagisce a voce e stati) ----------
@@ -12511,6 +12609,10 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('💡','Hai qualche idea per me?',()=>qs('hai qualche idea per me?'),'idee','consigli suggerimenti proattivo'),c('💡','Idee e ricordi',()=>openIdee(),'U','proattivo consigli impostazioni chiacchierate'),
+    c('🧠','Di cosa abbiamo parlato ieri?',()=>qs('di cosa abbiamo parlato ieri?'),'ricordi','chat conversazioni memoria'),c('🧠','Ti ricordi cosa ti avevo detto su…',()=>q('ti ricordi cosa ti avevo detto su '),'ricordi','memoria chiacchierate'),
+    c('🔕','Basta consigli spontanei',()=>qs('basta consigli'),'','proattivo idee spegni'),c('💡','Riattiva i consigli',()=>qs('riattiva i consigli'),'','proattivo idee accendi'),
+    c('📷','Foto di uno scontrino → spese',()=>{toast('📎 Allega la foto e scrivi «aggiungi questo scontrino alle spese»');$('#attin').click();},'scontrino','ocr foto spese bolletta'),
     c('📋','Le cose da fare',()=>openTodo(),'K','todo attività compiti lista'),c('✅','Cosa devo fare oggi?',()=>qs('cosa devo fare oggi?'),'oggi','todo impegni'),
     c('📋','Aggiungi una cosa da fare…',()=>q('aggiungi alle cose da fare: '),'todo','attività compito'),c('🗓️','Pianificami la giornata',()=>qs('pianificami la giornata'),'piano','orari organizza'),
     c('🍅','Modalità concentrazione (25 minuti)',()=>avviaFocus({}),'Q','pomodoro focus timer studio'),c('🍅','Quanti pomodori ho fatto oggi?',()=>qs('quanti pomodori ho fatto oggi?'),'focus','statistiche concentrazione'),
@@ -12523,7 +12625,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V17 · ZEP',key:'maik_boot_v17',checks:[
+  return MaikKit.boot({version:'V18 · ZEP',key:'maik_boot_v18',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -12533,6 +12635,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Idee e ricordi',run:async()=>{try{const [s,g]=await Promise.all([fetch('/proattivo/stato').then(r=>r.json()),fetch('/ricordi').then(r=>r.json())]);return{ok:true,text:(s.attivo?'💡 idee accese ('+s.oggi+'/'+s.massimo+' oggi)':'💡 idee spente')+' · 🧠 '+g.info.chiacchierate+' messaggi'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Cose da fare',run:async()=>{try{const r=await (await fetch('/attivita?filtro=oggi')).json();return{ok:true,text:r.conta.oggi+' per oggi · '+r.conta.tutte+' in tutto'+(r.conta.ritardo?' · '+r.conta.ritardo+' in ritardo':'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Spese e abitudini',run:async()=>{try{const [s,a]=await Promise.all([fetch('/spese').then(r=>r.json()),fetch('/abitudini').then(r=>r.json())]);return{ok:true,text:euroIt(s.totale)+' questo mese · '+(a.abitudini||[]).length+' abitudini'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Calendario',run:async()=>{try{const r=await (await fetch('/calendario?giorni=1')).json();return{ok:true,text:r.totale?r.totale+' eventi · oggi '+r.agenda.n:'vuoto (importa un .ics con 📅)'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -12543,7 +12646,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 17 🧍 Ora **ti aiuto a fare le cose**: «**aggiungi alle cose da fare: chiamare il commercialista entro venerdì, urgente**» 📋, «**cosa devo fare oggi?**», «**fatto: commercialista**». «**Pianificami la giornata**» 🗓️ e ti preparo gli orari con impegni, abitudini e pause. «**Concentrazione 25 minuti sulla relazione**» 🍅: mi metto le cuffie, lavoro al mio portatile con te e ti avviso per le pause (tasto **Q**). La sera: «**chiudiamo la giornata**» 🌙. E sempre: spese e bollette 💶, abitudini ✅, la tua settimana 📊, PDF, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik**, versione 18 💡 Ora **penso avanti**: ti ricordo le nostre chiacchierate — «**ti ricordi cosa ti avevo detto sul lavoro?**», «**di cosa abbiamo parlato ieri?**» 🧠 — e quando serve ti propongo io un\'idea: una serie da non spezzare, una scadenza domani, un impegno presto, una bolletta, il budget che scappa 💶 (poche al giorno; «**basta consigli**» se non le vuoi). Per le domande difficili **ragiono a più passi** 🤖: cerco, leggo, faccio i conti. Mandami la **foto di uno scontrino** con «**aggiungilo alle spese**» 📷, o chiedimi di **trascrivere** una foto; leggo anche i PDF scansionati. E sempre: cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -12901,7 +13004,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -13436,7 +13539,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK // ' + n + ' V17'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK // ' + n + ' V18'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -13887,6 +13990,7 @@ async function estraiFile(f) {
       if (r.ok) testo = r.testo; else { testo = ''; err = r.errore || 'non riesco a leggerlo'; }
     } catch (e) { err = 'server non raggiungibile'; }
   }
+  if (!testo && /\.pdf$/i.test(f.name)) testo = await ocrPdf(f);       // v18: PDF scansionato → lo leggo con gli occhi (modello della visione)
   if (!testo) { toast('📄 «' + f.name + '»: ' + (err || 'non riesco a leggerlo'), 'err'); return null; }
   return testo;
 }
@@ -14385,6 +14489,13 @@ async function spBudget() {
 }
 async function spDocumento(f) {
   if (!f) return null;
+  if (/^image\//.test(f.type)) {                                             // v18: la foto di uno scontrino o di una bolletta
+    toast('📷 Leggo «' + f.name + '»…');
+    const r = await postJ('/ocr', { immagine: await MaikKit.shrinkImage(f), scopo: 'spesa', nome: f.name, domanda: 'aggiungi alle spese', sessione: CUR }).catch(() => ({ ok: false, errore: 'server non raggiungibile' }));
+    const t = r.ok ? r.testo : '📷 ' + r.errore; toast(t.replace(/\*\*/g, '').slice(0, 140), r.spesa ? 'ok' : 'err');
+    if (r.spesa) { const d = add('ai', t); finalize(d, t, null, null); addSpese(d, r); addAgenda(d, r); loadSpese(); }
+    return r;
+  }
   const testo = await estraiFile(f); if (!testo) return null;
   let r; try { r = await postJ('/spese/documento', { testo, nome: f.name, scontrino: /scontrin|ricevut/i.test(f.name) }); } catch (e) { r = { ok: false, testo: 'server non raggiungibile' }; }
   const t = r.testo || ''; toast(t.replace(/\*\*/g, '').slice(0, 140), r.spesa ? 'ok' : 'err');
@@ -14634,8 +14745,184 @@ function comandoFocus(t) {
   return '🍅 Concentrazione: **' + min + ' minuti**' + (m[2] ? ' su «' + m[2].trim() + '»' : '') + '. Mi metto le cuffie e lavoro con te 🎧 Ti avviso io quando è ora di pausa. (Q per fermare)';
 }
 
+// ============================================================
+// V18 — MAIK PENSA AVANTI: idee proattive, ricordi delle chiacchierate, agente a più passi, foto → testo
+// ============================================================
+
+// ---------- 💡 idee proattive: arrivano da sole (GET /proattivo) o quando le chiedi ----------
+const IDEE = {};                                           // id → idea (per i pulsanti)
+function ideaHTML(x, conTesto) {
+  IDEE[x.id] = x;
+  return '<div class="idcard" data-idea="' + escA(x.id) + '">' + (conTesto ? '<div class="idt">' + renderAI(x.testo) + '</div>' : '')
+    + '<div class="idb">' + (x.azioni || []).map((a, i) => '<button type="button" data-ida="' + i + '">' + esc(a.etichetta) + '</button>').join('')
+    + '<button type="button" class="idno" data-ida="no" title="Non propormi più idee di questo tipo (si riaccendono da 💡 Idee e ricordi)">🔕 Non per questo</button></div></div>';
+}
+function mostraIdea(x) {
+  const piano = x.testo.replace(/\*\*/g, '').replace(/^\S+\s/, '');
+  const d = add('ai', x.testo, 'seguito idea'); finalize(d, x.testo, null, null);
+  const w = document.createElement('div'); w.className = 'pcwrap'; w.innerHTML = ideaHTML(x, false);
+  d.insertBefore(w, d.querySelector('.acts'));
+  toast('💡 ' + piano.slice(0, 120), 'ok'); notify('💡 MAIK ha un\'idea', piano); beep(1);
+  if (AV) AV.gesture('idea'); if (core) core.pulse(1.2);
+  say(piano);
+}
+async function checkIdee() {
+  if (busy || document.hidden) return;                     // la mostro quando mi guardi (resta in coda sul server)
+  let r; try { r = await (await fetch('/proattivo')).json(); } catch (e) { return; }
+  (r.idee || []).forEach((x, k) => setTimeout(() => mostraIdea(x), k * 1600));
+}
+async function azioneIdea(x, i, b, card) {
+  const blocca = () => card.querySelectorAll('button').forEach(z => z.disabled = true);
+  if (i === 'no') {
+    const r = await postJ('/proattivo/azione', { azione: 'spegni_regola', dati: { regola: x.regola } }).catch(() => ({ ok: false, testo: 'server non raggiungibile' }));
+    toast(r.testo, r.ok ? 'ok' : 'err'); if (r.ok) blocca(); return;
+  }
+  const a = (x.azioni || [])[+i]; if (!a) return;
+  if (a.azione === 'apri') { const f = { abitudini: openAbitudini, spese: openSpese, todo: openTodo }[a.dati.pannello]; if (f) f(); return; }
+  if (a.azione === 'scrivi') { $('#inp').focus(); return; }
+  if (a.azione === 'focus') {
+    blocca(); avviaFocus({ id: a.dati.id, testo: a.dati.testo });
+    const m = '🍅 Concentrazione: **25 minuti** su «' + a.dati.testo + '». Mi metto le cuffie 🎧'; const d = add('ai', m); finalize(d, m, null, null); return;
+  }
+  b.disabled = true;
+  const r = await postJ('/proattivo/azione', { azione: a.azione, dati: a.dati }).catch(() => ({ ok: false, testo: 'server non raggiungibile' }));
+  toast(String(r.testo || '').replace(/\*\*/g, ''), r.ok ? 'ok' : 'err');
+  if (!r.ok) { b.disabled = false; return; }
+  blocca(); b.classList.add('fatto');
+  card.insertAdjacentHTML('beforeend', '<div class="idok">' + renderAI(r.testo) + '</div>');
+  if (r.abitudine) festeggiaAbitudine(r.abitudine);
+  else if (AV) AV.gesture('thumbsup');
+  if (a.azione === 'promemoria') loadPr();
+  if (a.azione === 'rimanda' && $('#tdmodal').classList.contains('open')) loadTodo();
+}
+
+// ---------- 🧠 ricordi: le chiacchierate passate ----------
+const MESI_BREVI = ['gen', 'feb', 'mar', 'apr', 'mag', 'giu', 'lug', 'ago', 'set', 'ott', 'nov', 'dic'];
+function dataBreve(s) {
+  const g = new Date(String(s).slice(0, 10) + 'T12:00:00'), o = new Date(); o.setHours(12, 0, 0, 0);
+  if (isNaN(g)) return String(s).slice(0, 10);
+  const dd = Math.round((o - g) / 864e5);
+  return dd === 0 ? 'oggi' : dd === 1 ? 'ieri' : g.getDate() + ' ' + MESI_BREVI[g.getMonth()] + (g.getFullYear() !== o.getFullYear() ? ' ' + g.getFullYear() : '');
+}
+const corto = (t, n) => { t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+function ricordiHTML(lista) {
+  return '<div class="rccard">' + lista.map(r => '<div class="rc"><span class="rcq">' + esc(r.data || dataBreve(r.quando)) + '<small>' + esc((r.quando || '').slice(11, 16)) + '</small></span>'
+    + '<span class="rct">«' + esc(corto(r.tu, 140)) + '»' + (r.titolo && r.titolo !== 'Chat principale' ? ' <small>· chat «' + esc(r.titolo) + '»</small>' : '')
+    + (r.per_significato ? ' <span class="rcsig" title="Trovata per significato, anche senza le stesse parole">🧠 per significato</span>' : '') + '</span>'
+    + '<button type="button" data-rc="' + escA(r.sessione) + '" title="Riapri quella chat">💬 Riapri</button></div>').join('') + '</div>';
+}
+function ricordiGiornoHTML(chat) {
+  const piu = new Set(chat.map(c => c.data)).size > 1;
+  return '<div class="rccard">' + chat.map(c => '<div class="rc"><span class="rcq">' + (piu ? esc(dataBreve(c.data)) : '') + '<small>' + esc(c.ora) + '</small></span>'
+    + '<span class="rct">' + (c.titolo && c.titolo !== 'Chat principale' ? '<b>' + esc(c.titolo) + '</b> — ' : '') + c.domande.map(q => '«' + esc(q) + '»').join(' · ')
+    + (c.n > 1 ? ' <small>(' + c.n + ' messaggi)</small>' : '') + '</span><button type="button" data-rc="' + escA(c.sessione) + '" title="Riapri quella chat">💬 Riapri</button></div>').join('') + '</div>';
+}
+
+// ---------- 🤖 agente a più passi ----------
+function passoAgente(bubble, p) {
+  let el = bubble.querySelector('.passi');
+  if (!el) { el = document.createElement('div'); el.className = 'passi'; bubble.insertBefore(el, mc(bubble)); }
+  el.innerHTML = '<i></i>🤖 Passo ' + p.n + ' di ' + p.max + ' · ' + (p.strumenti || []).map(esc).join(' ');
+  caption('🤖 Passo ' + p.n + ' di ' + p.max + ' ' + (p.strumenti || []).join(' ') + '…');
+  if (core) core.pulse(0.8);
+  if (AV && p.n === 2 && !AV.acting('cerca')) AV.gesture('think');
+}
+
+function addV18(d, obj) {
+  const ps = d.querySelector('.passi');
+  if (ps) { ps.classList.add('fatto'); ps.innerHTML = '🤖 ' + (obj.passi || 2) + ' passi'; ps.title = 'Ho cercato, letto e ragionato in più giri prima di risponderti'; }
+  if (obj.idee && obj.idee.length) {
+    const primo = (d.dataset.raw || '').split('\n')[0];
+    mc(d).innerHTML = renderAI(primo) + '<div class="idlist">' + obj.idee.map(x => ideaHTML(x, true)).join('') + '</div>';
+    if (AV) AV.gesture('idea');
+  }
+  const R = obj.ricordi;
+  if (R && R.chat && R.chat.length) {
+    const righe = (d.dataset.raw || '').split('\n');
+    mc(d).innerHTML = renderAI(righe[0]) + ricordiGiornoHTML(R.chat) + '<div class="pnnota">' + renderAI(righe[righe.length - 1]) + '</div>';
+    if (AV) AV.gesture('idea');
+  } else if (R && R.risultati && R.risultati.length) {
+    mc(d).insertAdjacentHTML('beforeend', ricordiHTML(R.risultati));
+    if (AV) AV.gesture('idea');
+  }
+  if (obj.ricordati && obj.ricordati.length)
+    agEl(d).insertAdjacentHTML('beforeend', obj.ricordati.slice(0, 2).map(r => '<button type="button" class="agc rcchip" data-rc="' + escA(r.sessione) + '" title="Mi sono ricordato di questa chiacchierata («' + escA(r.tu) + '»): clic per riaprirla">🧠 ' + esc(dataBreve(r.quando)) + ': «' + esc(corto(r.tu, 38)) + '»</button>').join(''));
+}
+
+// ---------- 📷 foto → testo: scontrini e bollette alle spese, «trascrivi», PDF scansionati ----------
+const RE_FOTO_SPESA = /\b(?:aggiungi|metti|segna|registra|inserisci|salva|mettil[ao]|segnal[ao]|aggiungil[ao]|registral[ao])\b[^.?!\n]{0,40}\b(?:spes[ae]|bollett[ae]|scontrin[oi]|fattur[ae]|ricevut[ae])\b/i;
+const RE_FOTO_TESTO = /\b(?:trascriv\w*|leggi(?:mi)?\s+(?:il\s+)?(?:testo|scritto)|cosa\s+c['’]?\s*[eè]\s+scritto|(?:copia|estrai)(?:mi)?\s+il\s+testo|ocr)\b/i;
+async function fotoOcr(d, A, t) {
+  const spesa = RE_FOTO_SPESA.test(t);
+  caption('📷 Leggo la foto…'); if (AV) AV.act('cerca', { dur: 30 });
+  let r; try { r = await postJ('/ocr', spesa ? { immagine: A.dataUrl, scopo: 'spesa', domanda: t, nome: A.name, sessione: CUR } : { immagine: A.dataUrl }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (AV) AV.endAct('cerca');
+  const out = !r.ok ? '📷 ' + (r.errore || 'Non riesco a leggere la foto')
+    : spesa ? r.testo : r.testo ? '📝 Ecco il testo della foto:\n\n```\n' + r.testo + '\n```' : '📷 In questa foto non vedo nessun testo da leggere.';
+  mc(d).innerHTML = renderAI(out); finalize(d, out, null, null);
+  if (r.ok && spesa) {
+    addSpese(d, r); addAgenda(d, r);
+    if (r.ocr) mc(d).insertAdjacentHTML('beforeend', '<details class="ocrdet"><summary>📄 Il testo che ho letto</summary><pre>' + esc(r.ocr) + '</pre></details>');
+    if ($('#spmodal').classList.contains('open')) loadSpese();
+  }
+  if (r.ok && !spesa && r.testo) {
+    d._ocr = { testo: r.testo, nome: A.name };
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-ocr="copia">📋 Copia</button><button type="button" class="agc calb" data-ocr="doc">📚 Salva nei documenti</button>');
+  }
+  captionOff(0);
+  if (r.ok) say(spesa ? out.replace(/\*\*/g, '') : r.testo ? 'Ecco il testo della foto.' : out);
+}
+async function ocrPdf(f) {                                   // un PDF scansionato (solo immagini): lo leggo pagina per pagina con il modello della visione
+  let lib, doc; try { lib = await pdfjs(); doc = await lib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), isEvalSupported: false }).promise; } catch (e) { return ''; }
+  const n = Math.min(doc.numPages, 8), pagine = [];
+  try {
+    for (let i = 1; i <= n; i++) {
+      toast('📷 «' + f.name + '» è una scansione: leggo la pagina ' + i + ' di ' + n + '…');
+      const pg = await doc.getPage(i), v0 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: Math.min(2.2, 1600 / Math.max(v0.width, v0.height)) });
+      const c = document.createElement('canvas'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+      const r = await postJ('/ocr', { immagine: c.toDataURL('image/jpeg', 0.85) }).catch(() => ({ ok: false, errore: 'server non raggiungibile' }));
+      if (!r.ok) { toast('📷 ' + (r.errore || 'non riesco a leggere la scansione'), 'err'); break; }
+      if (r.testo) pagine.push(r.testo);
+    }
+    if (doc.numPages > n && pagine.length) pagine.push('[… altre ' + (doc.numPages - n) + ' pagine non lette]');
+  } finally { try { doc.destroy(); } catch (e) {} }
+  return pagine.join('\n\n').trim();
+}
+
+// ---------- 💡 la finestra «Idee e ricordi» ----------
+async function openIdee() { $('#idmodal').classList.add('open'); await loadIdee(); }
+function closeIdee() { $('#idmodal').classList.remove('open'); }
+async function loadIdee() {
+  let s, g; try { [s, g] = await Promise.all([fetch('/proattivo/stato').then(r => r.json()), fetch('/ricordi').then(r => r.json())]); } catch (e) { $('#idinfo').textContent = 'server non raggiungibile'; return; }
+  $('#idon').checked = !!s.attivo;
+  $('#idinfo').textContent = (s.acceso_server ? 'oggi ' + s.oggi + ' di ' + s.massimo : 'spente dal server (MAIK_PROATTIVO=0)') + (s.silenzio ? ' · silenzio ' + s.silenzio.replace('-', '–') : '');
+  $('#idregole').innerHTML = s.regole.map(r => '<label><input type="checkbox" data-reg="' + escA(r.chiave) + '"' + (r.on ? ' checked' : '') + (s.attivo ? '' : ' disabled') + '> ' + esc(r.nome) + '</label>').join('');
+  const i = g.info || {};
+  $('#rcinfo').textContent = '💬 ' + (i.chiacchierate || 0) + ' messaggi ricordati' + (i.per_significato ? ' · 🧠 per significato: ' + i.pronte + ' pronti' + (i.lavoro ? ' (sto preparando gli altri…)' : '') : ' · ricerca per parole (per il significato: ollama pull nomic-embed-text)');
+}
+async function rcCerca() {
+  const q = $('#rctesto').value.trim(); if (!q) { $('#rctesto').focus(); return; }
+  $('#rclista').innerHTML = '<div class="note">🔎 Cerco…</div>';
+  let r; try { r = await (await fetch('/ricordi?q=' + encodeURIComponent(q))).json(); } catch (e) { r = { risultati: [] }; }
+  $('#rclista').innerHTML = (r.risultati || []).length ? ricordiHTML(r.risultati.slice().reverse()) : '<div class="note">Niente su «' + esc(q) + '» nelle nostre chiacchierate.</div>';
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();}});
+$('#idmodal').addEventListener('click',e=>{if(e.target.id==='idmodal')closeIdee();});
+$('#idon').addEventListener('change',async e=>{const r=await postJ('/proattivo/imposta',{attivo:e.target.checked}).catch(()=>null);if(r)toast(r.attivo?'💡 Idee spontanee accese':'🔕 Idee spontanee spente',r.attivo?'ok':'');loadIdee();});
+$('#idregole').addEventListener('change',async e=>{const c=e.target.closest('input[data-reg]');if(!c)return;await postJ('/proattivo/imposta',{regola:c.dataset.reg,on:c.checked}).catch(()=>null);loadIdee();});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(checkIdee,800);});
+document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-ida],#msgs button[data-rc],#rclista button[data-rc],#msgs button[data-ocr]');if(!b)return;     // v18: idee, ricordi, testo delle foto
+  const ds=b.dataset;
+  if(ds.rc!=null){closeIdee();if(ds.rc===CUR){toast('💬 È proprio questa chat');return;}await switchChat(ds.rc,true);return;}
+  if(ds.ocr){const d=b.closest('.m'),o=d&&d._ocr;if(!o)return;
+    if(ds.ocr==='copia'){try{await navigator.clipboard.writeText(o.testo);toast('📋 Testo copiato','ok');}catch(x){toast('Il browser non mi fa copiare','err');}}
+    else if(await docSave(String(o.nome||'foto').replace(/\.\w+$/,'')+' (testo).txt',o.testo)){b.textContent='✓ nei documenti';b.disabled=true;}
+    return;}
+  const card=b.closest('.idcard'),x=card&&IDEE[card.dataset.idea];if(x)await azioneIdea(x,ds.ida,b,card);});
 $('#tdmodal').addEventListener('click',e=>{if(e.target.id==='tdmodal')closeTodo();});
 $('#tdfiltri').addEventListener('click',e=>{const b=e.target.closest('button[data-tdf]');if(b){TDV.filtro=b.dataset.tdf;loadTodo();}});
 document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-td],#tdlista button[data-td],#msgs button[data-todo2],#msgs button[data-fo]');if(!b)return;     // v17: cose da fare, piano, concentrazione
@@ -14728,7 +15015,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);})();
 </script>
 </body></html>"""
 

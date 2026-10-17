@@ -1,10 +1,10 @@
-# MAIK — assistente AI personale
+# MAIK PRIME — assistente AI personale
 
 Due modi di usare MAIK, scegli quello che preferisci:
 
-| | **`index.html`** (client) | **`maik_server.py`** (server) |
+| | **`index.html`** (client) | **`maikprime.py`** (server) |
 |---|---|---|
-| Avvio | apri il file nel browser | `python maik_server.py` |
+| Avvio | apri il file nel browser | `python maikprime.py` |
 | Dipendenze | nessuna | nessuna (solo stdlib Python) |
 | Memoria | nel browser (`localStorage`) | su disco in `dati_maik/*.json` |
 | Ideale per | uso veloce su un solo dispositivo | memoria persistente e robusta |
@@ -28,7 +28,7 @@ ollama pull nomic-embed-text   # (V16-18, facoltativo) ricerca per significato n
 ```
 
 - Nel **client** (`index.html`): scegli il modello chat e quello visione in **⚙ Impostazioni**.
-- Nel **server** (`maik_server.py`): variabili d'ambiente `MAIK_MODELLO` (chat) e `MAIK_MODELLO_VISIONE` (webcam).
+- Nel **server** (`maikprime.py`): variabili d'ambiente `MAIK_MODELLO` (chat) e `MAIK_MODELLO_VISIONE` (webcam).
 - In ogni caso MAIK **prova più modelli visione in cascata** (quello scelto → `llava` → `moondream`), quindi se ne hai almeno uno installato funziona.
 
 > ⚠️ **Errore `unknown model architecture: 'mllama'`** con `llama3.2-vision`?
@@ -44,6 +44,25 @@ e non lo legge ad alta voce né lo salva in memoria.
 
 **Per l'agente (V10)** vanno meglio i modelli che seguono bene le istruzioni: `qwen2.5:7b` / `qwen2.5:14b` o `llama3.1`.
 I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strumenti: MAIK funziona lo stesso, solo che agisce meno da solo.
+
+---
+
+## ⚡ Novità V19 — MAIK PRIME: lavora da solo, fa ricerche approfondite, ti mostra tutta la giornata (versione server)
+
+> **Nuovo nome:** il programma ora si chiama **MAIK PRIME** e il file è **`maikprime.py`** → `python maikprime.py`.
+> I tuoi dati restano gli stessi (cartella `dati_maik/`). Il vecchio `maik_server.py` c'è ancora, ma solo come lanciatore: avvia `maikprime.py`.
+
+| | Cosa fa |
+|---|---|
+| ⚙️ **Automazioni** | Dimmi cosa fare e quando, e MAIK lo fa **da solo**: «**ogni mattina alle 8 dimmi il meteo e le notizie**», «**ogni lunedì alle 9 dimmi quanto ho speso la settimana scorsa**», «**nei giorni feriali alle 7:30 cosa devo fare oggi?**», «**ogni sera alle 22 chiudiamo la giornata**», «ogni venerdì alle 18 com'è andata la settimana?», «nel weekend alle 10 …», «ogni lunedì e giovedì alle 18:30 …», «**ogni 2 ore ricordami di bere**». Può fare tutto quello che gli chiederesti in chat (spese, cose da fare, piano, notizie, meteo, ricerche, domande al modello…). Il risultato arriva come messaggio **⚙️ AUTOMAZIONE** (con le sue schede, la notifica e la voce) e resta nella chat **«⚙️ Automazioni»**. Zep si carica con l'**anello di energia** ⚡. |
+| ⚙️ **Gestirle** | In chat: «le mie automazioni», «sospendi / riattiva / cancella / esegui l'automazione delle notizie». Oppure il tasto **X**: crea scrivendo come parli, accendi/sospendi, ▶ prova adesso, ✕ cancella, e gli ultimi risultati. Se il PC era spento all'ora giusta, MAIK non recupera la valanga di arretrati: aspetta la volta dopo. **Mai comandi del PC nelle automazioni**: quelli li confermi sempre tu. |
+| 🔬 **Ricerca approfondita** | «**fai una ricerca approfondita sulle auto elettriche**», «ricerca approfondita: pannelli solari», «studia bene la storia di Roma», «fammi un rapporto sul mercato del lavoro»: MAIK prepara 3-4 ricerche diverse, legge le fonti su internet (senza doppioni) e scrive un **rapporto** con titolo, «in breve», sezioni, consigli e le **citazioni [1] [2]** cliccabili. Mentre lavora vedi **🔬 Ricerca 2 di 3 · «…»** e **✍️ Scrivo il rapporto**: Zep cerca con la lente e poi scrive sul blocco note. Il rapporto viene **salvato nei documenti** («📚 Ricerca — auto elettriche.md»), così dopo puoi chiedere «cosa diceva la ricerca sulle auto elettriche?». |
+| 🛰️ **Centro di controllo** | Tasto **Y**, il bottone 🛰️ in alto, o in chat «**centro di controllo**», «**come sto andando oggi?**», «il mio punteggio»: tutta la giornata in un colpo d'occhio, con il **punteggio Prime** (0–100: cose fatte, abitudini, concentrazione), le cose di oggi da **spuntare**, le abitudini da **segnare con un tocco**, le spese (oggi, mese, budget), l'agenda di oggi e domani, i pomodori, l'**umore degli ultimi 7 giorni**, le prossime automazioni, idee, ricordi e promemoria. Si aggiorna da solo. |
+| ⚡ **Zep Prime** | Nuovo gesto «**prime**»: si carica con i pugni stretti, un anello di energia gli sale dai piedi alla testa e alla fine alza le braccia al cielo. Lo fa quando finisce un'automazione o una ricerca. Va bene anche con il tuo personaggio VRM. |
+
+- L'agente ha un nuovo strumento, `automazione`: se gli chiedi «ricordami ogni venerdì di …» o «tienimi aggiornato ogni mattina su …», la può creare da solo.
+- Nuovi endpoint: `GET /automazioni` (con gli ultimi risultati) · `GET /automazioni/avvisi` · `POST /automazioni/crea {testo}` o `{comando, giorni, ora | ogni_min}` · `POST /automazioni/attiva {id, attiva}` · `POST /automazioni/esegui {id}` · `POST /automazioni/elimina {id}` · `GET /prime/oggi`. `/chat/stream` manda gli eventi `"ricerca"` (le fasi) e restituisce `"automazione"`, `"automazioni"`, `"prime"` e `"ricerca"`.
+- I dati: `dati_maik/automazioni.json`; i rapporti delle ricerche nei documenti.
 
 ---
 
@@ -196,12 +215,12 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 ## 🧍 Novità V11 — Zep, il tuo personaggio 3D (sul PC, versione server)
 
 Al posto della sfera c'è un **personaggio 3D animato** nel browser: il tuo, oppure **Zep**, il robottino integrato.
-Si usa con `maik_server.py` su un **PC** (Chrome o Edge, schermo largo). Su telefono e su schermi piccoli resta la sfera di sempre,
+Si usa con `maikprime.py` su un **PC** (Chrome o Edge, schermo largo). Su telefono e su schermi piccoli resta la sfera di sempre,
 e `index.html` rimane la versione V10 che funziona ovunque.
 
 ```bash
-python maik_server.py            # si apre come finestra-app (Chrome/Edge), non come una scheda
-python maik_server.py --no-app   # oppure in una scheda normale
+python maikprime.py            # si apre come finestra-app (Chrome/Edge), non come una scheda
+python maikprime.py --no-app   # oppure in una scheda normale
 ```
 
 | | Cosa fa |
@@ -250,7 +269,7 @@ Nuovi endpoint: `GET /pc/info` · `GET /pc/attesa` · `POST /pc/conferma {id, si
 | 📚 **I tuoi documenti** | Carica appunti, ricette, contratti, manuali, codice… (trascina, scegli o incolla il testo; dal 📎 c'è anche «salva nei documenti»). MAIK li divide in pezzi e, quando gli fai una domanda, mette nel prompt **solo i pezzi pertinenti** (ricerca BM25) e **cita la fonte** `[nome file]`, che vedi come badge e come chip 📄 (passa sopra per l'anteprima). Nel client restano nel browser (IndexedDB), nel server su disco. |
 | 💬 **Più chat** | Nuova chat, rinomina, elimina, dalla barra laterale o con **Ctrl+K**. Ogni chat ha la sua cronologia e il suo contesto, ma **la memoria su di te è una sola**. Prendono il nome dalla prima domanda e alla riapertura ritrovi la chat dov'eri rimasto. La vecchia conversazione diventa la **⭐ Chat principale** (anche dai backup V9). |
 | 🔁 **Follow-up da amico vero** | Se dici «domani ho l'esame di storia», «giovedì vado dal dentista alle 15» o «stasera esco con Giulia», MAIK se lo segna (chip 🔁) e **al momento giusto te lo chiede da solo**: «Ehi! 🤞 Com'è andato l'esame di storia?» — con notifica, voce e suono. Nel frattempo ti fa il tifo, e quando rispondi sa di averti appena chiesto. Le regole capiscono le frasi tipiche anche offline; l'IA migliora la domanda e trova gli eventi detti in altri modi. Non scatta con «domani ho fame», «domani non ho niente», «oggi ho avuto l'esame» o con le domande. |
-| 📲 **App installabile** (server) | `maik_server.py` ora è una **PWA**: icona generata dal server (nucleo + M), manifest, service worker. In Chrome/Edge: **📲 Installa MAIK come app** nella barra laterale (o dal menu del browser) → si apre in una finestra sua, come un programma. |
+| 📲 **App installabile** (server) | `maikprime.py` ora è una **PWA**: icona generata dal server (nucleo + M), manifest, service worker. In Chrome/Edge: **📲 Installa MAIK come app** nella barra laterale (o dal menu del browser) → si apre in una finestra sua, come un programma. |
 | 🐛 **Bug corretti** | Sul telefono la barra laterale partiva 48 px sotto la barra in alto (client e server); «sabato alle 9» detto di sabato non veniva capito; nel client, con il browser pieno il salvataggio poteva bloccarsi (ora accorcia le chat vecchie e avvisa). |
 
 Esempi da provare:
@@ -377,13 +396,13 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V18 — `maik_server.py`
+## MAIK PRIME — Server V19 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
 ```bash
 ollama pull llama3.1      # una volta
-python maik_server.py     # si apre da solo nel browser su :8137
+python maikprime.py     # si apre da solo nel browser su :8137
 ```
 
 Se nella stessa cartella c'è il tuo `aria.html`, il server usa quella interfaccia 3D; altrimenti parte con una **GUI integrata** completa — **sfera 3D animata + chat in streaming + pannello 🧰 strumenti + 🫂 Modalità Amico + 👁️ visione webcam** — collegata agli endpoint del server, così la memoria viene salvata **su disco** (non nel browser). Funziona out-of-the-box senza `aria.html`.
@@ -431,14 +450,14 @@ Eredita da v5.0: profilo ricco, memoria episodica, timeline, umore tracker, rice
 ### Esempio configurazione
 
 ```bash
-MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maik_server.py
-MAIK_APPRENDIMENTO_IA=0 python maik_server.py     # spegne l'apprendimento con l'IA
-MAIK_AGENTE=0 python maik_server.py               # spegne gli strumenti dell'agente
-MAIK_SEGUITI_RITARDO=30 python maik_server.py     # demo: chiede «com'è andata?» dopo 30 secondi
+MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maikprime.py
+MAIK_APPRENDIMENTO_IA=0 python maikprime.py     # spegne l'apprendimento con l'IA
+MAIK_AGENTE=0 python maikprime.py               # spegne gli strumenti dell'agente
+MAIK_SEGUITI_RITARDO=30 python maikprime.py     # demo: chiede «com'è andata?» dopo 30 secondi
 ```
 
 > 📲 Per installarlo sul **telefono** come app serve HTTPS (i browser lo chiedono per i service worker); sul computer
-> con `localhost` funziona subito. Per usarlo dal telefono in casa: `MAIK_HOST=0.0.0.0 python maik_server.py`
+> con `localhost` funziona subito. Per usarlo dal telefono in casa: `MAIK_HOST=0.0.0.0 python maikprime.py`
 > e apri `http://IP-DEL-PC:8137`: chat, documenti e memoria funzionano; microfono, webcam e installazione
 > invece vogliono HTTPS (regola dei browser).
 

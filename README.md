@@ -23,8 +23,8 @@ MAIK usa due modelli: uno per **chattare/ragionare** e uno **multimodale per la 
 
 ```bash
 ollama pull llama3.1     # chat
-ollama pull llava        # visione (per far "vedere" MAIK) — compatibile ovunque
-ollama pull nomic-embed-text   # (V16, facoltativo) ricerca per significato nei documenti
+ollama pull llava        # visione (per far "vedere" MAIK e, dalla V18, leggere foto e scansioni) — compatibile ovunque
+ollama pull nomic-embed-text   # (V16-18, facoltativo) ricerca per significato nei documenti e nelle chiacchierate
 ```
 
 - Nel **client** (`index.html`): scegli il modello chat e quello visione in **⚙ Impostazioni**.
@@ -44,6 +44,27 @@ e non lo legge ad alta voce né lo salva in memoria.
 
 **Per l'agente (V10)** vanno meglio i modelli che seguono bene le istruzioni: `qwen2.5:7b` / `qwen2.5:14b` o `llama3.1`.
 I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strumenti: MAIK funziona lo stesso, solo che agisce meno da solo.
+
+---
+
+## 💡 Novità V18 — MAIK pensa avanti: ricorda le chiacchierate, ti propone idee, ragiona a più passi, legge le foto (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🧠 **Ricorda le chiacchierate** | «**ti ricordi cosa ti avevo detto su mio fratello?**», «cosa ti avevo detto ieri sul lavoro?», «ti ho mai parlato di Luca?», «cosa avevamo deciso per le vacanze?»: MAIK ritrova le chiacchierate giuste (anche di settimane fa, in qualsiasi chat) e ti risponde con le date. Sotto c'è la scheda dei ricordi con **💬 Riapri** per tornare a quella chat. Con `nomic-embed-text` le trova **per significato**: «il lavoro» trova «il mio capo mi ha promesso una promozione». |
+| 🗓️ **Di cosa abbiamo parlato** | «**di cosa abbiamo parlato ieri?**», «cosa ci siamo detti la settimana scorsa?», «… lunedì», «… il 3 ottobre»: le chat di quel giorno con le domande principali e **💬 Riapri**. |
+| 🧠 **Ricordi da solo** | Quando dici qualcosa che c'entra con una chiacchierata vecchia (in un'altra chat o di tanto tempo fa), MAIK se la ricorda e la usa («come mi avevi detto il 3 ottobre…»). Sotto la risposta compare il chip **🧠** con quel ricordo: un clic e riapri la chat. |
+| 💡 **Idee proattive** | MAIK ti scrive lui quando serve, con i pulsanti per farlo subito: la sera, se una **serie di abitudini** sta per spezzarsi (✓ Fatto!); se **domani scade** qualcosa (🍅 Ci lavoro ora); se domattina hai un **impegno presto** (⏰ promemoria un'ora prima); se una **bolletta** scade entro 3 giorni (✓ Già pagata · ⏰ Ricordamelo domani); se di questo passo **sfori il budget** del mese (quanto puoi spendere al giorno); la mattina, se hai **cose in ritardo** (➡️ Sposta a domani); e se ti ha sentito giù per un paio di giorni, ti chiede come stai. Zep alza il dito e **gli si accende una lampadina** 💡. |
+| 🔕 **Mai troppe** | Al massimo 4 al giorno, mai nelle **ore di silenzio** (22–8), e ogni idea una volta sola. «**basta consigli**» le spegne, «**riattiva i consigli**» le riaccende, **🔕 Non per questo** spegne solo quel tipo. «**hai qualche idea per me?**» te le dà subito, a qualsiasi ora. |
+| 💡 **Idee e ricordi** | Tasto **U** o il bottone 💡 in alto: idee accese/spente, i 7 tipi di idea uno per uno, quante oggi, e la **ricerca nelle chiacchierate** (anche per significato) con 💬 Riapri. |
+| 🤖 **Agente a più passi** | Per le domande difficili MAIK lavora in più giri: cerca, legge una fonte, fa i conti con i numeri trovati… e solo alla fine risponde. Mentre lavora vedi **🤖 Passo 2 di 4 · 🧮**, alla fine **🤖 3 passi** e i chip di ogni strumento. Nuovo strumento dell'agente: `cerca_chat` (le chiacchierate passate). |
+| 📷 **Foto → testo** | Allega la **foto di uno scontrino o di una bolletta** e scrivi «**aggiungilo alle spese**» (o tocca **💶 alle spese** sull'allegato): MAIK legge la foto con il modello della visione, segna la spesa (e la scadenza della bolletta in calendario) e ti mostra il testo che ha letto. «**trascrivi il testo di questa foto**» (o **📝 testo**): il testo in un riquadro, con 📋 Copia e 📚 Salva nei documenti. Anche dalla finestra 💶 Spese («Da una bolletta o uno scontrino») ora vanno bene le foto. |
+| 📄 **PDF scansionati** | Un PDF senza testo (una scansione) non è più un problema: la GUI lo legge **pagina per pagina** con il modello della visione (fino a 8 pagine), come allegato o nei documenti. |
+
+- Per leggere le foto serve un modello della visione (`ollama pull llava`), lo stesso di 👁️ Guarda. Per i ricordi per significato `ollama pull nomic-embed-text` (senza, MAIK cerca per parole).
+- Funziona **senza Ollama**: le idee, «di cosa abbiamo parlato ieri?» e i ricordi trovati (detti così come sono).
+- Nuovi endpoint: `GET /proattivo` (le idee nuove) · `GET /proattivo/stato` · `POST /proattivo/azione {azione, dati}` · `POST /proattivo/imposta {attivo?, regola?, on?}` · `POST /proattivo/controlla` · `GET /ricordi?q=&quando=` · `GET /ricordi/giorno?q=ieri` · `POST /ocr {immagine, scopo?: "spesa", domanda?, nome?}`. `/chat/stream` manda anche gli eventi `"passo"` e restituisce `"idee"`, `"ricordi"`, `"ricordati"`, `"passi"`.
+- Variabili: `MAIK_PROATTIVO=0` (niente idee) · `MAIK_PROATTIVO_MAX` (4 al giorno) · `MAIK_PROATTIVO_OGNI` (ogni quanti secondi guardare, 300) · `MAIK_SILENZIO` (ore di silenzio, `22-8`; `0` = mai) · `MAIK_SERA` (da che ora è «sera», 20) · `MAIK_AGENTE_PASSI` (giri massimi dell'agente, 4) · `MAIK_RICORDI_SOGLIA` (0.6). I dati restano in `dati_maik/proattivo.json` e `dati_maik/ricordi_vettori.json`.
 
 ---
 
@@ -356,7 +377,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK — Server V17 — `maik_server.py`
+## MAIK — Server V18 — `maik_server.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

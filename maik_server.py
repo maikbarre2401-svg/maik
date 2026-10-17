@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v17.0                     ║
+║                  MAIK — Server v18.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,22 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v18.0 — MAIK PENSA AVANTI:
+  • 🧠 Ricorda le chiacchierate per significato: «ti ricordi cosa ti avevo detto su mio fratello?»,
+    «di cosa abbiamo parlato ieri?», «cosa ci siamo detti la settimana scorsa?»; e quando una chiacchierata
+    vecchia c'entra con quello che dici, la usa da sola («come mi avevi detto il 3 ottobre…»).
+  • 💡 Idee proattive: la sera se una serie di abitudini è a rischio, se domani scade qualcosa o hai un impegno
+    presto (ti propone un promemoria), se di questo passo sfori il budget, bollette in scadenza, cose in ritardo
+    (le sposta a domani con un tocco). Poche al giorno, mai nelle ore di silenzio; «basta consigli» /
+    «riattiva i consigli» / «hai qualche idea per me?».
+  • 🤖 Agente a più passi: cerca, legge una fonte, fa i conti… fino a MAIK_AGENTE_PASSI giri; la GUI mostra i passi.
+  • 📷 Foto → testo (con il modello della visione): «aggiungi questo scontrino alle spese» con la foto, «trascrivi il
+    testo» di una foto, PDF scansionati letti pagina per pagina.
+  • Nuovi endpoint: GET /proattivo · GET /proattivo/stato · POST /proattivo/azione /proattivo/imposta
+    /proattivo/controlla · GET /ricordi?q= · GET /ricordi/giorno?q=ieri · POST /ocr
+  • Variabili: MAIK_PROATTIVO=0 · MAIK_PROATTIVO_MAX (4 al giorno) · MAIK_PROATTIVO_OGNI (300 s) · MAIK_SILENZIO (22-8)
+    · MAIK_SERA (20) · MAIK_AGENTE_PASSI (4) · MAIK_RICORDI_SOGLIA (0.6)
 
 NOVITÀ v17.0 — MAIK TI AIUTA A FARE LE COSE:
   • 📋 Cose da fare: «aggiungi alle cose da fare: chiamare il commercialista entro venerdì, urgente #lavoro»
@@ -190,6 +206,7 @@ import shutil
 import struct
 import zlib
 import operator
+import collections
 import datetime
 import threading
 import unicodedata
@@ -292,6 +309,14 @@ che avete vissuto insieme, citalo con calore.""",
     "embed_soglia": float(_env("MAIK_EMBED_SOGLIA", "0.62")),
     # v17: la tua giornata di lavoro (per il piano), es. 9-19
     "giornata": tuple(int(x) for x in (_env("MAIK_GIORNATA", "9-19").split("-") + ["19"])[:2]),
+    # v18: idee proattive (quante al giorno, ogni quanto guardare, ore di silenzio, da che ora è «sera»), agente a più passi, ricordi
+    "proattivo": _env("MAIK_PROATTIVO", "1") not in ("0", "no", "false"),
+    "proattivo_max": max(0, int(_env("MAIK_PROATTIVO_MAX", "4"))),
+    "proattivo_ogni": max(1, int(_env("MAIK_PROATTIVO_OGNI", "300"))),
+    "silenzio": (tuple(int(x) for x in _env("MAIK_SILENZIO", "22-8").split("-")[:2]) if re.fullmatch(r"\d{1,2}-\d{1,2}", _env("MAIK_SILENZIO", "22-8").strip()) else None),
+    "sera": int(_env("MAIK_SERA", "20")),
+    "agente_passi": max(2, min(8, int(_env("MAIK_AGENTE_PASSI", "4")))),
+    "ricordi_soglia": float(_env("MAIK_RICORDI_SOGLIA", "0.6")),
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -301,7 +326,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "17.0"
+VERSIONE  = "18.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -5807,7 +5832,7 @@ class Spese:
             return {"testo": "💶 Non trovo l'importo in questo documento. Dimmelo tu: «ho pagato la bolletta della luce 87,40»."}
         if scontrino:
             prima = next((r.strip() for r in (testo or "").split("\n") if len(r.strip()) > 2), "")
-            desc, cat = ("Scontrino " + prima[:40]).strip(), categoria_spesa(testo) or "spesa"
+            desc, cat = ("Scontrino " + (prima.title() if prima.isupper() else prima)[:40]).strip(), categoria_spesa(testo) or "spesa"
         else:
             desc, cat = ("Bolletta " + d["tipo"]) if d["tipo"] else ("Bolletta" if re.search(r"bollett|fattur", (testo + nome).lower()) else (nome or "Documento")), "bollette"
         s, err = self.aggiungi(d["importo"], desc, cat, fonte="documento", scadenza=d["scadenza"].isoformat() if d["scadenza"] else None)
@@ -6892,6 +6917,697 @@ def fine_giornata(ora=None):
 
 
 # ════════════════════════════════════════════════════════════
+# v18 — MAIK PENSA AVANTI: ricorda le chiacchierate, ti propone idee, legge le foto
+# ════════════════════════════════════════════════════════════
+
+# ── 🧠 RICORDI: le chiacchierate passate, ritrovate per significato (embedding) o per parole (BM25) ──
+_RE_RIC_CUE = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:"
+                         r"(?:ti\s+|te\s+(?:lo|ne)\s+)?ricordi\b|ricordi\s+quando\b|"
+                         r"(?:(?:che\s+)?cosa|quando|cosa\s+mai)\s+(?:ti\s+|t['’]\s*)(?:avevo|ho)\s+(?:mai\s+|già\s+|gia\s+)?(?:detto|parlato|raccontato|scritto|accennato|chiesto|spiegato)\b|"
+                         r"(?:(?:che\s+)?cosa|quando)\s+(?:avevamo|abbiamo)\s+(?:deciso|detto|stabilito|concluso)\s+(?:su|sul|sulla|sullo|sui|sugli|sulle|di|del|della|dello|dei|degli|delle|per|riguardo|a\s+proposito)\b|"
+                         r"ti\s+(?:avevo|ho)\s+(?:mai|già|gia)\s+(?:parlato|detto|raccontato)\b|"
+                         r"(?:ne\s+)?(?:avevamo|abbiamo)\s+(?:già|gia)\s+parlato\b)", re.I)
+_RE_RIC_TOGLI = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:(?:ti\s+|te\s+(?:lo|ne)\s+)?ricordi\s*(?:che\s+cosa|cosa|quello\s+che|quel\s+che|quando|di\s+quando|se|che)?\s*)?"
+                           r"(?:(?:che\s+)?cosa\s+|quando\s+|cosa\s+mai\s+)?(?:ti\s+|t['’]\s*)?(?:ne\s+)?(?:avevo|ho|avevamo|abbiamo)?\s*(?:mai\s+|già\s+|gia\s+)?"
+                           r"(?:detto|parlato|raccontato|scritto|accennato|chiesto|spiegato|deciso|stabilito|concluso)?\s*", re.I)
+_RE_RIC_PREP = re.compile(r"^(?:(?:su|sul|sulla|sullo|sui|sugli|sulle|di|del|della|dello|dei|degli|delle|riguardo\s+(?:a|al|alla|allo|ai|agli|alle)|"
+                          r"a\s+proposito\s+(?:di|del|della|dello|dei|degli|delle)|per|che|quello\s+che|a|al|alla|ai|alle|con)\s+|"
+                          r"(?:sull|dell|d|all|riguardo\s+all|a\s+proposito\s+dell)['’]\s*)", re.I)
+_RE_RIC_GIORNO = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:(?:di\s+)?(?:che\s+)?(?:cosa|cos['’]|che)\s*(?:abbiamo|avevamo)\s+(?:parlato|chiacchierato|discusso)|"
+                            r"(?:(?:che\s+)?cosa|cos['’])\s*ci\s+siamo\s+detti|riassumi(?:mi)?\s+(?:le\s+)?(?:nostre\s+)?(?:chiacchierate|conversazioni|chat)|"
+                            r"(?:le\s+)?(?:nostre\s+)?(?:chiacchierate|conversazioni)\s+(?:di|del|della))\s*(?P<q>.*)$", re.I)
+_RE_RIC_TEMPO = [(re.compile(r"\b(?:l['’]\s*altro\s*ieri|ieri\s+l['’]\s*altro)\b", re.I), "altroieri"),
+                 (re.compile(r"\bieri\b", re.I), "ieri"),
+                 (re.compile(r"\b(?:oggi|stamattina|stamani|stasera|stanotte|stamane)\b", re.I), "oggi"),
+                 (re.compile(r"\b(?:la\s+)?settimana\s+(?:scorsa|passata)\b", re.I), "sett_scorsa"),
+                 (re.compile(r"\bquesta\s+settimana\b", re.I), "settimana"),
+                 (re.compile(r"\b(?:il\s+)?mese\s+(?:scorso|passato)\b", re.I), "mese_scorso"),
+                 (re.compile(r"\bquesto\s+mese\b", re.I), "mese"),
+                 (re.compile(r"\bnegli\s+ultimi\s+(\d{1,2})\s+giorni\b", re.I), "ultimi")]
+
+
+def periodo_ricordi(q, oggi=None):
+    """«ieri», «lunedì», «la settimana scorsa», «il 3 ottobre» → (da, a, etichetta, resto della frase) oppure None."""
+    oggi = oggi or datetime.date.today()
+    for rx, k in _RE_RIC_TEMPO:
+        m = rx.search(q or "")
+        if not m:
+            continue
+        resto = (q[:m.start()] + " " + q[m.end():]).strip()
+        if k == "altroieri":
+            g = oggi - datetime.timedelta(days=2)
+            return g, g, "L'altro ieri", resto
+        if k == "ieri":
+            g = oggi - datetime.timedelta(days=1)
+            return g, g, "Ieri", resto
+        if k == "oggi":
+            return oggi, oggi, "Oggi", resto
+        if k == "sett_scorsa":
+            lun = oggi - datetime.timedelta(days=oggi.weekday() + 7)
+            return lun, lun + datetime.timedelta(days=6), "La settimana scorsa", resto
+        if k == "settimana":
+            return oggi - datetime.timedelta(days=oggi.weekday()), oggi, "Questa settimana", resto
+        if k == "mese_scorso":
+            fine = oggi.replace(day=1) - datetime.timedelta(days=1)
+            return fine.replace(day=1), fine, f"A {MESI_IT[fine.month - 1]}", resto
+        if k == "mese":
+            return oggi.replace(day=1), oggi, "Questo mese", resto
+        n = max(1, min(60, int(m.group(1))))
+        return oggi - datetime.timedelta(days=n - 1), oggi, f"Negli ultimi {n} giorni", resto
+    m = re.search(r"\b(luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)(?:\s+scors[oa])?\b", q or "", re.I)
+    if m:
+        w = next(i for i, g in enumerate(GIORNI_LUNGHI) if _senza_accenti(g) == _senza_accenti(m.group(1).lower()))
+        g = oggi - datetime.timedelta(days=(oggi.weekday() - w) % 7 or 7)
+        return g, g, GIORNI_LUNGHI[w].capitalize(), (q[:m.start()] + " " + q[m.end():]).strip()
+    m = re.search(r"\b(?:il\s+|l['’]\s*)?(\d{1,2})\s+(" + "|".join(MESI_IT) + r")(?:\s+(\d{4}))?\b", q or "", re.I)
+    if m:
+        try:
+            g = datetime.date(int(m.group(3) or oggi.year), MESI_IT.index(m.group(2).lower()) + 1, int(m.group(1)))
+            if g > oggi and not m.group(3):
+                g = g.replace(year=g.year - 1)
+            return g, g, f"Il {g.day} {MESI_IT[g.month - 1]}", (q[:m.start()] + " " + q[m.end():]).strip()
+        except ValueError:
+            pass
+    return None
+
+
+class Ricordi:
+    """v18: ritrova le chiacchierate passate. Con il modello degli embedding (lo stesso dei documenti) le trova
+    per significato («la mia macchina» trova «l'auto»), sempre anche per parole. I vettori in ricordi_vettori.json."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._dati = None
+        self._tok = {}
+        self._evento = threading.Event()
+        self._thread = None
+        self.lavoro = False
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "ricordi_vettori.json")
+
+    def _carica(self):
+        if self._dati is None:
+            try:
+                with open(self._file(), encoding="utf-8") as f:
+                    d = json.load(f)
+                self._dati = d if isinstance(d, dict) and d.get("modello") == CONFIG["modello_embed"] else {"modello": CONFIG["modello_embed"], "v": {}}
+            except Exception:
+                self._dati = {"modello": CONFIG["modello_embed"], "v": {}}
+        return self._dati
+
+    def _salva(self):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self._dati, f, separators=(",", ":"))
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def testo(x):
+        tu = re.sub(r"\s+", " ", re.sub(r"\[📎[^\]]*\]", "", x.get("tu") or "")).strip()
+        ai = re.sub(r"\s+", " ", x.get("ai") or "").strip()
+        return ((f"Persona: {tu[:600]}\n" if tu else "") + f"MAIK: {ai[:300]}").strip()
+
+    @staticmethod
+    def chiave(x):
+        return Vettori.chiave((x.get("quando") or "") + "|" + (x.get("tu") or "")[:300] + "|" + (x.get("ai") or "")[:80])
+
+    def _parole_di(self, x):
+        k = self.chiave(x)
+        t = self._tok.get(k)
+        if t is None:
+            t = self._tok[k] = collections.Counter(_parole(self.testo(x)))
+            if len(self._tok) > 4000:
+                self._tok.pop(next(iter(self._tok)))
+        return t
+
+    # in sottofondo: i vettori delle chiacchierate nuove (16 alla volta)
+    def indicizza(self, memoria, massimo=256):
+        if not CONFIG["embed"] or not VETTORI.pronta():
+            return 0
+        with memoria._lock:
+            diario = [x for x in memoria.diario if (x.get("tu") or "").strip()]
+        with self._lock:
+            d = self._carica()
+            manca = [x for x in diario if self.chiave(x) not in d["v"]][-massimo:]
+        n = 0
+        for i in range(0, len(manca), 16):
+            parte = manca[i:i + 16]
+            try:
+                vv = VETTORI._chiedi(Vettori._prefisso([self.testo(x) for x in parte], "d"))
+            except Exception as e:
+                VETTORI.errore = str(e)[:120]
+                break
+            with self._lock:
+                for x, v in zip(parte, vv):
+                    d["v"][self.chiave(x)] = v
+                n += len(parte)
+        if n:
+            with self._lock:
+                vivi = {self.chiave(x) for x in diario}
+                if len(d["v"]) > len(vivi) * 1.3 + 50:            # le chiacchierate cancellate
+                    d["v"] = {k: v for k, v in d["v"].items() if k in vivi}
+                self._salva()
+        return n
+
+    def _lavoratore(self, memoria):
+        while True:
+            self._evento.wait()
+            self._evento.clear()
+            try:
+                self.lavoro = True
+                self.indicizza(memoria)
+            except Exception as e:
+                print(f"  ⚠  ricordi: {e}")
+            finally:
+                self.lavoro = False
+
+    def programma(self, memoria):
+        if not CONFIG["embed"]:
+            return
+        if self._thread is None:
+            self._thread = threading.Thread(target=self._lavoratore, args=(memoria,), daemon=True)
+            self._thread.start()
+        self._evento.set()
+
+    def info(self, memoria):
+        with memoria._lock:
+            diario = [x for x in memoria.diario if (x.get("tu") or "").strip()]
+        v = self._carica()["v"]
+        return {"chiacchierate": len(diario), "pronte": sum(1 for x in diario if self.chiave(x) in v), "lavoro": self.lavoro,
+                "per_significato": bool(CONFIG["embed"] and VETTORI.attiva)}
+
+    def cerca(self, memoria, query, k=4, escludi=(), da=None, a=None, rigida=True, soglia=None):
+        """→ [{quando, sessione, titolo, tu, ai, simile?, punteggio, per_significato?}] le chiacchierate più vicine alla domanda."""
+        q = set(_parole(query))
+        with memoria._lock:
+            diario = list(memoria.diario)
+            titoli = {s["id"]: s.get("titolo", "") for s in memoria.sessioni}
+        el = []
+        for x in diario:
+            if not (x.get("tu") or "").strip():
+                continue
+            g = (x.get("quando") or "")[:10]
+            if (da and g < da.isoformat()) or (a and g > a.isoformat()):
+                continue
+            if self.chiave(x) in escludi:
+                continue
+            el.append(x)
+        if not el or not (q or (query or "").strip()):
+            return []
+        qv = VETTORI.vettore_domanda(query) if CONFIG["embed"] and VETTORI.pronta() else None
+        vett = self._carica()["v"] if qv is not None else {}
+        docs = [self._parole_di(x) for x in el]
+        N = len(docs)
+        media = sum(sum(d.values()) for d in docs) / N or 1
+        df = collections.Counter(w for d in docs for w in set(d) if w in q)
+        k1, b = 1.4, 0.75
+        punti = []
+        for i, (x, tf) in enumerate(zip(el, docs)):
+            s, comuni, lung = 0.0, 0, sum(tf.values())
+            for w in q:
+                f = tf.get(w)
+                if f:
+                    comuni += 1
+                    n = df[w]
+                    s += math.log(1 + (N - n + 0.5) / (n + 0.5)) * f * (k1 + 1) / (f + k1 * (1 - b + b * lung / media))
+            ok_parole = s > 0 and (not rigida or (comuni >= min(2, len(q)) and comuni / max(1, len(q)) >= 0.34))
+            v = vett.get(self.chiave(x)) if qv is not None else None
+            sim = sum(map(operator.mul, qv, v)) if v is not None and len(v) == len(qv) else None
+            punti.append((s, ok_parole, sim, i, x))
+        best = max((p[2] for p in punti if p[2] is not None), default=None)
+        max_s = max((p[0] for p in punti), default=0) or 1
+        soglia = CONFIG["ricordi_soglia"] if soglia is None else soglia
+        scelti = []
+        for s, ok_parole, sim, i, x in punti:
+            ok_senso = sim is not None and sim >= soglia and sim >= best - 0.1
+            if ok_parole or ok_senso:
+                voto = 0.45 * s / max_s + (0.55 * max(0.0, (sim - 0.3) / 0.7) if sim is not None else 0.0) + 0.02 * i / N   # a pari merito la più recente
+                scelti.append((voto, sim, ok_senso and not ok_parole, s, x))
+        scelti.sort(key=lambda t: -t[0])
+        out = []
+        for voto, sim, solo_senso, s, x in scelti[:k]:
+            sid = x.get("sessione") or Memoria.PRINCIPALE
+            out.append(dict({"quando": x.get("quando", ""), "sessione": sid, "titolo": titoli.get(sid, ""), "tu": (x.get("tu") or "")[:400],
+                             "ai": (x.get("ai") or "")[:400], "punteggio": round(s, 2)},
+                            **({"simile": round(sim, 3)} if sim is not None else {}), **({"per_significato": True} if solo_senso else {})))
+        return sorted(out, key=lambda r: r["quando"])
+
+    @staticmethod
+    def _data(r):
+        try:
+            g = datetime.date.fromisoformat(r["quando"][:10])
+        except ValueError:
+            return r["quando"][:10]
+        oggi = datetime.date.today()
+        if g == oggi:
+            return "oggi"
+        if g == oggi - datetime.timedelta(days=1):
+            return "ieri"
+        return f"{g.day} {MESI_IT[g.month - 1]}" + ("" if g.year == oggi.year else f" {g.year}")
+
+    def contesto(self, memoria, testo, sessione=None):
+        """Per il system prompt: le chiacchierate passate che c'entrano con la domanda (non quelle già nella chat)."""
+        if len(_parole(testo)) < 2 or not memoria.diario:
+            return "", []
+        esclusi = {self.chiave(x) for x in memoria.ultimi_scambi(6, sessione or Memoria.PRINCIPALE)} | {self.chiave(x) for x in memoria.diario[-2:]}
+        trovati = self.cerca(memoria, testo, k=3, escludi=esclusi, rigida=True, soglia=max(CONFIG["ricordi_soglia"], 0.66))
+        if not trovati:
+            return "", []
+        righe = "\n".join(f"- {self._data(r)}: la persona ha scritto «{_testo_breve(r['tu'], 220)}» — tu hai risposto «{_testo_breve(r['ai'], 160)}»" for r in trovati)
+        return ("\n\n--- DALLE VOSTRE CHIACCHIERATE PASSATE (ricordi pertinenti: usali solo se c'entrano, con naturalezza, "
+                f"es. «come mi avevi detto {self._data(trovati[-1])}…») ---\n{righe}\n--- FINE RICORDI ---",
+                [{"quando": r["quando"], "tu": _testo_breve(r["tu"], 90), "sessione": r["sessione"], "titolo": r["titolo"]} for r in trovati])
+
+    def domanda(self, testo):
+        """«ti ricordi cosa ti avevo detto su mio fratello?» → {tema, periodo?} (oppure None se non è una domanda sui ricordi)."""
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        if not _RE_RIC_CUE.match(t) or re.match(r"^(?:(?:maik|zep)[,!]?\s+)?ricordami\b", t, re.I):
+            return None
+        resto = _RE_RIC_TOGLI.sub("", t, count=1).strip()
+        per = periodo_ricordi(resto)
+        if per:
+            resto = per[3]
+        for _ in range(3):
+            resto = _RE_RIC_PREP.sub("", resto, count=1).strip()
+        resto = re.sub(r"\b(?:la\s+volta\s+scorsa|l['’]\s*altra\s+volta|tempo\s+fa|qualche\s+(?:giorno|settimana|mese)\s+fa|di\s+recente|ultimamente|prima)\b", "", resto, flags=re.I).strip(" ,")
+        return {"tema": resto[:120], "periodo": per[:3] if per else None}
+
+    def risposta_domanda(self, memoria, d, sessione=None):
+        """→ (testo per il modello, meta) se trovo qualcosa; altrimenti None (risponde il modello con la memoria che ha)."""
+        if not d or not (d["tema"] or d["periodo"]):
+            return None
+        da, a = (d["periodo"][0], d["periodo"][1]) if d["periodo"] else (None, None)
+        q = d["tema"] or ""
+        trovati = self.cerca(memoria, q, k=4, da=da, a=a, rigida=False) if q and _parole(q) else []
+        if not trovati and d["periodo"] and not (q and _parole(q)):
+            return None
+        if not trovati:
+            return None
+        meta = {"tema": d["tema"], "periodo": d["periodo"][2] if d["periodo"] else "", "risultati": [dict(r, data=self._data(r)) for r in trovati]}
+        righe = "\n".join(f"- {self._data(r)}{(' (chat «' + r['titolo'] + '»)') if r['titolo'] else ''}: la persona ha scritto «{_testo_breve(r['tu'], 300)}»; "
+                          f"tu hai risposto «{_testo_breve(r['ai'], 200)}»" for r in trovati)
+        return righe, meta
+
+    @classmethod
+    def testo_senza_modello(cls, meta):
+        righe = [f"🧠 Sì, me lo ricordo! Ecco cosa ci siamo detti" + (f" su **{meta['tema']}**" if meta["tema"] else "") + ":"]
+        for r in meta["risultati"]:
+            righe.append(f"• **{r['data']}** — mi avevi scritto: «{_testo_breve(r['tu'], 160)}»")
+        return "\n".join(righe)
+
+    def router(self, testo, memoria):
+        """«di cosa abbiamo parlato ieri?», «cosa ci siamo detti la settimana scorsa?» → le chat di quel giorno."""
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        m = _RE_RIC_GIORNO.match(t)
+        if not m:
+            return None
+        q = m.group("q") or ""
+        per = periodo_ricordi(q)
+        if not per:
+            if _parole(re.sub(r"^(?:di|su|del|della|sul|sulla)\s+", "", q)):
+                return None                                   # «di cosa abbiamo parlato sul lavoro» → per significato
+            oggi = datetime.date.today()
+            per = (oggi - datetime.timedelta(days=6), oggi, "Negli ultimi 7 giorni", "")
+        da, a, etichetta = per[:3]
+        with memoria._lock:
+            voci = [x for x in memoria.diario if da.isoformat() <= (x.get("quando") or "")[:10] <= a.isoformat() and (x.get("tu") or "").strip()]
+            titoli = {s["id"]: s.get("titolo", "") for s in memoria.sessioni}
+            ultimo = next((x for x in reversed(memoria.diario) if (x.get("quando") or "")[:10] < da.isoformat() and (x.get("tu") or "").strip()), None)
+        quando = etichetta + (f" ({data_it(da)})" if da == a and etichetta in ("Ieri", "L'altro ieri", "Oggi") else "")
+        if not voci:
+            t = f"🗓️ {quando} non abbiamo chiacchierato."
+            if ultimo:
+                g = datetime.date.fromisoformat(ultimo["quando"][:10])
+                t += f" L'ultima volta prima è stata {data_it(g)}: chiedimi «di cosa abbiamo parlato il {g.day} {MESI_IT[g.month - 1]}?»."
+            return {"testo": t, "ricordi": {"periodo": etichetta, "chat": []}}
+        gruppi = collections.OrderedDict()
+        for x in voci:
+            k = (x["quando"][:10], x.get("sessione") or Memoria.PRINCIPALE)
+            gruppi.setdefault(k, []).append(x)
+        chat = []
+        for (g, sid), xs in list(gruppi.items())[-10:]:
+            domande = []
+            for x in xs:
+                d0 = _testo_breve(re.sub(r"\[📎[^\]]*\]", "📎", x["tu"]), 60)
+                if d0 not in domande:
+                    domande.append(d0)
+            chat.append({"data": g, "ora": xs[0]["quando"][11:16], "sessione": sid, "titolo": titoli.get(sid, ""),
+                         "n": len(xs), "domande": domande[:3]})
+        piu_giorni = da != a
+        righe = [f"🗓️ **{quando}** abbiamo chiacchierato {len(voci)} volt{'a' if len(voci) == 1 else 'e'}" + (", di:" if chat else ".")]
+        for c in chat:
+            g = datetime.date.fromisoformat(c["data"])
+            quando_c = (f"{GIORNI_IT[g.weekday()]} {g.day}/{g.month} " if piu_giorni else "") + c["ora"]
+            righe.append(f"• {quando_c} — " + " · ".join(f"«{d}»" for d in c["domande"]) + (f" (chat «{c['titolo']}»)" if c["titolo"] and c["titolo"] != "Chat principale" else "")
+                         + (f" — {c['n']} messaggi" if c["n"] > 3 else ""))
+        righe.append("Vuoi riprendere un discorso? Tocca «💬 Riapri» oppure chiedimi «ti ricordi cosa ti avevo detto su …?».")
+        return {"testo": "\n".join(righe), "ricordi": {"periodo": etichetta, "chat": chat}}
+
+
+RICORDI = Ricordi()
+
+
+# ── 💡 PROATTIVO: MAIK ti propone un'idea quando serve (serie a rischio, budget, scadenze, impegni presto, bollette) ──
+_RE_PRO_STOP = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:basta|stop|niente\s+pi[uù]|smetti(?:la)?\s+(?:di\s+(?:darmi|dare|farmi|fare|mandarmi)\s+)?|non\s+(?:darmi|mandarmi|farmi)\s+pi[uù]|"
+                          r"spegni|disattiva|togli)\s*(?:i\s+|le\s+)?(?:tuoi\s+|tue\s+)?(?:consigli|suggerimenti|idee|avvisi\s+(?:spontanei|proattivi)|consigli\s+spontanei)(?:\s+spontane[ie])?(?:\s+per\s+favore)?$", re.I)
+_RE_PRO_VIA = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:riattiva|riaccendi|attiva|accendi|rimetti)\s+(?:i\s+|le\s+)?(?:tuoi\s+|tue\s+)?(?:consigli|suggerimenti|idee)(?:\s+spontane[ie])?$|"
+                         r"^(?:(?:maik|zep)[,!]?\s+)?(?:puoi\s+)?(?:ricominciare|tornare)\s+a\s+darmi\s+(?:i\s+)?(?:consigli|suggerimenti|idee)$", re.I)
+_RE_PRO_CHIEDI = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:hai\s+(?:qualche\s+|delle\s+|dei\s+|degli\s+|un['’]?\s*)?(?:idea|idee|consigli|consiglio|suggerimenti|suggerimento)\s+per\s+me|(?:che\s+)?cosa\s+mi\s+consigli(?:\s+di\s+fare)?(?:\s+oggi)?|"
+                            r"(?:i\s+)?(?:tuoi\s+)?consigli\s+(?:per\s+)?oggi|c['’]?\s*[eè]\s+qualcosa\s+(?:a\s+cui|che)\s+(?:devo\s+)?(?:stare\s+attent[oa]|pensare|fare\s+attenzione)|"
+                            r"a\s+cosa\s+devo\s+stare\s+attent[oa]|sono\s+in\s+regola\s+con\s+tutto)$", re.I)
+
+
+class Proattivo:
+    """v18: ogni tanto MAIK guarda abitudini, spese, cose da fare, calendario e bollette e, se serve, ti propone
+    un'idea con i pulsanti per farla subito. Poche al giorno (MAIK_PROATTIVO_MAX), mai nelle ore di silenzio
+    (MAIK_SILENZIO, es. 22-8); «basta consigli» le spegne, «riattiva i consigli» le riaccende."""
+    REGOLE = {"serie": "🔥 Serie di un'abitudine a rischio (la sera)", "budget": "💶 Di questo passo sfori il budget",
+              "scadenze": "📋 Cose che scadono domani (la sera)", "presto": "📅 Impegno presto domattina (la sera)",
+              "bollette": "🧾 Bollette in scadenza", "ritardo": "⏰ Cose da fare in ritardo (la mattina)",
+              "umore": "💚 Giorni un po' giù"}
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.coda = []
+        self._ultimo = 0.0
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "proattivo.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                for k, v in (("attivo", True), ("spente", []), ("inviate", {}), ("pagate", [])):
+                    d.setdefault(k, v)
+                return d
+        except Exception:
+            pass
+        return {"attivo": True, "spente": [], "inviate": {}, "pagate": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def silenzio(ora):
+        s = CONFIG["silenzio"]
+        if not s:
+            return False
+        a, b = s
+        return (a <= ora.hour or ora.hour < b) if a > b else (a <= ora.hour < b)
+
+    def stato(self):
+        d = self._carica()
+        oggi = datetime.date.today().isoformat()
+        return {"attivo": CONFIG["proattivo"] and d["attivo"], "acceso_server": CONFIG["proattivo"], "oggi": len(d["inviate"].get(oggi, [])),
+                "massimo": CONFIG["proattivo_max"], "silenzio": "-".join(map(str, CONFIG["silenzio"])) if CONFIG["silenzio"] else "",
+                "regole": [{"chiave": k, "nome": v, "on": k not in d["spente"]} for k, v in self.REGOLE.items()]}
+
+    def imposta(self, attivo=None, regola=None, on=None):
+        with self._lock:
+            d = self._carica()
+            if attivo is not None:
+                d["attivo"] = bool(attivo)
+            if regola in self.REGOLE and on is not None:
+                d["spente"] = [r for r in d["spente"] if r != regola] + ([] if on else [regola])
+            self._salva(d)
+        return self.stato()
+
+    # ── le regole: ognuna → [idea]; un'idea = {id, regola, emoji, testo, azioni: [{etichetta, azione, dati}]} ──
+    def idee(self, ora=None, memoria=None, sempre=False):
+        """`sempre`: senza guardare l'ora (quando me lo chiedi tu: «hai qualche idea per me?»)."""
+        ora = ora or datetime.datetime.now()
+        oggi, d = ora.date(), self._carica()
+        sera = sempre or ora.hour >= CONFIG["sera"]
+        out = []
+        # 🔥 serie di un'abitudine giornaliera a rischio
+        if sera:
+            try:
+                dab = ABITUDINI._carica()
+                for st in [ABITUDINI.stato(x, dab, oggi) for x in dab["abitudini"]]:
+                    if st.get("settimanale") or not st["previsto_oggi"] or st["fatta_oggi"] or st["serie"] < 2:
+                        continue
+                    manca = f" (sei a {st['oggi']}/{st['obiettivo']} {st['unita']})".rstrip() if st["obiettivo"] > 1 and st["oggi"] else ""
+                    out.append({"id": f"serie:{st['id']}:{oggi}", "regola": "serie", "emoji": "🔥",
+                                "testo": f"🔥 La tua serie di **{st['emoji']} {st['nome']}** è a **{st['serie']} giorni** di fila{manca}: se la fai entro stasera non si spezza! Ce la fai?",
+                                "azioni": [{"etichetta": "✓ Fatto!", "azione": "abitudine_fatta", "dati": {"id": st["id"]}},
+                                           {"etichetta": "✅ Abitudini", "azione": "apri", "dati": {"pannello": "abitudini"}}]})
+            except Exception as e:
+                print(f"  ⚠  proattivo/serie: {e}")
+        # 💶 di questo passo sfori il budget del mese (una volta a settimana)
+        try:
+            ultimo = (oggi.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+            if 5 <= oggi.day <= ultimo.day - 2 or sempre:
+                b = SPESE.budget()
+                dd = {"spese": SPESE.tutte()}
+                mese = oggi.isoformat()[:7]
+                casi = []
+                for cat, lim in b.items():
+                    usato = Spese._tot_mese(dd, mese, None if cat == "totale" else cat)
+                    if not lim or usato >= lim or usato <= 0:
+                        continue
+                    prev = usato / max(1, oggi.day) * ultimo.day
+                    if prev > lim * 1.05:
+                        casi.append((prev / lim, cat, usato, prev, lim))
+                if casi:
+                    _, cat, usato, prev, lim = max(casi)
+                    cosa = "budget del mese" if cat == "totale" else f"budget per {CAT_SPESE[cat]['emoji']} {CAT_SPESE[cat]['nome'].lower()}" if cat in CAT_SPESE else "budget"
+                    resta = max(0.0, lim - usato)
+                    al_giorno = resta / max(1, (ultimo - oggi).days + 1)
+                    out.append({"id": f"budget:{cat}:{oggi.isocalendar()[1]}", "regola": "budget", "emoji": "💶",
+                                "testo": f"💶 Di questo passo a fine {MESI_IT[oggi.month - 1]} arrivi a circa **{euro(prev)}**, più del {cosa} di {euro(lim)}. "
+                                         f"Per restarci dentro hai {euro(resta)}: circa **{euro(al_giorno)} al giorno**. Vuoi vedere dove va la maggior parte?",
+                                "azioni": [{"etichetta": "💶 Vedi le spese", "azione": "apri", "dati": {"pannello": "spese"}}]})
+        except Exception as e:
+            print(f"  ⚠  proattivo/budget: {e}")
+        # 📋 domani scadono…
+        if sempre or ora.hour >= CONFIG["sera"] - 2:
+            try:
+                dom = ATTIVITA.vista("domani", oggi)
+                if dom:
+                    nomi = ", ".join(f"**{a['testo']}**" for a in dom[:3]) + (f" e altre {len(dom) - 3}" if len(dom) > 3 else "")
+                    out.append({"id": f"scadenze:{oggi}", "regola": "scadenze", "emoji": "📋",
+                                "testo": f"📋 Domani scade{'' if len(dom) == 1 else 'no'} {nomi}. Vuoi portarti avanti adesso con un pomodoro, o le guardiamo domattina?",
+                                "azioni": [{"etichetta": "🍅 Ci lavoro ora", "azione": "focus", "dati": {"id": dom[0]["id"], "testo": dom[0]["testo"]}},
+                                           {"etichetta": "📋 Cose da fare", "azione": "apri", "dati": {"pannello": "todo"}}]})
+            except Exception as e:
+                print(f"  ⚠  proattivo/scadenze: {e}")
+        # 📅 un impegno presto domattina → un promemoria un'ora prima
+        if sempre or ora.hour >= CONFIG["sera"] - 2:
+            try:
+                dom0 = datetime.datetime.combine(oggi + datetime.timedelta(days=1), datetime.time(0, 0))
+                occ = [o for o in CAL.occorrenze(dom0, dom0 + datetime.timedelta(hours=10, minutes=31)) if not o["tutto_giorno"] and o["inizio"] >= dom0]
+                if occ:
+                    o = occ[0]
+                    prima = o["inizio"] - datetime.timedelta(hours=1)
+                    out.append({"id": f"presto:{o['id']}:{oggi}", "regola": "presto", "emoji": "📅",
+                                "testo": f"📅 Domani alle **{o['inizio'].strftime('%H:%M')}** hai **{o['titolo']}**" + (f" ({o['luogo']})" if o["luogo"] else "")
+                                         + f". Vuoi che ti ricordi di prepararti alle {prima.strftime('%H:%M')}?",
+                                "azioni": [{"etichetta": f"⏰ Sì, alle {prima.strftime('%H:%M')}", "azione": "promemoria",
+                                            "dati": {"testo": f"Prepararti per: {o['titolo']} (alle {o['inizio'].strftime('%H:%M')})", "quando": prima.isoformat(timespec="minutes")}}]})
+            except Exception as e:
+                print(f"  ⚠  proattivo/presto: {e}")
+        # 🧾 bollette che scadono entro 3 giorni (e non ancora segnate come pagate)
+        try:
+            for s in SPESE.tutte():
+                sc = s.get("scadenza")
+                if not sc or s["id"] in d["pagate"] or not (oggi.isoformat() <= sc <= (oggi + datetime.timedelta(days=3)).isoformat()):
+                    continue
+                q = quando_scade(sc, oggi)
+                out.append({"id": f"bolletta:{s['id']}", "regola": "bollette", "emoji": "🧾",
+                            "testo": f"🧾 **{s['descrizione']}** da **{euro(s['importo'])}** scade {q}. L'hai già pagata?",
+                            "azioni": [{"etichetta": "✓ Già pagata", "azione": "bolletta_pagata", "dati": {"id": s["id"]}},
+                                       {"etichetta": "⏰ Ricordamelo domani alle 9", "azione": "promemoria",
+                                        "dati": {"testo": f"Pagare: {s['descrizione'].lower()} ({euro(s['importo'])})",
+                                                 "quando": datetime.datetime.combine(oggi + datetime.timedelta(days=1), datetime.time(9, 0)).isoformat(timespec="minutes")}}]})
+        except Exception as e:
+            print(f"  ⚠  proattivo/bollette: {e}")
+        # ⏰ cose in ritardo (la mattina): le sposto a domani?
+        if sempre or CONFIG["giornata"][0] <= ora.hour < 13:
+            try:
+                rit = ATTIVITA.vista("ritardo", oggi)
+                if len(rit) >= 2:
+                    out.append({"id": f"ritardo:{oggi}", "regola": "ritardo", "emoji": "⏰",
+                                "testo": f"⏰ Hai **{len(rit)} cose in ritardo**: " + ", ".join(a["testo"] for a in rit[:3]) + ("…" if len(rit) > 3 else "")
+                                         + ". Le sposto a domani così ripartiamo puliti, o ne facciamo una adesso?",
+                                "azioni": [{"etichetta": "➡️ Sposta a domani", "azione": "rimanda", "dati": {"ids": [a["id"] for a in rit[:50]]}},
+                                           {"etichetta": "📋 Vediamole", "azione": "apri", "dati": {"pannello": "todo"}}]})
+            except Exception as e:
+                print(f"  ⚠  proattivo/ritardo: {e}")
+        # 💚 un paio di giorni un po' giù → ti chiedo come va (al massimo ogni 3 giorni)
+        if memoria is not None:
+            try:
+                rec = [u for u in memoria.umore[-4:] if u.get("data", "") >= (oggi - datetime.timedelta(days=3)).isoformat()]
+                giu = [u for u in rec if valenza_umore(u.get("umore"), u.get("intensita", 5)) < 4]
+                if len(giu) >= 2 and len(giu) >= len(rec) - 1:
+                    out.append({"id": f"umore:{oggi.toordinal() // 3}", "regola": "umore", "emoji": "💚",
+                                "testo": "💚 Negli ultimi giorni ti ho sentito un po' giù. Come stai adesso? Se ti va di raccontarmi, sono qui.",
+                                "azioni": [{"etichetta": "💬 Ti racconto", "azione": "scrivi", "dati": {}}]})
+            except Exception as e:
+                print(f"  ⚠  proattivo/umore: {e}")
+        return [x for x in out if x["regola"] not in d["spente"]]
+
+    def controlla(self, ora=None, memoria=None, forza=False):
+        """In sottofondo (ogni MAIK_PROATTIVO_OGNI secondi): le idee nuove vanno in coda per la GUI (GET /proattivo)."""
+        if not CONFIG["proattivo"]:
+            return []
+        if not forza and time.time() - self._ultimo < CONFIG["proattivo_ogni"]:
+            return []
+        self._ultimo = time.time()
+        ora = ora or datetime.datetime.now()
+        if self.silenzio(ora):
+            return []
+        nuove = []
+        with self._lock:
+            d = self._carica()
+            if not d["attivo"]:
+                return []
+            oggi = ora.date().isoformat()
+            inviate = d["inviate"].setdefault(oggi, [])
+            tutte = {i for v in d["inviate"].values() for i in v}
+            for idea in self.idee(ora, memoria):
+                if len(inviate) >= CONFIG["proattivo_max"]:
+                    break
+                if idea["id"] in tutte:
+                    continue
+                inviate.append(idea["id"])
+                nuove.append(dict(idea, quando=ora.isoformat(timespec="seconds")))
+            d["inviate"] = {k: v for k, v in d["inviate"].items() if k >= (ora.date() - datetime.timedelta(days=10)).isoformat()}
+            self._salva(d)
+            self.coda = (self.coda + nuove)[-10:]
+        return nuove
+
+    def prendi(self):
+        with self._lock:
+            c, self.coda = self.coda, []
+        return c
+
+    def esegui(self, azione, dati, memoria):
+        """I pulsanti delle idee. → {ok, testo}"""
+        dati = dati if isinstance(dati, dict) else {}
+        if azione == "abitudine_fatta":
+            st = ABITUDINI.segna(str(dati.get("id", "")))
+            return {"ok": bool(st), "testo": ABITUDINI.testo_segnato(st) if st else "Non trovo più quell'abitudine.", **({"abitudine": st} if st else {})}
+        if azione == "promemoria":
+            testo = re.sub(r"\s+", " ", str(dati.get("testo") or "")).strip()[:120]
+            try:
+                quando = datetime.datetime.fromisoformat(str(dati.get("quando") or ""))
+            except ValueError:
+                quando = None
+            if len(testo) < 2 or not quando:
+                return {"ok": False, "testo": "Promemoria non valido."}
+            if quando <= datetime.datetime.now():
+                quando = datetime.datetime.now() + datetime.timedelta(minutes=5)
+            memoria.aggiungi_promemoria(testo, quando, "promemoria")
+            return {"ok": True, "testo": f"⏰ Ok! Ti ricordo «{testo}» {fmt_quando(quando)}."}
+        if azione == "rimanda":
+            q = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+            n = len([x for x in (ATTIVITA.modifica(str(i), scadenza=q) for i in (dati.get("ids") or [])[:50]) if x])
+            return {"ok": bool(n), "testo": f"➡️ Spostat{'a' if n == 1 else 'e'} a domani {n} cos{'a' if n == 1 else 'e'}. Si riparte puliti! 💪" if n else "Niente da spostare."}
+        if azione == "bolletta_pagata":
+            with self._lock:
+                d = self._carica()
+                if dati.get("id") and dati["id"] not in d["pagate"]:
+                    d["pagate"] = (d["pagate"] + [str(dati["id"])])[-500:]
+                self._salva(d)
+            return {"ok": True, "testo": "🧾 Perfetto, segnata come pagata: non te la ricordo più. ✅"}
+        if azione == "spegni_regola":
+            r = str(dati.get("regola", ""))
+            if r not in self.REGOLE:
+                return {"ok": False, "testo": "Tipo di consiglio sconosciuto."}
+            self.imposta(regola=r, on=False)
+            return {"ok": True, "testo": f"🔕 Va bene: niente più consigli di questo tipo ({self.REGOLE[r]}). Li riaccendi dalle ⚙️ impostazioni."}
+        return {"ok": False, "testo": "Azione sconosciuta."}
+
+    def router(self, testo, memoria):
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        if _RE_PRO_STOP.match(t):
+            self.imposta(attivo=False)
+            return {"testo": "🔕 Va bene, niente più consigli spontanei. Se cambi idea dimmi «riattiva i consigli» (o chiedimi «hai qualche idea per me?» quando vuoi tu)."}
+        if _RE_PRO_VIA.match(t):
+            st = self.imposta(attivo=True)
+            extra = "" if st["acceso_server"] else " (però il server è avviato con MAIK_PROATTIVO=0: toglilo per riceverli)"
+            return {"testo": f"💡 Consigli riattivati! Te ne darò al massimo {st['massimo']} al giorno" + (f", mai tra le {st['silenzio'].replace('-', ' e le ')}" if st["silenzio"] else "") + "." + extra}
+        if _RE_PRO_CHIEDI.match(t):
+            idee = self.idee(memoria=memoria, sempre=True)
+            if not idee:
+                return {"testo": "💡 Per ora è tutto sotto controllo: niente in ritardo, il budget regge, le serie sono al sicuro e domani non ci sono sorprese. 👍"}
+            quante = "l'idea" if len(idee) == 1 else f"{min(5, len(idee))} idee"
+            return {"testo": f"💡 Ecco {quante} che ho per te:\n" + "\n".join("• " + x["testo"] for x in idee[:5]), "idee": idee[:5]}
+        return None
+
+
+PROATTIVO = Proattivo()
+
+
+# ── 📷 OCR: il testo di una foto (scontrini, bollette, documenti, PDF scansionati) con il modello della visione ──
+PROMPT_OCR = ("TRASCRIVI tutto il testo leggibile in questa immagine, riga per riga, esattamente come è scritto "
+              "(numeri, prezzi, date, totali compresi). Niente commenti e niente descrizioni: solo il testo. "
+              "Se non c'è nessun testo, scrivi soltanto: NESSUN TESTO")
+
+
+def messaggio_errore_visione(testo):
+    low = (testo or "").lower()
+    if "mllama" in low or "architecture" in low:
+        return ("Il tuo Ollama è troppo vecchio per llama3.2-vision (errore 'mllama'). Soluzione veloce:  ollama pull llava   —  "
+                "oppure aggiorna Ollama all'ultima versione da https://ollama.com/download")
+    if "not found" in low:
+        return "Nessun modello visione installato. Esegui:  ollama pull llava"
+    return "Modello visione non raggiungibile. Prova:  ollama pull llava"
+
+
+def ocr_immagine(img, cervello):
+    """→ {ok, testo} (testo vuoto se nella foto non c'è niente da leggere) oppure {ok: False, errore}."""
+    img = str(img or "")
+    if "," in img[:120]:
+        img = img.split(",", 1)[1]
+    if not img:
+        return {"ok": False, "errore": "nessuna immagine"}
+    t = cervello.vedi(img, PROMPT_OCR)
+    if t.startswith("__ERRORE"):
+        return {"ok": False, "errore": messaggio_errore_visione(t)}
+    t = re.sub(r"^```[a-z]*\n?|\n?```$", "", pulisci_pensiero(t).strip()).strip()
+    if not t or re.fullmatch(r"\W*nessun\s+testo\W*", t, re.I):
+        return {"ok": True, "testo": "", "vuoto": True}
+    return {"ok": True, "testo": t[:20000]}
+
+
+def foto_alle_spese(img, cervello, domanda="", nome="foto", memoria=None, sessione=None):
+    """📷 «aggiungi questo scontrino alle spese» con una foto → leggo il testo e lo segno (bolletta: anche la scadenza)."""
+    r = ocr_immagine(img, cervello)
+    if not r["ok"]:
+        return {"ok": False, "errore": r["errore"]}
+    if not r["testo"]:
+        return {"ok": False, "errore": "📷 Non riesco a leggere nessun testo nella foto: rifalla dritta, da vicino e con più luce."}
+    tl = (domanda + " " + nome).lower()
+    if re.search(r"bollett|fattur", tl):
+        scontrino = False
+    elif re.search(r"scontrin|ricevut", tl):
+        scontrino = True
+    else:
+        scontrino = not (Spese.dati_bolletta(r["testo"])["tipo"] or re.search(r"scadenza|bollett|fattura", r["testo"], re.I))
+    reg = SPESE.registra_documento(r["testo"], nome, scontrino, cervello)
+    if memoria is not None:
+        memoria.salva_scambio((domanda or "Aggiungi questa foto alle spese") + " [📷 foto]", reg["testo"], sessione)
+    return dict({k: reg[k] for k in ("testo", "spesa", "evento") if reg.get(k)}, ok=True, ocr=r["testo"][:4000])
+
+
+PROMPT_AGENTE_V18 = """PIÙ PASSI E RICORDI:
+[[azione:{"tipo":"cerca_chat","q":"parole chiave"}]]  ← ritrovo cosa vi siete detti nelle chiacchierate passate (anche settimane fa)
+Puoi lavorare a più passi: dopo i risultati, se per rispondere bene ti serve ancora un dato (per esempio aprire una delle fonti
+trovate con leggi_pagina, o fare un conto con i numeri appena letti), scrivi solo quel tag e aspetta di nuovo."""
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -6930,7 +7646,7 @@ PROMPT_AGENTE_V16 = """SOLDI E ABITUDINI:
 [[azione:{"tipo":"abitudini"}]]  ← le sue abitudini: cosa ha fatto oggi, le serie di giorni
 [[azione:{"tipo":"aggiungi_attivita","testo":"chiamare il commercialista entro venerdì, urgente"}]]  ← una cosa da fare (scadenza e priorità nel testo)
 [[azione:{"tipo":"attivita","quando":"oggi"}]]  ← le cose da fare (oggi, domani, questa settimana, tutte)"""
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie", "leggi_pagina", "calendario", "spese", "abitudini", "attivita"}
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie", "leggi_pagina", "calendario", "spese", "abitudini", "attivita", "cerca_chat"}
 STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
                 "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
                 "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca", "esegui_routine": "routine"}
@@ -6953,7 +7669,7 @@ ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥�
                    "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
-                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅", "attivita": "📋", "aggiungi_attivita": "📋"}
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅", "attivita": "📋", "aggiungi_attivita": "📋", "cerca_chat": "💬"}
 
 
 class FiltroTag:
@@ -7044,7 +7760,8 @@ class Agente:
                 "pagina": "leggi_pagina", "apri_pagina": "leggi_pagina", "link": "leggi_pagina", "agenda": "calendario", "impegni": "calendario",
                 "evento": "aggiungi_evento", "appuntamento": "aggiungi_evento",
                 "spesa": "aggiungi_spesa", "segna_spesa": "aggiungi_spesa", "budget": "spese", "soldi": "spese", "abitudine": "abitudini", "obiettivi": "abitudini",
-                "todo": "attivita", "cose_da_fare": "attivita", "compito": "aggiungi_attivita", "nuova_attivita": "aggiungi_attivita", "aggiungi_todo": "aggiungi_attivita"}.get(tipo, tipo)
+                "todo": "attivita", "cose_da_fare": "attivita", "compito": "aggiungi_attivita", "nuova_attivita": "aggiungi_attivita", "aggiungi_todo": "aggiungi_attivita",
+                "chat": "cerca_chat", "conversazioni": "cerca_chat", "cerca_conversazioni": "cerca_chat", "chiacchierate": "cerca_chat", "ricordi": "cerca_chat"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -7143,6 +7860,13 @@ class Agente:
                 dati = "\n".join(f"[{x['nome']} · parte {x['pezzo']}] {x['testo'][:900]}" for x in trovati)
                 return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} risultati", dati=dati,
                             fonti=[{"nome": x["nome"], "pezzo": x["pezzo"], "anteprima": x["testo"][:200]} for x in trovati])
+            if tipo == "cerca_chat":                       # v18: le chiacchierate passate (per significato o per parole)
+                q = s("q", 120) or s("query", 120)
+                trovati = RICORDI.cerca(memoria, q, k=4, rigida=False) if q else []
+                if not trovati:
+                    return dict(r, ok=True, esito=f"«{q}»: niente nelle chiacchierate", dati=f"nelle chiacchierate passate non c'è niente su «{q}»")
+                dati = "\n".join(f"[{Ricordi._data(x)}] la persona: «{_testo_breve(x['tu'], 300)}» — tu: «{_testo_breve(x['ai'], 200)}»" for x in trovati)
+                return dict(r, ok=True, esito=f"«{q}»: {len(trovati)} chiacchierat{'a' if len(trovati) == 1 else 'e'}", dati=dati)
             if tipo == "cerca_memoria":
                 q = s("q", 80) or s("query", 80)
                 trovati = memoria.cerca(q)
@@ -7284,7 +8008,7 @@ class MotoreAI:
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
             routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
-            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + "\n" + PROMPT_AGENTE_V16 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
+            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + "\n" + PROMPT_AGENTE_V16 + "\n" + PROMPT_AGENTE_V18 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
                          + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
                          + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
@@ -7442,15 +8166,16 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
             return self._meta(ok=True, risposta=cal["testo"], azione=True, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
-        v16 = SPESE.router(testo) or ABITUDINI.router(testo) or ATTIVITA.router_fatto(testo) or (riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(testo.strip().rstrip(" ?!.")) else None)
+        v16 = SPESE.router(testo) or ABITUDINI.router(testo) or ATTIVITA.router_fatto(testo) or (riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(testo.strip().rstrip(" ?!.")) else None) \
+            or PROATTIVO.router(testo, self.memoria) or RICORDI.router(testo, self.memoria)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -7503,6 +8228,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             on_token(r["testo"])
             self.memoria.salva_scambio(testo + f" [📎 {nome}]", r["testo"], sid)
             return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: r[k] for k in ("spesa", "evento") if r.get(k)})
+        ricordi_dom = ric_q = None
         if not allegato:
             cmd = self._gestisci_comando(testo)
             if cmd:
@@ -7516,27 +8242,30 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
                 self.memoria.salva_scambio(testo, cal["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
             for rt in (lambda x: SPESE.router(x), lambda x: ABITUDINI.router(x), lambda x: ATTIVITA.router_fatto(x),   # v16-17: soldi, abitudini, «fatto: …», la settimana
-                       lambda x: riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(x.strip().rstrip(" ?!.")) else None):
+                       lambda x: riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(x.strip().rstrip(" ?!.")) else None,
+                       lambda x: PROATTIVO.router(x, self.memoria), lambda x: RICORDI.router(x, self.memoria)):   # v18: consigli, «di cosa abbiamo parlato ieri?»
                 v16 = rt(testo)
                 if v16:
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
                 self.memoria.salva_scambio(testo, nz["testo"], sid, extra={"notizie": {"titolo": nz["notizie"].get("titolo"), "categoria": nz["notizie"].get("categoria"),
                                                                                   "ok": nz["notizie"].get("ok"), "notizie": [{k: n[k] for k in ("titolo", "link", "quando")} for n in nz["notizie"].get("notizie", [])]}})
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, notizie=nz["notizie"])
+            ric_q = RICORDI.domanda(testo)                    # v18: «ti ricordi cosa ti avevo detto su …?»
+            ricordi_dom = RICORDI.risposta_domanda(self.memoria, ric_q, sid) if ric_q else None
             # azioni pratiche: istantanee, anche offline (più richieste insieme → l'agente)
-            azione = None if self._lascia_all_agente(testo) else Azioni.prova(testo, self.memoria)
+            azione = None if (ric_q or self._lascia_all_agente(testo)) else Azioni.prova(testo, self.memoria)
             if azione:
                 on_token(azione)
                 self.memoria.salva_scambio(testo, azione, sid)
@@ -7587,7 +8316,18 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                        "Se le fonti non bastano o non sono d'accordo, dillo.")
             else:
                 msg = f"{testo}\n\n[La ricerca su internet non è riuscita: rispondi con quello che sai e di' che non hai potuto controllare online.]"
+        ricordi_meta, ricordati = None, []
+        if ricordi_dom:                                         # v18: i ricordi trovati vanno al modello, che risponde con le date
+            righe, ricordi_meta = ricordi_dom
+            avvisa({"strumento": {"tipo": "cerca_chat", "ok": True, "icona": "💬",
+                                  "esito": f"{len(ricordi_meta['risultati'])} chiacchierat{'a' if len(ricordi_meta['risultati']) == 1 else 'e'} ritrovat{'a' if len(ricordi_meta['risultati']) == 1 else 'e'}"}})
+            msg = (f"{testo}\n\n[RICORDI DELLE VOSTRE CHIACCHIERATE — la persona non li vede]\n{righe}\n\n"
+                   "Rispondi usando questi ricordi, con naturalezza e con le date («il 3 ottobre mi avevi detto…»). "
+                   "Se non c'entrano con la domanda, di' onestamente che non te lo ricordi.")
         system = self._system_prompt(testo or nome, fonti)
+        if testo and not allegato and not ricordi_dom and not url:   # v18: le chiacchierate vecchie che c'entrano
+            ctx, ricordati = RICORDI.contesto(self.memoria, testo, sid)
+            system += ctx
         messaggi = self._costruisci_messaggi(msg, sid)
         stat = {}
         agente = CONFIG["agente"]
@@ -7602,25 +8342,35 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             else:
                 risposta = RicercaWeb.senza_modello(web)
             on_token(risposta)
+        if (not risposta or risposta.startswith("__ERRORE")) and ricordi_meta:    # v18: senza modello, i ricordi così come sono
+            risposta = Ricordi.testo_senza_modello(ricordi_meta)
+            on_token(risposta)
         if not risposta or risposta.startswith("__ERRORE"):
             return {"done": True, "ok": False,
                     "risposta": "Ollama non risponde. Controlla che sia acceso."}
         finale, azioni = pulisci_pensiero(risposta) or risposta, []
         notizie_meta = agenda_meta = spese_meta = None
+        passo = 1
         if agente:
             finale, richieste = Agente.estrai(pulisci_pensiero(risposta))
             info = [a for a in richieste if str(a.get("tipo", "")).lower() in STRUMENTI_INFO][:3]
             for a in richieste:
                 if a not in info:
                     azioni.append(Agente.esegui(a, self.memoria))
-            if info:
-                # secondo giro: il modello riceve i risultati veri e finisce la risposta
+            # v18: più giri — il modello riceve i risultati veri e, se gli serve ancora un dato, lo chiede di nuovo (max agente_passi)
+            max_passi, conv, giro, risultati_tutti, fatti = CONFIG["agente_passi"], list(messaggi), finale, [], set()
+            while info:
+                passo += 1
+                ultimo = passo >= max_passi
+                avvisa({"passo": {"n": passo, "max": max_passi, "strumenti": [ICONE_STRUMENTI.get(str(a.get("tipo", "")).lower(), "🔧") for a in info]}})
                 risultati = []
                 for a in info:
+                    fatti.add(json.dumps(a, sort_keys=True, ensure_ascii=False))
                     t_a = str(a.get("tipo", "")).lower()
-                    if t_a in ("cerca_internet", "notizie"):           # Zep si mette a cercare mentre leggo
+                    if t_a in ("cerca_internet", "notizie", "leggi_pagina"):   # Zep si mette a cercare (o a leggere) mentre lavoro
                         avvisa({"lavoro": {"tipo": t_a, "icona": ICONE_STRUMENTI[t_a],
-                                           "testo": f"Cerco su internet: «{str(a.get('q') or a.get('domanda') or '')[:80]}»…" if t_a == "cerca_internet" else "Leggo le notizie…"}})
+                                           "testo": f"Cerco su internet: «{str(a.get('q') or a.get('domanda') or '')[:80]}»…" if t_a == "cerca_internet"
+                                           else f"Leggo la pagina {_sito(str(a.get('url') or ''))}…" if t_a == "leggi_pagina" else "Leggo le notizie…"}})
                     r = Agente.esegui(a, self.memoria, n0=len(fonti_web) + 1)
                     risultati.append(r)
                     azioni.append(r)
@@ -7632,29 +8382,35 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                     for f in r.get("fonti") or []:
                         if not any(f["nome"] == x["nome"] and f["pezzo"] == x["pezzo"] for x in fonti):
                             fonti.append(dict(f, testo=f.get("anteprima", "")))
+                risultati_tutti += risultati
                 dati = "\n".join(f"- {r['tipo']}: {r.get('dati') or r['esito']}" for r in risultati)
-                seguito_msg = messaggi + [
-                    {"role": "assistant", "content": finale or "(controllo…)"},
+                conv = conv + [
+                    {"role": "assistant", "content": giro or "(controllo…)"},
                     {"role": "user", "content": "[RISULTATI DEGLI STRUMENTI — la persona non li vede]\n" + dati +
-                     "\n\nOra continua la risposta alla persona usando questi dati, in modo naturale e senza "
-                     "ripetere quello che hai già scritto. Non scrivere altri tag per meteo/ora/calcoli/ricerche."
+                     "\n\nOra continua la risposta alla persona usando questi dati, in modo naturale e senza ripetere quello che hai già scritto."
+                     + (" Se per rispondere bene ti serve ancora UN dato (es. aprire una fonte o fare un conto), scrivi solo quel tag e fermati."
+                        if not ultimo else " Non scrivere altri tag per meteo/ora/calcoli/ricerche.")
                      + (" Cita le fonti web col numero tra parentesi quadre, es. [1]." if fonti_web else "")}]
                 if finale:
                     on_token("\n\n")
                 filtro2, stat2 = FiltroTag(on_token), {}
-                r2 = self.cervello.pensa_stream(system, seguito_msg, filtro2, stat2)
+                r2 = self.cervello.pensa_stream(system, conv, filtro2, stat2)
                 filtro2.fine()
+                info = []
                 if r2 and not r2.startswith("__ERRORE"):
                     testo2, rich2 = Agente.estrai(pulisci_pensiero(r2))
                     for a in rich2:
                         if str(a.get("tipo", "")).lower() not in STRUMENTI_INFO:
                             azioni.append(Agente.esegui(a, self.memoria))
+                        elif not ultimo and json.dumps(a, sort_keys=True, ensure_ascii=False) not in fatti:
+                            info.append(a)
+                    info, giro = info[:3], testo2
                     finale = (finale + "\n\n" + testo2).strip()
                     if stat2.get("tps"):
                         stat.update(tps=stat2["tps"], token=(stat.get("token") or 0) + (stat2.get("token") or 0),
                                     totale_ms=(stat.get("totale_ms") or 0) + (stat2.get("totale_ms") or 0))
                 elif not finale:
-                    finale = "Ecco cosa ho trovato:\n" + "\n".join(f"- {r['icona']} {r['esito']}" for r in risultati)
+                    finale = "Ecco cosa ho trovato:\n" + "\n".join(f"- {r['icona']} {r['esito']}" for r in risultati_tutti)
                     on_token(finale)
             if not finale and azioni:
                 finale = "Fatto! ✅"
@@ -7677,7 +8433,9 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         return self._meta(done=True, ok=True, imparato=imparato, stat=stat, azioni=chip, fonti=fonti_meta,
                           seguito=seguito, sessione=sid, titolo=titolo, conferme=conferme, file=file_trovati,
                           schermate=schermate, fonti_web=fonti_web, **({"notizie": notizie_meta} if notizie_meta else {}),
-                          **({"agenda": agenda_meta} if agenda_meta else {}), **({"spese": spese_meta} if spese_meta else {}))
+                          **({"agenda": agenda_meta} if agenda_meta else {}), **({"spese": spese_meta} if spese_meta else {}),
+                          **({"ricordi": ricordi_meta} if ricordi_meta else {}), **({"ricordati": ricordati} if ricordati else {}),
+                          **({"passi": passo} if passo > 2 else {}))
 
     def stato(self):
         return {
@@ -8106,6 +8864,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(dict(pianifica_giornata(), ok=True))
             elif base == "/giornata":
                 self._json(dict(fine_giornata(), ok=True))
+            elif base == "/proattivo":                                # v18: 💡 le idee nuove (la GUI chiede ogni tanto)
+                self._json({"idee": PROATTIVO.prendi(), "attivo": PROATTIVO.stato()["attivo"]})
+            elif base == "/proattivo/stato":
+                self._json(dict(PROATTIVO.stato(), ok=True))
+            elif base == "/ricordi":                                  # v18: cerca nelle chiacchierate passate
+                q = qs.get("q", "").strip()[:200]
+                per = periodo_ricordi(qs.get("quando", "")) if qs.get("quando") else None
+                self._json({"ok": True, "risultati": RICORDI.cerca(MOTORE.memoria, q, k=8, da=per[0] if per else None, a=per[1] if per else None, rigida=False) if q else [],
+                            "info": RICORDI.info(MOTORE.memoria)})
+            elif base == "/ricordi/giorno":
+                r = RICORDI.router("di cosa abbiamo parlato " + (qs.get("q", "") or "ieri")[:40], MOTORE.memoria)
+                self._json(dict(r or {"testo": "Non capisco il giorno."}, ok=bool(r)))
             elif base == "/abitudini/avvisi":
                 self._json({"avvisi": ABITUDINI.prendi_avvisi()})
             elif base == "/settimana":
@@ -8520,6 +9290,23 @@ class Handler(BaseHTTPRequestHandler):
                 n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
                 self._json({"ok": bool(n)})
 
+            elif base == "/proattivo/azione":                         # v18: i pulsanti delle idee
+                c = self._read_json_body()
+                self._json(PROATTIVO.esegui(str(c.get("azione", "")), c.get("dati") or {}, MOTORE.memoria))
+            elif base == "/proattivo/imposta":
+                c = self._read_json_body()
+                self._json(dict(PROATTIVO.imposta(c.get("attivo"), c.get("regola"), c.get("on")), ok=True))
+            elif base == "/proattivo/controlla":                       # «hai qualche idea?» dalla GUI (rispetta silenzio e limite)
+                PROATTIVO.controlla(memoria=MOTORE.memoria, forza=True)
+                self._json({"ok": True, "idee": PROATTIVO.prendi()})
+            elif base == "/ocr":                                     # v18: 📷 il testo di una foto (scopo «spesa»: scontrino/bolletta → spese)
+                c = self._read_json_body()
+                if c.get("scopo") == "spesa":
+                    sid = MOTORE.memoria.sessione_valida(str(c.get("sessione") or "")[:40] or None)
+                    self._json(foto_alle_spese(c.get("immagine", ""), MOTORE.cervello, str(c.get("domanda", ""))[:300], str(c.get("nome") or "foto")[:80],
+                                               MOTORE.memoria, sid))
+                else:
+                    self._json(ocr_immagine(c.get("immagine", ""), MOTORE.cervello))
             elif base == "/vedi":
                 c = self._read_json_body()
                 img = c.get("immagine", "")
@@ -13952,6 +14739,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 def _ciclo_sfondo():
     """In sottofondo: routine a orario (ogni MAIK_ROUTINE_OGNI s) e avvisi del PC (ogni MAIK_AVVISI_OGNI s)."""
     passo, ultimo_avviso = max(1, int(_env("MAIK_ROUTINE_OGNI", "20"))), 0.0
+    ultimo_ricordi = 0.0
     while True:
         time.sleep(passo)
         try:
@@ -13968,6 +14756,13 @@ def _ciclo_sfondo():
         except Exception as e:
             print(f"  ⚠  abitudini: {e}")
         try:
+            PROATTIVO.controlla(memoria=MOTORE.memoria)              # v18: 💡 un'idea quando serve
+        except Exception as e:
+            print(f"  ⚠  proattivo: {e}")
+        if time.time() - ultimo_ricordi >= 60:                      # v18: i vettori delle chiacchierate nuove
+            ultimo_ricordi = time.time()
+            RICORDI.programma(MOTORE.memoria)
+        try:
             if CONFIG["pc"] and CONFIG["avvisi"] and time.time() - ultimo_avviso >= CONFIG["avvisi_ogni"]:
                 ultimo_avviso = time.time()
                 MONITOR.controlla()
@@ -13982,8 +14777,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 17.0 — Server avviato            ║
-║ cose da fare · pomodori · piano · spese · abitud.║
+║           MAIK 18.0 — Server avviato            ║
+║ ricordi · idee proattive · agente · foto→testo   ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -14034,7 +14829,8 @@ def main():
           f"{(_avatar_info() or {}).get('nome', 'Zep (integrato)')}")
     print(f"  Endpoint principali:")
     print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
-    print(f"    POST /vedi          — visione: descrive un frame webcam")
+    print(f"    POST /vedi          — visione: descrive un frame webcam  ·  POST /ocr — il testo di una foto      [NUOVO v18]")
+    print(f"    GET  /proattivo · /proattivo/stato · /ricordi?q= · /ricordi/giorno?q=ieri                   [NUOVO v18]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")
@@ -14047,6 +14843,7 @@ def main():
     threading.Thread(target=lambda: [icona_png(n) for n in (192, 512)], daemon=True).start()   # icone pronte
     threading.Thread(target=_ciclo_sfondo, daemon=True).start()                                  # v13: routine e avvisi
     VETTORI.programma(MOTORE.memoria)                                                            # v16: significato dei documenti
+    RICORDI.programma(MOTORE.memoria)                                                            # v18: significato delle chiacchierate
     threading.Timer(1.2, lambda: print(f"  Aperto come {apri_finestra(url)}  (--no-app per la scheda normale)")).start()
 
     server = ThreadingHTTPServer((CONFIG["host"], CONFIG["porta"]), Handler)

@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║                  MAIK — Server v16.0                     ║
+║                  MAIK — Server v17.0                     ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v17.0 — MAIK TI AIUTA A FARE LE COSE:
+  • 📋 Cose da fare: «aggiungi alle cose da fare: chiamare il commercialista entro venerdì, urgente #lavoro»
+    (priorità, scadenza, progetto, durata «(30 min)»), «cosa devo fare oggi?» (con impegni e abitudini),
+    «fatto: commercialista», «sposta la relazione a lunedì», «cancella l'attività …».
+  • 🍅 Modalità concentrazione (GUI): «concentrazione 25 minuti sulla relazione» → pomodoro con pausa,
+    Zep con le cuffie al suo portatile; «quanti pomodori ho fatto oggi?».
+  • 🗓️ «pianificami la giornata»: orari con impegni, abitudini, pranzo, cose da fare negli spazi liberi e pause.
+  • 🌙 «chiudiamo la giornata»: cosa hai fatto, pomodori, abitudini, spese, cosa spostare a domani.
+  • Nuovi endpoint: GET /attivita?filtro= · POST /attivita/aggiungi /attivita/fatta /attivita/modifica
+    /attivita/rimanda /attivita/elimina /attivita/trova · GET /focus · POST /focus/sessione · GET /piano · GET /giornata
+  • Variabili: MAIK_GIORNATA (es. 9-19, per il piano)
 
 NOVITÀ v16.0 — MAIK TI ORGANIZZA LA VITA:
   • 💶 Spese: «ho speso 23,50 € di benzina», «spesi 40 euro al supermercato», «quanto ho speso questo mese?»,
@@ -278,6 +290,8 @@ che avete vissuto insieme, citalo con calore.""",
     "embed": _env("MAIK_EMBED", "1") != "0",
     "modello_embed": _env("MAIK_MODELLO_EMBED", "nomic-embed-text"),
     "embed_soglia": float(_env("MAIK_EMBED_SOGLIA", "0.62")),
+    # v17: la tua giornata di lavoro (per il piano), es. 9-19
+    "giornata": tuple(int(x) for x in (_env("MAIK_GIORNATA", "9-19").split("-") + ["19"])[:2]),
     # apprendimento con l'IA (un'estrazione JSON dopo ogni messaggio personale)
     "apprendimento_ia": _env("MAIK_APPRENDIMENTO_IA", "1") not in ("0", "no", "false"),
     "ogni_n_riassumi": 8,
@@ -287,7 +301,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "16.0"
+VERSIONE  = "17.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1977,6 +1991,8 @@ AIUTO = """Ecco cosa so fare al volo (anche senza Ollama):
 - 💶 «ho speso 23 € di benzina» · «quanto ho speso questo mese?» · «imposta il budget a 800 euro»
 - ✅ «nuova abitudine: palestra lun mer ven alle 19» · «ho fatto palestra» · «come vanno le mie abitudini?»
 - 📊 «com'è andata la settimana?»
+- 📋 «aggiungi alle cose da fare: chiamare il commercialista entro venerdì» · «cosa devo fare oggi?» · «fatto: commercialista»
+- 🗓️ «pianificami la giornata» · 🌙 «chiudiamo la giornata» · 🍅 «concentrazione 25 minuti sulla relazione»
 - ☀️ «briefing» — il riepilogo della tua giornata
 - 🎲 «lancia un dado» · «testa o croce» · «numero a caso tra 1 e 50»
 - 📝 «prendi nota: …»
@@ -2277,6 +2293,11 @@ class Azioni:
                 righe.append(f"💶 A {MESI_IT[g.month - 1]} finora: {euro(rs['totale'])} di spese.")
             if g.weekday() == 0:
                 righe.append("📊 È lunedì: chiedimi «com'è andata la settimana?» per il riepilogo.")
+            da_fare = ATTIVITA.vista("oggi")                       # v17
+            if da_fare:
+                rit = sum(1 for a in da_fare if a["scadenza"] and a["scadenza"] < g.isoformat())
+                righe.append("📋 Da fare oggi: " + ", ".join(a["testo"] for a in da_fare[:4]) + (f" (⚠️ {rit} in ritardo)" if rit else "")
+                             + " — dimmi «pianificami la giornata» e ti preparo gli orari.")
         except Exception:
             pass
         oggi = memoria.promemoria_di_oggi()
@@ -6381,6 +6402,13 @@ def riepilogo_settimana(memoria, oggi=None):
         extra.append(f"📝 {len(riunioni)} riunion{'e' if len(riunioni) == 1 else 'i'}")
     if out["documenti"]:
         extra.append(f"📚 {out['documenti']} document{'o' if out['documenti'] == 1 else 'i'} nuov{'o' if out['documenti'] == 1 else 'i'}")
+    fatte_sett = sum(1 for a in ATTIVITA.tutte() if (a.get("fatta") or "")[:10] >= da.isoformat())          # v17
+    foc = ATTIVITA.statistiche(da, oggi)
+    out.update(attivita_fatte=fatte_sett, pomodori=foc["pomodori"], minuti_focus=foc["minuti"])
+    if fatte_sett:
+        extra.append(f"✅ {fatte_sett} {'cosa fatta' if fatte_sett == 1 else 'cose fatte'}")
+    if foc["pomodori"]:
+        extra.append(f"🍅 {foc['pomodori']} pomodor{'o' if foc['pomodori'] == 1 else 'i'}")
     if chiacchiere:
         extra.append(f"💬 {chiacchiere} messaggi tra noi")
     if extra:
@@ -6394,6 +6422,472 @@ def riepilogo_settimana(memoria, oggi=None):
         bravo.append("con le abitudini sei stato costante")
     r.append(("🌟 Bravo: " + " e ".join(bravo) + "!") if bravo else "🌱 La prossima settimana proviamo a fare ancora meglio, un passo alla volta.")
     return {"testo": "\n".join(r), "settimana": out}
+
+
+# ════════════════════════════════════════════════════════════
+# V17 — MAIK TI AIUTA A FARE LE COSE: cose da fare con priorità e scadenze, pomodori, il piano della giornata, la chiusura
+# ════════════════════════════════════════════════════════════
+_PRIO_ALTA = re.compile(r"(?:\b(?:urgente|urgentissim[oa]|importante|importantissim[oa]|priorit[aà]\s+alta|alta\s+priorit[aà]|subito)\b|!!+)", re.I)
+_PRIO_BASSA = re.compile(r"\b(?:quando\s+(?:hai|ho)\s+tempo|priorit[aà]\s+bassa|bassa\s+priorit[aà]|non\s+(?:è\s+)?urgente|con\s+calma|prima\s+o\s+poi)\b", re.I)
+_RE_DATA_ESPLICITA = re.compile(r"\b(?:(?:entro|per|prima\s+di|scade)\s+(?:il\s+|l['’]\s*)?|il\s+)(\d{1,2})(?:\s*[/.\-]\s*(\d{1,2})(?:\s*[/.\-]\s*(\d{2,4}))?|\s+(" + "|".join(MESI_IT) + r")(?:\s+(\d{4}))?)\b", re.I)
+_RE_DATA_PAROLA = re.compile(r"\b(?:(?:entro|per|prima\s+di)\s+(?:(?:il|la|lo)\s+)?)?(oggi|stasera|domani(?:\s+(?:mattina|sera|pomeriggio))?|dopodomani|"
+                             r"(?:(?:questo|questa|prossimo|prossima)\s+)?(?:luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)(?:\s+prossim[oa])?|"
+                             r"fine\s+settimana|(?:la\s+)?(?:prossima\s+settimana|settimana\s+prossima)|fine\s+mese)\b(?:\s+(?:alle|verso\s+le|entro\s+le)\s+\d{1,2}(?:[:.]\d{2})?)?", re.I)
+_ICONA_PRIO = {"alta": "🔴", "normale": "🟡", "bassa": "⚪"}
+
+
+def interpreta_attivita(testo, oggi=None):
+    """«chiamare il commercialista entro venerdì, urgente #lavoro (30 min)» → {testo, priorita, scadenza, ora, progetto, durata}."""
+    oggi = oggi or datetime.date.today()
+    t = re.sub(r"\s+", " ", str(testo or "")).strip()
+    priorita = "alta" if _PRIO_ALTA.search(t) else "bassa" if _PRIO_BASSA.search(t) else "normale"
+    t = _PRIO_BASSA.sub(" ", _PRIO_ALTA.sub(" ", t))
+    progetto = ""
+    m = re.search(r"#([\wàèéìòù]{2,24})", t)
+    if m:
+        progetto, t = m.group(1).lower(), t[:m.start()] + t[m.end():]
+    durata = 0
+    m = re.search(r"\(\s*(?:circa\s+)?(\d{1,3})\s*(min(?:uti)?|m|h|or[ae])\s*\)", t, re.I)
+    if m:
+        durata = int(m.group(1)) * (60 if m.group(2).lower()[0] in "ho" else 1)
+        t = t[:m.start()] + t[m.end():]
+    scadenza, ora = None, ""
+    m = _RE_DATA_ESPLICITA.search(t)
+    if m:
+        try:
+            g = int(m.group(1))
+            if m.group(4):
+                mese, anno = MESI_IT.index(m.group(4).lower()) + 1, int(m.group(5) or oggi.year)
+            else:
+                mese = int(m.group(2) or oggi.month)
+                anno = int(m.group(3)) + (2000 if m.group(3) and len(m.group(3)) == 2 else 0) if m.group(3) else oggi.year
+            scadenza = datetime.date(anno, mese, g)
+            if scadenza < oggi and not (m.group(3) or m.group(5)):
+                scadenza = scadenza.replace(year=scadenza.year + 1)                          # «il 3 gennaio» a dicembre = l'anno dopo
+            t = t[:m.start()] + t[m.end():]
+        except (ValueError, IndexError):
+            scadenza = None
+    if not scadenza:
+        m = _RE_DATA_PAROLA.search(t)
+        if m:
+            frase = m.group(0)
+            w = _senza_accenti(m.group(1).lower())
+            if "fine settimana" in w:
+                scadenza = oggi + datetime.timedelta(days=6 - oggi.weekday())                # domenica
+            elif "settimana" in w:
+                scadenza = oggi + datetime.timedelta(days=7 - oggi.weekday() + 4)        # venerdì della settimana dopo
+            elif w == "oggi":
+                scadenza = oggi
+            elif "fine mese" in w:
+                scadenza = (oggi.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+            else:
+                q, _ = parse_quando(frase, datetime.datetime.combine(oggi, datetime.time(datetime.datetime.now().hour, datetime.datetime.now().minute)))
+                if q:
+                    scadenza = q.date()
+                    if re.search(r"\b(?:alle|verso\s+le|entro\s+le)\s+\d", frase) or w == "stasera":
+                        ora = q.strftime("%H:%M")
+            if scadenza:
+                t = t[:m.start()] + t[m.end():]
+    t = re.sub(r"\s+", " ", t).strip(" ,.;:-")
+    t = re.sub(r"(?i)\s+(?:entro|per|prima\s+di|e|,)$", "", t).strip(" ,.;:-")
+    t = re.sub(r"(?i)^(?:di|che\s+devo|devo)\s+", "", t).strip()
+    return {"testo": (t[:1].upper() + t[1:])[:140], "priorita": priorita, "scadenza": scadenza.isoformat() if scadenza else "", "ora": ora, "progetto": progetto, "durata": durata}
+
+
+def quando_scade(s, oggi=None):
+    if not s:
+        return ""
+    oggi = oggi or datetime.date.today()
+    d = datetime.date.fromisoformat(s[:10])
+    gg = (d - oggi).days
+    if gg < 0:
+        return "in ritardo di " + (f"{-gg} giorni" if gg < -1 else "un giorno")
+    if gg == 0:
+        return "oggi"
+    if gg == 1:
+        return "domani"
+    if gg < 7:
+        return GIORNI_LUNGHI[d.weekday()]
+    return f"{d.day} {MESI_IT[d.month - 1][:3]}"
+
+
+_RE_ATT_AGGIUNGI = [
+    re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:aggiungi|metti|scrivi|segna|inserisci)(?:mi)?\s+(?:(?:alle|tra\s+le|nelle|nella\s+lista\s+delle)\s+(?:mie\s+)?cose\s+da\s+fare|(?:alla|nella)\s+(?:mia\s+)?(?:to-?do(?:\s+list)?|lista\s+(?:delle\s+)?(?:attivit[aà]|cose\s+da\s+fare)))\s*[:,]?\s*(?P<t>.+)$", re.I),
+    re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:aggiungi|metti|segna)\s+(?P<t>.+?)\s+(?:alle|tra\s+le|nelle)\s+(?:mie\s+)?cose\s+da\s+fare$", re.I),
+    re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:nuova\s+attivit[aà]|nuovo\s+compito|nuova\s+cosa\s+da\s+fare|cosa\s+da\s+fare|to-?do)\s*[:,]\s*(?P<t>.+)$", re.I),
+    re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:ricordati\s+che\s+)?devo\s+(?P<t>.+?\bentro\b.+)$", re.I),
+]
+_RE_ATT_ELENCO = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:cosa\s+(?:devo|ho\s+da|mi\s+resta\s+da)\s+fare|che\s+cosa\s+devo\s+fare|(?:le\s+)?(?:mie\s+)?cose\s+da\s+fare|(?:la\s+)?(?:mia\s+)?to-?do(?:\s+list)?|"
+                            r"(?:le\s+)?(?:mie\s+)?attivit[aà]|(?:i\s+)?(?:miei\s+)?compiti|cosa\s+c['’]?[eè]\s+da\s+fare)(?P<q>\s+(?:oggi|domani|questa\s+settimana|in\s+settimana|per\s+oggi|per\s+domani|in\s+ritardo))?$", re.I)
+_RE_ATT_FATTO = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:(?:ho\s+)?(?:fatto|finito|completato|terminato|chiuso)|fatt[oa]|segna(?:mi)?\s+(?:come\s+)?(?:fatt[oa]|completat[oa])|spunta)\s*[:!,]?\s+(?P<t>.+)$", re.I)
+_RE_ATT_TOGLI = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:cancella|elimina|togli|rimuovi)\s+(?:dalle\s+(?:mie\s+)?cose\s+da\s+fare|l['’]\s*attivit[aà]|(?:il\s+)?compito)\s+(?P<t>.+)$", re.I)
+_RE_ATT_RIMANDA = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:sposta|rimanda|posticipa)\s+(?P<t>.+?)\s+(?:a|al|alla|per|di)\s+(?P<q>domani|dopodomani|luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica|(?:la\s+)?prossima\s+settimana)$", re.I)
+_RE_PIANO = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:(?:pianifica|organizza|programma)(?:mi)?\s+(?:la\s+)?(?:mia\s+)?giornata(?:\s+di\s+(?:oggi|domani))?|(?:il\s+)?piano\s+(?:della\s+|di\s+)?(?:giornata|oggi)|"
+                       r"come\s+(?:mi\s+)?organizzo\s+(?:la\s+giornata|oggi)|aiutami\s+a\s+organizzare\s+(?:la\s+)?giornata)$", re.I)
+_RE_GIORNATA = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:com['’]?\s*[eè]\s+andata\s+(?:la\s+giornata|oggi)|come\s+[eè]\s+andata\s+oggi|chiud(?:i|iamo)\s+la\s+giornata|fine\s+(?:della\s+)?giornata|"
+                          r"bilancio\s+(?:della\s+)?giornata|(?:il\s+)?riepilogo\s+(?:di\s+oggi|della\s+giornata))$", re.I)
+_RE_POMODORI = re.compile(r"^(?:(?:maik|zep)[,!]?\s+)?(?:quanti\s+pomodori\s+(?:ho\s+fatto|abbiamo\s+fatto)|quanto\s+(?:mi\s+sono|sono\s+stato|sono\s+stata)\s+concentrat[oa]|(?:le\s+)?(?:mie\s+)?statistiche\s+(?:della\s+)?concentrazione|(?:i\s+)?(?:miei\s+)?pomodori)(?P<q>\s+(?:oggi|ieri|questa\s+settimana|in\s+settimana))?$", re.I)
+
+
+class Attivita:
+    def __init__(self):
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "attivita.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("attivita", [])
+                d.setdefault("sessioni", [])
+                return d
+        except Exception:
+            pass
+        return {"attivita": [], "sessioni": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def tutte(self):
+        return self._carica()["attivita"]
+
+    def aperte(self):
+        return [a for a in self.tutte() if not a.get("fatta")]
+
+    @staticmethod
+    def _ordine(a, oggi=None):
+        """In ritardo e in scadenza prima, poi le urgenti, poi le altre (le più vecchie prima)."""
+        oggi = (oggi or datetime.date.today()).isoformat()
+        s = a.get("scadenza") or "9999-99-99"
+        return (0 if s < oggi else 1 if s == oggi else 2, {"alta": 0, "normale": 1, "bassa": 2}[a.get("priorita", "normale")], s, a.get("ora") or "99", a.get("creata", ""))
+
+    def aggiungi(self, testo, priorita="normale", scadenza="", ora="", progetto="", durata=0, fonte="chat"):
+        testo = re.sub(r"\s+", " ", str(testo or "")).strip()[:140]
+        if len(testo) < 2:
+            return None, "manca cosa devi fare"
+        a = {"id": uuid.uuid4().hex[:8], "testo": testo, "priorita": priorita if priorita in _ICONA_PRIO else "normale", "scadenza": str(scadenza or "")[:10],
+             "ora": str(ora or "")[:5], "progetto": str(progetto or "")[:24], "durata": int(durata or 0), "creata": datetime.datetime.now().isoformat(timespec="seconds"),
+             "fatta": None, "pomodori": 0, "fonte": fonte}
+        with self._lock:
+            d = self._carica()
+            d["attivita"].append(a)
+            d["attivita"] = d["attivita"][-3000:]
+            self._salva(d)
+        return a, None
+
+    def aggiungi_testo(self, testo, fonte="chat", quando=""):
+        x = interpreta_attivita(testo + (" " + quando if quando else ""))
+        return self.aggiungi(fonte=fonte, **x)
+
+    def modifica(self, aid, **campi):
+        with self._lock:
+            d = self._carica()
+            a = next((x for x in d["attivita"] if x["id"] == aid), None)
+            if not a:
+                return None
+            for k, v in campi.items():
+                if k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata", "pomodori"):
+                    a[k] = v
+                elif k == "fatta":
+                    a["fatta"] = datetime.datetime.now().isoformat(timespec="seconds") if v else None
+            self._salva(d)
+            return dict(a)
+
+    def elimina(self, aid):
+        with self._lock:
+            d = self._carica()
+            prima = len(d["attivita"])
+            d["attivita"] = [a for a in d["attivita"] if a["id"] != aid]
+            self._salva(d)
+            return len(d["attivita"]) < prima
+
+    def trova(self, testo, aperte=True):
+        """L'attività di cui parla la frase (parole in comune; a pari merito quella che scade prima)."""
+        tok = {w for w in _token(testo) if not w.isdigit()}
+        if not tok:
+            return None
+        meglio, punti = None, 0
+        for a in sorted(self.aperte() if aperte else self.tutte(), key=self._ordine):
+            p = len(tok & _token(a["testo"]))
+            if p > punti:
+                meglio, punti = a, p
+        return meglio
+
+    def vista(self, filtro="tutte", oggi=None):
+        oggi = oggi or datetime.date.today()
+        o = oggi.isoformat()
+        if filtro == "fatte":
+            return sorted([a for a in self.tutte() if a.get("fatta")], key=lambda a: a["fatta"], reverse=True)[:100]
+        L = sorted(self.aperte(), key=lambda a: self._ordine(a, oggi))
+        if filtro == "oggi":
+            return [a for a in L if (a["scadenza"] and a["scadenza"] <= o) or (not a["scadenza"] and a["priorita"] == "alta")]
+        if filtro == "domani":
+            return [a for a in L if a["scadenza"] == (oggi + datetime.timedelta(days=1)).isoformat()]
+        if filtro == "settimana":
+            return [a for a in L if a["scadenza"] and a["scadenza"] <= (oggi + datetime.timedelta(days=7)).isoformat()]
+        if filtro == "ritardo":
+            return [a for a in L if a["scadenza"] and a["scadenza"] < o]
+        return L
+
+    @staticmethod
+    def riga(a, oggi=None):
+        q = quando_scade(a.get("scadenza"), oggi)
+        extra = ([("⚠️ " if q.startswith("in ritardo") else "") + q + (" alle " + a["ora"] if a.get("ora") else "")] if q else []) + (["#" + a["progetto"]] if a.get("progetto") else []) + (["🍅" * min(a["pomodori"], 6)] if a.get("pomodori") else [])
+        return f"{_ICONA_PRIO.get(a['priorita'], '🟡')} {a['testo']}" + (f" ({', '.join(extra)})" if extra else "")
+
+    # ── 🍅 sessioni di concentrazione ──
+    def sessione(self, minuti, aid="", testo="", completa=True, inizio=None):
+        minuti = max(0, min(240, int(minuti or 0)))
+        if minuti < 1:
+            return None
+        fine = datetime.datetime.now()
+        s = {"id": uuid.uuid4().hex[:8], "inizio": (inizio or (fine - datetime.timedelta(minutes=minuti))).isoformat(timespec="seconds"),
+             "fine": fine.isoformat(timespec="seconds"), "minuti": minuti, "attivita": aid or "", "testo": str(testo or "")[:140], "completa": bool(completa)}
+        with self._lock:
+            d = self._carica()
+            d["sessioni"].append(s)
+            d["sessioni"] = d["sessioni"][-5000:]
+            if aid and completa:
+                for a in d["attivita"]:
+                    if a["id"] == aid:
+                        a["pomodori"] = a.get("pomodori", 0) + 1
+            self._salva(d)
+        return s
+
+    def statistiche(self, da, a):
+        ss = [s for s in self._carica()["sessioni"] if da.isoformat() <= s["fine"][:10] <= a.isoformat()]
+        per = {}
+        for s in ss:
+            k = s["testo"] or "senza attività"
+            per[k] = per.get(k, 0) + (1 if s["completa"] else 0)
+        giorni = {}
+        for s in ss:
+            giorni[s["fine"][:10]] = giorni.get(s["fine"][:10], 0) + s["minuti"]
+        return {"pomodori": sum(1 for s in ss if s["completa"]), "minuti": sum(s["minuti"] for s in ss), "sessioni": len(ss),
+                "per_attivita": sorted(([k, v] for k, v in per.items() if v), key=lambda x: -x[1]), "per_giorno": giorni}
+
+    # ── il router ──
+    def router(self, testo):
+        t = re.sub(r"\s+", " ", (testo or "").strip())
+        tl = t.lower().rstrip(" ?!.")
+        for rx in _RE_ATT_AGGIUNGI:
+            m = rx.match(t.rstrip(" .!"))
+            if m:
+                pezzi = [p.strip() for p in re.split(r"\s*;\s*|\n+", m.group("t")) if p.strip()]
+                fatte = []
+                for p in pezzi[:10]:
+                    a, err = self.aggiungi_testo(p)
+                    if a:
+                        fatte.append(a)
+                if not fatte:
+                    return {"testo": "✅ Cosa devo segnare? Per esempio «aggiungi alle cose da fare: chiamare il commercialista entro venerdì»."}
+                if len(fatte) == 1:
+                    a = fatte[0]
+                    return {"testo": f"✅ Aggiunta alle cose da fare: **{a['testo']}**" + (f" — scade {quando_scade(a['scadenza'])}" if a["scadenza"] else "")
+                            + (" · 🔴 urgente" if a["priorita"] == "alta" else "") + (f" · #{a['progetto']}" if a["progetto"] else "") + ".", "attivita": a}
+                return {"testo": f"✅ Aggiunte {len(fatte)} cose da fare:\n" + "\n".join("- " + self.riga(a) for a in fatte), "attivita_lista": {"titolo": "Aggiunte", "voci": fatte}}
+        m = _RE_ATT_TOGLI.match(tl)
+        if m:
+            a = self.trova(m.group("t"))
+            if not a:
+                return {"testo": f"✅ Non trovo «{m.group('t')}» tra le cose da fare."}
+            self.elimina(a["id"])
+            return {"testo": f"🗑️ Tolta dalle cose da fare: {a['testo']}."}
+        m = _RE_ATT_RIMANDA.match(tl)
+        if m:
+            a = self.trova(m.group("t"))
+            if a:
+                x = interpreta_attivita("x per " + m.group("q"))
+                b = self.modifica(a["id"], scadenza=x["scadenza"])
+                return {"testo": f"📆 Spostata a {quando_scade(b['scadenza'])}: {b['testo']}.", "attivita": b}
+        m = _RE_ATT_ELENCO.match(tl)
+        if m:
+            return self.elenco_testo((m.group("q") or "").strip())
+        if _RE_PIANO.match(tl):
+            return pianifica_giornata()
+        if _RE_GIORNATA.match(tl):
+            return fine_giornata()
+        m = _RE_POMODORI.match(tl)
+        if m:
+            q = _senza_accenti((m.group("q") or "oggi").strip().lower())
+            oggi = datetime.date.today()
+            da, a, et = (oggi - datetime.timedelta(days=1), oggi - datetime.timedelta(days=1), "Ieri") if q == "ieri" else \
+                        (oggi - datetime.timedelta(days=oggi.weekday()), oggi, "Questa settimana") if "settimana" in q else (oggi, oggi, "Oggi")
+            st = self.statistiche(da, a)
+            if not st["sessioni"]:
+                return {"testo": f"🍅 {et} nessun pomodoro. Prova: «concentrazione 25 minuti sulla relazione» (o il tasto Q)."}
+            ore = f"{st['minuti'] // 60} or{'a' if st['minuti'] // 60 == 1 else 'e'} e {st['minuti'] % 60} minuti" if st["minuti"] >= 60 else f"{st['minuti']} minuti"
+            return {"testo": f"🍅 {et}: **{st['pomodori']} pomodor{'o' if st['pomodori'] == 1 else 'i'}**, {ore} di concentrazione."
+                    + ("\n" + "\n".join(f"- {k}: {'🍅' * min(v, 10)}" for k, v in st["per_attivita"][:6]) if st["per_attivita"] else ""), "focus": st}
+        return None
+
+    def elenco_testo(self, q=""):
+        q = _senza_accenti(q.lower())
+        oggi = datetime.date.today()
+        if not q:
+            L = self.vista("tutte")
+            if not L:
+                return {"testo": "✅ Non hai cose da fare segnate. Dimmi «aggiungi alle cose da fare: …» 🎉", "attivita_lista": {"titolo": "Cose da fare", "voci": []}}
+            return {"testo": f"✅ Le tue cose da fare ({len(L)}):\n" + "\n".join("- " + self.riga(a) for a in L[:15]) + (f"\n…e altre {len(L) - 15}" if len(L) > 15 else ""),
+                    "attivita_lista": {"titolo": "Cose da fare", "voci": L[:30]}}
+        giorno = oggi + datetime.timedelta(days=1) if "domani" in q else oggi
+        if "settimana" in q:
+            L, titolo = self.vista("settimana"), "Questa settimana"
+        elif "ritardo" in q:
+            L, titolo = self.vista("ritardo"), "In ritardo"
+        else:
+            L, titolo = self.vista("domani" if "domani" in q else "oggi"), "Domani" if "domani" in q else "Oggi"
+        righe = [f"📋 **{titolo}**"]
+        if "settimana" not in q and "ritardo" not in q:
+            ag = CAL.agenda(datetime.datetime.combine(giorno, datetime.time()), 1)
+            if ag["n"]:
+                righe.append("📅 Impegni: " + " · ".join(f"{e['ora']} {e['titolo']}" for e in ag["giorni"][0]["eventi"][:6]))
+            if giorno == oggi:
+                ab = [a for a in ABITUDINI.tutte_stato() if a["previsto_oggi"] and not a["fatta_oggi"] and not a.get("settimanale")]
+                if ab:
+                    righe.append("💪 Abitudini: " + ", ".join(f"{a['emoji']} {a['nome']}" for a in ab[:5]))
+        if L:
+            righe.append("✅ Da fare:\n" + "\n".join("- " + self.riga(a) for a in L[:12]))
+        else:
+            righe.append("✅ Niente in scadenza" + (" 🎉" if len(righe) == 1 else "") + ".")
+        senza = [a for a in self.vista("tutte") if a not in L][:3] if titolo == "Oggi" else []
+        if senza:
+            righe.append("💡 Se hai tempo: " + ", ".join(a["testo"] for a in senza))
+        return {"testo": "\n".join(righe), "attivita_lista": {"titolo": titolo, "voci": L[:30]}}
+
+    def router_fatto(self, testo):
+        m = _RE_ATT_FATTO.match(re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" .!"))
+        if not m or not self.aperte():
+            return None
+        a = self.trova(m.group("t"))
+        if not a:
+            return None
+        b = self.modifica(a["id"], fatta=True)
+        resto = len(self.vista("oggi"))
+        return {"testo": f"✅ Fatto: ~~{b['testo']}~~ 🎉" + (f" Per oggi ne restano {resto}." if resto else " Per oggi non resta niente in scadenza!"), "attivita": b}
+
+
+ATTIVITA = Attivita()
+
+
+# ── 🗓️ il piano della giornata (senza modello: impegni fissi, abitudini, cose da fare negli spazi liberi, pause) ──
+def _hm(t):
+    return t.strftime("%H:%M")
+
+
+def pianifica_giornata(ora=None, inizio_h=None, fine_h=None):
+    ora = ora or datetime.datetime.now()
+    inizio_h = inizio_h if inizio_h is not None else CONFIG["giornata"][0]
+    fine_h = fine_h if fine_h is not None else CONFIG["giornata"][1]
+    giorno = ora.date()
+    fine = datetime.datetime.combine(giorno, datetime.time(fine_h))
+    domani = False
+    if ora >= fine - datetime.timedelta(minutes=45):                 # la giornata è finita: il piano di domani
+        giorno, domani = giorno + datetime.timedelta(days=1), True
+        fine = datetime.datetime.combine(giorno, datetime.time(fine_h))
+        inizio = datetime.datetime.combine(giorno, datetime.time(inizio_h))
+    else:
+        m = (ora.minute // 15 + 1) * 15
+        inizio = max(datetime.datetime.combine(giorno, datetime.time(inizio_h)), ora.replace(minute=0, second=0, microsecond=0) + datetime.timedelta(minutes=m))
+    fissi = []
+    for o in CAL.occorrenze(datetime.datetime.combine(giorno, datetime.time()), datetime.datetime.combine(giorno + datetime.timedelta(days=1), datetime.time())):
+        if not o["tutto_giorno"] and o["fine"] > inizio and o["inizio"] < fine:
+            fissi.append({"inizio": max(o["inizio"], inizio), "fine": min(o["fine"], fine), "tipo": "evento", "titolo": o["titolo"] + (f" ({o['luogo']})" if o["luogo"] else ""), "icona": "📅"})
+    for a in ABITUDINI.elenco():
+        if a.get("ora") and ABITUDINI._previsto(a, giorno) and not (not domani and ABITUDINI.stato(a)["fatta_oggi"]):
+            h, mi = map(int, a["ora"].split(":"))
+            t0 = datetime.datetime.combine(giorno, datetime.time(h, mi))
+            dur = 60 if re.search(r"palestra|allenament|corr|nuot|bici|calcio|tennis", a["nome"], re.I) else 20
+            if inizio <= t0 < fine:
+                fissi.append({"inizio": t0, "fine": min(fine, t0 + datetime.timedelta(minutes=dur)), "tipo": "abitudine", "titolo": a["nome"], "icona": a["emoji"], "id": a["id"]})
+    p0, p1 = datetime.datetime.combine(giorno, datetime.time(13)), datetime.datetime.combine(giorno, datetime.time(14))
+    if inizio < p1 and fine > p0 and not any(f["inizio"] < p1 and f["fine"] > p0 for f in fissi):
+        fissi.append({"inizio": max(p0, inizio), "fine": p1, "tipo": "pranzo", "titolo": "Pranzo", "icona": "🍝"})
+    fissi.sort(key=lambda f: f["inizio"])
+    buchi, t = [], inizio
+    for f in fissi:
+        if f["inizio"] > t:
+            buchi.append([t, f["inizio"]])
+        t = max(t, f["fine"])
+    if t < fine:
+        buchi.append([t, fine])
+    oggi_iso = giorno.isoformat()
+    da_fare = sorted(ATTIVITA.aperte(), key=lambda a: ATTIVITA._ordine(a, giorno))
+    blocchi, messe, fuori = [], [], []
+    for a in da_fare:
+        dur = a.get("durata") or (50 if a["priorita"] != "bassa" else 25)
+        posto = False
+        for b in buchi:
+            if (b[1] - b[0]).total_seconds() / 60 >= dur:
+                blocchi.append({"inizio": b[0], "fine": b[0] + datetime.timedelta(minutes=dur), "tipo": "attivita", "titolo": a["testo"], "icona": _ICONA_PRIO[a["priorita"]],
+                                "id": a["id"], "scade": quando_scade(a["scadenza"], giorno), "pomodori": max(1, round(dur / 25))})
+                b[0] += datetime.timedelta(minutes=dur)
+                if (b[1] - b[0]).total_seconds() >= 10 * 60:
+                    blocchi.append({"inizio": b[0], "fine": b[0] + datetime.timedelta(minutes=10), "tipo": "pausa", "titolo": "Pausa", "icona": "☕"})
+                    b[0] += datetime.timedelta(minutes=10)
+                messe.append(a)
+                posto = True
+                break
+        if not posto and (a["scadenza"] and a["scadenza"] <= oggi_iso or a["priorita"] == "alta"):
+            fuori.append(a)
+    tutti = sorted(fissi + blocchi, key=lambda x: x["inizio"])
+    while tutti and tutti[-1]["tipo"] == "pausa":
+        tutti.pop()
+    titolo = ("Il piano di domani" if domani else "Il tuo piano di oggi") + f" ({_hm(inizio)}–{_hm(fine)})"
+    if not tutti:
+        return {"testo": f"🗓️ {titolo}: niente in programma, giornata libera! 🎉 Aggiungi qualcosa con «aggiungi alle cose da fare: …».",
+                "piano": {"titolo": titolo, "blocchi": [], "fuori": []}}
+    righe = [f"🗓️ **{titolo}**"]
+    for x in tutti:
+        extra = f" ({x['scade']})" if x.get("scade") and x["tipo"] == "attivita" else ""
+        righe.append(f"- {_hm(x['inizio'])}–{_hm(x['fine'])} {x['icona']} {x['titolo']}{extra}")
+    if fuori:
+        righe.append("⚠️ Non ci stanno: " + ", ".join(a["testo"] for a in fuori[:5]) + " — vuoi spostarle a domani?")
+    restano = [a for a in da_fare if a not in messe and a not in fuori]
+    if restano:
+        righe.append(f"💡 Altre {len(restano)} cose senza fretta restano in lista.")
+    righe.append("▶ Premi «Inizia» su un'attività e mi concentro con te (🍅 25 minuti + pausa).")
+    js = lambda x: dict({k: v for k, v in x.items() if k not in ("inizio", "fine")}, inizio=_hm(x["inizio"]), fine=_hm(x["fine"]))
+    return {"testo": "\n".join(righe), "piano": {"titolo": titolo, "domani": domani, "blocchi": [js(x) for x in tutti], "fuori": [{"id": a["id"], "testo": a["testo"]} for a in fuori]}}
+
+
+# ── 🌙 chiudiamo la giornata ──
+def fine_giornata(ora=None):
+    ora = ora or datetime.datetime.now()
+    oggi = ora.date()
+    o = oggi.isoformat()
+    fatte = [a for a in ATTIVITA.tutte() if (a.get("fatta") or "")[:10] == o]
+    restano = [a for a in ATTIVITA.vista("oggi", oggi) if a.get("scadenza") and a["scadenza"] <= o]
+    st = ATTIVITA.statistiche(oggi, oggi)
+    ab = ABITUDINI.tutte_stato()
+    prev = [a for a in ab if a["previsto_oggi"] and not a.get("settimanale")]
+    ab_fatte = [a for a in prev if a["fatta_oggi"]]
+    sp = SPESE.riepilogo(oggi, oggi)
+    dom = CAL.agenda(datetime.datetime.combine(oggi + datetime.timedelta(days=1), datetime.time()), 1)
+    righe = [f"🌙 **La tua giornata** ({data_it(ora)})"]
+    righe.append(f"✅ Fatte: {len(fatte)}" + (" — " + ", ".join(a["testo"] for a in fatte[:6]) if fatte else ""))
+    if st["sessioni"]:
+        righe.append(f"🍅 Concentrazione: {st['pomodori']} pomodor{'o' if st['pomodori'] == 1 else 'i'}, {st['minuti']} minuti")
+    if prev:
+        righe.append(f"💪 Abitudini: {len(ab_fatte)}/{len(prev)}" + (" · mancano: " + ", ".join(f"{a['emoji']} {a['nome']}" for a in prev if not a["fatta_oggi"])[:200] if len(ab_fatte) < len(prev) else " — tutte! 🔥"))
+    if sp["n"]:
+        righe.append(f"💶 Spese di oggi: {euro(sp['totale'])}")
+    if restano:
+        righe.append("⏭️ Da spostare: " + ", ".join(a["testo"] for a in restano[:6]) + " — premi «sposta a domani».")
+    if dom["n"]:
+        righe.append("📅 Domani: " + " · ".join(f"{e['ora']} {e['titolo']}" for e in dom["giorni"][0]["eventi"][:4]))
+    voto = len(fatte) + st["pomodori"] + len(ab_fatte)
+    righe.append("🌟 Giornata produttiva, complimenti! Ora riposati. 😴" if voto >= 5 else "🌱 Ogni giorno un passo: domani si riparte. Buona serata! 💙")
+    return {"testo": "\n".join(righe), "giornata": {"fatte": [{"id": a["id"], "testo": a["testo"]} for a in fatte], "restano": [{"id": a["id"], "testo": a["testo"]} for a in restano],
+                                                   "pomodori": st["pomodori"], "minuti": st["minuti"], "abitudini": [len(ab_fatte), len(prev)], "spese": sp["totale"]}}
 
 
 # ════════════════════════════════════════════════════════════
@@ -6432,8 +6926,10 @@ PROMPT_AGENTE_V15 = """PAGINE E CALENDARIO:
 PROMPT_AGENTE_V16 = """SOLDI E ABITUDINI:
 [[azione:{"tipo":"aggiungi_spesa","importo":23.5,"descrizione":"benzina"}]]  ← segno una spesa (in euro)
 [[azione:{"tipo":"spese","periodo":"questo mese","cosa":""}]]  ← quanto ha speso (oggi, questa settimana, questo mese, mese scorso, a settembre…; cosa = benzina, spesa…)
-[[azione:{"tipo":"abitudini"}]]  ← le sue abitudini: cosa ha fatto oggi, le serie di giorni"""
-STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie", "leggi_pagina", "calendario", "spese", "abitudini"}
+[[azione:{"tipo":"abitudini"}]]  ← le sue abitudini: cosa ha fatto oggi, le serie di giorni
+[[azione:{"tipo":"aggiungi_attivita","testo":"chiamare il commercialista entro venerdì, urgente"}]]  ← una cosa da fare (scadenza e priorità nel testo)
+[[azione:{"tipo":"attivita","quando":"oggi"}]]  ← le cose da fare (oggi, domani, questa settimana, tutte)"""
+STRUMENTI_INFO = {"meteo", "ora", "calcola", "cerca_documenti", "cerca_memoria", "info_pc", "cerca_file", "cerca_internet", "notizie", "leggi_pagina", "calendario", "spese", "abitudini", "attivita"}
 STRUMENTI_PC = {"apri_sito": "sito", "cerca_web": "cerca", "apri_app": "app", "apri_cartella": "cartella",
                 "imposta_volume": "volume", "controlla_musica": "media", "screenshot": "screenshot",
                 "apri_file": "file", "scrivi_testo": "scrivi", "blocca_pc": "blocca", "esegui_routine": "routine"}
@@ -6456,7 +6952,7 @@ ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥�
                    "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
-                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅"}
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅", "attivita": "📋", "aggiungi_attivita": "📋"}
 
 
 class FiltroTag:
@@ -6546,7 +7042,8 @@ class Agente:
                 "cerca_online": "cerca_internet", "ricerca": "cerca_internet", "news": "notizie", "giornale": "notizie",
                 "pagina": "leggi_pagina", "apri_pagina": "leggi_pagina", "link": "leggi_pagina", "agenda": "calendario", "impegni": "calendario",
                 "evento": "aggiungi_evento", "appuntamento": "aggiungi_evento",
-                "spesa": "aggiungi_spesa", "segna_spesa": "aggiungi_spesa", "budget": "spese", "soldi": "spese", "abitudine": "abitudini", "obiettivi": "abitudini"}.get(tipo, tipo)
+                "spesa": "aggiungi_spesa", "segna_spesa": "aggiungi_spesa", "budget": "spese", "soldi": "spese", "abitudine": "abitudini", "obiettivi": "abitudini",
+                "todo": "attivita", "cose_da_fare": "attivita", "compito": "aggiungi_attivita", "nuova_attivita": "aggiungi_attivita", "aggiungi_todo": "aggiungi_attivita"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -6689,6 +7186,13 @@ class Agente:
             if tipo == "abitudini":
                 rr = ABITUDINI.router("come vanno le mie abitudini")
                 return dict(r, ok=True, esito="abitudini", dati=rr["testo"])
+            if tipo == "aggiungi_attivita":            # v17: cose da fare
+                x, err = ATTIVITA.aggiungi_testo(s("testo", 200) or s("cosa", 200), fonte="agente")
+                return dict(r, ok=bool(x), esito=(f"«{x['testo']}»" + (f" · scade {quando_scade(x['scadenza'])}" if x["scadenza"] else "")) if x else err)
+            if tipo == "attivita":
+                q = s("quando", 30)
+                rr = ATTIVITA.elenco_testo("" if q in ("", "tutte", "tutto") else q)
+                return dict(r, ok=True, esito=f"cose da fare: {q or 'tutte'}", dati=rr["testo"])
             if tipo == "leggi_pagina":                  # v15: una pagina intera
                 if not CONFIG["web"]:
                     return dict(r, esito="internet è spento (MAIK_WEB=0)", dati="niente internet")
@@ -6934,14 +7438,18 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         if pc:
             self.memoria.salva_scambio(testo, pc["testo"])
             return self._meta(ok=True, risposta=pc["testo"], azione=True, **self._meta_pc(pc))
+        att = ATTIVITA.router(testo)
+        if att:
+            self.memoria.salva_scambio(testo, att["testo"])
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
             return self._meta(ok=True, risposta=cal["testo"], azione=True, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
-        v16 = SPESE.router(testo) or ABITUDINI.router(testo) or (riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(testo.strip().rstrip(" ?!.")) else None)
+        v16 = SPESE.router(testo) or ABITUDINI.router(testo) or ATTIVITA.router_fatto(testo) or (riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(testo.strip().rstrip(" ?!.")) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -7003,18 +7511,23 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 on_token(pc["testo"])
                 self.memoria.salva_scambio(testo, pc["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **self._meta_pc(pc))
+            att = ATTIVITA.router(testo)                       # v17: cose da fare, piano della giornata, chiusura, pomodori
+            if att:
+                on_token(att["testo"])
+                self.memoria.salva_scambio(testo, att["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
                 self.memoria.salva_scambio(testo, cal["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
-            for rt in (lambda x: SPESE.router(x), lambda x: ABITUDINI.router(x),            # v16: soldi, abitudini, la settimana
+            for rt in (lambda x: SPESE.router(x), lambda x: ABITUDINI.router(x), lambda x: ATTIVITA.router_fatto(x),   # v16-17: soldi, abitudini, «fatto: …», la settimana
                        lambda x: riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(x.strip().rstrip(" ?!.")) else None):
                 v16 = rt(testo)
                 if v16:
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -7581,6 +8094,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(dict(r, ok=True, budget_impostati=SPESE.budget(), categorie=[CAT_SPESE[k] for k, *_ in CATEGORIE_SPESE]))
             elif base == "/abitudini":
                 self._json({"ok": True, "abitudini": ABITUDINI.tutte_stato()})
+            elif base == "/attivita":                                 # v17: cose da fare (oggi, domani, settimana, tutte, fatte)
+                f = qs.get("filtro", "tutte")
+                self._json({"ok": True, "attivita": ATTIVITA.vista(f if f in ("oggi", "domani", "settimana", "ritardo", "fatte") else "tutte"),
+                            "conta": {k: len(ATTIVITA.vista(k)) for k in ("oggi", "tutte", "ritardo")}})
+            elif base == "/focus":
+                oggi = datetime.date.today()
+                self._json({"ok": True, "oggi": ATTIVITA.statistiche(oggi, oggi), "settimana": ATTIVITA.statistiche(oggi - datetime.timedelta(days=oggi.weekday()), oggi)})
+            elif base == "/piano":
+                self._json(dict(pianifica_giornata(), ok=True))
+            elif base == "/giornata":
+                self._json(dict(fine_giornata(), ok=True))
             elif base == "/abitudini/avvisi":
                 self._json({"avvisi": ABITUDINI.prendi_avvisi()})
             elif base == "/settimana":
@@ -7880,6 +8404,36 @@ class Handler(BaseHTTPRequestHandler):
                     giorno = None
                 st = ABITUDINI.segna(str(c.get("id", "")), int(c.get("n", 1) or 1), giorno)
                 self._json({"ok": bool(st), "abitudine": st, "testo": ABITUDINI.testo_segnato(st) if st else ""})
+            elif base == "/attivita/aggiungi":                        # v17
+                c = self._read_json_body()
+                if c.get("testo") and not c.get("campi"):
+                    a, err = ATTIVITA.aggiungi_testo(str(c["testo"]), fonte=str(c.get("fonte") or "gui")[:20], quando=str(c.get("quando") or "")[:60])
+                else:
+                    a, err = ATTIVITA.aggiungi(**{k: c[k] for k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata") if k in c}, fonte="gui")
+                self._json({"ok": bool(a), "attivita": a, "errore": err})
+            elif base == "/attivita/fatta":
+                c = self._read_json_body()
+                a = ATTIVITA.modifica(str(c.get("id", "")), fatta=c.get("fatta", True) is not False)
+                self._json({"ok": bool(a), "attivita": a, "oggi": len(ATTIVITA.vista("oggi"))})
+            elif base == "/attivita/modifica":
+                c = self._read_json_body()
+                a = ATTIVITA.modifica(str(c.get("id", "")), **{k: c[k] for k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata") if k in c})
+                self._json({"ok": bool(a), "attivita": a})
+            elif base == "/attivita/rimanda":
+                c = self._read_json_body()
+                q = interpreta_attivita("x per " + str(c.get("a") or "domani"))["scadenza"] or (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+                fatte = [ATTIVITA.modifica(str(i), scadenza=q) for i in (c.get("ids") or [])[:50]]
+                self._json({"ok": True, "spostate": len([x for x in fatte if x]), "scadenza": q})
+            elif base == "/attivita/elimina":
+                self._json({"ok": ATTIVITA.elimina(str(self._read_json_body().get("id", "")))})
+            elif base == "/attivita/trova":
+                a = ATTIVITA.trova(str(self._read_json_body().get("testo", ""))[:200])
+                self._json({"ok": bool(a), "attivita": a})
+            elif base == "/focus/sessione":
+                c = self._read_json_body()
+                x = ATTIVITA.sessione(c.get("minuti", 0), str(c.get("attivita") or ""), str(c.get("testo") or ""), c.get("completa", True) is not False)
+                oggi = datetime.date.today()
+                self._json({"ok": bool(x), "sessione": x, "oggi": ATTIVITA.statistiche(oggi, oggi)})
             elif base == "/abitudini/elimina":
                 self._json({"ok": ABITUDINI.elimina(str(self._read_json_body().get("id", "")))})
             elif base == "/traduci":                                  # v15: interprete
@@ -13130,8 +13684,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║           MAIK 16.0 — Server avviato            ║
-║ spese · abitudini · settimana · PDF · calendario ║
+║           MAIK 17.0 — Server avviato            ║
+║ cose da fare · pomodori · piano · spese · abitud.║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

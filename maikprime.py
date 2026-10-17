@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v19.0                   ║
+║              MAIK PRIME — Server v20.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v20.0 — MAIK PRIME PENSA IN GRANDE:
+  • 🎯 Obiettivi con le tappe: «voglio imparare lo spagnolo entro giugno», «nuovo obiettivo: correre una mezza
+    maratona in 4 mesi» → 3-6 tappe con le date (fatte dal modello, o a regole), la tappa in corso va nelle cose da
+    fare (#progetto) e quando la spunti si passa alla prossima; avanzamento, ritmo («in linea», «indietro»),
+    🏆 a ogni tappa e al traguardo. «i miei obiettivi», «a che punto sono con lo spagnolo?», «ho finito la tappa».
+  • 🗓️ «pianificami la settimana»: le cose da fare divise nei 7 giorni attorno agli impegni (prima quelle che scadono),
+    il weekend più leggero; «📌 Fissa i giorni» per quelle senza data.
+  • 📈 «come sto andando questo mese?», «le mie tendenze»: 30 giorni di spese (e il confronto col mese scorso),
+    abitudini, cose fatte, pomodori, umore, con quello che si nota.
+  • Nuovi endpoint: GET /obiettivi · GET /obiettivi/avvisi · POST /obiettivi/crea /obiettivi/tappa /obiettivi/elimina ·
+    GET /prime/settimana · POST /settimana/applica · GET /prime/tendenze?giorni=30
 
 NOVITÀ v19.0 — MAIK PRIME:
   • Nuovo nome: MAIK PRIME (il file è maikprime.py; i tuoi dati in dati_maik/ restano quelli di prima).
@@ -340,7 +352,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "19.0"
+VERSIONE  = "20.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -7957,7 +7969,7 @@ class Automazioni:
 
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
-                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime")
+                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze")
 AUTOMAZIONI = Automazioni()
 
 
@@ -8092,7 +8104,9 @@ def prime_oggi(memoria, ora=None):
             "umore": umore, "idee": {"attive": pro["attivo"], "oggi": pro["oggi"], "massimo": pro["massimo"]},
             "automazioni": [{k: a[k] for k in ("id", "comando", "descrizione", "prossima")} for a in autos],
             "promemoria": [{"testo": p["testo"], "quando": p["quando"]} for p in prom],
-            "ricordi": len([x for x in memoria.diario if (x.get("tu") or "").strip()])}
+            "ricordi": len([x for x in memoria.diario if (x.get("tu") or "").strip()]),
+            "obiettivi": [{"id": o["id"], "emoji": o["emoji"], "titolo": o["titolo"], "perc": o["perc"], "ritmo": o["ritmo"], "prossima": (o["prossima"] or {}).get("titolo", ""),
+                           "giorni_rimasti": o["giorni_rimasti"]} for o in (OBIETTIVI.elenco() if "OBIETTIVI" in globals() else [])]}
 
 
 def prime_testo(p):
@@ -8107,6 +8121,8 @@ def prime_testo(p):
     ag = [x for x in p["agenda"] if x["giorno"] == "oggi" and not x["passato"]]
     if ag:
         righe.append("📅 Ancora oggi: " + ", ".join(f"{x['ora']} {x['titolo']}" for x in ag[:3]))
+    if p.get("obiettivi"):
+        righe.append("🎯 Obiettivi: " + " · ".join(f"{o['emoji']} {o['titolo']} {o['perc']}%" for o in p["obiettivi"][:3]))
     if p["automazioni"]:
         x = p["automazioni"][0]
         righe.append(f"⚙️ Prossima automazione: «{x['comando']}» {fmt_quando(datetime.datetime.fromisoformat(x['prossima']))}")
@@ -8122,6 +8138,512 @@ def prime_router(testo, memoria):
 
 PROMPT_AGENTE_V19 = """AUTOMAZIONI (cose che fai da solo a un orario, quando la persona te lo chiede):
 [[azione:{"tipo":"automazione","quando":"ogni lunedì alle 9","cosa":"dimmi quanto ho speso la settimana scorsa"}]]  ← «quando»: ogni giorno alle 8, nei giorni feriali alle 7:30, ogni venerdì alle 18, ogni 2 ore…"""
+
+
+# ════════════════════════════════════════════════════════════
+# v20 — MAIK PRIME: obiettivi con le tappe, il piano della settimana, le tendenze
+# ════════════════════════════════════════════════════════════
+
+# ── 🎯 OBIETTIVI CON LE TAPPE: «voglio imparare lo spagnolo entro giugno» ──
+_RE_OB_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:nuovo|crea(?:\s+un)?|aggiungi(?:\s+un)?|imposta(?:\s+un)?)\s+obiettivo\s*[:,]?\s*(?P<a>.{3,})|"
+                         r"(?:il\s+mio\s+obiettivo\s+[eè](?:\s+di)?|voglio(?:\s+riuscire\s+a)?|vorrei(?:\s+riuscire\s+a)?|devo\s+riuscire\s+a|mi\s+(?:sono\s+)?(?:dato|posto|data|posta)\s+l['’]\s*obiettivo\s+di)\s+"
+                         r"(?P<b>.{3,}?\s(?:entro|in|tra|fra|per)\s.+))$", re.I)
+_RE_OB_ELENCO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:i\s+)?(?:miei\s+)?obiettivi|come\s+vanno\s+(?:i\s+)?(?:miei\s+)?obiettivi|a\s+che\s+punto\s+sono\s+(?:con\s+)?(?:i\s+)?(?:miei\s+)?obiettivi|(?:i\s+)?miei\s+traguardi)$", re.I)
+_RE_OB_PUNTO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:a\s+che\s+punto\s+sono\s+con|come\s+va\s+(?:con\s+)?l['’]\s*obiettivo(?:\s+(?:di|del|della|dello))?|come\s+procede)\s+(?P<t>.+)$", re.I)
+_RE_OB_TAPPA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:ho\s+(?:finito|completato|fatto|chiuso)\s+(?:la\s+)?tappa|tappa\s+(?:fatta|finita|completata)|fatto\s*[:,]?\s*(?:la\s+)?tappa)\s*(?:di|del|della|dello|dell['’]|per|su|sul|sulla)?\s*(?P<t>.*)$", re.I)
+_RE_OB_CANC = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:cancella|elimina|togli|rimuovi|abbandona|lascia\s+perdere)\s+(?:l['’]\s*)?obiettivo\s*(?:di|del|della|dello|dell['’]|su)?\s*(?P<t>.+)$", re.I)
+_EMOJI_OB = [(r"spagnol|ingles|frances|tedesc|lingua|giappones|cinese|portoghes", "🗣️"), (r"marato|corr|corsa|km\b|chilometri", "🏃"), (r"risparm|soldi|euro|€|debit", "💰"),
+             (r"peso|chil[oi]|dimagr|kg\b", "⚖️"), (r"libr|legg|scriv|romanzo", "📚"), (r"esam|laure|diplom|concors|universit|studi", "🎓"), (r"casa|trasloc|arred", "🏠"),
+             (r"viaggi|vacanz|giappone|america|parigi", "✈️"), (r"lavor|carrier|promozion|cliente|azienda|business", "💼"), (r"chitarr|piano|music|suon|cant", "🎸"),
+             (r"palestra|muscol|forma|allen|nuot|bici", "💪"), (r"cucin|ricett", "🍳"), (r"program|codic|app\b|sito", "💻"), (r"fum|sigarett", "🚭")]
+_TAPPE_BASE = ["Capire da dove parto e cosa mi serve", "Preparare un piano e gli strumenti giusti", "Fare le basi con costanza",
+               "Fare pratica e mettermi alla prova", "Sistemare i punti deboli", "Arrivare al traguardo"]
+_SCELTA_TAPPE = {3: [0, 2, 5], 4: [0, 2, 3, 5], 5: [0, 1, 2, 3, 5], 6: [0, 1, 2, 3, 4, 5]}
+PROMPT_TAPPE = ("Obiettivo: «{ob}», da raggiungere entro il {scad} (tra {giorni} giorni). Dividilo in {n} tappe concrete, in ordine, ognuna verificabile "
+                "(cosa avrò fatto alla fine della tappa), in italiano, brevi (al massimo 8 parole), senza numeri. Rispondi in JSON {{\"tappe\": [\"…\"]}}.")
+
+
+def _ultimo_del_mese(a, m):
+    return (datetime.date(a + (m == 12), m % 12 + 1, 1) - datetime.timedelta(days=1))
+
+
+def scadenza_obiettivo(testo, oggi=None):
+    """«… entro giugno», «entro il 30 giugno», «in 3 mesi», «tra 6 settimane», «entro l'estate», «entro fine anno», «entro il 15/3»
+    → (testo senza la scadenza, data) · data None se non c'è."""
+    oggi = oggi or datetime.date.today()
+    t = re.sub(r"\s+", " ", testo or "").strip(" .!")
+    regole = [
+        (r"\s+(?:entro|per)\s+(?:il\s+|l['’]\s*)?(\d{1,2})\s+(" + "|".join(MESI_IT) + r")(?:\s+(\d{4}))?\b", "data"),
+        (r"\s+(?:entro|per)\s+(?:il\s+)?(\d{1,2})[/.\-](\d{1,2})(?:[/.\-](\d{2,4}))?\b", "num"),
+        (r"\s+(?:entro|per)\s+(?:la\s+fine\s+di\s+|fine\s+)?(" + "|".join(MESI_IT) + r")(?:\s+(\d{4}))?\b", "mese"),
+        (r"\s+(?:in|tra|fra|entro)\s+(\d{1,3}|un|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|dodici)\s+(giorn[oi]|settiman[ae]|mes[ei]|ann[oi])\b", "durata"),
+        (r"\s+(?:entro|per)\s+(?:la\s+)?fine\s+(?:dell['’]\s*)?anno\b|\s+(?:entro|per)\s+capodanno\b", "anno"),
+        (r"\s+(?:entro|per)\s+(?:l['’]\s*)?estate\b", "estate"), (r"\s+(?:entro|per)\s+natale\b", "natale"),
+        (r"\s+(?:entro|per)\s+(?:la\s+)?fine\s+(?:del\s+)?mese\b", "finemese"), (r"\s+(?:entro|per)\s+(?:la\s+)?primavera\b", "primavera")]
+    numeri = {"un": 1, "una": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "dodici": 12}
+    for rx, k in regole:
+        m = re.search(rx, t, re.I)
+        if not m:
+            continue
+        d = None
+        try:
+            if k == "data":
+                d = datetime.date(int(m.group(3) or oggi.year), MESI_IT.index(m.group(2).lower()) + 1, int(m.group(1)))
+                if d < oggi and not m.group(3):
+                    d = d.replace(year=d.year + 1)
+            elif k == "num":
+                a = int(m.group(3)) if m.group(3) else oggi.year
+                a += 2000 if a < 100 else 0
+                d = datetime.date(a, int(m.group(2)), int(m.group(1)))
+                if d < oggi and not m.group(3):
+                    d = d.replace(year=d.year + 1)
+            elif k == "mese":
+                me = MESI_IT.index(m.group(1).lower()) + 1
+                a = int(m.group(2)) if m.group(2) else oggi.year + (me < oggi.month)
+                d = _ultimo_del_mese(a, me)
+            elif k == "durata":
+                n = numeri.get(m.group(1).lower()) or int(m.group(1))
+                u = m.group(2).lower()
+                d = oggi + datetime.timedelta(days=n * (1 if u.startswith("giorn") else 7 if u.startswith("settiman") else 30 if u.startswith("mes") else 365))
+            elif k == "anno":
+                d = datetime.date(oggi.year, 12, 31)
+            elif k == "estate":
+                d = datetime.date(oggi.year + (oggi > datetime.date(oggi.year, 6, 21)), 6, 21)
+            elif k == "natale":
+                d = datetime.date(oggi.year + (oggi > datetime.date(oggi.year, 12, 25)), 12, 25)
+            elif k == "finemese":
+                d = _ultimo_del_mese(oggi.year, oggi.month)
+            elif k == "primavera":
+                d = datetime.date(oggi.year + (oggi > datetime.date(oggi.year, 3, 21)), 3, 21)
+        except ValueError:
+            d = None
+        if d:
+            return (t[:m.start()] + t[m.end():]).strip(" ,.:"), d
+    return t, None
+
+
+def _etichetta_progetto(titolo):
+    parole = [w for w in re.findall(r"[a-zà-ù]+", titolo.lower()) if len(w) > 3]
+    nomi = [w for w in parole if not re.search(r"(?:are|ere|ire|rre)$", w) and w not in _STOP]
+    return (nomi[-1] if nomi else parole[0] if parole else "obiettivo")[:18]
+
+
+class Obiettivi:
+    """Gli obiettivi grandi divisi in tappe con le date. La tappa in corso è una «cosa da fare» (#progetto): quando la spunti
+    MAIK passa alla tappa dopo (e la mette in lista), e al traguardo festeggia. Dati in obiettivi_prime.json."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self.avvisi = []
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "obiettivi_prime.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("obiettivi", [])
+                return d
+        except Exception:
+            pass
+        return {"obiettivi": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def _tappe(self, titolo, scadenza, oggi, cervello=None):
+        giorni = max(3, (scadenza - oggi).days)
+        n = 3 if giorni <= 21 else 4 if giorni <= 60 else 5 if giorni <= 180 else 6
+        nomi = []
+        if cervello is not None and cervello.disponibile():
+            j = cervello.pensa_json(PROMPT_TAPPE.format(ob=titolo, scad=f"{scadenza.day} {MESI_IT[scadenza.month - 1]} {scadenza.year}", giorni=giorni, n=n)) or {}
+            nomi = [re.sub(r"^\s*\d+[.)]\s*", "", re.sub(r"\s+", " ", str(x))).strip(" .")[:80] for x in (j.get("tappe") or []) if isinstance(x, str) and len(x.strip()) > 2]
+        if not (3 <= len(nomi) <= 8):
+            nomi = [_TAPPE_BASE[i] for i in _SCELTA_TAPPE[n]]
+        k = len(nomi)
+        return [{"id": uuid.uuid4().hex[:6], "titolo": nomi[i][:1].upper() + nomi[i][1:], "scadenza": (oggi + datetime.timedelta(days=round(giorni * (i + 1) / k))).isoformat(),
+                 "attivita": "", "fatta": None} for i in range(k)]
+
+    def _nuova_attivita(self, o, t):
+        a, _ = ATTIVITA.aggiungi(f"{o['emoji']} {t['titolo']} ({o['titolo'][:1].lower() + o['titolo'][1:]})", "normale", t["scadenza"], "", o["progetto"], 0, "obiettivo")
+        t["attivita"] = a["id"] if a else ""
+
+    def crea(self, titolo, scadenza=None, cervello=None, oggi=None):
+        oggi = oggi or datetime.date.today()
+        titolo = re.sub(r"\s+", " ", str(titolo or "")).strip(" .,:;!")[:120]
+        if len(titolo) < 3:
+            return None, "manca l'obiettivo"
+        titolo = titolo[:1].upper() + titolo[1:]
+        scadenza = scadenza or (oggi + datetime.timedelta(days=90))
+        if scadenza <= oggi:
+            return None, "la scadenza è già passata"
+        emoji = next((e for rx, e in _EMOJI_OB if re.search(rx, titolo, re.I)), "🎯")
+        with self._lock:
+            d = self._carica()
+            if any(o["titolo"].lower() == titolo.lower() and o["stato"] == "attivo" for o in d["obiettivi"]):
+                return None, "hai già questo obiettivo"
+            o = {"id": uuid.uuid4().hex[:8], "titolo": titolo, "emoji": emoji, "creato": oggi.isoformat(), "scadenza": scadenza.isoformat(), "stato": "attivo",
+                 "progetto": _etichetta_progetto(titolo), "tappe": self._tappe(titolo, scadenza, oggi, cervello), "raggiunto": None}
+            self._nuova_attivita(o, o["tappe"][0])
+            d["obiettivi"].append(o)
+            self._salva(d)
+        return self.stato(o, oggi), None
+
+    @staticmethod
+    def stato(o, oggi=None):
+        oggi = oggi or datetime.date.today()
+        fatte = sum(1 for t in o["tappe"] if t.get("fatta"))
+        tot = len(o["tappe"]) or 1
+        perc = round(100 * fatte / tot)
+        try:
+            c, s = datetime.date.fromisoformat(o["creato"]), datetime.date.fromisoformat(o["scadenza"])
+            atteso = max(0, min(100, round(100 * (oggi - c).days / max(1, (s - c).days))))
+        except ValueError:
+            atteso, s = 0, oggi
+        prossima = next((t for t in o["tappe"] if not t.get("fatta")), None)
+        ritmo = "raggiunto" if o["stato"] == "raggiunto" else "avanti" if perc >= atteso + 15 else "indietro" if perc + 100 / tot < atteso else "in linea"
+        return dict(o, fatte=fatte, totali=tot, perc=perc, atteso=atteso, ritmo=ritmo, giorni_rimasti=(s - oggi).days,
+                    prossima=prossima, in_ritardo=bool(prossima and prossima["scadenza"] < oggi.isoformat()))
+
+    def elenco(self, tutti=False, oggi=None):
+        return [self.stato(o, oggi) for o in self._carica()["obiettivi"] if tutti or o["stato"] == "attivo"]
+
+    def trova(self, testo, tutti=False):
+        tok = _token(testo or "")
+        L = [o for o in self._carica()["obiettivi"] if tutti or o["stato"] == "attivo"]
+        if not L:
+            return None
+        if not tok:
+            return L[-1] if len(L) == 1 else None
+        meglio, punti = None, 0
+        for o in L:
+            p = len(tok & _token(o["titolo"] + " " + o["progetto"]))
+            if p > punti:
+                meglio, punti = o, p
+        return meglio
+
+    def sincronizza(self, oggi=None, avvisa=True):
+        """La tappa in corso è fatta (la sua cosa da fare è spuntata)? → avanti alla prossima (in lista) o 🏆 traguardo. → [eventi]"""
+        oggi = oggi or datetime.date.today()
+        eventi = []
+        with self._lock:
+            d = self._carica()
+            fatte = {a["id"]: a for a in ATTIVITA.tutte()}
+            cambiato = False
+            for o in d["obiettivi"]:
+                if o["stato"] != "attivo":
+                    continue
+                while True:
+                    t = next((x for x in o["tappe"] if not x.get("fatta")), None)
+                    if not t:
+                        break
+                    a = fatte.get(t.get("attivita"))
+                    if a is None:                                   # la cosa da fare è sparita (cancellata): la rimetto
+                        self._nuova_attivita(o, t)
+                        cambiato = True
+                        break
+                    if not a.get("fatta"):
+                        break
+                    t["fatta"] = (a["fatta"] or oggi.isoformat())[:10]
+                    cambiato = True
+                    i = o["tappe"].index(t)
+                    if i + 1 < len(o["tappe"]):
+                        nx = o["tappe"][i + 1]
+                        if nx["scadenza"] < oggi.isoformat():
+                            nx["scadenza"] = (oggi + datetime.timedelta(days=7)).isoformat()
+                        self._nuova_attivita(o, nx)
+                        eventi.append({"tipo": "tappa", "obiettivo": o["id"], "emoji": o["emoji"], "titolo": o["titolo"], "tappa": t["titolo"], "prossima": nx["titolo"],
+                                       "numero": i + 1, "totali": len(o["tappe"]),
+                                       "testo": f"🏆 Tappa {i + 1} di {len(o['tappe'])} completata: **{t['titolo']}** ({o['emoji']} {o['titolo']})! "
+                                                f"Prossima: **{nx['titolo']}**, entro {quando_scade(nx['scadenza'], oggi)}. L'ho messa nelle cose da fare. 💪"})
+                        fatte = {a2["id"]: a2 for a2 in ATTIVITA.tutte()}
+                    else:
+                        o["stato"], o["raggiunto"] = "raggiunto", oggi.isoformat()
+                        eventi.append({"tipo": "traguardo", "obiettivo": o["id"], "emoji": o["emoji"], "titolo": o["titolo"], "tappa": t["titolo"], "numero": i + 1, "totali": len(o["tappe"]),
+                                       "testo": f"🏆🎉 **Obiettivo raggiunto: {o['emoji']} {o['titolo']}!** Tutte le {len(o['tappe'])} tappe fatte. Sono fierissimo di te!"})
+                        break
+            if cambiato:
+                self._salva(d)
+            if avvisa and eventi:
+                self.avvisi = (self.avvisi + eventi)[-20:]
+        return eventi
+
+    def segna_tappa(self, oid, oggi=None):
+        """Spunta la tappa in corso (la sua cosa da fare) → gli eventi."""
+        o = next((x for x in self._carica()["obiettivi"] if x["id"] == oid and x["stato"] == "attivo"), None)
+        if not o:
+            return None
+        t = next((x for x in o["tappe"] if not x.get("fatta")), None)
+        if t and t.get("attivita"):
+            ATTIVITA.modifica(t["attivita"], fatta=True)
+        return self.sincronizza(oggi, avvisa=False)
+
+    def elimina(self, oid):
+        with self._lock:
+            d = self._carica()
+            o = next((x for x in d["obiettivi"] if x["id"] == oid), None)
+            if not o:
+                return False
+            for t in o["tappe"]:
+                if t.get("attivita") and not t.get("fatta"):
+                    ATTIVITA.elimina(t["attivita"])
+            d["obiettivi"] = [x for x in d["obiettivi"] if x["id"] != oid]
+            self._salva(d)
+            return True
+
+    def prendi_avvisi(self):
+        with self._lock:
+            a, self.avvisi = self.avvisi, []
+        return a
+
+    @staticmethod
+    def barra(perc, n=10):
+        k = round(perc / 100 * n)
+        return "▓" * k + "░" * (n - k)
+
+    @classmethod
+    def riga(cls, s):
+        ritmo = {"avanti": "🚀 in anticipo", "in linea": "✅ in linea", "indietro": "⚠️ un po' indietro", "raggiunto": "🏆 raggiunto"}[s["ritmo"]]
+        pr = f" · prossima: «{s['prossima']['titolo']}» entro {quando_scade(s['prossima']['scadenza'])}" if s.get("prossima") else ""
+        return f"{s['emoji']} **{s['titolo']}** {cls.barra(s['perc'])} {s['perc']}% ({s['fatte']}/{s['totali']} tappe) · {ritmo}{pr}"
+
+    def router(self, testo, cervello=None, memoria=None):
+        t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+        if _RE_OB_ELENCO.match(t):
+            L = self.elenco()
+            if not L:
+                return {"testo": "🎯 Non hai ancora obiettivi. Prova: «**voglio imparare lo spagnolo entro giugno**», «**nuovo obiettivo: correre una mezza maratona in 4 mesi**» e te lo divido in tappe.", "obiettivi": []}
+            return {"testo": "🎯 **I tuoi obiettivi**\n" + "\n".join("• " + self.riga(s) for s in L), "obiettivi": L}
+        m = _RE_OB_PUNTO.match(t)
+        if m:
+            o = self.trova(m.group("t"))
+            if o:
+                s = self.stato(o)
+                return {"testo": "🎯 " + self.riga(s) + f"\nMancano {s['giorni_rimasti']} giorni alla scadenza.", "obiettivo": s}
+        m = _RE_OB_TAPPA.match(t)
+        if m:
+            o = self.trova(m.group("t"))
+            if not o:
+                return {"testo": "🎯 Di quale obiettivo? Dimmi «i miei obiettivi» per vederli."}
+            ev = self.segna_tappa(o["id"]) or []
+            s = self.stato(next(x for x in self._carica()["obiettivi"] if x["id"] == o["id"]))
+            return {"testo": (ev[0]["testo"] if ev else "🎯 " + self.riga(s)), "obiettivo": s, **({"obiettivo_eventi": ev} if ev else {})}
+        m = _RE_OB_CANC.match(t)
+        if m:
+            o = self.trova(m.group("t"))
+            if not o:
+                return {"testo": "🎯 Non trovo quell'obiettivo."}
+            self.elimina(o["id"])
+            return {"testo": f"🗑️ Tolto l'obiettivo {o['emoji']} «{o['titolo']}» (e la sua tappa dalle cose da fare)."}
+        m = _RE_OB_CREA.match(t)
+        if m:
+            corpo = m.group("a") or m.group("b")
+            titolo, scad = scadenza_obiettivo(corpo)
+            if m.group("b") and (not scad or (scad - datetime.date.today()).days < 7):
+                return None                                    # «voglio una pizza per stasera» / «devo … entro domani» → non è un obiettivo
+            s, err = self.crea(titolo, scad, cervello)
+            if not s:
+                return {"testo": f"🎯 {err[:1].upper() + err[1:]}."}
+            if memoria is not None:
+                memoria.aggiungi_obiettivo(s["titolo"], "obiettivo")
+            sc = datetime.date.fromisoformat(s["scadenza"])
+            righe = [f"🎯 Nuovo obiettivo: {s['emoji']} **{s['titolo']}** entro il {sc.day} {MESI_IT[sc.month - 1]} {sc.year} (tra {s['giorni_rimasti']} giorni). Le tappe:"]
+            for i, tp in enumerate(s["tappe"], 1):
+                g = datetime.date.fromisoformat(tp["scadenza"])
+                righe.append(f"{i}. {tp['titolo']} — entro il {g.day} {MESI_IT[g.month - 1]}")
+            righe.append("Ho messo la prima tappa nelle cose da fare: quando la spunti passo alla prossima. 💪")
+            return {"testo": "\n".join(righe), "obiettivo": s}
+        return None
+
+
+OBIETTIVI = Obiettivi()
+
+
+# ── 🗓️ IL PIANO DELLA SETTIMANA: le cose da fare nei giorni giusti, attorno agli impegni ──
+_RE_SETT_PIANO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:pianifica|organizza|programma)(?:mi)?\s+(?:la\s+)?(?:mia\s+)?(?:prossima\s+)?settimana|"
+                            r"(?:il\s+)?piano\s+(?:della\s+|per\s+la\s+)?settimana|come\s+(?:organizzo|divido)\s+(?:la\s+)?(?:mia\s+)?settimana)$", re.I)
+
+
+def pianifica_settimana(ora=None):
+    ora = ora or datetime.datetime.now()
+    h0, h1 = CONFIG["giornata"]
+    primo = ora.date() if ora.hour < h1 - 2 else ora.date() + datetime.timedelta(days=1)
+    giorni = []
+    for i in range(7):
+        g = primo + datetime.timedelta(days=i)
+        inizio = datetime.datetime.combine(g, datetime.time(h0))
+        if g == ora.date():
+            inizio = max(inizio, ora)
+        fine = datetime.datetime.combine(g, datetime.time(h1) if h1 < 24 else datetime.time(23, 59))
+        minuti = max(0, (fine - inizio).total_seconds() / 60)
+        p0, p1 = datetime.datetime.combine(g, datetime.time(13)), datetime.datetime.combine(g, datetime.time(14))
+        minuti -= max(0, (min(fine, p1) - max(inizio, p0)).total_seconds() / 60)
+        ev = []
+        for o in CAL.occorrenze(datetime.datetime.combine(g, datetime.time()), datetime.datetime.combine(g + datetime.timedelta(days=1), datetime.time())):
+            ev.append({"ora": "tutto il giorno" if o["tutto_giorno"] else o["inizio"].strftime("%H:%M"), "titolo": o["titolo"]})
+            if not o["tutto_giorno"]:
+                minuti -= max(0, (min(fine, o["fine"]) - max(inizio, o["inizio"])).total_seconds() / 60)
+        cap = max(0, minuti) * (0.75 if g.weekday() < 5 else 0.35)               # un po' d'aria (e il weekend più leggero)
+        et = "Oggi" if g == ora.date() else "Domani" if g == ora.date() + datetime.timedelta(days=1) else f"{GIORNI_LUNGHI[g.weekday()].capitalize()} {g.day}"
+        giorni.append({"data": g.isoformat(), "etichetta": et, "breve": f"{GIORNI_IT[g.weekday()]} {g.day}", "eventi": ev, "attivita": [], "capacita": round(cap), "occupati": 0})
+    ultimo = giorni[-1]["data"]
+    da_fare = sorted(ATTIVITA.aperte(), key=lambda a: ATTIVITA._ordine(a, primo))
+    fuori = []
+    for a in da_fare:
+        dur = a.get("durata") or (50 if a["priorita"] != "bassa" else 25)
+        limite = min(a["scadenza"], ultimo) if a.get("scadenza") else ultimo
+        if a.get("scadenza") and a["scadenza"] < primo.isoformat():
+            limite = primo.isoformat()
+        possibili = [g for g in giorni if g["data"] <= limite and g["capacita"] - g["occupati"] >= dur]
+        if not possibili:
+            if a.get("scadenza") and a["scadenza"] <= ultimo or a["priorita"] == "alta":
+                fuori.append({"id": a["id"], "testo": a["testo"], "scadenza": a.get("scadenza", "")})
+            continue
+        if a.get("scadenza") or a["priorita"] == "alta":
+            g = possibili[0]                                                     # con la scadenza: prima possibile
+        elif a["priorita"] == "bassa":
+            g = possibili[-1]                                                    # senza fretta: verso la fine
+        else:
+            g = max(possibili, key=lambda x: x["capacita"] - x["occupati"])      # il resto: dove c'è più spazio
+        g["occupati"] += dur
+        g["attivita"].append({"id": a["id"], "testo": a["testo"], "durata": dur, "priorita": a["priorita"], "icona": _ICONA_PRIO[a["priorita"]],
+                              "scadenza": a.get("scadenza", ""), "senza_data": not a.get("scadenza")})
+    for g in giorni:
+        g["carico"] = round(100 * g["occupati"] / g["capacita"]) if g["capacita"] else (100 if g["occupati"] else 0)
+    n = sum(len(g["attivita"]) for g in giorni)
+    p, u = datetime.date.fromisoformat(giorni[0]["data"]), datetime.date.fromisoformat(ultimo)
+    periodo = f"{p.day}–{u.day} {MESI_IT[u.month - 1]}" if p.month == u.month else f"{p.day} {MESI_IT[p.month - 1]} – {u.day} {MESI_IT[u.month - 1]}"
+    if not n and not fuori:
+        return {"testo": f"🗓️ La tua settimana ({periodo}): niente da sistemare, le cose da fare sono finite! 🎉 Aggiungine con «aggiungi alle cose da fare: …».",
+                "piano_settimana": {"periodo": periodo, "giorni": giorni, "fuori": [], "da_fissare": 0}}
+    righe = [f"🗓️ **La tua settimana** ({periodo}): {n} cos{'a' if n == 1 else 'e'} da fare, divise nei giorni attorno ai tuoi impegni."]
+    for g in giorni:
+        if not g["attivita"] and not g["eventi"]:
+            continue
+        ore = f" · {round(g['occupati'] / 60, 1):g} h".replace(".", ",") if g["occupati"] else ""
+        righe.append(f"• **{g['breve']}**" + (f" (📅 {len(g['eventi'])})" if g["eventi"] else "") + ore + ": "
+                     + (" · ".join(f"{x['icona']} {x['testo']}" for x in g["attivita"]) if g["attivita"] else "solo impegni"))
+    if fuori:
+        righe.append("⚠️ Non ci stanno prima della scadenza: " + ", ".join(x["testo"] for x in fuori[:5]) + ". Spostiamo qualcosa?")
+    da_fissare = sum(1 for g in giorni for x in g["attivita"] if x["senza_data"])
+    if da_fissare:
+        righe.append(f"📌 {da_fissare} cos{'a è' if da_fissare == 1 else 'e sono'} senza data: tocca «Fissa i giorni» e le metto in quei giorni.")
+    return {"testo": "\n".join(righe), "piano_settimana": {"periodo": periodo, "giorni": giorni, "fuori": fuori, "da_fissare": da_fissare}}
+
+
+# ── 📈 LE TENDENZE: 30 giorni di spese, abitudini, concentrazione, umore, con quello che si nota ──
+_RE_TENDENZE = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:come\s+sto\s+andando\s+(?:questo\s+mese|ultimamente|in\s+generale)|come\s+vanno\s+le\s+cose\s+ultimamente|"
+                          r"(?:le\s+)?(?:mie\s+)?(?:tendenze|statistiche)(?:\s+(?:del\s+mese|di\s+questo\s+mese|degli\s+ultimi\s+30\s+giorni))?|(?:i\s+)?(?:miei\s+)?progressi(?:\s+del\s+mese)?)$", re.I)
+
+
+def tendenze(memoria, giorni=30, oggi=None):
+    oggi = oggi or datetime.date.today()
+    giorni = max(7, min(90, int(giorni)))
+    serie = [oggi - datetime.timedelta(days=i) for i in range(giorni - 1, -1, -1)]
+    iso = [g.isoformat() for g in serie]
+    spese = SPESE.tutte()
+    per_giorno = collections.defaultdict(float)
+    for s in spese:
+        per_giorno[s["data"]] += s["importo"]
+    dab = ABITUDINI._carica()
+    giornaliere = [a for a in dab["abitudini"] if not a.get("settimanale")]
+    per_ab = {a["id"]: [0, 0] for a in giornaliere}
+    ab_giorno = {}
+    for g in serie:
+        prev = fatte = 0
+        for a in giornaliere:
+            if g < Abitudini._inizio(a, dab, oggi) or not Abitudini._previsto(a, g):
+                continue
+            ok = Abitudini._fatto(dab, a, g) >= a.get("obiettivo", 1)
+            prev, fatte = prev + 1, fatte + ok
+            per_ab[a["id"]][0] += 1
+            per_ab[a["id"]][1] += ok
+        ab_giorno[g.isoformat()] = round(100 * fatte / prev) if prev else None
+    datt = ATTIVITA._carica()
+    pomi = collections.Counter(s["fine"][:10] for s in datt["sessioni"] if s.get("completa"))
+    fatte_g = collections.Counter((a.get("fatta") or "")[:10] for a in datt["attivita"] if a.get("fatta"))
+    umore = collections.defaultdict(list)
+    for u in memoria.umore:
+        umore[u.get("data", "")].append(valenza_umore(u.get("umore"), u.get("intensita", 5)))
+    righe = [{"data": d, "spese": round(per_giorno.get(d, 0.0), 2), "abitudini": ab_giorno[d], "pomodori": pomi.get(d, 0), "fatte": fatte_g.get(d, 0),
+              "umore": round(sum(umore[d]) / len(umore[d]), 1) if umore.get(d) else None} for d in iso]
+    # questo mese fin qui vs lo stesso periodo del mese scorso
+    m0 = oggi.replace(day=1)
+    pm_fine = m0 - datetime.timedelta(days=1)
+    pm0 = pm_fine.replace(day=1)
+    pm_oggi = pm0.replace(day=min(oggi.day, pm_fine.day))
+    cat_ora, cat_prima = collections.defaultdict(float), collections.defaultdict(float)
+    for s in spese:
+        if m0.isoformat() <= s["data"] <= oggi.isoformat():
+            cat_ora[s["categoria"]] += s["importo"]
+        elif pm0.isoformat() <= s["data"] <= pm_oggi.isoformat():
+            cat_prima[s["categoria"]] += s["importo"]
+    mese, prima = round(sum(cat_ora.values()), 2), round(sum(cat_prima.values()), 2)
+    categorie = sorted([{"chiave": k, "emoji": CAT_SPESE.get(k, {}).get("emoji", "•"), "nome": CAT_SPESE.get(k, {}).get("nome", k), "mese": round(cat_ora.get(k, 0), 2),
+                         "prima": round(cat_prima.get(k, 0), 2)} for k in set(cat_ora) | set(cat_prima)], key=lambda c: -max(c["mese"], c["prima"]))[:8]
+    delta = round(100 * (mese - prima) / prima) if prima else None
+    ab_vals = [r["abitudini"] for r in righe if r["abitudini"] is not None]
+    kpi = {"spese_mese": mese, "spese_prima": prima, "spese_delta": delta, "abitudini": round(sum(ab_vals) / len(ab_vals)) if ab_vals else None,
+           "pomodori": sum(r["pomodori"] for r in righe), "fatte": sum(r["fatte"] for r in righe),
+           "umore": round(sum(r["umore"] for r in righe if r["umore"] is not None) / max(1, sum(1 for r in righe if r["umore"] is not None)), 1) if any(r["umore"] is not None for r in righe) else None}
+    ins = []
+    if mese or prima:
+        if delta is None:
+            ins.append(f"💶 Questo mese hai speso {euro(mese)} (il mese scorso, nello stesso periodo, niente).")
+        else:
+            ins.append(f"💶 Questo mese hai speso {euro(mese)}: {abs(delta)}% {'in meno' if delta < 0 else 'in più'} dello stesso periodo del mese scorso ({euro(prima)})" + (" 👍" if delta < 0 else "") + ".")
+    if categorie and mese:
+        c = max(categorie, key=lambda x: x["mese"])
+        if c["mese"]:
+            ins.append(f"{c['emoji']} La voce più grossa del mese è {c['nome'].lower()}: {euro(c['mese'])} ({round(100 * c['mese'] / mese)}%).")
+        su = [x for x in categorie if x["prima"] >= 10 and x["mese"] >= x["prima"] * 1.3]
+        if su:
+            x = max(su, key=lambda x: x["mese"] / x["prima"])
+            ins.append(f"📈 {x['emoji']} {x['nome']} è salita del {round(100 * (x['mese'] - x['prima']) / x['prima'])}% rispetto al mese scorso.")
+    stime = [(per_ab[a["id"]][1] / per_ab[a["id"]][0], a) for a in giornaliere if per_ab[a["id"]][0] >= 5]
+    if stime:
+        p, a = max(stime, key=lambda x: x[0])
+        ins.append(f"🔥 L'abitudine che tieni meglio: {a['emoji']} {a['nome']} ({round(100 * p)}% dei giorni).")
+        p2, a2 = min(stime, key=lambda x: x[0])
+        if a2 is not a and p2 < 0.5:
+            ins.append(f"💡 Da rinforzare: {a2['emoji']} {a2['nome']} ({round(100 * p2)}% dei giorni): vuoi un promemoria all'ora giusta?")
+    if kpi["fatte"] or kpi["pomodori"]:
+        prod = collections.Counter()
+        for r in righe:
+            prod[datetime.date.fromisoformat(r["data"]).weekday()] += r["fatte"] + r["pomodori"]
+        top = max(prod, key=prod.get)
+        ins.append(f"📋 In {giorni} giorni hai fatto {kpi['fatte']} cos{'a' if kpi['fatte'] == 1 else 'e'} e {kpi['pomodori']} pomodor{'o' if kpi['pomodori'] == 1 else 'i'}"
+                   + (f"; il giorno più produttivo è il {GIORNI_LUNGHI[top]}" if prod[top] else "") + ".")
+    u7 = [r["umore"] for r in righe[-7:] if r["umore"] is not None]
+    u14 = [r["umore"] for r in righe[-14:-7] if r["umore"] is not None]
+    if u7 and u14:
+        dv = sum(u7) / len(u7) - sum(u14) / len(u14)
+        ins.append("💙 L'umore è " + ("in salita" if dv > 0.7 else "un po' in calo: se vuoi parliamone" if dv < -0.7 else "stabile") + " rispetto alla settimana prima.")
+    ob = OBIETTIVI.elenco()
+    if ob:
+        ind = [s for s in ob if s["ritmo"] == "indietro"]
+        ins.append(f"🎯 {len(ob)} obiettiv{'o' if len(ob) == 1 else 'i'} in corso" + (f", {len(ind)} un po' indietro ({ind[0]['emoji']} {ind[0]['titolo']})" if ind else ", tutti in linea") + ".")
+    return {"giorni": righe, "categorie": categorie, "kpi": kpi, "insight": ins, "dal": iso[0], "al": iso[-1], "n": giorni}
+
+
+def tendenze_router(testo, memoria):
+    if not _RE_TENDENZE.match(re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")):
+        return None
+    t = tendenze(memoria)
+    if not t["insight"]:
+        return {"testo": "📈 Non ho ancora abbastanza dati: segna qualche spesa, abitudine o cosa fatta e tra qualche giorno ti mostro le tendenze.", "tendenze": t}
+    return {"testo": "📈 **Le tue tendenze** (ultimi 30 giorni)\n" + "\n".join("• " + x for x in t["insight"]), "tendenze": t}
+
+
+PROMPT_AGENTE_V20 = """OBIETTIVI (quando la persona vuole raggiungere qualcosa di grande entro una data):
+[[azione:{"tipo":"obiettivo_tappe","testo":"imparare lo spagnolo","entro":"giugno"}]]  ← lo divido in tappe con le date e metto la prima nelle cose da fare"""
 
 
 # ════════════════════════════════════════════════════════════
@@ -8186,7 +8708,7 @@ ICONE_STRUMENTI = {"apri_sito": "🌐", "cerca_web": "🔎", "apri_app": "🖥�
                    "apri_file": "📄", "scrivi_testo": "⌨️", "blocca_pc": "🔒", "esegui_routine": "⚡",
                    "promemoria": "⏰", "timer": "⏱️", "lista": "🛒", "nota": "📝", "obiettivo": "🎯",
                    "personalita": "🎭", "meteo": "🌤️", "ora": "🕒", "calcola": "🧮",
-                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅", "attivita": "📋", "aggiungi_attivita": "📋", "cerca_chat": "💬", "automazione": "⚙️"}
+                   "cerca_documenti": "📚", "cerca_memoria": "🧠", "cerca_internet": "🌍", "notizie": "📰", "leggi_pagina": "📖", "calendario": "📅", "aggiungi_evento": "📅", "spese": "💶", "aggiungi_spesa": "💶", "abitudini": "✅", "attivita": "📋", "aggiungi_attivita": "📋", "cerca_chat": "💬", "automazione": "⚙️", "obiettivo_tappe": "🎯"}
 
 
 class FiltroTag:
@@ -8279,7 +8801,8 @@ class Agente:
                 "spesa": "aggiungi_spesa", "segna_spesa": "aggiungi_spesa", "budget": "spese", "soldi": "spese", "abitudine": "abitudini", "obiettivi": "abitudini",
                 "todo": "attivita", "cose_da_fare": "attivita", "compito": "aggiungi_attivita", "nuova_attivita": "aggiungi_attivita", "aggiungi_todo": "aggiungi_attivita",
                 "chat": "cerca_chat", "conversazioni": "cerca_chat", "cerca_conversazioni": "cerca_chat", "chiacchierate": "cerca_chat", "ricordi": "cerca_chat",
-                "automatizza": "automazione", "programma": "automazione", "crea_automazione": "automazione"}.get(tipo, tipo)
+                "automatizza": "automazione", "programma": "automazione", "crea_automazione": "automazione",
+                "obiettivo_grande": "obiettivo_tappe", "traguardo": "obiettivo_tappe", "progetto": "obiettivo_tappe"}.get(tipo, tipo)
         s = lambda k, n=200: re.sub(r"\s+", " ", str(a.get(k) or "")).strip()[:n]
         r = {"tipo": tipo, "ok": False, "icona": ICONE_STRUMENTI.get(tipo, "🔧"), "esito": ""}
         try:
@@ -8458,6 +8981,11 @@ class Agente:
                 return dict(r, ok=bool(e), esito=f"«{titolo}» {fmt_quando(quando)}" if e else err)
             if tipo in STRUMENTI_PC and getattr(_CTX, "automazione", False):   # v19: un'automazione non tocca mai il PC
                 return dict(r, esito="nelle automazioni niente comandi del PC: quelli li confermi sempre tu")
+            if tipo == "obiettivo_tappe":                  # v20: un obiettivo grande diviso in tappe
+                entro = s("entro", 60) or s("quando", 60)
+                titolo, scad = scadenza_obiettivo(s("testo", 160) + (" " + entro if re.match(r"(?:entro|in|tra|fra|per)\b", entro, re.I) else " entro " + entro if entro else ""))
+                x, err = OBIETTIVI.crea(titolo, scad, None)
+                return dict(r, ok=bool(x), esito=f"{x['emoji']} «{x['titolo']}»: {x['totali']} tappe, entro il {x['scadenza']}" if x else err)
             if tipo == "automazione":                      # v19: «ogni lunedì alle 9 dimmi …»
                 q = s("quando", 80)
                 m_o = re.search(r"(?:alle|all['’]|verso\s+le)\s*(\d{1,2}(?:[:.]\d{2})?)", q)
@@ -8533,7 +9061,7 @@ class MotoreAI:
         if CONFIG["agente"]:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
             routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
-            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + "\n" + PROMPT_AGENTE_V16 + "\n" + PROMPT_AGENTE_V18 + "\n" + PROMPT_AGENTE_V19 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
+            strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + "\n" + PROMPT_AGENTE_V16 + "\n" + PROMPT_AGENTE_V18 + "\n" + PROMPT_AGENTE_V19 + "\n" + PROMPT_AGENTE_V20 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
                          + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
                          + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
@@ -8691,17 +9219,18 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
             return self._meta(ok=True, risposta=cal["testo"], azione=True, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
         v16 = SPESE.router(testo) or ABITUDINI.router(testo) or ATTIVITA.router_fatto(testo) or (riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(testo.strip().rstrip(" ?!.")) else None) \
             or PROATTIVO.router(testo, self.memoria) or RICORDI.router(testo, self.memoria) or prime_router(testo, self.memoria) \
+            or OBIETTIVI.router(testo, self.cervello, self.memoria) or tendenze_router(testo, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None) \
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -8764,7 +9293,12 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if au.get(k)})
+            v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
+            if v20:
+                on_token(v20["testo"])
+                self.memoria.salva_scambio(testo, v20["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v20.get(k)})
             pc = (ROUTINE.router(testo, self.memoria) or PC.router(testo, self.memoria)) if CONFIG["pc"] and not getattr(_CTX, "automazione", False) else None   # v11-13: PC e routine
             if pc:
                 on_token(pc["testo"])
@@ -8774,7 +9308,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -8782,12 +9316,13 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: cal[k] for k in ("agenda", "evento") if cal.get(k)})
             for rt in (lambda x: SPESE.router(x), lambda x: ABITUDINI.router(x), lambda x: ATTIVITA.router_fatto(x),   # v16-17: soldi, abitudini, «fatto: …», la settimana
                        lambda x: riepilogo_settimana(self.memoria) if _RE_SETTIMANA.match(x.strip().rstrip(" ?!.")) else None,
-                       lambda x: PROATTIVO.router(x, self.memoria), lambda x: RICORDI.router(x, self.memoria), lambda x: prime_router(x, self.memoria)):   # v18: consigli, «di cosa abbiamo parlato ieri?»
+                       lambda x: PROATTIVO.router(x, self.memoria), lambda x: RICORDI.router(x, self.memoria), lambda x: prime_router(x, self.memoria), lambda x: tendenze_router(x, self.memoria)):   # v18: consigli, «di cosa abbiamo parlato ieri?»
                 v16 = rt(testo)
                 if v16:
+                    OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -9411,6 +9946,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/obiettivi":                                # v20: 🎯 gli obiettivi con le tappe
+                self._json({"ok": True, "obiettivi": OBIETTIVI.elenco(tutti=qs.get("tutti") == "1")})
+            elif base == "/obiettivi/avvisi":
+                self._json({"avvisi": OBIETTIVI.prendi_avvisi()})
+            elif base == "/prime/settimana":                          # v20: 🗓️ il piano della settimana
+                self._json(dict(pianifica_settimana(), ok=True))
+            elif base == "/prime/tendenze":                           # v20: 📈 30 giorni
+                try:
+                    n = int(qs.get("giorni", "30") or 30)
+                except ValueError:
+                    n = 30
+                self._json(dict(tendenze(MOTORE.memoria, n), ok=True))
             elif base == "/prime/oggi":                               # v19: 🛰️ il centro di controllo
                 self._json(dict(prime_oggi(MOTORE.memoria), ok=True))
             elif base == "/proattivo":                                # v18: 💡 le idee nuove (la GUI chiede ogni tanto)
@@ -9734,7 +10281,8 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/attivita/fatta":
                 c = self._read_json_body()
                 a = ATTIVITA.modifica(str(c.get("id", "")), fatta=c.get("fatta", True) is not False)
-                self._json({"ok": bool(a), "attivita": a, "oggi": len(ATTIVITA.vista("oggi"))})
+                ev = OBIETTIVI.sincronizza() if a and a.get("fatta") else []          # v20: era una tappa? → 🏆 (arriva come avviso)
+                self._json({"ok": bool(a), "attivita": a, "oggi": len(ATTIVITA.vista("oggi")), "tappe": len(ev)})
             elif base == "/attivita/modifica":
                 c = self._read_json_body()
                 a = ATTIVITA.modifica(str(c.get("id", "")), **{k: c[k] for k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata") if k in c})
@@ -9839,6 +10387,34 @@ class Handler(BaseHTTPRequestHandler):
                 n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
                 self._json({"ok": bool(n)})
 
+            elif base == "/obiettivi/crea":                           # v20: {testo: «imparare lo spagnolo entro giugno»} o {titolo, scadenza}
+                c = self._read_json_body()
+                if c.get("testo"):
+                    titolo, scad = scadenza_obiettivo(str(c["testo"])[:200])
+                else:
+                    titolo = str(c.get("titolo", ""))[:120]
+                    try:
+                        scad = datetime.date.fromisoformat(str(c.get("scadenza", ""))[:10]) if c.get("scadenza") else None
+                    except ValueError:
+                        scad = None
+                o, err = OBIETTIVI.crea(titolo, scad, MOTORE.cervello)
+                if o:
+                    MOTORE.memoria.aggiungi_obiettivo(o["titolo"], "obiettivo")
+                self._json({"ok": bool(o), "obiettivo": o, "errore": err})
+            elif base == "/obiettivi/tappa":                          # ✓ la tappa in corso
+                oid = str(self._read_json_body().get("id", ""))
+                ev = OBIETTIVI.segna_tappa(oid)
+                self._json({"ok": ev is not None, "eventi": ev or [], "obiettivo": next((x for x in OBIETTIVI.elenco(tutti=True) if x["id"] == oid), None)})
+            elif base == "/obiettivi/elimina":
+                self._json({"ok": OBIETTIVI.elimina(str(self._read_json_body().get("id", "")))})
+            elif base == "/settimana/applica":                        # 📌 fissa i giorni (solo per le cose senza data)
+                c = self._read_json_body()
+                senza = {a["id"] for a in ATTIVITA.aperte() if not a.get("scadenza")}
+                n = 0
+                for x in (c.get("assegna") or [])[:100]:
+                    if str(x.get("id")) in senza and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x.get("data", ""))):
+                        n += bool(ATTIVITA.modifica(str(x["id"]), scadenza=str(x["data"])))
+                self._json({"ok": True, "fissate": n})
             elif base == "/automazioni/crea":                         # v19: {testo} in italiano, oppure {comando, giorni, ora | ogni_min}
                 c = self._read_json_body()
                 if c.get("testo"):
@@ -15891,6 +16467,7 @@ def _ciclo_sfondo():
             print(f"  ⚠  proattivo: {e}")
         try:
             AUTOMAZIONI.controlla(MOTORE)                            # v19: ⚙️ quelle che toccano adesso
+            OBIETTIVI.sincronizza()                                  # v20: 🎯 una tappa spuntata → la prossima (e 🏆)
         except Exception as e:
             print(f"  ⚠  automazioni: {e}")
         if time.time() - ultimo_ricordi >= 60:                      # v18: i vettori delle chiacchierate nuove
@@ -15911,8 +16488,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 19.0 — Server avviato         ║
-║ automazioni · ricerca approfondita · controllo   ║
+║        MAIK PRIME 20.0 — Server avviato         ║
+║ obiettivi · settimana · tendenze · automazioni   ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

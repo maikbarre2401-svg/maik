@@ -7846,8 +7846,12 @@ class Automazioni:
             sid = self._sessione(motore.memoria)
             out, prima = [], getattr(_CTX, "automazione", False)
             _CTX.automazione = True
+            cmd = a["comando"]                                     # «dimmi quanto ho speso…» → «quanto ho speso…» (così risponde subito la funzione giusta)
+            m = re.match(r"^(?:dimmi|dammi|mostrami|fammi\s+(?:sapere|vedere))\s+(?P<r>(?:quanto|quanti|quante|cosa|che|com['’]|come|quali|qual|le|il|la|lo|i|gli)\b.+)$", cmd, re.I)
+            if m:
+                cmd = m.group("r")
             try:
-                meta = motore.rispondi_stream(a["comando"], out.append, sessione=sid) or {}
+                meta = motore.rispondi_stream(cmd, out.append, sessione=sid) or {}
             except Exception as e:
                 meta = {"ok": False, "risposta": f"errore: {str(e)[:120]}"}
             finally:
@@ -9951,7 +9955,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK // Zep V18</title>
+<title>MAIK PRIME // Zep V19</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -10356,15 +10360,45 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #idregole{margin:8px 0 2px;display:grid;grid-template-columns:1fr 1fr;gap:2px 12px}#idregole label{display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer}
   #idmodal h4{margin:16px 0 6px;font-size:13px;letter-spacing:.5px}#rclista{max-height:260px;overflow:auto}
   @media (max-width:760px){#idregole{grid-template-columns:1fr}}
+
+  /* ===== V19 · MAIK PRIME: centro di controllo, automazioni, ricerca ===== */
+  .logo b.prime{font-weight:700;background:linear-gradient(90deg,var(--accent),#a78bfa,#ffd34d);-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:3px;margin-left:2px}
+  .m.seguito.auto{border-color:rgba(var(--accent-rgb),.65)!important;box-shadow:0 0 22px rgba(var(--accent-rgb),.2)}
+  .m.seguito.auto .mc::before{content:'⚙️ AUTOMAZIONE · ' attr(data-auto);color:var(--accent);text-transform:uppercase}
+  .passi.ric{color:#a78bfa;border-color:rgba(167,139,250,.5)}.passi.ric i{background:#a78bfa}
+  #prmodal .mod{max-width:1080px;width:calc(100% - 32px)}#prtitolo{font-size:12px;color:var(--dim);margin-left:10px;font-family:'Share Tech Mono',monospace}
+  .prgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .prbox{border:1px solid rgba(var(--accent-rgb),.22);border-radius:14px;background:rgba(0,0,0,.2);padding:10px 12px;min-width:0;font-size:13px}
+  .prbox h4{margin:0 0 8px;font-size:12px;letter-spacing:.8px;color:#fff}.prbox h4 small{font-weight:400;color:var(--dim);letter-spacing:0;margin-left:4px}.prbox .ko{color:#ef4444}
+  .prscore{grid-row:span 2;display:flex;flex-direction:column;gap:6px}.prsc{position:relative;width:140px;height:140px;margin:4px auto 8px}.prsc svg{width:140px;height:140px}
+  .prsc b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 38px 'Share Tech Mono',monospace;color:#fff}
+  .prring circle:last-child{transition:stroke-dashoffset .8s ease}
+  .prv{display:grid;grid-template-columns:118px 1fr 36px;align-items:center;gap:6px;font-size:12px}.prv i{height:7px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden}
+  .prv i b{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#a78bfa);border-radius:9px}.prv em{font-style:normal;color:var(--dim);text-align:right}
+  .prt{display:flex;gap:7px;align-items:flex-start;padding:3px 0;cursor:pointer}.prt small{font-size:11px}
+  .prbtn{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.prbtn button,.prh{border:1px solid var(--border);background:rgba(var(--accent-rgb),.08);color:var(--text);border-radius:8px;padding:3px 9px;cursor:pointer;font-family:inherit;font-size:12px}
+  .prchips{display:flex;gap:6px;flex-wrap:wrap}.prh.ok{border-color:var(--green);color:var(--green);background:rgba(0,255,136,.08);cursor:default}.prh small{color:#f59e0b}
+  .prbig{font:600 22px 'Share Tech Mono',monospace;color:#fff;margin-bottom:4px}.prbig small{font-size:12px;color:var(--dim);font-weight:400}
+  .prbar{display:block;height:8px;border-radius:9px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:6px}.prbar b{display:block;height:100%}
+  .prag{padding:3px 0;border-bottom:1px solid rgba(var(--accent-rgb),.06)}.prag:last-child{border-bottom:none}.prag b{font-family:'Share Tech Mono',monospace;font-weight:600;color:var(--accent);margin-right:4px}.prag.passato{opacity:.5}
+  .prumore{width:100%;height:64px}.prpro{margin-top:6px;font-size:12px}.prpro small{color:var(--dim)}
+  .prmini{display:flex;align-items:center;gap:10px;margin-bottom:8px;position:relative}.prmini svg{width:64px;height:64px;flex:0 0 64px}
+  .prmini>b{position:absolute;left:0;width:64px;text-align:center;font:700 18px 'Share Tech Mono',monospace;color:#fff}.prminiv{flex:1;min-width:0}
+  #aulista{max-height:300px;overflow:auto;margin-top:8px}.aur{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid rgba(var(--accent-rgb),.08)}.aur.off{opacity:.55}
+  .aut{flex:1;min-width:0;font-size:13px}.aut small{display:block;color:var(--dim);font-size:11.5px}.aur button{flex:0 0 auto;border:1px solid var(--border);background:rgba(var(--accent-rgb),.1);color:var(--text);border-radius:8px;padding:3px 9px;cursor:pointer}
+  #auesiti h4{margin:14px 0 6px;font-size:12px}.aue{font-size:12.5px;border-bottom:1px solid rgba(var(--accent-rgb),.06);padding:4px 0}.aue summary{cursor:pointer}.aue div{margin:6px 0 4px 12px;font-size:12.5px}
+  @media (max-width:980px){.prgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:640px){.prgrid{grid-template-columns:1fr}.prscore{grid-row:auto}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <span>// V18</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V19</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
     <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico" aria-label="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
     <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam" aria-label="MAIK guarda dalla webcam">👁️</button>
+    <button class="hbtn" id="sbprime" onclick="openPrime()" title="Centro di controllo (Y): la tua giornata e il punteggio Prime" aria-label="Centro di controllo">🛰️</button>
     <button class="hbtn" id="sbidea" onclick="openIdee()" title="Idee e ricordi (U): le idee che ti propongo e le nostre chiacchierate" aria-label="Idee e ricordi">💡</button>
     <button class="hbtn" onclick="openTools()" title="Strumenti" aria-label="Strumenti">🧰</button>
     <button class="hbtn" id="sidebtn" onclick="toggleSide()" title="Barra laterale" aria-label="Mostra o nascondi la barra laterale">≡</button>
@@ -10508,6 +10542,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('hai qualche idea per me?')">💡 hai qualche idea per me?</button>
       <button onclick="qs('di cosa abbiamo parlato ieri?')">🧠 di cosa abbiamo parlato ieri?</button>
       <button onclick="q('ti ricordi cosa ti avevo detto su ')">🧠 ti ricordi…?</button>
+      <button onclick="openPrime()">🛰️ centro di controllo</button>
+      <button onclick="qs('le mie automazioni')">⚙️ le mie automazioni</button>
+      <button onclick="q('ogni mattina alle 8 dimmi ')">⚙️ ogni mattina alle 8…</button>
+      <button onclick="q('fai una ricerca approfondita su ')">🔬 ricerca approfondita…</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -10545,6 +10583,28 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
         <div class="rrow"><input class="tfield" id="call" maxlength="120" placeholder="📍 Dove (facoltativo)"><select class="tfield" id="caldur" style="flex:0 0 auto"><option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 ora</option><option value="90">1 ora e ½</option><option value="120">2 ore</option><option value="240">4 ore</option></select><label><input type="checkbox" id="caltg"> tutto il giorno</label><button class="tbtn solid" type="button" onclick="calSalva()" style="flex:0 0 auto">📅 Aggiungi</button></div>
       </details>
       <div class="note" style="margin-top:10px">Da <b>Google Calendar</b> (Impostazioni → Importa ed esporta → Esporta), <b>Outlook</b> o <b>iPhone</b> salva il calendario come file <b>.ics</b> e importalo qui (reimportarlo aggiorna gli eventi, niente doppioni). Poi chiedimi «cosa ho domani?», «impegni della settimana», «aggiungi al calendario …». Ti avviso prima di ogni impegno.</div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="prmodal">
+  <div class="mod">
+    <div class="modh"><div class="modt">🛰️ CENTRO DI CONTROLLO <span id="prtitolo"></span></div><button class="ib" onclick="closePrime()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div id="prcorpo"><div class="note">Carico la tua giornata…</div></div>
+      <div class="spf" style="margin-top:10px"><button type="button" onclick="closePrime();qs('pianificami la giornata')">🗓️ Pianificami la giornata</button><button type="button" onclick="closePrime();qs('hai qualche idea per me?')">💡 Hai qualche idea per me?</button><button type="button" onclick="closePrime();q('fai una ricerca approfondita su ')">🔬 Ricerca approfondita…</button><button type="button" onclick="closePrime();qs('chiudiamo la giornata')">🌙 Chiudi la giornata</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="aumodal">
+  <div class="mod" style="max-width:680px">
+    <div class="modh"><div class="modt">⚙️ AUTOMAZIONI</div><button class="ib" onclick="closeAuto()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="abnew"><input class="tfield" id="autesto" maxlength="300" placeholder="es. ogni mattina alle 8 dimmi il meteo e le notizie" onkeydown="if(event.key==='Enter')auCrea()"><button class="tbtn solid" type="button" onclick="auCrea()">＋ Crea</button></div>
+      <div id="aulista"></div>
+      <div id="auesiti"></div>
+      <div class="note" style="margin-top:10px">Scrivile come le diresti a me: «ogni giorno alle 8 …», «ogni lunedì e giovedì alle 18:30 …», «nei giorni feriali alle 7:30 cosa devo fare oggi?», «nel weekend alle 10 …», «ogni 2 ore ricordami di bere». Faccio da solo qualsiasi cosa mi chiederesti in chat (spese, cose da fare, notizie, meteo, piano, ricerche…), tranne i comandi del PC: quelli li confermi sempre tu. I risultati restano anche nella chat «⚙️ Automazioni».</div>
     </div>
   </div>
 </div>
@@ -10634,6 +10694,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>L</kbd> mentre leggo: pausa / riprendi</div>
       <div><kbd>D</kbd> le tue spese · <kbd>O</kbd> le tue abitudini · <kbd>W</kbd> com'è andata la settimana</div>
       <div><kbd>K</kbd> le cose da fare · <kbd>Q</kbd> modalità concentrazione (pomodoro)</div>
+      <div><kbd>Y</kbd> centro di controllo · <kbd>X</kbd> automazioni</div>
       <div><kbd>U</kbd> idee e ricordi (le idee che ti propongo, le nostre chiacchierate)</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
       <div><kbd>Ctrl</kbd>+<kbd>K</kbd> palette dei comandi</div>
@@ -11083,7 +11144,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V18 — il personaggio 3D di MAIK (Three.js)
+   ZepKit V19 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -11096,6 +11157,7 @@ const MaikKit = (() => {
    V16: fa i conti con la calcolatrice (sul display il totale delle tue spese).
    V17: si concentra con te: cuffie in testa e lavora al suo portatile (modalità concentrazione).
    V18: ha un'idea! Alza il dito e sopra la testa gli si accende una lampadina (con le scintille).
+   V19: modalità PRIME — si carica e un anello di energia gli sale dai piedi alla testa (lavoro finito, automazioni).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -11378,6 +11440,11 @@ window.ZepKit = (() => {
     rpsShake: { dur: 1.8, arms: 'R', f(a, w, P) { const b = Math.abs(Math.sin(a.t * Math.PI / 0.6)); armTo(P.armR, { sx: -0.95, sy: -0.2, sz: 0.25, ex: -1.25 - 0.4 * b, ey: -0.25, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.head.x += 0.06 * b * w; P.face.brow += 0.3 * w; } },
     rpsShow: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -1.05, sy: -0.2, sz: 0.25, ex: -0.75, ey: -0.2, ez: 0, wr: a.shape === 'carta' ? 0 : 0.2 }, w); P.hand.R = [a.shape === 'carta' ? 'open' : a.shape === 'forbici' ? 'count2' : 'fist', w]; } },
     fistbump: { dur: 1.5, arms: 'R', f(a, w, P) { const k = smooth(a.p / 0.4); armTo(P.armR, { sx: -1.2 * k - 0.3, sy: -0.15, sz: 0.2, ex: -1.5 + 1.1 * k, ey: -0.1, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.face.smile += 0.6 * w; } },
+    prime: { dur: 2.8, arms: 'B', f(a, w, P) { const su = smooth(clamp((a.t - 1.15) / 0.45, 0, 1)), vib = 0.012 * Math.sin(a.t * 40) * (1 - su);
+      for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.38 + (P.robot ? 2.55 : 2.15) * su, sx: -0.3 + (P.robot ? 0.25 : 0.2) * su, ex: -0.95 * (1 - su) - (P.robot ? 0.1 : 0.25) * su, ey: 0, ez: vib, wr: 0 }, w); P.hand[s] = ['fist', w]; }
+      P.root.py += (-0.025 * (1 - su) + 0.05 * su * Math.abs(Math.sin(a.t * 7))) * w; P.spine.x += 0.06 * (1 - su) * w; P.head.x += 0.08 * (1 - su) * w;
+      P.face.wide += 0.7 * (1 - su) * w; P.face.squint += 0.3 * (1 - su) * w; P.face.mode.happy += 0.9 * su * w; P.face.smile += (0.35 + 0.65 * su) * w; P.face.brow += 0.4 * w;
+      P.prime = Math.max(P.prime, w); P.primeK = clamp(a.t / 2.3, 0, 1); P.antenna += su * w; } },
     idea: { dur: 3.4, arms: 'R', f(a, w, P) { const su = Math.sin(Math.PI * clamp(a.t / 0.55, 0, 1)); armTo(P.armR, Object.assign({}, IDEA_POSE[P.robot ? 0 : 1], { wr: 0.25 + 0.15 * su }), w); P.hand.R = ['point', w];
       P.face.brow += (0.6 + 0.4 * su) * w; P.face.wide += (a.t < 0.9 ? 0.7 : 0.25) * w; P.face.smile += 0.75 * w; P.face.mode.happy += 0.35 * w; P.root.py += 0.035 * su * w; P.head.z += 0.07 * w;
       P.look = [0.12, a.t < 1.3 ? 0.75 : 0.15, w]; P.lampadina = Math.max(P.lampadina, w); P.lampAccesa = a.t < 0.35 ? 0 : a.t < 0.62 ? (Math.sin(a.t * 75) > 0 ? 1 : 0.12) : 1; } },
@@ -12129,7 +12196,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0,
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0,
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -12214,6 +12281,7 @@ window.ZepKit = (() => {
       if (P.notes > 0.3 && now - A.noteT > 650) { A.noteT = now; spawn(pick(['♪', '♫']), headTop(rnd(-0.1, 0.12)), { size: 0.06 }); }
       if (P.hearts > 0.3 && now - A.heartT > 450) { A.heartT = now; spawn('♥', headTop(rnd(-0.12, 0.12)), { size: 0.055 }); }
       aggiornaLampadina(P, dt, now);                                      // v18: 💡
+      aggiornaAnello(P, dt, now);                                         // v19: ⚡ PRIME
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -12282,6 +12350,40 @@ window.ZepKit = (() => {
       U.vetro.emissiveIntensity = 1.6 * a; U.filo.color.setRGB(0.35 + 0.65 * a, 0.25 + 0.6 * a, 0.08 + 0.3 * a);
       U.alone.material.opacity = 0.55 * a * U.scala; U.luce.intensity = 2.2 * a * U.scala;
       if (a > 0.8 && w > 0.5 && now - lampScintilla > 380) { lampScintilla = now; const q = p.clone(); q.y += height * 0.03; spawn('✦', q, { size: 0.04, vx: rnd(-0.08, 0.08), vy: 0.12, life: 1.2 }); }
+    }
+    // ---------- v19: ⚡ l'anello di energia PRIME (nel mondo, attorno al personaggio: robot e VRM) ----------
+    let anello = null, anelloScintilla = 0;
+    function creaAnello() {
+      const G = new THREE.Group(); G.name = 'anello-prime';
+      const base = { transparent: true, opacity: 0, toneMapped: false, depthWrite: false, side: THREE.DoubleSide };
+      const m1 = new THREE.MeshBasicMaterial(Object.assign({ color: accent.clone() }, base)), m2 = new THREE.MeshBasicMaterial(Object.assign({ color: accent2.clone() }, base));
+      const m3 = new THREE.MeshBasicMaterial(Object.assign({ color: accent.clone(), blending: THREE.AdditiveBlending }, base));
+      const r1 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.028, 8, 96), m1); r1.rotation.x = Math.PI / 2; G.add(r1);
+      const r2 = new THREE.Mesh(new THREE.TorusGeometry(0.86, 0.014, 8, 96, Math.PI * 1.6), m2); r2.rotation.x = Math.PI / 2; G.add(r2);
+      const velo = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.22, 64, 1, true), m3); G.add(velo);
+      G.userData = { m1, m2, m3, r1, r2, w: 0 };
+      G.visible = false; scene.add(G);
+      return G;
+    }
+    function aggiornaAnello(P, dt, now) {
+      const w = clamp(P.prime || 0, 0, 1);
+      if (!anello && w < 0.02) return;
+      anello = anello || creaAnello();
+      const U = anello.userData, kk = clamp(P.primeK || 0, 0, 1);
+      U.w = damp(U.w, w > 0.02 ? 1 : 0, w > 0.02 ? 10 : 7, dt);
+      anello.visible = U.w > 0.02;
+      if (!anello.visible) return;
+      const sale = smooth(kk), r = height * (0.33 - 0.09 * sale);
+      anello.position.set(P.root.x, height * (0.04 + 1.0 * sale), 0);
+      anello.scale.set(r, r, r);
+      U.r1.rotation.z += dt * 3.2; U.r2.rotation.z -= dt * 4.5;
+      const op = U.w * (kk < 0.85 ? 0.9 : 0.9 * Math.max(0, 1 - (kk - 0.85) / 0.15));
+      U.m1.opacity = op; U.m2.opacity = 0.75 * op; U.m3.opacity = 0.22 * op;
+      if (op > 0.4 && now - anelloScintilla > 110) {
+        anelloScintilla = now; const t = now / 180, q = anello.position.clone();
+        q.x += Math.cos(t) * r; q.z += Math.sin(t) * r;
+        spawn('✦', q, { size: 0.035, vx: rnd(-0.05, 0.05), vy: 0.16, life: 0.9 });
+      }
     }
     function headTop(dx = 0) {
       const v = new THREE.Vector3();
@@ -12711,6 +12813,7 @@ window.ZepKit = (() => {
       // v16: cosa c'è scritto sul display della calcolatrice (es. «345,60 €»)
       calcolatrice(testo) { S.calcTesto = testo; const B = rig && rig.robot; if (B && B.props && B.props.calcolatrice) disegnaDisplay(B.props.calcolatrice, testo); },
       get testoCalcolatrice() { return S.calcTesto; },
+      get anelloPrime() { return anello ? { visibile: anello.visible, y: +anello.position.y.toFixed(3), opacita: +anello.userData.m1.opacity.toFixed(2), raggio: +anello.scale.x.toFixed(3) } : { visibile: false, y: 0, opacita: 0, raggio: 0 }; },
       get lampadina() { return lamp ? { visibile: lamp.visible, accesa: +lamp.userData.accesa.toFixed(2), luce: +lamp.userData.luce.intensity.toFixed(2), pos: lamp.position.toArray().map(x => +x.toFixed(3)), schermo: lamp.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, accesa: 0, luce: 0, pos: null }; },
       get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
       get paused() { return paused; },
@@ -12896,7 +12999,8 @@ async function invia(opt){
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
         if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
-        if(obj.passo)passoAgente(bubble,obj.passo);                                                // v18: 🤖 passo 2 di 4
+        if(obj.passo)passoAgente(bubble,obj.passo);
+        if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
         if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
@@ -12906,7 +13010,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -13182,6 +13286,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🛰️','Centro di controllo',()=>openPrime(),'Y','dashboard punteggio prime giornata panoramica'),c('⚙️','Automazioni',()=>openAuto(),'X','programmate ogni giorno routine automatiche'),
+    c('⚙️','Nuova automazione…',()=>q('ogni mattina alle 8 dimmi '),'auto','ogni giorno lunedì programma'),c('🔬','Ricerca approfondita…',()=>q('fai una ricerca approfondita su '),'ricerca','rapporto fonti internet studio'),
     c('💡','Hai qualche idea per me?',()=>qs('hai qualche idea per me?'),'idee','consigli suggerimenti proattivo'),c('💡','Idee e ricordi',()=>openIdee(),'U','proattivo consigli impostazioni chiacchierate'),
     c('🧠','Di cosa abbiamo parlato ieri?',()=>qs('di cosa abbiamo parlato ieri?'),'ricordi','chat conversazioni memoria'),c('🧠','Ti ricordi cosa ti avevo detto su…',()=>q('ti ricordi cosa ti avevo detto su '),'ricordi','memoria chiacchierate'),
     c('🔕','Basta consigli spontanei',()=>qs('basta consigli'),'','proattivo idee spegni'),c('💡','Riattiva i consigli',()=>qs('riattiva i consigli'),'','proattivo idee accendi'),
@@ -13198,7 +13304,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'V18 · ZEP',key:'maik_boot_v18',checks:[
+  return MaikKit.boot({version:'PRIME · V19',key:'maik_boot_v19',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -13208,6 +13314,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Automazioni',run:async()=>{try{const r=await (await fetch('/automazioni')).json();const n=r.automazioni.filter(a=>a.attiva!==false).length;return{ok:true,text:n?'⚙️ '+n+' attiv'+(n===1?'a':'e'):'⚙️ nessuna (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Idee e ricordi',run:async()=>{try{const [s,g]=await Promise.all([fetch('/proattivo/stato').then(r=>r.json()),fetch('/ricordi').then(r=>r.json())]);return{ok:true,text:(s.attivo?'💡 idee accese ('+s.oggi+'/'+s.massimo+' oggi)':'💡 idee spente')+' · 🧠 '+g.info.chiacchierate+' messaggi'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Cose da fare',run:async()=>{try{const r=await (await fetch('/attivita?filtro=oggi')).json();return{ok:true,text:r.conta.oggi+' per oggi · '+r.conta.tutte+' in tutto'+(r.conta.ritardo?' · '+r.conta.ritardo+' in ritardo':'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Spese e abitudini',run:async()=>{try{const [s,a]=await Promise.all([fetch('/spese').then(r=>r.json()),fetch('/abitudini').then(r=>r.json())]);return{ok:true,text:euroIt(s.totale)+' questo mese · '+(a.abitudini||[]).length+' abitudini'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -13219,7 +13326,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik**, versione 18 💡 Ora **penso avanti**: ti ricordo le nostre chiacchierate — «**ti ricordi cosa ti avevo detto sul lavoro?**», «**di cosa abbiamo parlato ieri?**» 🧠 — e quando serve ti propongo io un\'idea: una serie da non spezzare, una scadenza domani, un impegno presto, una bolletta, il budget che scappa 💶 (poche al giorno; «**basta consigli**» se non le vuoi). Per le domande difficili **ragiono a più passi** 🤖: cerco, leggo, faccio i conti. Mandami la **foto di uno scontrino** con «**aggiungilo alle spese**» 📷, o chiedimi di **trascrivere** una foto; leggo anche i PDF scansionati. E sempre: cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 19 ⚡ la mia versione più potente. **Lavoro anche da solo**: «**ogni mattina alle 8 dimmi il meteo e le notizie**», «**ogni lunedì alle 9 dimmi quanto ho speso la settimana scorsa**» ⚙️ e il risultato ti arriva qui. **Faccio ricerche approfondite**: «**fai una ricerca approfondita sulle auto elettriche**» 🔬 → più ricerche, leggo le fonti e ti scrivo un rapporto con le citazioni, salvato nei documenti. Il **centro di controllo** 🛰️ (tasto **Y**) ti mostra tutta la giornata e il tuo **punteggio Prime**. E poi: ricordo le nostre chiacchierate 🧠, ti propongo idee 💡, ragiono a più passi 🤖, leggo foto e PDF scansionati 📷, cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -13577,7 +13684,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { y: openPrime, x: openAuto, u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -14112,7 +14219,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK // ' + n + ' V18'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V19'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -15483,8 +15590,170 @@ async function rcCerca() {
   $('#rclista').innerHTML = (r.risultati || []).length ? ricordiHTML(r.risultati.slice().reverse()) : '<div class="note">Niente su «' + esc(q) + '» nelle nostre chiacchierate.</div>';
 }
 
+// ============================================================
+// V19 — MAIK PRIME: centro di controllo, automazioni, ricerca approfondita, Zep con l'anello di energia
+// ============================================================
+
+// ---------- 🛰️ centro di controllo ----------
+const PR = { dati: null, t: 0 };
+function anelloHTML(v, r, spessore) {
+  const c = 2 * Math.PI * r, p = v == null ? 0 : Math.max(0, Math.min(100, v));
+  const col = v == null ? 'var(--dim)' : p >= 75 ? 'var(--green)' : p >= 40 ? 'var(--accent)' : '#f59e0b';
+  return '<svg class="prring" viewBox="0 0 ' + (2 * r + spessore * 2) + ' ' + (2 * r + spessore * 2) + '" aria-hidden="true"><circle cx="' + (r + spessore) + '" cy="' + (r + spessore) + '" r="' + r + '" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="' + spessore + '"></circle>'
+    + '<circle cx="' + (r + spessore) + '" cy="' + (r + spessore) + '" r="' + r + '" fill="none" stroke="' + col + '" stroke-width="' + spessore + '" stroke-linecap="round" stroke-dasharray="' + c.toFixed(1) + '" stroke-dashoffset="' + (c * (1 - p / 100)).toFixed(1) + '" transform="rotate(-90 ' + (r + spessore) + ' ' + (r + spessore) + ')"></circle></svg>';
+}
+const NOMI_VOCI = { cose: '📋 Cose da fare', abitudini: '✅ Abitudini', concentrazione: '🍅 Concentrazione' };
+function vociHTML(voci) {
+  return (voci || []).map(v => '<div class="prv"><span>' + (NOMI_VOCI[v.nome] || v.nome) + '</span><i><b style="width:' + v.perc + '%"></b></i><em>' + v.perc + '%</em></div>').join('');
+}
+function umoreSVG(u) {
+  const pts = u.map((x, i) => x.valore == null ? null : [8 + i * 34, 52 - x.valore * 4.4]).filter(Boolean);
+  if (!pts.length) return '<div class="note">Parlami di come stai: qui vedrai il tuo umore della settimana 💙</div>';
+  return '<svg class="prumore" viewBox="0 0 220 60" aria-label="Umore degli ultimi 7 giorni"><polyline fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="' + pts.map(p => p.join(',')).join(' ') + '"></polyline>'
+    + pts.map(p => '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.5" fill="var(--accent)"></circle>').join('') + '</svg>';
+}
+function primeHTML(p) {
+  const a = p.attivita, s = p.spese, quando = x => { const d = new Date(x); return isNaN(d) ? x : d.toLocaleString('it-IT', { weekday: 'short', hour: '2-digit', minute: '2-digit' }); };
+  const box = (cls, tit, corpo) => '<section class="prbox ' + cls + '"><h4>' + tit + '</h4>' + corpo + '</section>';
+  return '<div class="prgrid">'
+    + box('prscore', '⚡ Punteggio Prime', '<div class="prsc">' + anelloHTML(p.punteggio, 48, 9) + '<b id="prpunti">' + (p.punteggio == null ? '—' : p.punteggio) + '</b></div>' + vociHTML(p.voci)
+      + (p.punteggio == null ? '<div class="note">Aggiungi una cosa da fare o un\'abitudine e il punteggio si accende.</div>' : ''))
+    + box('prtodo', '📋 Oggi <small>' + a.fatte + ' fatte · ' + a.n_da_fare + ' da fare' + (a.ritardo ? ' · <span class="ko">' + a.ritardo + ' in ritardo</span>' : '') + '</small>',
+      (a.da_fare.length ? a.da_fare.map(t => '<label class="prt"><input type="checkbox" data-prt="' + escA(t.id) + '"> ' + esc(t.testo) + (t.scadenza && t.scadenza < p.data ? ' <small class="ko">in ritardo</small>' : '') + '</label>').join('') : '<div class="note">Niente in sospeso per oggi 🎉</div>')
+      + '<div class="prbtn"><button type="button" data-pr="todo">📋 Tutte</button><button type="button" data-pr="piano">🗓️ Pianificami la giornata</button></div>')
+    + box('prab', '✅ Abitudini di oggi', p.abitudini.length ? '<div class="prchips">' + p.abitudini.map(h => '<button type="button" class="prh' + (h.fatta_oggi ? ' ok' : '') + '" data-prh="' + escA(h.id) + '"' + (h.fatta_oggi ? ' disabled' : '') + ' title="' + (h.fatta_oggi ? 'Fatta!' : 'Segna come fatta') + '">' + h.emoji + ' ' + esc(h.nome) + (h.serie ? ' <small>🔥' + h.serie + '</small>' : '') + '</button>').join('') + '</div>' : '<div class="note">Nessuna abitudine per oggi.</div>')
+    + box('prspese', '💶 Spese', '<div class="prbig">' + euroIt(s.oggi) + ' <small>oggi</small></div><div>' + euroIt(s.mese) + ' questo mese' + (s.budget ? ' su ' + euroIt(s.budget) : '') + '</div>'
+      + (s.perc != null ? '<i class="prbar"><b style="width:' + Math.min(100, s.perc) + '%;background:' + (s.perc >= 100 ? '#ef4444' : s.perc >= 80 ? '#f59e0b' : 'var(--green)') + '"></b></i>' : '') + '<div class="prbtn"><button type="button" data-pr="spese">💶 Le spese</button></div>')
+    + box('pragenda', '📅 Agenda', p.agenda.length ? p.agenda.map(x => '<div class="prag' + (x.passato ? ' passato' : '') + '"><b>' + (x.giorno === 'domani' ? 'domani ' : '') + esc(x.ora) + '</b> ' + esc(x.titolo) + '</div>').join('') : '<div class="note">Niente in calendario oggi e domani.</div>')
+    + box('prfocus', '🍅 Concentrazione', '<div class="prbig">' + p.focus.pomodori + ' <small>pomodor' + (p.focus.pomodori === 1 ? 'o' : 'i') + ' · ' + p.focus.minuti + ' min</small></div><div class="prbtn"><button type="button" data-pr="focus">🍅 Concentrati 25 minuti</button></div>')
+    + box('prumorebox', '💙 Umore (7 giorni)', umoreSVG(p.umore))
+    + box('prauto', '⚙️ Prossime automazioni', (p.automazioni.length ? p.automazioni.map(x => '<div class="prag"><b>' + esc(quando(x.prossima)) + '</b> ' + esc(x.comando) + '</div>').join('') : '<div class="note">Nessuna: prova «ogni mattina alle 8 dimmi il meteo e le notizie».</div>')
+      + '<div class="prbtn"><button type="button" data-pr="auto">⚙️ Automazioni</button></div>')
+    + box('pridee', '💡 Idee e 🧠 ricordi', '<div>' + (p.idee.attive ? 'Idee accese · ' + p.idee.oggi + ' di ' + p.idee.massimo + ' oggi' : 'Idee spente') + '</div><div>' + p.ricordi + ' messaggi ricordati</div>'
+      + (p.promemoria.length ? '<div class="prpro">⏰ ' + p.promemoria.map(x => esc(x.testo) + ' <small>' + esc(quando(x.quando)) + '</small>').join(' · ') + '</div>' : '') + '<div class="prbtn"><button type="button" data-pr="idee">💡 Idee e ricordi</button></div>')
+    + '</div>';
+}
+async function openPrime() { $('#prmodal').classList.add('open'); await loadPrime(); clearInterval(PR.t); PR.t = setInterval(() => { if ($('#prmodal').classList.contains('open')) loadPrime(); else clearInterval(PR.t); }, 60000); }
+function closePrime() { $('#prmodal').classList.remove('open'); clearInterval(PR.t); }
+async function loadPrime() {
+  let p; try { p = await (await fetch('/prime/oggi')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  PR.dati = p;
+  $('#prtitolo').textContent = p.titolo + ' · ' + p.ora;
+  $('#prcorpo').innerHTML = primeHTML(p);
+}
+function primeMiniHTML(p) {
+  return '<div class="prmini">' + anelloHTML(p.punteggio, 26, 6) + '<b>' + (p.punteggio == null ? '—' : p.punteggio) + '</b><div class="prminiv">' + vociHTML(p.voci) + '</div></div>';
+}
+
+// ---------- ⚙️ automazioni ----------
+async function openAuto() { $('#aumodal').classList.add('open'); await loadAuto(); }
+function closeAuto() { $('#aumodal').classList.remove('open'); }
+async function loadAuto() {
+  let r; try { r = await (await fetch('/automazioni?n=6')).json(); } catch (e) { $('#aulista').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  const L = r.automazioni || [];
+  $('#aulista').innerHTML = L.length ? L.map(a => '<div class="aur' + (a.attiva === false ? ' off' : '') + '" data-id="' + escA(a.id) + '"><label class="ausw" title="Accesa / sospesa"><input type="checkbox" data-au="attiva"' + (a.attiva === false ? '' : ' checked') + '></label>'
+    + '<div class="aut"><b>' + esc(a.descrizione) + '</b> — ' + esc(a.tipo === 'avviso' ? '⏰ ' + a.avviso : a.comando) + '<small>' + (a.prossima ? 'prossima: ' + new Date(a.prossima).toLocaleString('it-IT', { weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'sospesa') + (a.volte ? ' · fatta ' + a.volte + (a.volte === 1 ? ' volta' : ' volte') : '') + '</small></div>'
+    + '<button type="button" data-au="prova" title="Fallo adesso">▶</button><button type="button" data-au="elimina" title="Cancella" aria-label="Cancella">✕</button></div>').join('')
+    : '<div class="note">Nessuna automazione. Scrivila come la diresti a me, qui sopra o in chat.</div>';
+  const E = (r.esiti || []).slice().reverse();
+  $('#auesiti').innerHTML = E.length ? '<h4>🕘 Ultimi risultati</h4>' + E.map(e => '<details class="aue"><summary><b>' + esc(new Date(e.quando).toLocaleString('it-IT', { weekday: 'short', hour: '2-digit', minute: '2-digit' })) + '</b> · ' + esc(e.comando) + '</summary><div>' + renderAI(e.testo) + '</div></details>').join('') : '';
+}
+async function auCrea() {
+  const t = $('#autesto').value.trim(); if (!t) { $('#autesto').focus(); return; }
+  let r; try { r = await postJ('/automazioni/crea', { testo: t }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (!r.ok) { toast('⚙️ ' + (r.errore || 'Automazione non creata'), 'err'); return; }
+  toast('⚙️ ' + r.automazione.descrizione + ': ' + r.automazione.comando, 'ok'); $('#autesto').value = ''; loadAuto();
+}
+async function auProva(id, b) {
+  if (b) b.disabled = true;
+  toast('⚙️ La faccio adesso…');
+  let r; try { r = await postJ('/automazioni/esegui', { id }); } catch (e) { r = { ok: false, errore: 'server non raggiungibile' }; }
+  if (b) b.disabled = false;
+  if (!r.ok) { toast('⚙️ ' + (r.errore || 'Non riuscita'), 'err'); return; }
+  mostraEsito(r.esito, true);
+  if ($('#aumodal').classList.contains('open')) loadAuto();
+}
+function mostraEsito(es, chiesto) {
+  const t = es.testo || 'Fatto.';
+  const d = add('ai', t, 'seguito auto'); mc(d).dataset.auto = es.descrizione;
+  finalize(d, t, null, null);
+  const m = es.meta || {};
+  addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
+  agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
+  const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
+  if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
+  if (AV) AV.gesture('prime'); if (core) core.pulse(1.4);
+  say(piano.slice(0, 220));
+  $('#msgs').scrollTop = 1e9;
+}
+async function checkAutoAvvisi() {
+  if (busy || document.hidden) return;
+  if ((window.FOCUS && FOCUS.on && FOCUS.fase === 'lavoro') || (typeof RIU !== 'undefined' && RIU.on) || (window.LETTURA && LETTURA.on) || (window.INTERPRETE && INTERPRETE.on)) return;
+  let r; try { r = await (await fetch('/automazioni/avvisi')).json(); } catch (e) { return; }
+  (r.avvisi || []).forEach((es, k) => setTimeout(() => mostraEsito(es, false), k * 1500));
+}
+function autoHTML(L) {
+  return '<div class="rccard">' + L.map(a => '<div class="rc"><span class="rcq">' + (a.attiva === false ? '⏸' : '⚙️') + '</span><span class="rct"><b>' + esc(a.descrizione) + '</b> — «' + esc(a.comando) + '»</span><button type="button" data-au2="prova" data-id="' + escA(a.id) + '">▶ Prova</button></div>').join('') + '</div>';
+}
+
+// ---------- 🔬 ricerca approfondita: le fasi ----------
+function faseRicerca(bubble, f) {
+  let el = bubble.querySelector('.passi');
+  if (!el) { el = document.createElement('div'); el.className = 'passi ric'; bubble.insertBefore(el, mc(bubble)); }
+  if (f.fase === 'scrivo') {
+    el.innerHTML = '<i></i>✍️ Scrivo il rapporto · ' + f.fonti + ' fonti';
+    caption('✍️ Scrivo il rapporto con ' + f.fonti + ' fonti…');
+    if (AV) { AV.endAct('cerca'); AV.act('scrive', { dur: 40 }); }
+  } else {
+    el.innerHTML = '<i></i>🔬 Ricerca ' + f.fase + ' di ' + f.di + ' · «' + esc(corto(f.q, 60)) + '»';
+    caption('🔬 Ricerca ' + f.fase + ' di ' + f.di + ': «' + corto(f.q, 60) + '»…');
+  }
+  if (core) core.pulse(0.8);
+}
+
+function addV19(d, obj) {
+  if (obj.automazione && !obj.automazioni) {
+    const a = obj.automazione, nuova = /^⚙️ Fatto!/.test(d.dataset.raw || '');
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="prova" data-id="' + escA(a.id) + '">▶ Prova adesso</button><button type="button" class="agc calb" data-au2="apri">⚙️ Automazioni</button>'
+      + (nuova ? '<button type="button" class="agc calb" data-au2="annulla" data-id="' + escA(a.id) + '">↩ Annulla</button>' : ''));
+    if (nuova && AV) AV.gesture('thumbsup');
+  }
+  if (obj.automazioni && obj.automazioni.length) {
+    const primo = (d.dataset.raw || '').split('\n')[0];
+    mc(d).innerHTML = renderAI(primo) + autoHTML(obj.automazioni);
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ Gestisci</button>');
+  }
+  if (obj.prime) {
+    mc(d).insertAdjacentHTML('afterbegin', primeMiniHTML(obj.prime));
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-pr="apri">🛰️ Centro di controllo</button>');
+  }
+  if (obj.ricerca) {
+    const r = obj.ricerca, ps = d.querySelector('.passi.ric');
+    if (ps) { ps.classList.add('fatto'); ps.innerHTML = '🔬 Ricerca approfondita · ' + r.domande.length + ' ricerche · ' + r.fonti + ' fonti · ' + r.parole + ' parole'; }
+    if (r.documento) agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-pr="docs" title="Il rapporto è salvato nei tuoi documenti: chiedimi «cosa diceva la ricerca su …?»">📚 ' + esc(r.documento) + '</button>');
+    if (AV) { AV.endAct('scrive'); AV.endAct('cerca'); setTimeout(() => AV && AV.gesture('prime'), 300); }
+  }
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();}});
+$('#prmodal').addEventListener('click',e=>{if(e.target.id==='prmodal')closePrime();});
+$('#aumodal').addEventListener('click',e=>{if(e.target.id==='aumodal')closeAuto();});
+$('#prcorpo').addEventListener('change',async e=>{const c=e.target.closest('input[data-prt]');if(!c)return;c.disabled=true;     // v19: ✓ dal centro di controllo
+  const r=await postJ('/attivita/fatta',{id:c.dataset.prt,fatta:true}).catch(()=>({ok:false}));if(r.ok){toast('✅ Fatto: '+r.attivita.testo,'ok');if(AV)AV.gesture('thumbsup');}loadPrime();});
+$('#aulista').addEventListener('change',async e=>{const c=e.target.closest('input[data-au="attiva"]');if(!c)return;const id=c.closest('.aur').dataset.id;await postJ('/automazioni/attiva',{id,attiva:c.checked}).catch(()=>null);loadAuto();});
+$('#aulista').addEventListener('click',async e=>{const b=e.target.closest('button[data-au]');if(!b)return;const id=b.closest('.aur').dataset.id;
+  if(b.dataset.au==='prova'){closeAuto();await auProva(id,b);}
+  else if(b.dataset.au==='elimina'){if(!confirm('Cancellare questa automazione?'))return;await postJ('/automazioni/elimina',{id}).catch(()=>null);loadAuto();}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(checkAutoAvvisi,1200);});
+document.addEventListener('click',async e=>{const b=e.target.closest('#prcorpo button[data-pr],#prcorpo button[data-prh],#msgs button[data-pr],#msgs button[data-au2]');if(!b)return;     // v19
+  const ds=b.dataset;
+  if(ds.prh){b.disabled=true;const r=await postJ('/abitudini/segna',{id:ds.prh,n:1}).catch(()=>({ok:false}));if(r.ok){festeggiaAbitudine(r.abitudine);toast(r.testo.replace(/\*\*/g,''),'ok');}loadPrime();return;}
+  if(ds.pr){const f={apri:openPrime,todo:()=>{closePrime();openTodo();},piano:()=>{closePrime();qs('pianificami la giornata');},spese:()=>{closePrime();openSpese();},focus:()=>{closePrime();avviaFocus({});},
+    auto:()=>{closePrime();openAuto();},idee:()=>{closePrime();openIdee();},docs:()=>openDocs()}[ds.pr];if(f)f();return;}
+  if(ds.au2==='apri')openAuto();
+  else if(ds.au2==='prova')await auProva(ds.id,b);
+  else if(ds.au2==='annulla'){b.disabled=true;const r=await postJ('/automazioni/elimina',{id:ds.id}).catch(()=>({ok:false}));if(r.ok){b.textContent='✓ tolta';toast('⚙️ Automazione tolta','ok');}else b.disabled=false;}});
 $('#idmodal').addEventListener('click',e=>{if(e.target.id==='idmodal')closeIdee();});
 $('#idon').addEventListener('change',async e=>{const r=await postJ('/proattivo/imposta',{attivo:e.target.checked}).catch(()=>null);if(r)toast(r.attivo?'💡 Idee spontanee accese':'🔕 Idee spontanee spente',r.attivo?'ok':'');loadIdee();});
 $('#idregole').addEventListener('change',async e=>{const c=e.target.closest('input[data-reg]');if(!c)return;await postJ('/proattivo/imposta',{regola:c.dataset.reg,on:c.checked}).catch(()=>null);loadIdee();});
@@ -15589,7 +15858,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);})();
 </script>
 </body></html>"""
 

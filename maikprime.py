@@ -6645,7 +6645,7 @@ class Attivita:
             if not a:
                 return None
             for k, v in campi.items():
-                if k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata", "pomodori"):
+                if k in ("testo", "priorita", "scadenza", "ora", "progetto", "durata", "pomodori", "fissata"):
                     a[k] = v
                 elif k == "fatta":
                     a["fatta"] = datetime.datetime.now().isoformat(timespec="seconds") if v else None
@@ -8502,19 +8502,22 @@ def pianifica_settimana(ora=None):
         if a.get("scadenza") and a["scadenza"] < primo.isoformat():
             limite = primo.isoformat()
         possibili = [g for g in giorni if g["data"] <= limite and g["capacita"] - g["occupati"] >= dur]
-        if not possibili:
+        fissata = a.get("fissata") and a.get("fissata") == a.get("scadenza") and primo.isoformat() <= a["fissata"] <= ultimo
+        if not possibili and not fissata:
             if a.get("scadenza") and a["scadenza"] <= ultimo or a["priorita"] == "alta":
                 fuori.append({"id": a["id"], "testo": a["testo"], "scadenza": a.get("scadenza", "")})
             continue
-        if a.get("scadenza") or a["priorita"] == "alta":
-            g = possibili[0]                                                     # con la scadenza: prima possibile
+        if fissata:
+            g = next(x for x in giorni if x["data"] == a["fissata"])              # il giorno l'hai fissato tu (📌): resta lì
+        elif a.get("scadenza") and a["scadenza"] <= ultimo or a["priorita"] == "alta":
+            g = possibili[0]                                                     # scade questa settimana: prima possibile
         elif a["priorita"] == "bassa":
             g = possibili[-1]                                                    # senza fretta: verso la fine
         else:
             g = max(possibili, key=lambda x: x["capacita"] - x["occupati"])      # il resto: dove c'è più spazio
         g["occupati"] += dur
         g["attivita"].append({"id": a["id"], "testo": a["testo"], "durata": dur, "priorita": a["priorita"], "icona": _ICONA_PRIO[a["priorita"]],
-                              "scadenza": a.get("scadenza", ""), "senza_data": not a.get("scadenza")})
+                              "scadenza": a.get("scadenza", ""), "senza_data": not a.get("scadenza"), "fissata": bool(fissata)})
     for g in giorni:
         g["carico"] = round(100 * g["occupati"] / g["capacita"]) if g["capacita"] else (100 if g["occupati"] else 0)
     n = sum(len(g["attivita"]) for g in giorni)
@@ -10413,7 +10416,7 @@ class Handler(BaseHTTPRequestHandler):
                 n = 0
                 for x in (c.get("assegna") or [])[:100]:
                     if str(x.get("id")) in senza and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(x.get("data", ""))):
-                        n += bool(ATTIVITA.modifica(str(x["id"]), scadenza=str(x["data"])))
+                        n += bool(ATTIVITA.modifica(str(x["id"]), scadenza=str(x["data"]), fissata=str(x["data"])))
                 self._json({"ok": True, "fissate": n})
             elif base == "/automazioni/crea":                         # v19: {testo} in italiano, oppure {comando, giorni, ora | ogni_min}
                 c = self._read_json_body()
@@ -10531,7 +10534,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V19</title>
+<title>MAIK PRIME // Zep V20</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -10965,10 +10968,47 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #auesiti h4{margin:14px 0 6px;font-size:12px}.aue{font-size:12.5px;border-bottom:1px solid rgba(var(--accent-rgb),.06);padding:4px 0}.aue summary{cursor:pointer}.aue div{margin:6px 0 4px 12px;font-size:12.5px}
   @media (max-width:980px){.prgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media (max-width:640px){.prgrid{grid-template-columns:1fr}.prscore{grid-row:auto}}
+
+  /* ===== V20 · obiettivi, settimana, tendenze (grafici), trofeo ===== */
+  #prtabs{display:flex;gap:6px;padding:10px 18px 0;flex-wrap:wrap}#prtabs button{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:999px;padding:4px 14px;cursor:pointer;font-family:inherit;font-size:13px}
+  #prtabs button.on{background:var(--accent);color:#050a0f;border-color:var(--accent);font-weight:600}
+  .m.seguito.trofeo{border-color:rgba(255,201,60,.7)!important;box-shadow:0 0 26px rgba(255,201,60,.25)}.m.seguito.trofeo .mc::before{content:'🏆 TAPPA COMPLETATA';color:#ffc93c}
+  .m.seguito.trofeo.finale .mc::before{content:'🏆 OBIETTIVO RAGGIUNTO'}
+  .oblista{display:flex;flex-direction:column;gap:10px;margin-top:10px}.obcard{border:1px solid rgba(255,201,60,.35);border-radius:14px;background:rgba(0,0,0,.2);padding:10px 12px}
+  .obh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.obh b{font-size:14px;color:#fff}.obrit{margin-left:auto;font-size:11.5px;border-radius:999px;padding:1px 9px;border:1px solid var(--border)}
+  .obrit.ok{color:var(--green);border-color:rgba(0,255,136,.4)}.obrit.warn{color:#f59e0b;border-color:rgba(245,158,11,.5)}
+  .obprog{display:flex;align-items:center;gap:8px;margin:7px 0 4px}.obprog .prbar{flex:1;margin:0}.obprog .prbar b{background:linear-gradient(90deg,#ffc93c,#f59e0b)}.obprog em{font-style:normal;font-size:11.5px;color:var(--dim);white-space:nowrap}
+  .obtappe{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:3px}.obtappe li{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--dim)}
+  .obtappe li.ora{color:#fff;font-weight:600}.obtappe li.fatta{color:var(--text)}.obtappe li.fatta .obtt{text-decoration:line-through;opacity:.7}
+  .obpal{flex:0 0 20px;height:20px;border-radius:50%;border:1.5px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:10.5px}
+  .obtappe li.fatta .obpal{background:#ffc93c;border-color:#ffc93c;color:#1a1300}.obtappe li.ora .obpal{border-color:#ffc93c;color:#ffc93c}
+  .obtt{flex:1;min-width:0}.obtappe small{font-size:11px;white-space:nowrap}.obfatti{margin:16px 0 0;font-size:12px}
+  .obmini{display:grid;grid-template-columns:1fr 70px 34px;align-items:center;gap:6px;font-size:12.5px;padding:3px 0}.obmini .prbar{margin:0}.obmini .prbar b{background:#ffc93c}.obmini em{font-style:normal;color:var(--dim);text-align:right}
+  .swtitle{font-size:12.5px;color:var(--dim);margin-bottom:8px}.swtitle b{color:#fff}
+  .swgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}.swgrid.compatta{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:6px}
+  .swday{border:1px solid rgba(var(--accent-rgb),.2);border-radius:12px;background:rgba(0,0,0,.18);padding:7px 8px;min-width:0;font-size:12px}
+  .swh{display:flex;align-items:baseline;gap:6px}.swh b{color:#fff;font-size:12.5px}.swh small{margin-left:auto;color:var(--dim);font-size:11px}.swload{margin:5px 0 6px!important;height:5px!important}
+  .swev{color:var(--accent);font-size:11.5px;padding:1px 0}.swat{padding:2px 0;border-top:1px solid rgba(var(--accent-rgb),.07)}.swat.libera{color:var(--dim)}
+  .vzkpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:10px}.vzkpi{border:1px solid rgba(var(--accent-rgb),.2);border-radius:12px;padding:8px 10px;background:rgba(0,0,0,.18)}
+  .vzkpi small{display:block;color:var(--dim);font-size:11.5px}.vzkpi b{display:block;font-size:20px;font-weight:600;color:#fff;margin:2px 0}.vzdelta{font-size:11.5px}.vzdelta.giu{color:var(--green)}.vzdelta.su{color:#f59e0b}
+  .vzins{margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.55}.vzgrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:10px}
+  svg.vz{width:100%;height:auto;display:block;overflow:visible}.vzgrid{stroke:rgba(255,255,255,.08);stroke-width:1}.vzax{fill:var(--dim);font-size:10px;font-family:'Share Tech Mono',monospace}
+  .vzval{fill:var(--text);font-size:10.5px;font-weight:600}.vzbar{fill:var(--accent)}.vzline{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+  .vzdot{fill:var(--accent);stroke:var(--bg,#050a0f);stroke-width:2}.vzhit{fill:transparent;cursor:crosshair}.vzhit.su{fill:rgba(255,255,255,.06)}.vzcross{stroke:rgba(255,255,255,.35);stroke-width:1}
+  .vzleg{display:flex;gap:14px;font-size:11.5px;color:var(--dim);margin-bottom:6px}.vzleg i{display:inline-block;vertical-align:middle;margin-right:5px}.lgbar{width:16px;height:8px;border-radius:2px;background:var(--accent)}.lgtick{width:2px;height:12px;background:var(--text)}
+  .vzcat{display:grid;grid-template-columns:150px 1fr 74px;align-items:center;gap:8px;font-size:12.5px;padding:3px 0}.vzcat i{position:relative;height:10px;border-radius:4px;background:rgba(255,255,255,.06)}
+  .vzcat i b{display:block;height:100%;border-radius:0 4px 4px 0;background:var(--accent)}.vzcat i u{position:absolute;top:-3px;width:2px;height:16px;background:var(--text);margin-left:-1px}.vzcat em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
+  .vztab{margin-top:10px;font-size:12px}.vztab summary{cursor:pointer;color:var(--dim)}.vztab table{width:100%;border-collapse:collapse;margin-top:6px;font-variant-numeric:tabular-nums}.vztab th,.vztab td{padding:3px 6px;border-bottom:1px solid rgba(var(--accent-rgb),.08);text-align:right}.vztab th:first-child,.vztab td:first-child{text-align:left}
+  #prcorpo .abnew .tbtn{flex:0 0 auto;padding:9px 16px}.swat.fissa{border-color:rgba(var(--accent-rgb),.45)}
+  .vzbox{position:relative}.vzvuoto{position:absolute;left:46px;right:14px;top:40px;bottom:30px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--dim);font-size:12.5px;line-height:1.45;pointer-events:none;padding:0 10px}
+  #vztip{position:fixed;z-index:200;display:none;pointer-events:none;background:rgba(5,10,15,.94);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+  .vzmini .vzkpis{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));margin:4px 0 8px}
+  @media (max-width:980px){.swgrid{grid-template-columns:repeat(4,minmax(0,1fr))}.vzkpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (max-width:640px){.swgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.vzgrid2{grid-template-columns:1fr}.vzkpis{grid-template-columns:repeat(2,minmax(0,1fr))}.vzcat{grid-template-columns:100px 1fr 64px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V19</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V20</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -11122,6 +11162,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button onclick="qs('le mie automazioni')">⚙️ le mie automazioni</button>
       <button onclick="q('ogni mattina alle 8 dimmi ')">⚙️ ogni mattina alle 8…</button>
       <button onclick="q('fai una ricerca approfondita su ')">🔬 ricerca approfondita…</button>
+      <button onclick="q('voglio ')">🎯 nuovo obiettivo…</button>
+      <button onclick="qs('i miei obiettivi')">🎯 i miei obiettivi</button>
+      <button onclick="qs('pianificami la settimana')">🗓️ pianificami la settimana</button>
+      <button onclick="qs('come sto andando questo mese?')">📈 come sto andando questo mese?</button>
       <button onclick="toggleGioco(true)">✊ giochiamo</button>
       <button onclick="q('Mi chiamo ')">mi chiamo…</button>
       <button onclick="qs('aiuto')">❓ aiuto</button>
@@ -11166,12 +11210,15 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 <div class="ov" id="prmodal">
   <div class="mod">
     <div class="modh"><div class="modt">🛰️ CENTRO DI CONTROLLO <span id="prtitolo"></span></div><button class="ib" onclick="closePrime()" aria-label="Chiudi">✕</button></div>
+    <div id="prtabs" role="tablist"><button type="button" data-tab="oggi" class="on">⚡ Oggi</button><button type="button" data-tab="obiettivi">🎯 Obiettivi</button><button type="button" data-tab="settimana">🗓️ Settimana</button><button type="button" data-tab="tendenze">📈 Tendenze</button></div>
     <div class="modb">
       <div id="prcorpo"><div class="note">Carico la tua giornata…</div></div>
       <div class="spf" style="margin-top:10px"><button type="button" onclick="closePrime();qs('pianificami la giornata')">🗓️ Pianificami la giornata</button><button type="button" onclick="closePrime();qs('hai qualche idea per me?')">💡 Hai qualche idea per me?</button><button type="button" onclick="closePrime();q('fai una ricerca approfondita su ')">🔬 Ricerca approfondita…</button><button type="button" onclick="closePrime();qs('chiudiamo la giornata')">🌙 Chiudi la giornata</button></div>
     </div>
   </div>
 </div>
+
+<div id="vztip" role="tooltip"></div>
 
 <div class="ov" id="aumodal">
   <div class="mod" style="max-width:680px">
@@ -11720,7 +11767,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V19 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V20 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -11734,6 +11781,7 @@ const MaikKit = (() => {
    V17: si concentra con te: cuffie in testa e lavora al suo portatile (modalità concentrazione).
    V18: ha un'idea! Alza il dito e sopra la testa gli si accende una lampadina (con le scintille).
    V19: modalità PRIME — si carica e un anello di energia gli sale dai piedi alla testa (lavoro finito, automazioni).
+   V20: alza al cielo una coppa d'oro quando completi una tappa o raggiungi un obiettivo.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -11959,6 +12007,7 @@ window.ZepKit = (() => {
   const TALK = { sx: -0.32, sy: 0, sz: 0.3, ex: -0.95, ey: -0.2, ez: 0, wr: 0.5 };
   const THINK = { sx: -1.35, sy: -0.65, sz: 0.2, ex: -1.75, ey: -0.25, ez: 0, wr: 0.3 };      // mano al mento (robot)
   const IDEA_POSE = [{ sx: -0.55, sy: 0, sz: 0.5, ex: -1.85, ey: -0.1, ez: 0 }, { sx: -1.5, sy: 0, sz: 0.6, ex: -1.6, ey: -0.3, ez: 0 }];   // v18: il dito in alto («eureka!») · robot, umanoide
+  const TROFEO_POSE = [{ sz: 2.9, sx: -0.05, sy: 0, ex: -0.1, ey: 0, ez: 0, wr: 0 }, { sz: 0.4, sx: -1.0, sy: 0, ex: -1.8, ey: -0.5, ez: 0, wr: 0 }];   // v20: la coppa in alto · robot (al cielo), umanoide (accanto alla testa, così sta nell'inquadratura)
   const THINK_H = { sx: -0.55, sy: -0.35, sz: 0.15, ex: -2.3, ey: -0.55, ez: 0, wr: 0.3 };    // (umanoide)
   const FACE_POSE = {      // mano alla bocca / sul viso / agli occhi: [robot, umanoide]
     yawn: [{ sx: -1.55, sy: -0.6, sz: 0.25, ex: -1.6, ey: -0.2, ez: 0, wr: 0.4 }, { sx: -0.6, sy: -0.4, sz: 0.15, ex: -2.45, ey: -0.6, ez: 0, wr: 0.4 }],
@@ -12016,6 +12065,10 @@ window.ZepKit = (() => {
     rpsShake: { dur: 1.8, arms: 'R', f(a, w, P) { const b = Math.abs(Math.sin(a.t * Math.PI / 0.6)); armTo(P.armR, { sx: -0.95, sy: -0.2, sz: 0.25, ex: -1.25 - 0.4 * b, ey: -0.25, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.head.x += 0.06 * b * w; P.face.brow += 0.3 * w; } },
     rpsShow: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -1.05, sy: -0.2, sz: 0.25, ex: -0.75, ey: -0.2, ez: 0, wr: a.shape === 'carta' ? 0 : 0.2 }, w); P.hand.R = [a.shape === 'carta' ? 'open' : a.shape === 'forbici' ? 'count2' : 'fist', w]; } },
     fistbump: { dur: 1.5, arms: 'R', f(a, w, P) { const k = smooth(a.p / 0.4); armTo(P.armR, { sx: -1.2 * k - 0.3, sy: -0.15, sz: 0.2, ex: -1.5 + 1.1 * k, ey: -0.1, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.face.smile += 0.6 * w; } },
+    trofeo: { dur: 3.6, arms: 'R', f(a, w, P) { const su = smooth(clamp(a.t / 0.45, 0, 1)), b = Math.abs(Math.sin(a.t * 5.5));
+      armTo(P.armR, TROFEO_POSE[P.robot ? 0 : 1], w * su); P.hand.R = ['fist', w];
+      P.root.py += 0.03 * b * su * w; P.face.mode.happy += w; P.face.smile += w; P.face.wide += 0.25 * w; P.head.z += 0.07 * w; P.look = [0.12, 0.45, w];
+      P.trofeo = Math.max(P.trofeo, w * su); } },
     prime: { dur: 2.8, arms: 'B', f(a, w, P) { const su = smooth(clamp((a.t - 1.15) / 0.45, 0, 1)), vib = 0.012 * Math.sin(a.t * 40) * (1 - su);
       for (const s of 'LR') { armTo(P['arm' + s], { sz: 0.38 + (P.robot ? 2.55 : 2.15) * su, sx: -0.3 + (P.robot ? 0.25 : 0.2) * su, ex: -0.95 * (1 - su) - (P.robot ? 0.1 : 0.25) * su, ey: 0, ez: vib, wr: 0 }, w); P.hand[s] = ['fist', w]; }
       P.root.py += (-0.025 * (1 - su) + 0.05 * su * Math.abs(Math.sin(a.t * 7))) * w; P.spine.x += 0.06 * (1 - su) * w; P.head.x += 0.08 * (1 - su) * w;
@@ -12772,7 +12825,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0,
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0, trofeo: 0,
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -12858,6 +12911,7 @@ window.ZepKit = (() => {
       if (P.hearts > 0.3 && now - A.heartT > 450) { A.heartT = now; spawn('♥', headTop(rnd(-0.12, 0.12)), { size: 0.055 }); }
       aggiornaLampadina(P, dt, now);                                      // v18: 💡
       aggiornaAnello(P, dt, now);                                         // v19: ⚡ PRIME
+      aggiornaTrofeo(P, dt, now);                                         // v20: 🏆
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -12960,6 +13014,37 @@ window.ZepKit = (() => {
         q.x += Math.cos(t) * r; q.z += Math.sin(t) * r;
         spawn('✦', q, { size: 0.035, vx: rnd(-0.05, 0.05), vy: 0.16, life: 0.9 });
       }
+    }
+    // ---------- v20: 🏆 la coppa d'oro (nel mondo, sopra il pugno destro: robot e VRM) ----------
+    let coppa = null, coppaStella = 0;
+    function creaCoppa() {
+      const G = new THREE.Group(); G.name = 'trofeo';
+      const oro = new THREE.MeshPhysicalMaterial({ color: 0xffc93c, metalness: 1, roughness: 0.22, clearcoat: 1, emissive: 0x5a3a00, emissiveIntensity: 0.35 });
+      const prof = [[0, 0], [0.42, 0.02], [0.5, 0.25], [0.48, 0.55], [0.4, 0.8], [0.22, 0.95], [0.08, 1.02], [0.07, 1.25]].map(([x, y]) => new THREE.Vector2(x, 1.6 - y));
+      const tazza = new THREE.Mesh(new THREE.LatheGeometry(prof.reverse(), 40), oro); tazza.position.y = 0; G.add(tazza);
+      for (const sx of [-1, 1]) { const m = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.045, 10, 24, Math.PI * 1.1), oro); m.position.set(sx * 0.5, 1.15, 0); m.rotation.z = sx > 0 ? -Math.PI / 2 : Math.PI / 2 + 0.3; G.add(m); }
+      const stelo = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.11, 0.35, 16), oro); stelo.position.y = 0.2; G.add(stelo);
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 0.14, 32), new THREE.MeshPhysicalMaterial({ color: 0x3b2a12, roughness: 0.5, metalness: 0.3 })); base.position.y = -0.02; G.add(base);
+      const stella = new THREE.Sprite(new THREE.SpriteMaterial({ map: symbolTexture(THREE, '★', '#fff4b0'), transparent: true, depthWrite: false, toneMapped: false })); stella.position.set(0, 1.0, 0.52); stella.scale.setScalar(0.42); G.add(stella);
+      G.userData = { s: 0 };
+      G.visible = false; scene.add(G);
+      return G;
+    }
+    function aggiornaTrofeo(P, dt, now) {
+      const w = clamp(P.trofeo || 0, 0, 1);
+      if (!coppa && w < 0.02) return;
+      coppa = coppa || creaCoppa();
+      const U = coppa.userData;
+      U.s = damp(U.s, w > 0.05 ? 1 : 0, w > 0.05 ? 8 : 9, dt);
+      coppa.visible = U.s > 0.02;
+      if (!coppa.visible) return;
+      const B = rig && rig.robot, mano = B ? B.Rr.hand : rig && rig.bones && rig.bones.rightHand;
+      const p = mano && mano.isObject3D ? mano.getWorldPosition(new THREE.Vector3()) : headTop(0);
+      p.y += height * 0.035;
+      coppa.position.copy(p);
+      coppa.scale.setScalar(height * 0.085 * U.s * (U.s < 0.98 ? 1 + 0.15 * Math.sin(Math.PI * U.s) : 1));
+      coppa.rotation.y = 0.5 * Math.sin(now / 420); coppa.rotation.z = 0.08 * Math.sin(now / 260);
+      if (U.s > 0.8 && now - coppaStella > 160) { coppaStella = now; const q = p.clone(); q.y += height * 0.12; spawn(pick(['★', '✦']), q, { size: 0.04, vx: rnd(-0.12, 0.12), vy: 0.1, life: 1.3 }); }
     }
     function headTop(dx = 0) {
       const v = new THREE.Vector3();
@@ -13389,6 +13474,7 @@ window.ZepKit = (() => {
       // v16: cosa c'è scritto sul display della calcolatrice (es. «345,60 €»)
       calcolatrice(testo) { S.calcTesto = testo; const B = rig && rig.robot; if (B && B.props && B.props.calcolatrice) disegnaDisplay(B.props.calcolatrice, testo); },
       get testoCalcolatrice() { return S.calcTesto; },
+      get trofeo() { return coppa ? { visibile: coppa.visible, pos: coppa.position.toArray().map(x => +x.toFixed(3)), schermo: coppa.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, pos: null }; },
       get anelloPrime() { return anello ? { visibile: anello.visible, y: +anello.position.y.toFixed(3), opacita: +anello.userData.m1.opacity.toFixed(2), raggio: +anello.scale.x.toFixed(3) } : { visibile: false, y: 0, opacita: 0, raggio: 0 }; },
       get lampadina() { return lamp ? { visibile: lamp.visible, accesa: +lamp.userData.accesa.toFixed(2), luce: +lamp.userData.luce.intensity.toFixed(2), pos: lamp.position.toArray().map(x => +x.toFixed(3)), schermo: lamp.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, accesa: 0, luce: 0, pos: null }; },
       get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
@@ -13586,7 +13672,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -13862,6 +13948,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🎯','I miei obiettivi',()=>apriPrime('obiettivi'),'obiettivi','traguardi tappe progetti'),c('🎯','Nuovo obiettivo…',()=>q('voglio '),'obiettivo','entro tappe traguardo'),
+    c('🗓️','Pianificami la settimana',()=>qs('pianificami la settimana'),'settimana','piano organizza giorni'),c('📈','Le mie tendenze',()=>apriPrime('tendenze'),'tendenze','statistiche grafici mese andamento'),
     c('🛰️','Centro di controllo',()=>openPrime(),'Y','dashboard punteggio prime giornata panoramica'),c('⚙️','Automazioni',()=>openAuto(),'X','programmate ogni giorno routine automatiche'),
     c('⚙️','Nuova automazione…',()=>q('ogni mattina alle 8 dimmi '),'auto','ogni giorno lunedì programma'),c('🔬','Ricerca approfondita…',()=>q('fai una ricerca approfondita su '),'ricerca','rapporto fonti internet studio'),
     c('💡','Hai qualche idea per me?',()=>qs('hai qualche idea per me?'),'idee','consigli suggerimenti proattivo'),c('💡','Idee e ricordi',()=>openIdee(),'U','proattivo consigli impostazioni chiacchierate'),
@@ -13880,7 +13968,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V19',key:'maik_boot_v19',checks:[
+  return MaikKit.boot({version:'PRIME · V20',key:'maik_boot_v20',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -13890,6 +13978,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Obiettivi',run:async()=>{try{const r=await (await fetch('/obiettivi')).json();const n=r.obiettivi.length;return{ok:true,text:n?'🎯 '+n+' in corso':'🎯 nessuno (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Automazioni',run:async()=>{try{const r=await (await fetch('/automazioni')).json();const n=r.automazioni.filter(a=>a.attiva!==false).length;return{ok:true,text:n?'⚙️ '+n+' attiv'+(n===1?'a':'e'):'⚙️ nessuna (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Idee e ricordi',run:async()=>{try{const [s,g]=await Promise.all([fetch('/proattivo/stato').then(r=>r.json()),fetch('/ricordi').then(r=>r.json())]);return{ok:true,text:(s.attivo?'💡 idee accese ('+s.oggi+'/'+s.massimo+' oggi)':'💡 idee spente')+' · 🧠 '+g.info.chiacchierate+' messaggi'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Cose da fare',run:async()=>{try{const r=await (await fetch('/attivita?filtro=oggi')).json();return{ok:true,text:r.conta.oggi+' per oggi · '+r.conta.tutte+' in tutto'+(r.conta.ritardo?' · '+r.conta.ritardo+' in ritardo':'')};}catch(e){return{ok:false,text:'errore'};}}},
@@ -13902,7 +13991,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 19 ⚡ la mia versione più potente. **Lavoro anche da solo**: «**ogni mattina alle 8 dimmi il meteo e le notizie**», «**ogni lunedì alle 9 dimmi quanto ho speso la settimana scorsa**» ⚙️ e il risultato ti arriva qui. **Faccio ricerche approfondite**: «**fai una ricerca approfondita sulle auto elettriche**» 🔬 → più ricerche, leggo le fonti e ti scrivo un rapporto con le citazioni, salvato nei documenti. Il **centro di controllo** 🛰️ (tasto **Y**) ti mostra tutta la giornata e il tuo **punteggio Prime**. E poi: ricordo le nostre chiacchierate 🧠, ti propongo idee 💡, ragiono a più passi 🤖, leggo foto e PDF scansionati 📷, cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 20 🏆 Ora **penso in grande**: «**voglio imparare lo spagnolo entro giugno**» e te lo divido in tappe con le date, una alla volta nelle cose da fare, e festeggio a ogni traguardo. «**pianificami la settimana**» 🗓️ e «**come sto andando questo mese?**» 📈 con i grafici delle tue tendenze. Lavoro anche da solo (⚙️ «ogni mattina alle 8 dimmi il meteo e le notizie»), faccio ricerche approfondite 🔬 e il **centro di controllo** 🛰️ (tasto **Y**) ha tutto: oggi, obiettivi, settimana e tendenze. E poi: ricordo le nostre chiacchierate 🧠, ti propongo idee 💡, ragiono a più passi 🤖, leggo foto e PDF scansionati 📷, cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -14795,7 +14884,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V19'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V20'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -16211,7 +16300,7 @@ function primeHTML(p) {
 }
 async function openPrime() { $('#prmodal').classList.add('open'); await loadPrime(); clearInterval(PR.t); PR.t = setInterval(() => { if ($('#prmodal').classList.contains('open')) loadPrime(); else clearInterval(PR.t); }, 60000); }
 function closePrime() { $('#prmodal').classList.remove('open'); clearInterval(PR.t); }
-async function loadPrime() {
+async function loadPrimeOggi() {
   let p; try { p = await (await fetch('/prime/oggi')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
   PR.dati = p;
   $('#prtitolo').textContent = p.titolo + ' · ' + p.ora;
@@ -16311,8 +16400,215 @@ function addV19(d, obj) {
   }
 }
 
+// ============================================================
+// V20 — MAIK PRIME pensa in grande: obiettivi con le tappe, il piano della settimana, le tendenze (grafici), il trofeo
+// ============================================================
+PR.tab = 'oggi';
+function segnaTab() { document.querySelectorAll('#prtabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === PR.tab)); }
+function apriPrime(tab) { PR.tab = tab || 'oggi'; segnaTab(); openPrime(); }
+async function loadPrime() {
+  segnaTab();
+  if (PR.tab === 'obiettivi') return loadObiettiviTab();
+  if (PR.tab === 'settimana') return loadSettimanaTab();
+  if (PR.tab === 'tendenze') return loadTendenzeTab();
+  await loadPrimeOggi();
+  const p = PR.dati, g = $('#prcorpo .prgrid');
+  if (p && g) g.insertAdjacentHTML('beforeend', '<section class="prbox probx"><h4>🎯 Obiettivi</h4>' + ((p.obiettivi || []).length ? p.obiettivi.map(o => '<div class="obmini"><span>' + o.emoji + ' ' + esc(o.titolo) + '</span><i class="prbar"><b style="width:' + o.perc + '%"></b></i><em>' + o.perc + '%</em></div>').join('')
+    : '<div class="note">Nessun obiettivo: prova «voglio imparare lo spagnolo entro giugno».</div>') + '<div class="prbtn"><button type="button" data-prtab="obiettivi">🎯 Obiettivi</button><button type="button" data-prtab="tendenze">📈 Tendenze</button></div></section>');
+}
+
+// ---------- 🎯 obiettivi ----------
+const RITMO = { avanti: ['🚀 in anticipo', 'ok'], 'in linea': ['✅ in linea', 'ok'], indietro: ['⚠️ un po\' indietro', 'warn'], raggiunto: ['🏆 raggiunto', 'ok'] };
+const dataIt = s => { const d = new Date(String(s).slice(0, 10) + 'T12:00:00'); return isNaN(d) ? s : d.getDate() + ' ' + MESI_BREVI[d.getMonth()]; };
+function tappeHTML(o) {
+  const corrente = (o.prossima || {}).id;
+  return '<ol class="obtappe">' + o.tappe.map((t, i) => '<li class="' + (t.fatta ? 'fatta' : t.id === corrente ? 'ora' : '') + '"><span class="obpal">' + (t.fatta ? '✓' : i + 1) + '</span><span class="obtt">' + esc(t.titolo) + '</span><small>' + (t.fatta ? 'fatta il ' + dataIt(t.fatta) : 'entro il ' + dataIt(t.scadenza)) + '</small></li>').join('') + '</ol>';
+}
+function obiettivoHTML(o, conBottoni) {
+  const r = RITMO[o.ritmo] || ['', ''];
+  return '<div class="obcard" data-ob="' + escA(o.id) + '"><div class="obh"><b>' + o.emoji + ' ' + esc(o.titolo) + '</b><span class="obrit ' + r[1] + '">' + r[0] + '</span></div>'
+    + '<div class="obprog"><i class="prbar"><b style="width:' + o.perc + '%"></b></i><em>' + o.perc + '% · ' + o.fatte + '/' + o.totali + ' tappe · ' + (o.stato === 'raggiunto' ? 'raggiunto il ' + dataIt(o.raggiunto) : (o.giorni_rimasti >= 0 ? 'mancano ' + o.giorni_rimasti + ' giorni' : 'scaduto')) + '</em></div>'
+    + tappeHTML(o)
+    + (conBottoni && o.stato !== 'raggiunto' ? '<div class="prbtn"><button type="button" data-obz="tappa">✓ Tappa fatta</button><button type="button" data-obz="lunedi">⚙️ Controllo ogni lunedì</button><button type="button" data-obz="elimina" title="Cancella l\'obiettivo">🗑️</button></div>' : '') + '</div>';
+}
+async function loadObiettiviTab() {
+  let r; try { r = await (await fetch('/obiettivi?tutti=1')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  const att = r.obiettivi.filter(o => o.stato === 'attivo'), fatti = r.obiettivi.filter(o => o.stato === 'raggiunto');
+  $('#prcorpo').innerHTML = '<div class="abnew"><input class="tfield" id="obtesto" maxlength="200" placeholder="es. voglio imparare lo spagnolo entro giugno · correre una mezza maratona in 4 mesi"><button class="tbtn solid" type="button" data-obz="crea">＋ Nuovo obiettivo</button></div>'
+    + (att.length ? '<div class="oblista">' + att.map(o => obiettivoHTML(o, true)).join('') + '</div>' : '<div class="note" style="margin:10px 0">Nessun obiettivo in corso. Scrivilo come lo diresti a me, con una scadenza: lo divido in tappe e metto la prima nelle cose da fare.</div>')
+    + (fatti.length ? '<h4 class="obfatti">🏆 Raggiunti</h4><div class="oblista">' + fatti.map(o => obiettivoHTML(o, false)).join('') + '</div>' : '');
+}
+async function obAzione(z, b) {
+  const card = b.closest('.obcard'), id = card && card.dataset.ob;
+  if (z === 'crea') {
+    const t = $('#obtesto').value.trim(); if (!t) { $('#obtesto').focus(); return; }
+    b.disabled = true; toast('🎯 Divido l\'obiettivo in tappe…');
+    const r = await postJ('/obiettivi/crea', { testo: t }).catch(() => ({ ok: false, errore: 'server non raggiungibile' }));
+    b.disabled = false;
+    if (!r.ok) { toast('🎯 ' + (r.errore || 'non creato'), 'err'); return; }
+    toast('🎯 ' + r.obiettivo.titolo + ': ' + r.obiettivo.totali + ' tappe', 'ok'); if (AV) AV.gesture('thumbsup'); loadPrime(); return;
+  }
+  if (z === 'tappa') { b.disabled = true; const r = await postJ('/obiettivi/tappa', { id }).catch(() => ({ ok: false })); if (r.ok && r.eventi.length) r.eventi.forEach(e => mostraTraguardo(e)); else b.disabled = false; loadPrime(); return; }
+  if (z === 'lunedi') {
+    const tit = card.querySelector('.obh b').textContent.replace(/^\S+\s/, '');
+    const r = await postJ('/automazioni/crea', { comando: 'a che punto sono con ' + tit.charAt(0).toLowerCase() + tit.slice(1) + '?', giorni: [0], ora: '09:00' }).catch(() => ({ ok: false }));
+    toast(r.ok ? '⚙️ Ogni lunedì alle 9 ti dico a che punto sei' : '⚙️ ' + (r.errore || 'non creata'), r.ok ? 'ok' : 'err'); if (r.ok) b.disabled = true; return;
+  }
+  if (z === 'elimina') { if (!confirm('Cancellare questo obiettivo (e la sua tappa dalle cose da fare)?')) return; await postJ('/obiettivi/elimina', { id }).catch(() => null); loadPrime(); }
+}
+function mostraTraguardo(e, quiet) {
+  const d = add('ai', e.testo, 'seguito trofeo' + (e.tipo === 'traguardo' ? ' finale' : '')); finalize(d, e.testo, null, null);
+  agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-prtab="obiettivi">🎯 I miei obiettivi</button>');
+  coriandoli(e.tipo === 'traguardo' ? 140 : 70); beep(e.tipo === 'traguardo' ? 3 : 2); if (core) core.pulse(2);
+  if (AV) { AV.gesture('trofeo'); AV.emote('happy', 4000); }
+  const piano = e.testo.replace(/\*\*/g, '');
+  if (!quiet) { toast(piano.slice(0, 140), 'ok'); notify('🏆 MAIK PRIME', piano); }
+  say(piano);
+  $('#msgs').scrollTop = 1e9;
+}
+async function checkObAvvisi() {
+  if (busy || document.hidden) return;
+  let r; try { r = await (await fetch('/obiettivi/avvisi')).json(); } catch (e) { return; }
+  (r.avvisi || []).forEach((e, k) => setTimeout(() => mostraTraguardo(e), k * 1800));
+}
+const _tdFatta0 = tdFatta;
+tdFatta = async function (...a) { const r = await _tdFatta0.apply(this, a); setTimeout(checkObAvvisi, 500); return r; };   // la cosa spuntata era una tappa? → 🏆
+
+// ---------- 🗓️ la settimana ----------
+function settimanaHTML(w, compatta) {
+  const giorni = w.giorni.filter(g => !compatta || g.attivita.length || g.eventi.length);
+  return '<div class="swgrid' + (compatta ? ' compatta' : '') + '">' + giorni.map(g => '<div class="swday"><div class="swh"><b>' + esc(g.etichetta) + '</b><small>' + (g.occupati ? Math.round(g.occupati / 6) / 10 + ' h' : 'libero') + '</small></div>'
+    + '<i class="prbar swload" title="Carico della giornata: ' + g.carico + '%"><b style="width:' + Math.min(100, g.carico) + '%;background:' + (g.carico > 90 ? '#f59e0b' : 'var(--accent)') + '"></b></i>'
+    + g.eventi.map(e => '<div class="swev">📅 ' + esc(e.ora) + ' ' + esc(e.titolo) + '</div>').join('')
+    + g.attivita.map(x => '<div class="swat' + (x.senza_data ? ' libera' : '') + (x.fissata ? ' fissa' : '') + '" title="' + escA(x.durata + ' min' + (x.fissata ? ' · giorno fissato da te' : x.scadenza ? ' · scade ' + x.scadenza : ' · senza data')) + '">' + x.icona + ' ' + esc(x.testo) + (x.fissata ? ' <small title="Giorno fissato">📌</small>' : '') + '</div>').join('') + '</div>').join('') + '</div>'
+    + (w.fuori && w.fuori.length ? '<div class="pnfuori">⚠️ Non ci stanno prima della scadenza: ' + w.fuori.map(f => esc(f.testo)).join(', ') + '</div>' : '');
+}
+async function loadSettimanaTab() {
+  let r; try { r = await (await fetch('/prime/settimana')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  PR.settimana = r.piano_settimana;
+  $('#prcorpo').innerHTML = '<div class="swtitle">🗓️ <b>' + esc(r.piano_settimana.periodo) + '</b> · le cose da fare divise nei giorni attorno ai tuoi impegni (prima quelle che scadono, il weekend più leggero)</div>'
+    + settimanaHTML(r.piano_settimana, false) + '<div class="prbtn">' + (r.piano_settimana.da_fissare ? '<button type="button" data-sw="fissa">📌 Fissa i giorni (' + r.piano_settimana.da_fissare + ' senza data)</button>' : '') + '<button type="button" data-pr="todo">📋 Le cose da fare</button></div>';
+}
+async function swFissa(w, b) {
+  const assegna = []; w.giorni.forEach(g => g.attivita.forEach(x => { if (x.senza_data) assegna.push({ id: x.id, data: g.data }); }));
+  b.disabled = true;
+  const r = await postJ('/settimana/applica', { assegna }).catch(() => ({ ok: false }));
+  if (r.ok) { b.textContent = '✓ Giorni fissati (' + r.fissate + ')'; toast('📌 Ho dato un giorno a ' + r.fissate + (r.fissate === 1 ? ' cosa' : ' cose') + ' da fare', 'ok'); } else b.disabled = false;
+}
+
+// ---------- 📈 le tendenze (grafici SVG: una serie per grafico, niente doppi assi, tooltip al passaggio, tabella per tutti) ----------
+const pulito = n => Math.abs(n) >= 1000 ? (n / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 }) + 'K' : (+n).toLocaleString('it-IT', { maximumFractionDigits: 1 });
+function tondo(max) { if (max <= 0) return 1; const e = Math.pow(10, Math.floor(Math.log10(max))), m = max / e; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * e; }
+function colonneSVG(dati, opz) {           // dati: [{x (data), v, tip}] · una sola serie, colore della serie, etichetta solo sul massimo
+  const W = 560, H = 150, L = 34, B = 20, T = 14, n = dati.length, top = tondo(Math.max(...dati.map(d => d.v), 0)), bw = Math.min(24, (W - L - 4) / n - 2);
+  const y = v => T + (H - T - B) * (1 - v / top), passo = (W - L - 4) / n, imax = dati.reduce((a, d, i) => d.v > dati[a].v ? i : a, 0);
+  let s = '<svg class="vz" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + escA(opz.titolo) + '">';
+  [0, top / 2, top].forEach(t => { s += '<line class="vzgrid" x1="' + L + '" x2="' + W + '" y1="' + y(t) + '" y2="' + y(t) + '"></line><text class="vzax" x="' + (L - 6) + '" y="' + (y(t) + 3) + '" text-anchor="end">' + pulito(t) + '</text>'; });
+  dati.forEach((d, i) => {
+    const x = L + 2 + i * passo + (passo - bw) / 2, h = Math.max(0, y(0) - y(d.v));
+    if (h > 0) s += '<path class="vzbar" d="M' + x + ',' + y(0) + 'V' + (y(0) - h + Math.min(4, h)) + 'q0,-' + Math.min(4, h) + ' ' + Math.min(4, bw / 2) + ',-' + Math.min(4, h) + 'H' + (x + bw - Math.min(4, bw / 2)) + 'q' + Math.min(4, bw / 2) + ',0 ' + Math.min(4, bw / 2) + ',' + Math.min(4, h) + 'V' + y(0) + 'Z"></path>';
+    s += '<rect class="vzhit" x="' + (L + 2 + i * passo) + '" y="' + T + '" width="' + passo + '" height="' + (H - T - B) + '" data-tip="' + escA(d.tip) + '"></rect>';
+    if (i % 7 === (n - 1) % 7) s += '<text class="vzax" x="' + (x + bw / 2) + '" y="' + (H - 5) + '" text-anchor="middle">' + esc(dataIt(d.x)) + '</text>';
+  });
+  if (dati[imax] && dati[imax].v > 0) s += '<text class="vzval" x="' + (L + 2 + imax * passo + passo / 2) + '" y="' + (y(dati[imax].v) - 4) + '" text-anchor="middle">' + esc(opz.fmt(dati[imax].v)) + '</text>';
+  return s + '</svg>';
+}
+function lineaSVG(dati, opz) {             // dati: [{x, v (o null), tip}] · 2px, punto finale con l'anello del colore della superficie, crocino al passaggio
+  const W = 560, H = 140, L = 34, B = 20, T = 12, n = dati.length, top = opz.max, passo = (W - L - 10) / Math.max(1, n - 1);
+  const X = i => L + 4 + i * passo, y = v => T + (H - T - B) * (1 - v / top);
+  let s = '<svg class="vz" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + escA(opz.titolo) + '">';
+  [0, top / 2, top].forEach(t => { s += '<line class="vzgrid" x1="' + L + '" x2="' + W + '" y1="' + y(t) + '" y2="' + y(t) + '"></line><text class="vzax" x="' + (L - 6) + '" y="' + (y(t) + 3) + '" text-anchor="end">' + pulito(t) + (opz.suff || '') + '</text>'; });
+  let d = '', aperto = false, ultimo = -1;
+  dati.forEach((p, i) => { if (p.v == null) { aperto = false; return; } d += (aperto ? 'L' : 'M') + X(i) + ',' + y(p.v); aperto = true; ultimo = i; });
+  if (d) s += '<path class="vzline" d="' + d + '"></path>';
+  if (ultimo >= 0) s += '<circle class="vzdot" cx="' + X(ultimo) + '" cy="' + y(dati[ultimo].v) + '" r="4"></circle><text class="vzval" x="' + Math.min(W - 18, X(ultimo)) + '" y="' + (y(dati[ultimo].v) - 9) + '" text-anchor="middle">' + esc(opz.fmt(dati[ultimo].v)) + '</text>';
+  dati.forEach((p, i) => {
+    s += '<rect class="vzhit" x="' + (X(i) - passo / 2) + '" y="' + T + '" width="' + passo + '" height="' + (H - T - B) + '" data-tip="' + escA(p.tip) + '" data-cx="' + X(i) + '"></rect>';
+    if (i % 7 === (n - 1) % 7) s += '<text class="vzax" x="' + X(i) + '" y="' + (H - 5) + '" text-anchor="middle">' + esc(dataIt(p.x)) + '</text>';
+  });
+  return s + '<line class="vzcross" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" style="display:none"></line></svg>';
+}
+function categorieHTML(cat) {
+  if (!cat.length) return '<div class="note">Nessuna spesa in questi due mesi.</div>';
+  const max = Math.max(...cat.map(c => Math.max(c.mese, c.prima)), 1);
+  return '<div class="vzleg"><span><i class="lgbar"></i> questo mese</span><span><i class="lgtick"></i> stesso periodo del mese scorso</span></div>'
+    + cat.map(c => '<div class="vzcat" data-tip="' + escA(c.nome + ': ' + euroIt(c.mese) + ' (mese scorso ' + euroIt(c.prima) + ')') + '"><span>' + c.emoji + ' ' + esc(c.nome) + '</span><i><b style="width:' + (100 * c.mese / max) + '%"></b><u style="left:' + (100 * c.prima / max) + '%"></u></i><em>' + euroIt(c.mese) + '</em></div>').join('');
+}
+function kpiHTML(k) {
+  const tile = (lab, val, delta) => '<div class="vzkpi"><small>' + lab + '</small><b>' + val + '</b>' + (delta || '') + '</div>';
+  const d = k.spese_delta == null ? '' : '<span class="vzdelta ' + (k.spese_delta <= 0 ? 'giu' : 'su') + '">' + (k.spese_delta <= 0 ? '▼ ' : '▲ ') + Math.abs(k.spese_delta) + '% vs mese scorso</span>';
+  return '<div class="vzkpis">' + tile('Spese del mese', euroIt(k.spese_mese), d) + tile('Abitudini fatte', k.abitudini == null ? '—' : k.abitudini + '%') + tile('Cose fatte', k.fatte) + tile('Pomodori', k.pomodori) + tile('Umore medio', k.umore == null ? '—' : String(k.umore).replace('.', ',') + '/10') + '</div>';
+}
+function vzBox(titolo, svg, vuoto, nota) {
+  return '<section class="prbox vzbox"><h4>' + titolo + '</h4>' + svg + (vuoto ? '<div class="vzvuoto">' + nota + '</div>' : '') + '</section>';
+}
+function tendenzeHTML(t) {
+  const G = t.giorni, niente = k => G.every(r => !r[k]), giorno = x => new Date(x + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'short' });
+  const tabella = '<details class="vztab"><summary>📋 Vedi i dati in tabella</summary><table><thead><tr><th>Giorno</th><th>Spese</th><th>Abitudini</th><th>Cose fatte</th><th>Pomodori</th><th>Umore</th></tr></thead><tbody>'
+    + G.slice().reverse().map(r => '<tr><td>' + esc(giorno(r.data)) + '</td><td>' + euroIt(r.spese) + '</td><td>' + (r.abitudini == null ? '—' : r.abitudini + '%') + '</td><td>' + r.fatte + '</td><td>' + r.pomodori + '</td><td>' + (r.umore == null ? '—' : r.umore) + '</td></tr>').join('') + '</tbody></table></details>';
+  return kpiHTML(t.kpi)
+    + (t.insight.length ? '<ul class="vzins">' + t.insight.map(x => '<li>' + renderAI(x).replace(/^<p>|<\/p>$/g, '') + '</li>').join('') + '</ul>' : '')
+    + '<div class="vzgrid2">' + vzBox('💶 Spese al giorno', colonneSVG(G.map(r => ({ x: r.data, v: r.spese, tip: giorno(r.data) + ' · ' + euroIt(r.spese) })), { titolo: 'Spese al giorno', fmt: euroIt }), niente('spese'), 'Nessuna spesa in 30 giorni: dimmi «ho speso 12 € di pizza».')
+    + vzBox('✅ Abitudini fatte (%)', lineaSVG(G.map(r => ({ x: r.data, v: r.abitudini, tip: giorno(r.data) + ' · ' + (r.abitudini == null ? 'nessuna prevista' : r.abitudini + '% delle abitudini') })), { titolo: 'Abitudini fatte', max: 100, suff: '%', fmt: v => v + '%' }), G.every(r => r.abitudini == null), 'Nessuna abitudine ancora: prova «voglio bere 2 litri d\'acqua al giorno».')
+    + vzBox('🍅 Pomodori al giorno', colonneSVG(G.map(r => ({ x: r.data, v: r.pomodori, tip: giorno(r.data) + ' · ' + r.pomodori + (r.pomodori === 1 ? ' pomodoro' : ' pomodori') + ' · ' + r.fatte + ' cose fatte' })), { titolo: 'Pomodori al giorno', fmt: v => String(v) }), niente('pomodori'), 'Nessun pomodoro in 30 giorni: tocca 🍅 per 25 minuti di concentrazione.')
+    + vzBox('💙 Umore (0–10)', lineaSVG(G.map(r => ({ x: r.data, v: r.umore, tip: giorno(r.data) + ' · ' + (r.umore == null ? 'non so' : 'umore ' + String(r.umore).replace('.', ',') + '/10') })), { titolo: 'Umore', max: 10, fmt: v => String(v).replace('.', ',') }), G.every(r => r.umore == null), 'Raccontami come ti senti e qui vedrai l\'andamento.') + '</div>'
+    + '<section class="prbox"><h4>💶 Spese per voce: questo mese e lo stesso periodo del mese scorso</h4>' + categorieHTML(t.categorie) + '</section>' + tabella;
+}
+async function loadTendenzeTab() {
+  let t; try { t = await (await fetch('/prime/tendenze?giorni=30')).json(); } catch (e) { $('#prcorpo').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  $('#prcorpo').innerHTML = tendenzeHTML(t);
+}
+function vzTip(e) {
+  const h = e.target.closest('.vzhit, .vzcat'), tip = $('#vztip');
+  document.querySelectorAll('.vzcross').forEach(c => c.style.display = 'none');
+  document.querySelectorAll('.vzhit.su').forEach(x => x.classList.remove('su'));
+  if (!h) { tip.style.display = 'none'; return; }
+  tip.textContent = h.dataset.tip; tip.style.display = 'block';
+  tip.style.left = Math.min(innerWidth - tip.offsetWidth - 8, e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 36) + 'px';
+  if (h.dataset.cx) { const c = h.closest('svg').querySelector('.vzcross'); c.setAttribute('x1', h.dataset.cx); c.setAttribute('x2', h.dataset.cx); c.style.display = ''; }
+  else h.classList.add('su');
+}
+
+function addV20(d, obj) {
+  if (obj.obiettivo && !obj.obiettivi) {
+    const o = obj.obiettivo, nuovo = /^🎯 Nuovo obiettivo/.test(d.dataset.raw || '');
+    if (nuovo) { const primo = (d.dataset.raw || '').split('\n')[0], ultimo = (d.dataset.raw || '').split('\n').pop(); mc(d).innerHTML = renderAI(primo) + obiettivoHTML(o, false) + '<div class="pnnota">' + renderAI(ultimo) + '</div>'; }
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-prtab="obiettivi">🎯 I miei obiettivi</button>' + (nuovo ? '<button type="button" class="agc calb" data-obc="lunedi" data-id="' + escA(o.id) + '" data-t="' + escA(o.titolo) + '">⚙️ Controllo ogni lunedì</button><button type="button" class="agc calb" data-obc="annulla" data-id="' + escA(o.id) + '">↩ Annulla</button>' : ''));
+    if (nuovo && AV) AV.gesture('idea');
+  }
+  if (obj.obiettivi && obj.obiettivi.length) {
+    mc(d).innerHTML = renderAI((d.dataset.raw || '').split('\n')[0]) + '<div class="oblista">' + obj.obiettivi.map(o => obiettivoHTML(o, false)).join('') + '</div>';
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-prtab="obiettivi">🎯 Gestisci gli obiettivi</button>');
+  }
+  if (obj.obiettivo_eventi && obj.obiettivo_eventi.length) { coriandoli(obj.obiettivo_eventi[0].tipo === 'traguardo' ? 140 : 70); if (AV) AV.gesture('trofeo'); }
+  if (obj.attivita || obj.attivita_lista) setTimeout(checkObAvvisi, 600);
+  if (obj.piano_settimana) {
+    const w = obj.piano_settimana, righe = (d.dataset.raw || '').split('\n');
+    d._sett = w;
+    if (w.giorni.some(g => g.attivita.length)) mc(d).innerHTML = renderAI(righe[0]) + settimanaHTML(w, true) + righe.filter(x => /^📌|^⚠️/.test(x)).map(x => '<div class="pnnota">' + renderAI(x) + '</div>').join('');
+    agEl(d).insertAdjacentHTML('beforeend', (w.da_fissare ? '<button type="button" class="agc calb" data-sw="fissa">📌 Fissa i giorni (' + w.da_fissare + ')</button>' : '') + '<button type="button" class="agc calb" data-prtab="settimana">🗓️ Apri la settimana</button>');
+  }
+  if (obj.tendenze) {
+    const G = obj.tendenze.giorni || [];
+    if (G.length) mc(d).insertAdjacentHTML('afterbegin', '<div class="vzmini">' + kpiHTML(obj.tendenze.kpi) + '</div>');
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-prtab="tendenze">📈 Apri le tendenze</button>');
+  }
+}
+
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();}});
+$('#prtabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(!b)return;PR.tab=b.dataset.tab;loadPrime();});
+$('#prcorpo').addEventListener('pointermove',vzTip);$('#prcorpo').addEventListener('pointerleave',()=>{$('#vztip').style.display='none';});
+$('#prcorpo').addEventListener('change',e=>{if(e.target.closest('input[data-prt]'))setTimeout(checkObAvvisi,700);});     // v20: la cosa spuntata era una tappa? → 🏆
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(checkObAvvisi,1500);});
+document.addEventListener('click',async e=>{const b=e.target.closest('#prcorpo button[data-prtab],#prcorpo button[data-obz],#prcorpo button[data-sw],#msgs button[data-prtab],#msgs button[data-obc],#msgs button[data-sw]');if(!b)return;     // v20
+  const ds=b.dataset;
+  if(ds.prtab){if($('#prmodal').classList.contains('open')){PR.tab=ds.prtab;loadPrime();}else apriPrime(ds.prtab);return;}
+  if(ds.obz){await obAzione(ds.obz,b);return;}
+  if(ds.sw){const d=b.closest('.m'),w=(d&&d._sett)||PR.settimana;if(w)await swFissa(w,b);return;}
+  if(ds.obc==='annulla'){b.disabled=true;const r=await postJ('/obiettivi/elimina',{id:ds.id}).catch(()=>({ok:false}));if(r.ok){b.textContent='✓ tolto';toast('🎯 Obiettivo tolto','ok');}else b.disabled=false;}
+  else if(ds.obc==='lunedi'){b.disabled=true;const t=ds.t||'';const r=await postJ('/automazioni/crea',{comando:'a che punto sono con '+t.charAt(0).toLowerCase()+t.slice(1)+'?',giorni:[0],ora:'09:00'}).catch(()=>({ok:false}));
+    toast(r.ok?'⚙️ Ogni lunedì alle 9 ti dico a che punto sei':'⚙️ '+(r.errore||'non creata'),r.ok?'ok':'err');if(!r.ok)b.disabled=false;}});
 $('#prmodal').addEventListener('click',e=>{if(e.target.id==='prmodal')closePrime();});
 $('#aumodal').addEventListener('click',e=>{if(e.target.id==='aumodal')closeAuto();});
 $('#prcorpo').addEventListener('change',async e=>{const c=e.target.closest('input[data-prt]');if(!c)return;c.disabled=true;     // v19: ✓ dal centro di controllo
@@ -16434,7 +16730,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);})();
 </script>
 </body></html>"""
 

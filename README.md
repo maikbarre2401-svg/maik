@@ -68,7 +68,7 @@ Prima: la prima risposta ci metteva tanto, e con la webcam accesa tutto rallenta
 
 - **Cosa non fa:** MAIK **non riconosce chi sei dal viso** (non identifica le persone) e i **comandi del PC restano quelli di prima**, sempre con la tua conferma.
 - Se il PC è lento: un modello più piccolo (`MAIK_MODELLO=llama3.2:3b`), `MAIK_EMBED=0` (un modello in meno in memoria), la modalità leggera di Zep. Il pannello ⚡ ti dice dove sta il collo di bottiglia.
-- Nuove variabili: `MAIK_KEEP_ALIVE` (default `30m`), `MAIK_KEEP_ALIVE_VISIONE` (`10m`), `MAIK_NUM_CTX` (`6144`; più alto = ricorda discorsi più lunghi ma usa più memoria), `MAIK_RISCALDA=0` (niente riscaldamento all'avvio).
+- Nuove variabili: `MAIK_KEEP_ALIVE` (default `30m`), `MAIK_KEEP_ALIVE_VISIONE` (`10m`), `MAIK_NUM_CTX` (`6144`; più alto = ricorda discorsi più lunghi ma usa più memoria), `MAIK_RISCALDA=0` (niente riscaldamento all'avvio), `MAIK_PAUSA_APPRENDIMENTO` (secondi di pausa prima di imparare dalle tue frasi, default `6`).
 - Nuovi endpoint: `GET /prestazioni` · `GET /presenza` · `POST /presenza {secondi}`. `/chat/stream` restituisce anche `"prestazioni"`, `"presenza"` e `"webcam"` (cosa fare con la webcam: leggere, guardare o dirti come ti vedo).
 - I dati: il tempo davanti al PC in `dati_maik/presenza.json` (solo i secondi per giorno).
 

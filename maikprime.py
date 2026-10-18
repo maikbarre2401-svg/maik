@@ -294,6 +294,7 @@ CONFIG = {
     "keep_alive_visione": _env("MAIK_KEEP_ALIVE_VISIONE", "10m"),
     "riscalda": _env("MAIK_RISCALDA", "1") != "0",
     "num_ctx": int(_env("MAIK_NUM_CTX", "6144")) if str(_env("MAIK_NUM_CTX", "6144")).isdigit() else 6144,   # v22: sempre uguale = niente ricaricamenti
+    "pausa_apprendimento": float(_env("MAIK_PAUSA_APPRENDIMENTO", "6")) if str(_env("MAIK_PAUSA_APPRENDIMENTO", "6")).replace(".", "", 1).isdigit() else 6.0,   # v22: secondi di pausa prima di imparare
     "ollama_base": _OLLAMA_BASE,
     "ollama_url":  _OLLAMA_BASE + "/api/chat",
     "ollama_tags": _OLLAMA_BASE + "/api/tags",

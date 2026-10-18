@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v24.0                   ║
+║              MAIK PRIME — Server v25.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,16 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v25.0 — MAIK PRIME ACCADEMIA:
+  • 🃏 Le carte per studiare: «fammi le carte per imparare le capitali d'Europa», «carte di spagnolo», «fammi le carte dal
+    documento storia.pdf» (o da un file allegato), «carta: hola = ciao». «ripassiamo»: ogni carta torna al momento giusto
+    (ripasso a intervalli, SM-2): quelle che sai sempre più tardi, quelle che sbagli domani. «quante carte devo ripassare?»
+  • 🎮 Il Quizzone di Zep: «facciamo un quiz di storia» (anche «difficile»): 10 domande dal modello, o le mie di serie
+    (geografia, storia, scienze, arte, sport); timer, 50:50, l'aiuto del pubblico, i record.
+  • 🎧 «metti la pioggia» (mare, bosco, camino, rumore marrone; «per 25 minuti»): i suoni per concentrarti, fatti dal vivo nel browser.
+  • Nuovi endpoint: GET /studio · GET /studio/ripasso?mazzo=&libero= · POST /studio/voto {id, voto} · POST /studio/elimina {mazzo} ·
+    GET /quiz?tema=&difficolta= · POST /quiz/fine {categoria, punti, giuste, totale}
 
 NOVITÀ v24.0 — MAIK PRIME SHOW:
   • 📻 «accendi radio maik» (o «fammi il notiziario»): uno show tutto tuo con due voci, Zep e Nova — il meteo, la tua
@@ -405,7 +415,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "24.0"
+VERSIONE  = "25.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -7713,7 +7723,7 @@ _CTX = threading.local()          # cosa sta facendo questo thread (in un'automa
 # ── ⚙️ AUTOMAZIONI: «ogni lunedì alle 9 dimmi quanto ho speso», e MAIK lo fa da solo ──
 _VERBI_AUTO = (r"dimmi|dammi|fammi|mandami|leggimi|mostrami|ricordami|ricorda(?:mi)?|fai|prepara(?:mi)?|controlla|cerca|riassumi(?:mi)?|esegui|calcola|"
                r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami|"
-               r"accendi|radio|notiziario|storie")                       # v24: «ogni mattina alle 8 accendi radio maik»
+               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz")   # v24-25: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo»
 _RE_AUTO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:crea|nuova|aggiungi|imposta)\s+(?:un['’]\s*|una\s+)?automazione\s*[:,]?\s*|automazione\s*[:,]\s*)?"
                            r"(?P<quando>(?:ogni|tutti\s+i|tutte\s+le)\s+[^,]+?|nei\s+giorni\s+feriali|nel\s+(?:weekend|fine\s+settimana)|dal\s+luned[iì]\s+al\s+venerd[iì])"
                            r"(?:\s+(?:alle|all['’]|verso\s+le)\s*(?P<ora>\d{1,2}(?:[:.]\d{2})?))?\s*[,:]?\s+(?P<cosa>(?:" + _VERBI_AUTO + r")\b.*)$", re.I)
@@ -8040,7 +8050,7 @@ class Automazioni:
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
                      "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
-                     "diagnosi", "backup", "radio", "storie")
+                     "diagnosi", "backup", "radio", "storie", "studio", "quiz")
 AUTOMAZIONI = Automazioni()
 
 
@@ -10862,6 +10872,505 @@ def v24_router(testo, motore, avvisa=None):
 
 
 # ════════════════════════════════════════════════════════════
+# V25 — MAIK PRIME Accademia: 🃏 le carte per studiare (con il ripasso intelligente), 🎮 il Quizzone di Zep,
+# 🎧 i suoni per concentrarti (pioggia, mare, bosco, camino)
+# ════════════════════════════════════════════════════════════
+
+# ── 🃏 LE CARTE PER STUDIARE: le crei da un argomento, da un documento o a mano; le ripassi al momento giusto (SM-2) ──
+MAZZI_DI_SERIE = {
+    "capitali": ("Capitali d'Europa", "🏛️", "it", [
+        ("Francia", "Parigi"), ("Germania", "Berlino"), ("Spagna", "Madrid"), ("Portogallo", "Lisbona"), ("Regno Unito", "Londra"),
+        ("Irlanda", "Dublino"), ("Paesi Bassi", "Amsterdam"), ("Belgio", "Bruxelles"), ("Austria", "Vienna"), ("Svizzera", "Berna"),
+        ("Polonia", "Varsavia"), ("Grecia", "Atene"), ("Svezia", "Stoccolma"), ("Norvegia", "Oslo"), ("Danimarca", "Copenaghen"),
+        ("Finlandia", "Helsinki"), ("Ungheria", "Budapest"), ("Repubblica Ceca", "Praga"), ("Romania", "Bucarest"), ("Croazia", "Zagabria")]),
+    "inglese": ("Inglese di base", "🇬🇧", "en", [
+        ("ciao", "hello"), ("grazie", "thank you"), ("per favore", "please"), ("casa", "house"), ("cane", "dog"), ("gatto", "cat"),
+        ("acqua", "water"), ("libro", "book"), ("amico", "friend"), ("lavoro", "work"), ("scuola", "school"), ("mangiare", "to eat"),
+        ("bere", "to drink"), ("dormire", "to sleep"), ("felice", "happy"), ("oggi", "today"), ("domani", "tomorrow"), ("ieri", "yesterday"),
+        ("sempre", "always"), ("mai", "never")]),
+    "spagnolo": ("Spagnolo di base", "🇪🇸", "es", [
+        ("ciao", "hola"), ("grazie", "gracias"), ("per favore", "por favor"), ("casa", "casa"), ("cane", "perro"), ("gatto", "gato"),
+        ("acqua", "agua"), ("libro", "libro"), ("amico", "amigo"), ("lavoro", "trabajo"), ("scuola", "escuela"), ("mangiare", "comer"),
+        ("bere", "beber"), ("dormire", "dormir"), ("felice", "feliz"), ("oggi", "hoy"), ("domani", "mañana"), ("ieri", "ayer"),
+        ("sempre", "siempre"), ("mai", "nunca")]),
+}
+_RE_SERIE = {"capitali": re.compile(r"capital", re.I), "inglese": re.compile(r"\binglese|english", re.I), "spagnolo": re.compile(r"spagnol|español|espanol", re.I)}
+_SERIE_ESATTE = {"capitali": {"capitali", "capitali d europa", "capitali europee", "capitali dell europa", "capitali d europa di base"},
+                 "inglese": {"inglese", "inglese di base", "inglese base", "parole inglesi", "parole in inglese"},
+                 "spagnolo": {"spagnolo", "spagnolo di base", "spagnolo base", "parole spagnole", "parole in spagnolo"}}
+_LINGUE_CODICE = {"inglese": "en", "spagnolo": "es", "francese": "fr", "tedesco": "de", "portoghese": "pt", "italiano": "it"}
+
+
+class Studio:
+    GIORNI_IMPARATA = 21                                   # una carta che torna tra 3 settimane o più: imparata
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "studio.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("mazzi", []); d.setdefault("carte", [])
+                return d
+        except Exception:
+            pass
+        return {"mazzi": [], "carte": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def _norm(s):
+        return re.sub(r"[^a-z0-9]+", " ", _senza_accenti(str(s or "").lower())).strip()
+
+    def trova_mazzo(self, nome, d=None):
+        d = d or self._carica()
+        n = self._norm(nome)
+        if not n:
+            return None
+        for m in d["mazzi"]:
+            if m["id"] == nome or self._norm(m["nome"]) == n:
+                return m
+        tok = set(n.split()) - {"di", "del", "della", "le", "carte", "mazzo", "il", "la"}
+        meglio, punti = None, 0
+        for m in d["mazzi"]:
+            p = len(tok & set(self._norm(m["nome"] + " " + m.get("argomento", "")).split()))
+            if p > punti:
+                meglio, punti = m, p
+        return meglio
+
+    def nuovo_mazzo(self, nome, emoji, lingua, carte, argomento="", fonte="modello"):
+        oggi = datetime.date.today().isoformat()
+        with self._lock:
+            d = self._carica()
+            m = self.trova_mazzo(nome, d) if nome else None
+            if not m or self._norm(m["nome"]) != self._norm(nome):
+                m = {"id": uuid.uuid4().hex[:8], "nome": str(nome)[:60], "emoji": str(emoji or "🃏")[:4], "lingua": lingua if lingua in ("it", "en", "es", "fr", "de", "pt") else "it",
+                     "argomento": str(argomento)[:120], "creato": oggi, "fonte": fonte}
+                d["mazzi"].append(m)
+            gia = {self._norm(c["fronte"]) for c in d["carte"] if c["mazzo"] == m["id"]}
+            nuove = []
+            for c in carte:
+                fr, rt = str(c.get("fronte") or "").strip()[:200], str(c.get("retro") or "").strip()[:200]
+                if not fr or not rt or self._norm(fr) in gia:
+                    continue
+                gia.add(self._norm(fr))
+                x = {"id": uuid.uuid4().hex[:10], "mazzo": m["id"], "fronte": fr, "retro": rt, "esempio": str(c.get("esempio") or "").strip()[:200],
+                     "creata": oggi, "scadenza": oggi, "intervallo": 0, "facilita": 2.5, "ripetizioni": 0, "storia": []}
+                d["carte"].append(x)
+                nuove.append(x)
+            self._salva(d)
+        return m, nuove
+
+    def aggiungi(self, fronte, retro, mazzo="Le mie carte"):
+        d = self._carica()
+        m = self.trova_mazzo(mazzo, d)
+        return self.nuovo_mazzo(m["nome"] if m else mazzo, m["emoji"] if m else "✍️", m["lingua"] if m else "it", [{"fronte": fronte, "retro": retro}], fonte="a mano")
+
+    @staticmethod
+    def sm2(c, voto, oggi=None):
+        """L'algoritmo del ripasso a intervalli (SuperMemo 2): se la sai bene torna sempre più tardi, se la sbagli torna domani."""
+        oggi = oggi or datetime.date.today()
+        q = max(0, min(5, int(voto)))
+        if q < 3:
+            c["ripetizioni"], c["intervallo"] = 0, 1
+        else:
+            c["intervallo"] = 1 if c["ripetizioni"] == 0 else 3 if c["ripetizioni"] == 1 else max(1, round(c["intervallo"] * c["facilita"]))
+            c["ripetizioni"] += 1
+        c["facilita"] = round(max(1.3, c["facilita"] + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)), 2)
+        c["scadenza"] = (oggi + datetime.timedelta(days=c["intervallo"])).isoformat()
+        c["storia"] = (c.get("storia") or [])[-30:] + [{"data": oggi.isoformat(), "voto": q}]
+        return c
+
+    def vota(self, cid, voto, oggi=None):
+        with self._lock:
+            d = self._carica()
+            c = next((x for x in d["carte"] if x["id"] == cid), None)
+            if not c:
+                return None
+            self.sm2(c, voto, oggi)
+            self._salva(d)
+            return c
+
+    def da_ripassare(self, mazzo=None, n=20, oggi=None, libero=False):
+        oggi = (oggi or datetime.date.today()).isoformat()
+        d = self._carica()
+        mz = {m["id"]: m for m in d["mazzi"]}
+        L = [c for c in d["carte"] if (not mazzo or c["mazzo"] == mazzo) and c["mazzo"] in mz]
+        if not libero:
+            L = [c for c in L if c["scadenza"] <= oggi]
+            L.sort(key=lambda c: (c["ripetizioni"] == 0, c["scadenza"]))       # prima quelle in ritardo, poi le nuove
+        else:
+            random.shuffle(L)
+        return [dict(c, mazzo_nome=mz[c["mazzo"]]["nome"], emoji=mz[c["mazzo"]]["emoji"], lingua=mz[c["mazzo"]]["lingua"]) for c in L[:n]]
+
+    def panoramica(self, oggi=None):
+        oggi = oggi or datetime.date.today()
+        d = self._carica()
+        out = []
+        for m in d["mazzi"]:
+            C = [c for c in d["carte"] if c["mazzo"] == m["id"]]
+            out.append(dict(m, totale=len(C), oggi=sum(1 for c in C if c["scadenza"] <= oggi.isoformat()), imparate=sum(1 for c in C if c["intervallo"] >= self.GIORNI_IMPARATA),
+                            nuove=sum(1 for c in C if not c.get("storia"))))
+        giorni = {s["data"] for c in d["carte"] for s in (c.get("storia") or [])}
+        serie, g = 0, oggi if oggi.isoformat() in giorni else oggi - datetime.timedelta(days=1)
+        while g.isoformat() in giorni:
+            serie, g = serie + 1, g - datetime.timedelta(days=1)
+        return {"mazzi": out, "da_ripassare": sum(m["oggi"] for m in out), "carte": sum(m["totale"] for m in out), "serie": serie,
+                "ripassate_oggi": sum(1 for c in d["carte"] for s in (c.get("storia") or []) if s["data"] == oggi.isoformat())}
+
+    def elimina_mazzo(self, mid):
+        with self._lock:
+            d = self._carica()
+            m = next((x for x in d["mazzi"] if x["id"] == mid), None)
+            if not m:
+                return None
+            d["mazzi"] = [x for x in d["mazzi"] if x["id"] != mid]
+            d["carte"] = [c for c in d["carte"] if c["mazzo"] != mid]
+            self._salva(d)
+            return m
+
+
+STUDIO = Studio()
+_FILE_ANNULLABILI["studio.json"] = "🃏 carte di studio"
+_FILE_ANNULLABILI["quiz.json"] = "🎮 record del quiz"
+
+
+def crea_carte(tema, cervello, n=12, testo_fonte=""):
+    """Le carte su un argomento (o da un testo): col modello; senza, i mazzi di serie che conosco."""
+    tema = re.sub(r"\s+", " ", str(tema or "")).strip(" .?!")[:120]
+    n = max(4, min(20, int(n or 12)))
+    pulito = re.sub(r"^(?:il|lo|la|l|le|i|gli)\s+", "", Studio._norm(tema))
+    k = None if testo_fonte else next((k for k, al in _SERIE_ESATTE.items() if pulito in al), None)
+    if k:                                                  # un mazzo che conosco già (giusto e subito): non serve il modello
+        nome, emoji, lin, coppie = MAZZI_DI_SERIE[k]
+        return STUDIO.nuovo_mazzo(nome, emoji, lin, [{"fronte": a, "retro": b} for a, b in coppie], argomento=tema, fonte="di serie"), "di serie"
+    lingua = next((c for k, c in _LINGUE_CODICE.items() if re.search(r"\b" + k, tema, re.I)), "it")
+    fonte_txt = f"\n\nUSA SOLO QUESTO TESTO (è un documento della persona):\n{testo_fonte[:6000]}" if testo_fonte else ""
+    prompt = (f"Crea un mazzo di carte per studiare «{tema}» (per una persona che parla italiano). Da 6 a {n} carte. Ogni carta: fronte (domanda o parola, breve), "
+              "retro (la risposta, breve e GIUSTA: niente cose inventate), esempio (facoltativo, una frase). Se è una lingua straniera: fronte in italiano, retro nella lingua, "
+              f"e scrivi il codice della lingua del retro (en, es, fr, de, pt, it).{fonte_txt}\nRispondi SOLO in JSON: "
+              '{"mazzo": "nome breve", "emoji": "una emoji", "lingua_retro": "it", "carte": [{"fronte": "…", "retro": "…", "esempio": "…"}]}')
+    j = None
+    try:
+        j = cervello.pensa_json(prompt, timeout=150, num_predict=1400)
+    except Exception:
+        j = None
+    carte = []
+    if isinstance(j, dict) and isinstance(j.get("carte"), list):
+        for c in j["carte"][:n]:
+            if isinstance(c, dict) and str(c.get("fronte") or "").strip() and str(c.get("retro") or "").strip():
+                carte.append(c)
+    if len(carte) >= 3:
+        nome = re.sub(r"\s+", " ", str(j.get("mazzo") or tema)).strip()[:60] or tema
+        lr = str(j.get("lingua_retro") or lingua).lower()[:2]
+        return STUDIO.nuovo_mazzo(nome, str(j.get("emoji") or "🃏"), lr if lr in ("it", "en", "es", "fr", "de", "pt") else lingua, carte, argomento=tema), "modello"
+    k = next((k for k, r in _RE_SERIE.items() if r.search(tema)), None) if not testo_fonte else None
+    if k:
+        nome, emoji, lin, coppie = MAZZI_DI_SERIE[k]
+        return STUDIO.nuovo_mazzo(nome, emoji, lin, [{"fronte": a, "retro": b} for a, b in coppie], argomento=tema, fonte="di serie"), "di serie"
+    return (None, []), None
+
+
+_RE_STUDIO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:crea(?:mi)?|fammi|preparami|prepara|genera(?:mi)?|fai)\s+(?:(?P<n>\d{1,2})\s+|delle\s+|le\s+|un\s+mazzo\s+di\s+|qualche\s+)?"
+                             r"(?:carte|flashcard|schede)(?:\s+(?:per\s+(?:imparare|studiare|ripassare)|su(?:l|lla|lle|i|gli|llo)?|di|dei|delle|dal|dalla|sul(?:l['’])?))?\s+(?P<t>.+)$", re.I)
+_RE_STUDIO_CREA2 = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:le\s+)?(?:carte|flashcard)\s+(?:di|del|della|delle|dei|degli|sul|sulla|sulle|sui|per\s+(?:imparare|studiare)|per)\s+(?P<t>.+)|"
+                              r"(?:voglio\s+(?:imparare|studiare|ripassare)|insegnami|aiutami\s+a\s+(?:imparare|studiare))\s+(?P<t2>.+?)\s+con\s+le\s+(?:carte|flashcard))$", re.I)
+_RE_STUDIO_CARTA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:aggiungi\s+(?:una\s+)?)?carta\s*[:,]\s*(?P<f>.+?)\s*(?:=|→|->)\s*(?P<r>.+?)(?:\s+(?:nel|al|in)\s+mazzo\s+(?P<m>.+))?$", re.I)
+_RE_STUDIO_RIPASSO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:ripassiamo|ripassa(?:mo)?|fammi\s+ripassare|facciamo\s+(?:il\s+)?ripasso|ripasso|studiamo|interrogami|interroga(?:mi)?)"
+                                r"(?:\s+(?:le\s+carte\s+)?(?:della|dello|delle|dei|del|di|sulla|sulle|sui|sul|su|il|lo|la)?\s*(?P<m>.+?))?$", re.I)
+_RE_STUDIO_STATO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:quante\s+carte\s+(?:devo|ho\s+da)\s+ripassare(?:\s+oggi)?|(?:le\s+)?mie\s+carte|(?:i\s+)?miei\s+mazzi|come\s+va\s+(?:lo\s+studio|il\s+ripasso)|(?:il\s+)?mio\s+studio)$", re.I)
+_RE_STUDIO_ELIMINA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:elimina|cancella|togli)\s+(?:il\s+)?mazzo\s+(?:di\s+|del\s+|della\s+)?(?P<m>.+)$", re.I)
+
+
+def studio_router(testo, motore, avvisa=None):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    m = _RE_STUDIO_CARTA.match(t)
+    if m:
+        mz, nuove = STUDIO.aggiungi(m.group("f"), m.group("r"), m.group("m") or "Le mie carte")
+        if not nuove:
+            return {"testo": f"🃏 Questa carta c'è già nel mazzo «{mz['nome']}».", "studio": STUDIO.panoramica()}
+        return {"testo": f"🃏 Aggiunta al mazzo **{mz['emoji']} {mz['nome']}**: «{nuove[0]['fronte']}» → «{nuove[0]['retro']}». Te la chiedo già oggi nel ripasso.", "studio": dict(STUDIO.panoramica(), nuovo=mz["id"])}
+    m = _RE_STUDIO_CREA.match(t)
+    m2 = None if m else _RE_STUDIO_CREA2.match(t)
+    if m or m2:
+        tema = m.group("t") if m else (m2.group("t") or m2.group("t2"))
+        doc = None
+        md = re.match(r"^(?:il\s+|questo\s+)?(?:documento|file|pdf)\s+(.+)$", tema, re.I)
+        if md:
+            q = _senza_accenti(md.group(1).lower())
+            doc = next((x for x in reversed(motore.memoria.documenti) if q in _senza_accenti(str(x.get("nome", "")).lower())), None)
+            if not doc:
+                return {"testo": f"🃏 Non trovo il documento «{md.group(1)}» tra i tuoi documenti 📚. Caricalo (📎) e poi chiedimi le carte."}
+        (avvisa or (lambda e: None))({"lavoro": {"tipo": "carte", "icona": "🃏", "testo": f"Preparo le carte su «{(doc or {}).get('nome') or tema}»…"}})
+        (mz, nuove), fonte = crea_carte(doc.get("nome") if doc else tema, motore.cervello, int((m.group("n") if m else None) or 12), testo_fonte=str(doc.get("contenuto") or "") if doc else "")
+        if not mz:
+            return {"testo": f"🃏 Senza il modello non so inventare le carte su «{tema}». Puoi scriverle tu («**carta: domanda = risposta**») oppure partire da un mazzo che conosco: "
+                             "«carte delle capitali d'Europa», «carte di inglese», «carte di spagnolo»."}
+        if not nuove:
+            return {"testo": f"🃏 Il mazzo **{mz['emoji']} {mz['nome']}** ce l'hai già, con le stesse carte. Dimmi «ripassiamo {mz['nome'].lower()}»!", "studio": dict(STUDIO.panoramica(), nuovo=mz["id"])}
+        esempi = "\n".join(f"- {c['fronte']} → {c['retro']}" for c in nuove[:4])
+        return {"testo": f"🃏 Pronto il mazzo **{mz['emoji']} {mz['nome']}**: {len(nuove)} carte" + (" (un mazzo che conosco io)" if fonte == "di serie" else "") + f".\n{esempi}"
+                         + ("\n- …" if len(nuove) > 4 else "") + "\n\nOgni carta te la richiedo al momento giusto: quelle che sai tornano sempre più tardi, quelle che sbagli domani. Partiamo?",
+                "studio": dict(STUDIO.panoramica(), nuovo=mz["id"], ripasso={"mazzo": mz["id"], "carte": STUDIO.da_ripassare(mz["id"])})}
+    if _RE_STUDIO_STATO.match(t):
+        p = STUDIO.panoramica()
+        if not p["mazzi"]:
+            return {"testo": "🃏 Non hai ancora carte. Prova: «**fammi le carte per imparare le capitali d'Europa**», «carte di spagnolo», oppure scrivine una tu: «carta: hola = ciao».", "studio": p}
+        righe = "\n".join(f"- {x['emoji']} **{x['nome']}**: {x['totale']} carte · {x['oggi']} da ripassare oggi · {x['imparate']} imparate" for x in p["mazzi"])
+        return {"testo": f"🃏 **Il tuo studio**: {p['da_ripassare']} carte da ripassare oggi" + (f" · 🔥 {p['serie']} giorn{'o' if p['serie'] == 1 else 'i'} di fila" if p["serie"] else "") + f".\n{righe}", "studio": p}
+    m = _RE_STUDIO_ELIMINA.match(t)
+    if m:
+        mz = STUDIO.trova_mazzo(m.group("m"))
+        if not mz:
+            return {"testo": f"🃏 Non trovo il mazzo «{m.group('m')}». Dimmi «i miei mazzi» per vederli."}
+        STUDIO.elimina_mazzo(mz["id"])
+        return {"testo": f"🗑️ Eliminato il mazzo **{mz['emoji']} {mz['nome']}** (se ti sei sbagliato: «annulla»).", "studio": STUDIO.panoramica()}
+    m = _RE_STUDIO_RIPASSO.match(t)
+    if m:
+        p = STUDIO.panoramica()
+        if not p["mazzi"]:
+            return {"testo": "🃏 Non hai ancora carte da ripassare. Prova: «**fammi le carte per imparare le capitali d'Europa**» oppure «carte di inglese».", "studio": p}
+        mz = STUDIO.trova_mazzo(m.group("m")) if m.group("m") else None
+        if m.group("m") and not mz:
+            return {"testo": f"🃏 Non trovo il mazzo «{m.group('m')}». I tuoi mazzi: " + ", ".join(f"{x['emoji']} {x['nome']}" for x in p["mazzi"]) + ".", "studio": p}
+        carte = STUDIO.da_ripassare(mz["id"] if mz else None)
+        libero = False
+        if not carte:
+            carte, libero = STUDIO.da_ripassare(mz["id"] if mz else None, n=10, libero=True), True
+        dove = f" **{mz['emoji']} {mz['nome']}**" if mz else ""
+        t = (f"🃏 Ripassiamo{dove}: {len(carte)} cart{'a' if len(carte) == 1 else 'e'}." if not libero else
+             f"🃏 Per oggi hai già ripassato tutto{(' in' + dove) if mz else ''}! 🎉 Se vuoi, un giro libero di {len(carte)} carte (non cambia i tempi del ripasso).")
+        return {"testo": t + " Guarda la carta, pensa alla risposta, poi girala e dimmi com'è andata.", "studio": dict(p, ripasso={"mazzo": mz["id"] if mz else None, "carte": carte, "libero": libero})}
+    return None
+
+
+def carte_da_allegato(testo, allegato, motore):
+    """«fammi le carte da questo file» con un file allegato."""
+    if not (testo and allegato and re.search(r"\b(?:carte|flashcard|schede)\b", testo, re.I) and re.search(r"\b(?:questo|quest['’]|dal|da|del)\b", testo, re.I)):
+        return None
+    nome = str(allegato.get("nome") or "file")[:80]
+    (mz, nuove), _ = crea_carte(nome, motore.cervello, 12, testo_fonte=str(allegato.get("contenuto") or ""))
+    if not mz or not nuove:
+        return {"testo": f"🃏 Non sono riuscito a fare le carte da «{nome}»" + (" (serve il modello: Ollama è acceso?)" if not mz else " (ci sono già tutte)") + "."}
+    return {"testo": f"🃏 Dal file «{nome}» ho preparato il mazzo **{mz['emoji']} {mz['nome']}**: {len(nuove)} carte. Partiamo col ripasso?",
+            "studio": dict(STUDIO.panoramica(), nuovo=mz["id"], ripasso={"mazzo": mz["id"], "carte": STUDIO.da_ripassare(mz["id"])})}
+
+
+# ── 🎮 IL QUIZZONE DI ZEP: 10 domande, 4 risposte, il timer, gli aiuti e i record ──
+DOMANDE_DI_SERIE = {
+    "geografia": [
+        ("Qual è la capitale dell'Australia?", "Canberra", ["Sydney", "Melbourne", "Perth"], "Canberra fu scelta come compromesso tra Sydney e Melbourne."),
+        ("Qual è il fiume più lungo d'Italia?", "Il Po", ["Il Tevere", "L'Adige", "L'Arno"], "Il Po è lungo circa 650 km."),
+        ("Qual è la montagna più alta del mondo?", "L'Everest", ["Il K2", "Il Kilimangiaro", "Il Monte Bianco"], "L'Everest supera gli 8.800 metri."),
+        ("In quale continente si trova l'Egitto?", "Africa", ["Asia", "Europa", "Oceania"], "L'Egitto è in Africa, anche se il Sinai è in Asia."),
+        ("Qual è il lago più grande d'Italia?", "Il lago di Garda", ["Il lago Maggiore", "Il lago di Como", "Il lago Trasimeno"], "Il Garda è il più esteso lago italiano."),
+        ("Qual è la capitale del Canada?", "Ottawa", ["Toronto", "Vancouver", "Montréal"], "Toronto è la città più grande, ma la capitale è Ottawa."),
+        ("Quale oceano bagna la costa occidentale degli Stati Uniti?", "L'oceano Pacifico", ["L'oceano Atlantico", "L'oceano Indiano", "Il mar Glaciale Artico"], "A ovest c'è il Pacifico, a est l'Atlantico."),
+        ("Quante regioni ha l'Italia?", "20", ["18", "21", "22"], "Le regioni italiane sono 20, di cui 5 a statuto speciale."),
+        ("Qual è il Paese più grande del mondo per superficie?", "La Russia", ["Il Canada", "La Cina", "Gli Stati Uniti"], "La Russia supera i 17 milioni di km²."),
+        ("Qual è la capitale della Spagna?", "Madrid", ["Barcellona", "Siviglia", "Valencia"], "Madrid è al centro della penisola iberica.")],
+    "storia": [
+        ("In che anno è caduto il Muro di Berlino?", "1989", ["1991", "1985", "1979"], "Il Muro cadde il 9 novembre 1989."),
+        ("Chi arrivò in America nel 1492?", "Cristoforo Colombo", ["Amerigo Vespucci", "Marco Polo", "Ferdinando Magellano"], "Colombo partì con tre caravelle."),
+        ("In che anno l'Italia scelse la Repubblica con il referendum?", "1946", ["1945", "1948", "1918"], "Il referendum si tenne il 2 giugno 1946."),
+        ("Chi fu il primo imperatore romano?", "Augusto", ["Giulio Cesare", "Nerone", "Traiano"], "Ottaviano Augusto divenne imperatore nel 27 a.C."),
+        ("In che anno iniziò la Prima guerra mondiale?", "1914", ["1915", "1918", "1939"], "L'Italia entrò in guerra nel 1915."),
+        ("In che anno l'uomo arrivò sulla Luna?", "1969", ["1961", "1972", "1957"], "Armstrong e Aldrin scesero sulla Luna nel luglio 1969."),
+        ("Quale città fu sepolta dall'eruzione del Vesuvio nel 79 d.C.?", "Pompei", ["Napoli", "Ostia", "Paestum"], "Con Pompei furono sepolte anche Ercolano e Stabia.")],
+    "scienze": [
+        ("Qual è il simbolo chimico dell'oro?", "Au", ["Ag", "Or", "Go"], "Au viene dal latino aurum; Ag è l'argento."),
+        ("Quanti pianeti ci sono nel sistema solare?", "8", ["9", "7", "10"], "Dal 2006 Plutone è un pianeta nano."),
+        ("Qual è il pianeta più grande del sistema solare?", "Giove", ["Saturno", "La Terra", "Nettuno"], "In Giove ci starebbero più di mille Terre."),
+        ("A che temperatura bolle l'acqua al livello del mare?", "100 °C", ["90 °C", "120 °C", "80 °C"], "In montagna bolle un po' prima, perché la pressione è più bassa."),
+        ("Qual è il gas più abbondante nell'aria?", "L'azoto", ["L'ossigeno", "L'anidride carbonica", "L'argon"], "L'azoto è circa il 78% dell'aria."),
+        ("Quante ossa ha, più o meno, un adulto?", "206", ["150", "312", "186"], "Alla nascita sono di più: poi alcune si saldano."),
+        ("Qual è l'organo più grande del corpo umano?", "La pelle", ["Il fegato", "Il cervello", "I polmoni"], "La pelle copre circa due metri quadrati."),
+        ("Qual è il pianeta più vicino al Sole?", "Mercurio", ["Venere", "Marte", "La Terra"], "Mercurio fa il giro del Sole in 88 giorni."),
+        ("Chi formulò la teoria della relatività?", "Albert Einstein", ["Isaac Newton", "Galileo Galilei", "Niels Bohr"], "La relatività ristretta è del 1905."),
+        ("Qual è la formula chimica dell'acqua?", "H₂O", ["CO₂", "O₂", "H₂O₂"], "Due atomi di idrogeno e uno di ossigeno.")],
+    "arte": [
+        ("Chi dipinse la Gioconda?", "Leonardo da Vinci", ["Michelangelo", "Raffaello", "Caravaggio"], "La Gioconda è al Louvre di Parigi."),
+        ("Chi scrisse la Divina Commedia?", "Dante Alighieri", ["Francesco Petrarca", "Giovanni Boccaccio", "Alessandro Manzoni"], "È divisa in Inferno, Purgatorio e Paradiso."),
+        ("Chi scrisse «I promessi sposi»?", "Alessandro Manzoni", ["Giovanni Verga", "Italo Calvino", "Ugo Foscolo"], "Racconta la storia di Renzo e Lucia."),
+        ("Chi compose «Le quattro stagioni»?", "Antonio Vivaldi", ["Wolfgang Amadeus Mozart", "Giuseppe Verdi", "Gioachino Rossini"], "Vivaldi era veneziano."),
+        ("Chi affrescò la volta della Cappella Sistina?", "Michelangelo", ["Raffaello", "Giotto", "Sandro Botticelli"], "Ci lavorò dal 1508 al 1512."),
+        ("Quante sono le note della scala musicale (do, re, mi…)?", "7", ["8", "5", "12"], "Do, re, mi, fa, sol, la, si.")],
+    "sport": [
+        ("Quanti giocatori ha in campo una squadra di calcio?", "11", ["10", "9", "12"], "Compreso il portiere."),
+        ("Ogni quanti anni si svolgono le Olimpiadi estive?", "4", ["2", "3", "5"], "L'intervallo di quattro anni si chiama olimpiade."),
+        ("Nel tennis, come si chiama il 40 pari?", "Parità", ["Vantaggio", "Break", "Tie-break"], "In inglese si dice deuce."),
+        ("In quale sport si fa un «fuoricampo»?", "Baseball", ["Golf", "Hockey", "Tennis"], "Il fuoricampo (home run) è il colpo più bello del baseball.")],
+}
+CATEGORIE_QUIZ = {"geografia": ("🌍", "Geografia", r"geograf|capital|paesi|fium|mont|citt"), "storia": ("🏛️", "Storia", r"stori"),
+                  "scienze": ("🔬", "Scienze", r"scien|chimic|fisic|biolog|astronom|corpo|pianet"), "arte": ("🎨", "Arte e cultura", r"arte|cultur|letterat|libri|musica|pittur"),
+                  "sport": ("⚽", "Sport", r"sport|calcio|tennis|olimpi")}
+_RE_QUIZ = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:facciamo|fammi|gioc(?:a|hiamo)(?:\s+a)?|inizia|lancia|sfidami(?:\s+a)?|voglio(?:\s+fare)?|proponimi)\s+)?(?:un\s+|il\s+|al\s+)?"
+                      r"(?:quiz(?:zone)?|quizzone(?:\s+di\s+zep)?)(?:\s+(?:sull['’]|sulla|sulle|sullo|sugli|sui|sul|su|di)\s*(?P<t>.+?))?(?:\s+(?P<d>facile|difficile|medio))?$", re.I)
+
+
+class Quiz:
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "quiz.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("record", {}); d.setdefault("partite", 0)
+                return d
+        except Exception:
+            pass
+        return {"record": {}, "partite": 0}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def categoria(tema):
+        t = str(tema or "")
+        return next((k for k, v in CATEGORIE_QUIZ.items() if re.search(v[2], t, re.I)), None)
+
+    @staticmethod
+    def _mescola(domanda, giusta, sbagliate, spiegazione):
+        r = [giusta] + list(sbagliate)[:3]
+        random.shuffle(r)
+        return {"domanda": domanda, "risposte": r, "giusta": r.index(giusta), "spiegazione": spiegazione}
+
+    def di_serie(self, cat=None, n=10):
+        if cat in DOMANDE_DI_SERIE:
+            L = list(DOMANDE_DI_SERIE[cat])
+            if len(L) < n:
+                altre = [q for k, v in DOMANDE_DI_SERIE.items() if k != cat for q in v]
+                random.shuffle(altre)
+                L += altre[:n - len(L)]
+        else:
+            L = [q for v in DOMANDE_DI_SERIE.values() for q in v]
+        random.shuffle(L)
+        return [self._mescola(*q) for q in L[:n]]
+
+    def prepara(self, tema, difficolta, cervello):
+        tema = re.sub(r"\s+", " ", str(tema or "")).strip(" .?!")[:80]
+        cat = self.categoria(tema) if tema else None
+        domande, fonte = [], "di serie"
+        prompt = (f"Prepara un quiz di 10 domande a risposta multipla su «{tema or 'cultura generale'}», difficoltà {difficolta}, per un pubblico italiano. "
+                  "Ogni domanda ha 4 risposte e UNA sola giusta; solo fatti veri e verificabili (niente domande ambigue, opinioni o date incerte). "
+                  "Aggiungi una spiegazione di una frase. Rispondi SOLO in JSON: "
+                  '{"titolo": "…", "domande": [{"domanda": "…", "risposte": ["…", "…", "…", "…"], "giusta": 0, "spiegazione": "…"}]}')
+        try:
+            j = cervello.pensa_json(prompt, timeout=150, num_predict=1800)
+        except Exception:
+            j = None
+        if isinstance(j, dict) and isinstance(j.get("domande"), list):
+            for q in j["domande"][:12]:
+                try:
+                    r = [re.sub(r"\s+", " ", str(x)).strip()[:120] for x in q["risposte"]]
+                    g = int(q["giusta"])
+                    dom = re.sub(r"\s+", " ", str(q["domanda"])).strip()[:240]
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if len(r) != 4 or not all(r) or len({x.lower() for x in r}) != 4 or not 0 <= g < 4 or not dom:
+                    continue
+                domande.append(self._mescola(dom, r[g], [x for i, x in enumerate(r) if i != g], re.sub(r"\s+", " ", str(q.get("spiegazione") or "")).strip()[:240]))
+        if len(domande) >= 5:
+            fonte = "modello"
+            titolo = re.sub(r"\s+", " ", str(j.get("titolo") or "")).strip()[:70]
+        else:
+            domande = self.di_serie(cat)
+            titolo = ""
+        emo, nome = (CATEGORIE_QUIZ[cat][0], CATEGORIE_QUIZ[cat][1]) if cat else ("🎯", tema.capitalize() if tema and fonte == "modello" else "Cultura generale")
+        chiave = cat or (_senza_accenti(tema.lower())[:40] if tema and fonte == "modello" else "generale")
+        rec = self._carica()["record"].get(chiave)
+        return {"titolo": titolo or f"Il Quizzone di Zep · {nome}", "categoria": chiave, "nome": nome, "emoji": emo, "difficolta": difficolta, "domande": domande[:10],
+                "fonte": fonte, "record": rec, "secondi": 20 if difficolta != "difficile" else 15}
+
+    def fine(self, categoria, punti, giuste, totale):
+        d = self._carica()
+        cat = str(categoria or "generale")[:40]
+        punti, giuste, totale = max(0, int(punti)), max(0, int(giuste)), max(1, int(totale))
+        vecchio = d["record"].get(cat)
+        nuovo = not vecchio or punti > vecchio.get("punti", 0)
+        if nuovo:
+            d["record"][cat] = {"punti": punti, "giuste": giuste, "totale": totale, "data": datetime.date.today().isoformat()}
+        d["partite"] = d.get("partite", 0) + 1
+        self._salva(d)
+        return {"record": nuovo, "precedente": vecchio, "partite": d["partite"], "migliore": d["record"].get(cat)}
+
+
+QUIZ = Quiz()
+
+
+def quiz_router(testo, motore, avvisa=None):
+    m = _RE_QUIZ.match(re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!."))
+    if not m:
+        return None
+    (avvisa or (lambda e: None))({"lavoro": {"tipo": "quiz", "icona": "🎮", "testo": "Preparo le domande del Quizzone…"}})
+    q = QUIZ.prepara(m.group("t") or "", (m.group("d") or "medio").lower(), motore.cervello)
+    rec = f" Il tuo record qui: **{q['record']['punti']} punti**." if q.get("record") else ""
+    return {"testo": f"🎮 **{q['titolo']}**: {len(q['domande'])} domande, {q['secondi']} secondi ciascuna, due aiuti (50:50 e il pubblico).{rec} Pronti? Via! 🎬", "quiz": q}
+
+
+# ── 🎧 I SUONI PER CONCENTRARTI (li fa il browser, dal vivo: qui capisco solo cosa vuoi) ──
+SUONI = {"pioggia": ("🌧️", "la pioggia"), "mare": ("🌊", "il mare"), "bosco": ("🌲", "il bosco"), "camino": ("🔥", "il camino"), "rumore": ("📻", "il rumore marrone")}
+_RE_SUONI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:metti|accendi|fammi\s+sentire|fai\s+partire|voglio(?:\s+sentire)?)\s+(?:un\s+po['’]?\s+(?:di\s+)?)?(?:(?:i|il|la|lo|le|gli|dei|del|della|delle)\s+)?"
+                       r"(?:suoni?\s+(?:della|del|di|dell['’]|per|dei)\s*|rumore\s+(?:della|del|di|dell['’])?\s*|onde\s+del\s+)?"
+                       r"(?P<s>pioggia|mare|onde|bosco|foresta|natura|camino|fuoco|rumore\s+(?:bianco|rosa|marrone)|concentrar(?:mi|si)|studiare|rilassar(?:mi|si)|dormire)"
+                       r"(?:\s+per\s+(?P<m>\d{1,3})\s+minuti)?$", re.I)
+_RE_SUONI_STOP = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:spegni|ferma|basta|togli|stop)\s+(?:(?:i|il|la|lo)\s+)?(?:suoni|rumore|pioggia|mare|bosco|camino|onde)(?:\s+di\s+sottofondo)?$", re.I)
+
+
+def suoni_router(testo):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    if _RE_SUONI_STOP.match(t):
+        return {"testo": "🔇 Spengo i suoni.", "suoni": {"tipo": "stop"}}
+    m = _RE_SUONI.match(t)
+    if not m:
+        return None
+    s = m.group("s").lower()
+    tipo = ("mare" if re.match(r"mare|onde|rilassar|dormire", s) else "bosco" if re.match(r"bosco|foresta|natura", s) else "camino" if re.match(r"camino|fuoco", s)
+            else "rumore" if s.startswith("rumore") else "pioggia")
+    minuti = int(m.group("m")) if m.group("m") else None
+    e, nome = SUONI[tipo]
+    return {"testo": f"{e} Metto {nome}" + (f" per {minuti} minuti" if minuti else "") + ". Il volume e lo stop sono nel riquadro sul palco 🎧", "suoni": {"tipo": tipo, "minuti": minuti}}
+
+
+def v25_router(testo, motore, avvisa=None):
+    return suoni_router(testo) or quiz_router(testo, motore, avvisa) or (None if getattr(_CTX, "automazione", False) and _RE_STUDIO_ELIMINA.match((testo or "").strip()) else studio_router(testo, motore, avvisa))
+
+
+def _aggancia_giornale_v25():
+    for cls in (Studio, Quiz):
+        if getattr(cls, "_v25", False):
+            continue
+        orig = cls._salva
+
+        def _salva_c(self, *a, _orig=orig, **k):
+            metti_da_parte_se_rotto(self._file())
+            GIORNALE.prima(self._file())
+            return _orig(self, *a, **k)
+        cls._salva, cls._v25 = _salva_c, True
+
+
+_aggancia_giornale_v25()
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -11442,7 +11951,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -11453,7 +11962,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -11510,6 +12019,12 @@ Oggi è {oggi}.{extra}
             on_token(r["testo"])
             self.memoria.salva_scambio(testo + f" [📎 {nome}]", r["testo"], sid)
             return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: r[k] for k in ("spesa", "evento") if r.get(k)})
+        if allegato and testo:                                   # v25: 🧠 «fammi le carte da questo file»
+            cd = carte_da_allegato(testo, allegato, self)
+            if cd:
+                on_token(cd["testo"])
+                self.memoria.salva_scambio(testo + f" [📎 {str(allegato.get('nome') or 'file')[:80]}]", cd["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **({"studio": cd["studio"]} if cd.get("studio") else {}))
         ricordi_dom = ric_q = None
         if not allegato:
             cmd = self._gestisci_comando(testo)
@@ -11519,34 +12034,39 @@ Oggi è {oggi}.{extra}
             if v23:
                 on_token(v23["testo"])
                 self.memoria.salva_scambio(testo, v23["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v23.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v23.get(k)})
             v24 = v24_router(testo, self, avvisa)                    # v24: 📻 radio maik · 🎞️ storie · 🧠 mappa della mente
             if v24:
                 on_token(v24["testo"])
                 self.memoria.salva_scambio(testo, v24["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v24.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v24.get(k)})
+            v25 = v25_router(testo, self, avvisa)                    # v25: 🧠 carte · 🎮 quiz · 🎧 suoni
+            if v25:
+                on_token(v25["testo"])
+                self.memoria.salva_scambio(testo, v25["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v25.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -11567,7 +12087,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -11581,7 +12101,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -12206,6 +12726,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/studio":                                   # v25: 🧠 i mazzi, le carte da ripassare oggi, la serie
+                self._json(dict(STUDIO.panoramica(), ok=True))
+            elif base == "/studio/ripasso":                           # v25: le carte da ripassare (?mazzo=&libero=1)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mz = q.get("mazzo", [""])[0] or None
+                self._json({"ok": True, "carte": STUDIO.da_ripassare(mz, libero=q.get("libero", ["0"])[0] == "1")})
+            elif base == "/quiz":                                     # v25: 🎮 le domande (?tema=&difficolta=facile|medio|difficile)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                d = q.get("difficolta", ["medio"])[0]
+                self._json(dict(QUIZ.prepara(q.get("tema", [""])[0][:80], d if d in ("facile", "medio", "difficile") else "medio", MOTORE.cervello), ok=True))
             elif base == "/radio":                                    # v24: 📻 il copione dello show (?momento=mattina|pomeriggio|sera)
                 q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
                 mo = q.get("momento", [""])[0]
@@ -12702,8 +13232,28 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     sec = 0
                 self._json(dict(PRESENZA.aggiungi(sec), ok=True))
-            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica") and not stessa_origine(self):
+            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica", "/studio/voto", "/studio/elimina", "/quiz/fine") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/studio/voto":                              # v25: {id, voto: 0-5} → la carta con la prossima data
+                c = self._read_json_body()
+                try:
+                    x = STUDIO.vota(str(c.get("id", "")), int(c.get("voto", 0)))
+                except (TypeError, ValueError):
+                    x = None
+                self._json({"ok": bool(x), "carta": x, "studio": STUDIO.panoramica()} if x else {"ok": False, "errore": "carta non trovata"}, 200 if x else 404)
+            elif base == "/studio/elimina":                           # v25: {mazzo} (si può annullare)
+                GIORNALE.inizia("elimina un mazzo")
+                m = STUDIO.elimina_mazzo(str(self._read_json_body().get("mazzo", "")))
+                if m and getattr(_CTX, "giornale", None):
+                    _CTX.giornale["testo"] = f"elimina il mazzo «{m['nome']}»"
+                mod = GIORNALE.chiudi()
+                self._json({"ok": bool(m), "annullabile": mod, "studio": STUDIO.panoramica()}, 200 if m else 404)
+            elif base == "/quiz/fine":                                # v25: {categoria, punti, giuste, totale} → record?
+                c = self._read_json_body()
+                try:
+                    self._json(dict(QUIZ.fine(c.get("categoria"), c.get("punti", 0), c.get("giuste", 0), c.get("totale", 10)), ok=True))
+                except (TypeError, ValueError):
+                    self._json({"ok": False, "errore": "dati non validi"}, 400)
             elif base == "/mente/dimentica":                          # v24: {tipo: profilo|persona|fatto|sogno, chiave} (si può annullare)
                 c = self._read_json_body()
                 r = dimentica_nodo(MOTORE.memoria, str(c.get("tipo", "")), str(c.get("chiave", "")))
@@ -12886,7 +13436,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V24</title>
+<title>MAIK PRIME // Zep V25</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -13502,10 +14052,52 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .mmnota{padding:6px 14px 10px;font-size:12px;color:var(--dim)}#mmvuota[hidden],#mmdet[hidden],#rdmuto[hidden]{display:none}
   .sbshow{display:flex;gap:6px;margin-top:8px}.sbshow .tbtn{flex:1;padding-left:4px;padding-right:4px;font-size:12px}
   @media (prefers-reduced-motion:reduce){.onair,#radio.parla .rdeq i,#stcont.entra>*,.stb i b,.stcloud span{animation:none}#radio.parla .rdeq i{height:60%}}
+
+  /* ===== V25 · carte, quiz, suoni ===== */
+  #stumodal .mod,#qzmodal .mod{max-width:640px;width:96vw}
+  .stuprog,.qzprog{height:3px;background:rgba(var(--accent-rgb),.12)}.stuprog b{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+  #stupos{margin-left:auto;margin-right:8px;font:12px 'Share Tech Mono',monospace;color:var(--dim)}
+  .stusom{padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.22);border:1px solid rgba(var(--accent-rgb),.22);margin-bottom:8px;font-size:14px}
+  .stumz{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid rgba(var(--accent-rgb),.1)}.stumz>div{flex:1;min-width:0}
+  .stumz small{display:block;color:var(--dim);font-size:12px}.stue{font-size:26px}
+  .stubar{display:block;height:5px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:5px;overflow:hidden}.stubar b{display:block;height:100%;background:var(--green,#34d399)}
+  .stumz button,.stunuovo button,.stubtn button,#stuvoti button,.sturow button,.qzbar button,#qzavanti{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:6px 11px;cursor:pointer;font:inherit;font-size:13px}
+  .stumz button:hover,.stunuovo button:hover,.stubtn button:hover,#stuvoti button:hover,.sturow button:hover,.qzbar button:hover:not(:disabled),#qzavanti:hover{border-color:var(--accent);color:var(--accent)}
+  .stumz button.rischio{border-color:#ef4444;color:#fca5a5}.stux{padding:6px 8px!important}
+  .stunuovo{display:flex;gap:8px;margin-top:10px}.stunuovo input,#sturisp{flex:1;min-width:0;background:transparent;border:1px solid var(--border);border-radius:10px;padding:8px 11px;color:var(--text);font:inherit}
+  .stuscena{perspective:1200px;margin:6px 0 12px}
+  #stuflip{position:relative;height:230px;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.2,.8,.2,1);cursor:pointer}
+  #stuflip.girata{transform:rotateY(180deg)}
+  .stuf{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;
+        border:1px solid rgba(var(--accent-rgb),.35);background:linear-gradient(160deg,rgba(var(--accent-rgb),.18),rgba(0,0,0,.28));box-shadow:0 10px 30px rgba(0,0,0,.3)}
+  .stuf small{position:absolute;top:12px;left:16px;font:600 11px 'Share Tech Mono',monospace;letter-spacing:1px;color:var(--dim)}
+  .stuf.retro{transform:rotateY(180deg);background:linear-gradient(160deg,rgba(52,211,153,.18),rgba(0,0,0,.28));border-color:rgba(52,211,153,.45)}
+  #stufr,#sturt{font:700 30px/1.25 system-ui,sans-serif;overflow-wrap:anywhere}#stuex{margin-top:10px;font-size:14px;color:var(--dim);font-style:italic}
+  .sturow{display:flex;gap:8px}#stuesito{min-height:22px;margin:6px 2px;font-size:14px}#stuesito.giusta{color:#34d399}#stuesito.quasi{color:#fbbf24}#stuesito.sbagliata{color:#f87171}
+  #stuvoti{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:4px 0 8px}#stuvoti button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 4px}
+  #stuvoti small{font-size:11px;color:var(--dim)}#stuvoti button.consiglio{border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--accent-rgb),.25)}
+  #stufine,#qzfine{text-align:center;padding:10px 4px}.stueb,.qzeb{font-size:56px}.stuconti{display:flex;gap:12px;justify-content:center;margin:8px 0;font-size:16px}
+  .stubtn{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  .qzbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}#qznum{color:var(--dim);font-family:'Share Tech Mono',monospace}#qzpunti{margin-left:auto;font-weight:700;color:var(--accent)}
+  .qzbar button:disabled{opacity:.35;cursor:default}
+  #qztempo{position:relative;height:8px;border-radius:4px;background:rgba(255,255,255,.1);margin:10px 0 4px;overflow:hidden}#qztempo b{display:block;height:100%;width:100%;background:linear-gradient(90deg,#34d399,var(--accent))}
+  #qztempo.poco b{background:#ef4444}#qzsec{position:absolute;right:0;top:10px;font:11px 'Share Tech Mono',monospace;color:var(--dim)}
+  #qzdom{font:700 21px/1.35 system-ui,sans-serif;margin:18px 0 14px;min-height:56px}
+  #qzris{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  #qzris button{display:flex;gap:10px;align-items:center;text-align:left;background:rgba(0,0,0,.25);border:1px solid rgba(var(--accent-rgb),.3);color:var(--text);border-radius:12px;padding:12px;font:inherit;font-size:15px;cursor:pointer;transition:transform .12s,background .2s}
+  #qzris button:hover:not(:disabled){transform:translateY(-1px);border-color:var(--accent)}#qzris button b{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:rgba(var(--accent-rgb),.2);flex:0 0 auto}
+  #qzris button.giusta{background:rgba(52,211,153,.22);border-color:#34d399}#qzris button.sbagliata{background:rgba(239,68,68,.22);border-color:#ef4444}#qzris button.via{opacity:.25}
+  #qzpub{display:flex;flex-direction:column;gap:3px;margin-top:8px;font-size:12.5px}#qzpub span{display:flex;align-items:center;gap:6px}#qzpub i{display:inline-block;height:8px;width:var(--w);max-width:60%;background:var(--accent);border-radius:4px}
+  #qzspieg{margin-top:10px;font-size:14px;line-height:1.45;padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.22)}#qzavanti{margin-top:10px;float:right}
+  .qzp{font-size:34px}.qzrec{color:#fbbf24;font-weight:700}
+  #suoni{position:absolute;right:16px;bottom:96px;display:none;align-items:center;gap:8px;z-index:6;padding:7px 10px;border-radius:999px;background:rgba(8,12,28,.84);backdrop-filter:blur(8px);border:1px solid rgba(var(--accent-rgb),.4);font-size:13px}
+  #suoni.on{display:flex}#sutempo{font:12px 'Share Tech Mono',monospace;color:var(--dim)}#suvol{width:84px;accent-color:var(--accent)}#suoni button{background:transparent;border:0;color:var(--dim);cursor:pointer}
+  @media (max-width:640px){#stuvoti{grid-template-columns:repeat(2,minmax(0,1fr))}#qzris{grid-template-columns:1fr}#stufr,#sturt{font-size:24px}}
+  @media (prefers-reduced-motion:reduce){#stuflip{transition:none}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V24</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V25</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -13561,6 +14153,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="apriStudio()" title="Le tue carte per studiare">🃏 Carte</button><button class="tbtn" type="button" onclick="qs('facciamo un quiz')" title="Il Quizzone di Zep">🎮 Quiz</button><button class="tbtn" type="button" onclick="SUONI25.on?fermaSuoni():avviaSuoni('pioggia')" title="Suoni per concentrarti">🎧 Suoni</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('accendi radio maik')" title="Radio Maik">📻 Radio</button><button class="tbtn" type="button" onclick="qs('il mio mese in storie')" title="Il tuo mese in storie">🎞️ Storie</button><button class="tbtn" type="button" onclick="apriMente()" title="La mappa della mente">🧠 Mente</button></div>
     <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
     <div class="note">Memoria su disco, condivisa da tutte le chat. MAIK impara da solo 🧠 e <b>agisce da solo</b> 🤖: chiedigli le cose a parole tue («stasera pasta, metti in lista gli ingredienti»). <b>📚</b> legge i tuoi documenti e cita la fonte · <b>🔁</b> si ricorda di chiederti com'è andata · <b>🫂 AMICO</b>: ti vede e ti parla.</div>
@@ -13572,6 +14165,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
+      <div id="suoni" role="region" aria-label="Suoni d'ambiente"><b id="sutit">🌧️ Pioggia</b><span id="sutempo">∞</span><input type="range" id="suvol" min="0" max="100" value="50" aria-label="Volume dei suoni" oninput="volumeSuoni(+this.value)"><button type="button" onclick="fermaSuoni()" aria-label="Spegni i suoni" title="Spegni">✕</button></div>
       <div id="radio" role="region" aria-label="Radio Maik">
         <div class="rdh"><span class="onair">● ON AIR</span><b id="rdtit">Radio Maik</b><button type="button" onclick="fermaRadio()" aria-label="Spegni la radio" title="Spegni la radio">✕</button></div>
         <div class="rdeq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -13638,6 +14232,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="offbar" role="status" aria-live="polite"></div>
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="qs('ripassiamo')">🃏 ripassiamo</button>
+      <button onclick="qs('facciamo un quiz')">🎮 facciamo un quiz</button>
+      <button onclick="qs('metti la pioggia')">🎧 metti la pioggia</button>
       <button onclick="qs('accendi radio maik')">📻 accendi radio maik</button>
       <button onclick="qs('il mio mese in storie')">🎞️ il mio mese in storie</button>
       <button onclick="qs('mappa della mente')">🧠 mappa della mente</button>
@@ -13745,6 +14342,42 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="stumodal">
+  <div class="mod">
+    <div class="modh"><div class="modt" id="stutit">🃏 LE TUE CARTE</div><span id="stupos"></span><button class="ib" onclick="STU.voce=!STU.voce;this.textContent=STU.voce?'🔊':'🔇';if(!STU.voce)stopSpeech()" aria-label="Voce">🔊</button><button class="ib" onclick="chiudiStudio()" aria-label="Chiudi">✕</button></div>
+    <div class="stuprog"><b id="stuprog"></b></div>
+    <div class="modb">
+      <div id="stumazzi"></div>
+      <div id="stucarta" hidden>
+        <div class="stuscena"><div id="stuflip" onclick="giraCarta()" role="button" aria-label="Gira la carta"><div class="stuf fronte"><small>DOMANDA</small><div id="stufr"></div></div><div class="stuf retro"><small>RISPOSTA</small><div id="sturt"></div><div id="stuex"></div></div></div></div>
+        <div class="sturow"><input id="sturisp" placeholder="✍️ Scrivi la risposta (facoltativo) e premi Invio" autocomplete="off" aria-label="La tua risposta"><button type="button" id="stugira" onclick="controllaScritta()">↻ Gira</button></div>
+        <div id="stuesito" aria-live="polite"></div>
+        <div id="stuvoti" hidden><button type="button" data-v="1">❌ Non la sapevo<small></small></button><button type="button" data-v="3">😐 Difficile<small></small></button><button type="button" data-v="4">🙂 Bene<small></small></button><button type="button" data-v="5">🤩 Facile<small></small></button></div>
+        <div class="note">Spazio = gira · 1 2 3 4 = com'è andata · quelle sbagliate tornano alla fine del giro</div>
+      </div>
+      <div id="stufine" hidden></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="qzmodal">
+  <div class="mod">
+    <div class="modh"><div class="modt" id="qztit">🎮 IL QUIZZONE DI ZEP</div><button class="ib" onclick="chiudiQuiz()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div id="qzgioco">
+        <div class="qzbar"><span id="qznum"></span><button type="button" id="qz50" onclick="aiutoQuiz('cinquanta')" title="Toglie due risposte sbagliate">½ 50:50</button><button type="button" id="qzpu" onclick="aiutoQuiz('pubblico')" title="Chiedi al pubblico">👥 Pubblico</button><span id="qzpunti"></span></div>
+        <div id="qztempo"><b></b><span id="qzsec"></span></div>
+        <div id="qzdom" aria-live="polite"></div>
+        <div id="qzris"></div>
+        <div id="qzpub"></div>
+        <div id="qzspieg" hidden></div>
+        <button type="button" id="qzavanti" onclick="avantiQuiz()" hidden>Avanti ▶</button>
+      </div>
+      <div id="qzfine" hidden></div>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="stmodal" aria-label="Le tue storie">
   <div class="stwrap">
@@ -16389,7 +17022,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -16665,6 +17298,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🃏','Le mie carte (ripasso)',()=>apriStudio(),'carte','studio flashcard ripassa impara mazzo'),c('🎮','Il Quizzone di Zep',()=>qs('facciamo un quiz'),'quiz','gioco domande sfida'),
+    c('🎧','Suoni per concentrarti',()=>SUONI25.on?fermaSuoni():avviaSuoni('pioggia'),'suoni','pioggia mare bosco camino rumore concentrazione'),
     c('📻','Radio Maik',()=>qs('accendi radio maik'),'radio','show notiziario musica nova zep'),c('🎞️','Il mio mese in storie',()=>qs('il mio mese in storie'),'storie','wrapped riassunto mese anno settimana'),
     c('🧠','Mappa della mente',()=>apriMente(),'mente','memoria cosa sai di me grafo dimentica'),
     c('🩺','Diagnosi: funziona tutto?',()=>openDiagnosi(),'diagnosi','controlla problemi ollama modelli ripara errori'),c('↩','Annulla l\'ultima cosa che ho cambiato',()=>annullaModifica(null,null),'annulla','undo ctrl z torna indietro sbagliato'),
@@ -16694,7 +17329,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V24',key:'maik_boot_v24',checks:[
+  return MaikKit.boot({version:'PRIME · V25',key:'maik_boot_v25',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16704,6 +17339,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Studio',run:async()=>{try{const s=await (await fetch('/studio')).json();return{ok:true,text:s.carte?'🃏 '+s.da_ripassare+' da ripassare':'🃏 nessun mazzo'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Mente',run:async()=>{try{const m=await (await fetch('/mente')).json();return{ok:true,text:'🧠 '+(m.n||0)+' cose che so di te'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Diagnosi',run:async()=>{try{const d=await (await fetch('/diagnosi?veloce=1')).json();return{ok:!d.errori,text:d.errori?'❌ '+d.errori+' da sistemare':d.avvisi?'⚠️ '+d.avvisi+' da guardare':'✅ tutto a posto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Velocità',run:async()=>{try{const r=await (await fetch('/prestazioni')).json();const s=r.riscaldamento||{};return{ok:true,text:s.stato==='pronto'?'🔥 '+r.modello+' pronto':'⚡ '+r.modello+' · '+(s.stato||'')};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16721,7 +17357,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 24 🎬 Adesso faccio anche lo **show**: «**accendi radio maik**» e Zep si mette le cuffie per il tuo programma radio con Nova (meteo, la tua giornata, le notizie, i tuoi obiettivi e la curiosità del giorno); «**il mio mese in storie**» per rivedere il tuo mese come le storie di Instagram (e salvare la cartolina); «**mappa della mente**» per esplorare tutto quello che so di te, con i fili tra le cose (e far dimenticare quello che non vuoi). Sono anche più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 25 🎓 Adesso ti aiuto anche a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -17615,7 +18251,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V24'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V25'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -19075,7 +19711,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
-  addV20(d, m); addV21(d, m); addV24(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
+  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -20316,8 +20952,358 @@ function initStorie() {
   });
 }
 
+// V25 — MAIK PRIME Accademia: 🃏 il ripasso delle carte (gira, scrivi la risposta, i voti, la voce nella lingua giusta), 🎮 il Quizzone di Zep
+// (timer, 50:50, il pubblico, i record), 🎧 i suoni d'ambiente fatti dal vivo (pioggia, mare, bosco, camino, rumore)
+
+// ---------- 🔊 piccoli suoni (giusto, sbagliato, tic) ----------
+let AC25 = null;
+function nota25(freq, dur, tipo, vol, quando) {
+  try {
+    AC25 = AC25 || new (window.AudioContext || window.webkitAudioContext)(); if (AC25.state === 'suspended') AC25.resume();
+    const t = AC25.currentTime + (quando || 0), o = AC25.createOscillator(), g = AC25.createGain();
+    o.type = tipo || 'sine'; o.frequency.value = freq; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.14, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(AC25.destination); o.start(t); o.stop(t + dur + 0.05);
+  } catch (e) {}
+}
+const suonoGiusto = () => { nota25(659, 0.18, 'triangle'); nota25(784, 0.18, 'triangle', 0.14, 0.09); nota25(1047, 0.3, 'triangle', 0.14, 0.18); };
+const suonoSbagliato = () => { nota25(196, 0.35, 'sawtooth', 0.08); nota25(147, 0.45, 'sawtooth', 0.08, 0.12); };
+
+// ---------- 🃏 IL RIPASSO DELLE CARTE ----------
+const STU = { carte: [], i: 0, girata: false, libero: false, conti: { 1: 0, 3: 0, 4: 0, 5: 0 }, voce: true, mazzo: null, ripetute: new Set() };
+const _norm25 = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(il|lo|la|i|gli|le|l|un|una|uno|the|to|el|los|las)\b/g, ' ').replace(/\s+/g, ' ').trim();
+function distanza25(a, b) {
+  const m = a.length, n = b.length; if (Math.abs(m - n) > 2) return 9;
+  let p = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const c = [i]; for (let j = 1; j <= n; j++) c[j] = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] !== b[j - 1])); p = c; }
+  return p[n];
+}
+function rispostaGiusta(scritta, retro) {                       // «parigi» = «Parigi», «thank you» ≈ «thankyou», un errore di battitura si perdona
+  const a = _norm25(scritta), b = _norm25(retro); if (!a) return null;
+  if (a === b || a.replace(/ /g, '') === b.replace(/ /g, '')) return 'giusta';
+  if (b.length >= 5 && distanza25(a, b) <= 1) return 'quasi';
+  return b.split(/\s*[,/;]\s*|\s+o\s+/).some(x => _norm25(x) === a) ? 'giusta' : 'sbagliata';
+}
+function anteprimaSm2(c, voto) {                                // la stessa regola del server: quando tornerà la carta
+  if (voto < 3) return 1;
+  return c.ripetizioni === 0 ? 1 : c.ripetizioni === 1 ? 3 : Math.max(1, Math.round((c.intervallo || 1) * (c.facilita || 2.5)));
+}
+const traGiorni = g => g <= 1 ? 'domani' : 'tra ' + g + ' giorni';
+const codLingua = l => (LINGUE_LETTURA[l] || ['it-IT'])[0];
+function apriStudio(r) {
+  $('#stumodal').classList.add('open');
+  if (r && r.carte && r.carte.length) avviaRipasso(r); else elencoMazzi();
+}
+function chiudiStudio() { if (!$('#stumodal').classList.contains('open')) return; $('#stumodal').classList.remove('open'); stopSpeech(); if (AV) AV.endAct('legge'); loadPr && loadPr(); }
+async function elencoMazzi() {
+  STU.carte = []; $('#stucarta').hidden = true; $('#stufine').hidden = true; $('#stumazzi').hidden = false; $('#stuprog').style.width = '0%';
+  $('#stutit').textContent = '🃏 LE TUE CARTE';
+  let p = null; try { p = await (await fetch('/studio')).json(); } catch (e) {}
+  const M = p && p.mazzi || [];
+  $('#stumazzi').innerHTML = (p ? '<div class="stusom">' + (p.da_ripassare ? '📌 <b>' + p.da_ripassare + '</b> carte da ripassare oggi' : '✅ Per oggi hai ripassato tutto') + (p.serie ? ' · 🔥 ' + p.serie + ' giorn' + (p.serie === 1 ? 'o' : 'i') + ' di fila' : '') + '</div>' : '')
+    + (M.length ? M.map(m => '<div class="stumz"><span class="stue">' + esc(m.emoji) + '</span><div><b>' + esc(m.nome) + '</b><small>' + m.totale + ' carte · ' + m.oggi + ' da ripassare · ' + m.imparate + ' imparate</small>'
+      + '<i class="stubar"><b style="width:' + (m.totale ? Math.round(100 * m.imparate / m.totale) : 0) + '%"></b></i></div><button type="button" data-stu="ripassa" data-id="' + escA(m.id) + '">▶ ' + (m.oggi ? 'Ripassa' : 'Giro libero') + '</button>'
+      + '<button type="button" class="stux" data-stu="elimina" data-id="' + escA(m.id) + '" title="Elimina il mazzo">🗑</button></div>').join('')
+      : '<div class="note">Ancora nessun mazzo. Scrivi un argomento qui sotto, oppure prova «carte delle capitali d\'Europa», «carte di inglese», «carta: hola = ciao».</div>')
+    + '<div class="stunuovo"><input id="stuarg" placeholder="Nuovo mazzo: di cosa? (es. «le capitali d\'Europa», «verbi inglesi»)" aria-label="Argomento del nuovo mazzo"><button type="button" data-stu="nuovo">✨ Crea</button></div>';
+}
+function avviaRipasso(r) {
+  Object.assign(STU, { carte: r.carte.slice(), i: 0, libero: !!r.libero, conti: { 1: 0, 3: 0, 4: 0, 5: 0 }, mazzo: r.mazzo || null, ripetute: new Set() });
+  $('#stumazzi').hidden = true; $('#stufine').hidden = true; $('#stucarta').hidden = false;
+  if (AV) AV.act('legge', { dur: 600 });
+  mostraCarta();
+}
+function mostraCarta() {
+  const c = STU.carte[STU.i]; if (!c) { fineRipasso(); return; }
+  STU.girata = false; const k = $('#stuflip'); k.classList.remove('girata');
+  $('#stutit').textContent = '🃏 ' + (c.emoji || '') + ' ' + (c.mazzo_nome || 'RIPASSO') + (STU.libero ? ' · giro libero' : '');
+  $('#stupos').textContent = (STU.i + 1) + ' / ' + STU.carte.length; $('#stuprog').style.width = (100 * STU.i / STU.carte.length) + '%';
+  $('#stufr').textContent = c.fronte; $('#sturt').textContent = c.retro; $('#stuex').textContent = c.esempio || '';
+  $('#sturisp').value = ''; $('#stuesito').textContent = ''; $('#stuesito').className = '';
+  $('#stuvoti').hidden = true; $('#stugira').hidden = false;
+  [1, 3, 4, 5].forEach(v => { const b = document.querySelector('#stuvoti button[data-v="' + v + '"] small'); if (b) b.textContent = STU.libero ? '' : traGiorni(anteprimaSm2(c, v)); });
+  if (STU.voce && ttsOn) { stopSpeech(); say(c.fronte); }
+  if (document.activeElement === $('#sturisp')) $('#sturisp').blur();       // così Spazio gira e 1-4 votano; per scrivere basta toccare la casella
+}
+function giraCarta() {
+  const c = STU.carte[STU.i]; if (!c || STU.girata) return;
+  STU.girata = true; $('#stuflip').classList.add('girata'); $('#stuvoti').hidden = false; $('#stugira').hidden = true;
+  if (STU.voce && ttsOn) parlaLingua(c.retro, codLingua(c.lingua));
+}
+function controllaScritta() {
+  const c = STU.carte[STU.i]; if (!c || STU.girata) return;
+  const e = rispostaGiusta($('#sturisp').value, c.retro), el = $('#stuesito');
+  if (!e) { giraCarta(); return; }
+  el.textContent = e === 'giusta' ? '✅ Giusta!' : e === 'quasi' ? '🟡 Quasi! (un errore di battitura)' : '❌ Era: ' + c.retro; el.className = e;
+  if (e === 'sbagliata') suonoSbagliato(); else suonoGiusto();
+  $('#sturisp').blur(); giraCarta();
+  document.querySelector('#stuvoti button[data-v="' + (e === 'giusta' ? 4 : e === 'quasi' ? 3 : 1) + '"]').classList.add('consiglio');
+}
+async function votaCarta(v) {
+  const c = STU.carte[STU.i]; if (!c || !STU.girata) return;
+  document.querySelectorAll('#stuvoti button').forEach(b => b.classList.remove('consiglio'));
+  STU.conti[v] = (STU.conti[v] || 0) + 1;
+  if (!STU.libero) postJ('/studio/voto', { id: c.id, voto: v }).catch(() => {});
+  if (v < 3 && !STU.ripetute.has(c.id)) { STU.ripetute.add(c.id); STU.carte.push(c); }              // la rivedi alla fine del giro
+  if (AV) AV.gesture(v >= 4 ? 'thumbsup' : v === 3 ? 'nod' : 'shrug');
+  if (v >= 4) suonoGiusto();
+  STU.i++; mostraCarta();
+}
+async function fineRipasso() {
+  $('#stucarta').hidden = true; $('#stufine').hidden = false; $('#stuprog').style.width = '100%';
+  const k = STU.conti, tot = k[1] + k[3] + k[4] + k[5];
+  let p = null; try { p = await (await fetch('/studio')).json(); } catch (e) {}
+  const domani = p ? p.mazzi.reduce((a, m) => a + m.oggi, 0) : 0;
+  $('#stufine').innerHTML = '<div class="stueb">🎉</div><b>Ripasso finito: ' + tot + ' carte</b><div class="stuconti"><span>🤩 ' + k[5] + '</span><span>🙂 ' + k[4] + '</span><span>😐 ' + k[3] + '</span><span>❌ ' + k[1] + '</span></div>'
+    + '<p>' + (STU.libero ? 'Era un giro libero: i tempi del ripasso non cambiano.' : (domani ? 'Ti restano ' + domani + ' carte da ripassare oggi.' : 'Per oggi hai finito: le prossime te le chiedo al momento giusto.')) + (p && p.serie ? ' 🔥 ' + p.serie + ' giorn' + (p.serie === 1 ? 'o' : 'i') + ' di fila!' : '') + '</p>'
+    + '<div class="stubtn"><button type="button" data-stu="libero">🔁 Un giro libero</button><button type="button" data-stu="mazzi">🃏 I miei mazzi</button><button type="button" data-stu="chiudi">✓ Chiudi</button></div>';
+  if (AV) { AV.endAct('legge'); AV.gesture(k[1] <= tot / 4 ? 'celebrate' : 'thumbsup'); }
+  if (STU.voce && ttsOn) say('Ripasso finito! ' + (k[4] + k[5]) + ' carte su ' + tot + ' le sapevi bene.');
+}
+
+// ---------- 🎮 IL QUIZZONE DI ZEP ----------
+const QZ = { q: null, i: 0, punti: 0, giuste: 0, serie: 0, t: 0, fine: 0, risposto: false, aiuti: { cinquanta: true, pubblico: true } };
+function apriQuiz(q) {
+  if (!q || !q.domande || !q.domande.length) return;
+  Object.assign(QZ, { q, i: 0, punti: 0, giuste: 0, serie: 0, risposto: false, aiuti: { cinquanta: true, pubblico: true } });
+  stopSpeech(); $('#qzmodal').classList.add('open'); $('#qzfine').hidden = true; $('#qzgioco').hidden = false;
+  $('#qztit').textContent = (q.emoji || '🎮') + ' ' + (q.titolo || 'Il Quizzone di Zep').toUpperCase();
+  if (AV) AV.gesture('wave');
+  domandaQuiz();
+}
+function chiudiQuiz() { if (!$('#qzmodal').classList.contains('open')) return; clearInterval(QZ.t); $('#qzmodal').classList.remove('open'); stopSpeech(); }
+function domandaQuiz() {
+  const d = QZ.q.domande[QZ.i]; if (!d) { fineQuiz(); return; }
+  QZ.risposto = false; clearInterval(QZ.t);
+  $('#qznum').textContent = 'Domanda ' + (QZ.i + 1) + ' di ' + QZ.q.domande.length; $('#qzpunti').textContent = QZ.punti + ' punti' + (QZ.serie >= 2 ? ' · 🔥' + QZ.serie : '');
+  $('#qzdom').textContent = d.domanda; $('#qzspieg').textContent = ''; $('#qzspieg').hidden = true; $('#qzavanti').hidden = true; $('#qzpub').innerHTML = '';
+  $('#qzris').innerHTML = d.risposte.map((r, k) => '<button type="button" data-qz="' + k + '"><b>' + 'ABCD'[k] + '</b>' + esc(r) + '</button>').join('');
+  $('#qz50').disabled = !QZ.aiuti.cinquanta; $('#qzpu').disabled = !QZ.aiuti.pubblico;
+  const sec = QZ.q.secondi || 20; QZ.fine = performance.now() + sec * 1000;
+  const barra = $('#qztempo b'), num = $('#qzsec');
+  QZ.t = setInterval(() => {
+    const r = Math.max(0, QZ.fine - performance.now()); barra.style.width = (100 * r / (sec * 1000)) + '%'; num.textContent = Math.ceil(r / 1000);
+    $('#qztempo').classList.toggle('poco', r < 5000);
+    if (r < 5000 && r > 0 && Math.ceil(r / 1000) !== QZ.ultimoTic) { QZ.ultimoTic = Math.ceil(r / 1000); nota25(1200, 0.05, 'square', 0.04); }
+    if (r <= 0) rispondiQuiz(-1);
+  }, 100);
+  if (ttsOn) { stopSpeech(); say(d.domanda); }
+  if (AV) AV.gesture(QZ.i % 2 ? 'think' : 'nod');
+}
+function rispondiQuiz(k) {
+  if (QZ.risposto || !QZ.q) return;
+  const d = QZ.q.domande[QZ.i]; QZ.risposto = true; clearInterval(QZ.t);
+  const resto = Math.max(0, QZ.fine - performance.now()) / 1000, giusta = k === d.giusta;
+  document.querySelectorAll('#qzris button').forEach((b, j) => { b.disabled = true; if (j === d.giusta) b.classList.add('giusta'); else if (j === k) b.classList.add('sbagliata'); });
+  if (giusta) {
+    QZ.serie++; QZ.giuste++;
+    const p = 100 + Math.round(resto * 5) + (QZ.serie >= 3 ? 50 : 0); QZ.punti += p;
+    suonoGiusto(); if (AV) AV.gesture(QZ.serie >= 3 ? 'celebrate' : 'thumbsup');
+    $('#qzspieg').innerHTML = '<b>✅ Giusto! +' + p + '</b>' + (QZ.serie >= 3 ? ' 🔥 ' + QZ.serie + ' di fila (+50)' : '') + (d.spiegazione ? ' · ' + esc(d.spiegazione) : '');
+  } else {
+    QZ.serie = 0; suonoSbagliato(); if (AV) AV.gesture('shrug');
+    $('#qzspieg').innerHTML = '<b>' + (k < 0 ? '⏰ Tempo scaduto!' : '❌ No!') + '</b> Era «' + esc(d.risposte[d.giusta]) + '»' + (d.spiegazione ? ' · ' + esc(d.spiegazione) : '');
+  }
+  $('#qzspieg').hidden = false; $('#qzavanti').hidden = false; $('#qzpunti').textContent = QZ.punti + ' punti' + (QZ.serie >= 2 ? ' · 🔥' + QZ.serie : '');
+  if (ttsOn) { stopSpeech(); say(giusta ? 'Giusto!' : 'Era ' + d.risposte[d.giusta]); }
+  QZ.auto = setTimeout(() => { if (QZ.risposto && $('#qzmodal').classList.contains('open') && !$('#qzavanti').hidden) avantiQuiz(); }, 4200);
+}
+function avantiQuiz() { clearTimeout(QZ.auto); if (!QZ.risposto) return; QZ.i++; domandaQuiz(); }
+function aiutoQuiz(tipo) {
+  if (QZ.risposto || !QZ.aiuti[tipo]) return;
+  const d = QZ.q.domande[QZ.i]; QZ.aiuti[tipo] = false;
+  if (tipo === 'cinquanta') {
+    const sbagliate = [0, 1, 2, 3].filter(j => j !== d.giusta).sort(() => Math.random() - 0.5).slice(0, 2);
+    sbagliate.forEach(j => { const b = document.querySelector('#qzris button[data-qz="' + j + '"]'); b.disabled = true; b.classList.add('via'); });
+    $('#qz50').disabled = true;
+  } else {
+    const vive = [0, 1, 2, 3].filter(j => !document.querySelector('#qzris button[data-qz="' + j + '"]').classList.contains('via'));
+    const giusta = QZ.q.difficolta === 'difficile' ? 38 + Math.random() * 20 : 48 + Math.random() * 25, voti = {};
+    let resto = 100 - giusta; voti[d.giusta] = giusta;
+    vive.filter(j => j !== d.giusta).forEach((j, n, a) => { const v = n === a.length - 1 ? resto : Math.random() * resto * 0.7; voti[j] = v; resto -= v; });
+    $('#qzpub').innerHTML = '👥 Il pubblico: ' + vive.map(j => '<span><b>' + 'ABCD'[j] + '</b><i style="--w:' + Math.round(voti[j] || 0) + '%"></i>' + Math.round(voti[j] || 0) + '%</span>').join('');
+    $('#qzpu').disabled = true;
+  }
+  if (AV) AV.gesture('idea');
+}
+async function fineQuiz() {
+  clearInterval(QZ.t); $('#qzgioco').hidden = true; $('#qzfine').hidden = false;
+  let r = null; try { r = await postJ('/quiz/fine', { categoria: QZ.q.categoria, punti: QZ.punti, giuste: QZ.giuste, totale: QZ.q.domande.length }); } catch (e) {}
+  const nuovo = r && r.record;
+  $('#qzfine').innerHTML = '<div class="qzeb">' + (nuovo ? '🏆' : QZ.giuste >= QZ.q.domande.length * 0.7 ? '🎉' : '👏') + '</div><b class="qzp">' + QZ.punti + ' punti</b>'
+    + '<p>' + QZ.giuste + ' risposte giuste su ' + QZ.q.domande.length + '</p>'
+    + (nuovo ? '<p class="qzrec">🏆 Nuovo record' + (r.precedente ? ' (prima: ' + r.precedente.punti + ')' : '') + '!</p>' : r && r.migliore ? '<p>Il tuo record: ' + r.migliore.punti + ' punti</p>' : '')
+    + '<div class="stubtn"><button type="button" data-qzf="ancora">🔁 Un\'altra partita</button><button type="button" data-qzf="chiudi">✓ Chiudi</button></div>';
+  if (AV) { if (nuovo) AV.act('trofeo'); else AV.gesture(QZ.giuste >= QZ.q.domande.length / 2 ? 'celebrate' : 'thumbsup'); }
+  if (ttsOn) say((nuovo ? 'Nuovo record! ' : 'Fine del quiz! ') + QZ.punti + ' punti, ' + QZ.giuste + ' risposte giuste.');
+}
+
+// ---------- 🎧 I SUONI D'AMBIENTE (tutto generato dal vivo, niente file) ----------
+const SUONI25 = { on: false, tipo: null, ac: null, master: null, nodi: [], timer: [], fine: 0, conto: 0, vol: 0.5 };
+const NOMI_SUONI = { pioggia: '🌧️ Pioggia', mare: '🌊 Mare', bosco: '🌲 Bosco', camino: '🔥 Camino', rumore: '📻 Rumore marrone' };
+function bufferRumore(ac, tipo) {
+  const n = ac.sampleRate * 4, b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
+  let ul = 0, b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+  for (let i = 0; i < n; i++) {
+    const w = Math.random() * 2 - 1;
+    if (tipo === 'marrone') { ul = (ul + 0.02 * w) / 1.02; d[i] = ul * 3.5; }
+    else if (tipo === 'rosa') { b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.969 * b2 + w * 0.153852; b3 = 0.8665 * b3 + w * 0.3104856; b4 = 0.55 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.016898; d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926; }
+    else d[i] = w;
+  }
+  return b;
+}
+function catena(ac, nodi) { for (let i = 0; i < nodi.length - 1; i++) nodi[i].connect(nodi[i + 1]); nodi.forEach(n => { if (!SUONI25.nodi.includes(n)) SUONI25.nodi.push(n); }); return nodi[nodi.length - 1]; }
+function filtro(ac, tipo, f, q) { const x = ac.createBiquadFilter(); x.type = tipo; x.frequency.value = f; if (q) x.Q.value = q; return x; }
+function guadagno(ac, v) { const g = ac.createGain(); g.gain.value = v; return g; }
+function scoppiettio(ac, buf, dest, ogni, durMs, hp, vol) {      // gocce, scoppiettii, cinguettii: piccoli eventi a caso
+  const via = () => {
+    if (!SUONI25.on) return;
+    try {
+      const s = ac.createBufferSource(), g = ac.createGain(), f = filtro(ac, 'bandpass', hp[0] + Math.random() * (hp[1] - hp[0]), 1.2), t = ac.currentTime;
+      s.buffer = buf; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * (0.4 + Math.random() * 0.6), t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + durMs / 1000);
+      s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 3); s.stop(t + durMs / 1000 + 0.02);
+    } catch (e) {}
+    SUONI25.timer.push(setTimeout(via, ogni[0] + Math.random() * (ogni[1] - ogni[0])));
+  };
+  via();
+}
+function uccellino(ac, dest) {
+  const canta = () => {
+    if (!SUONI25.on) return;
+    const t0 = ac.currentTime, n = 2 + Math.floor(Math.random() * 3), base = 2400 + Math.random() * 1400;
+    for (let k = 0; k < n; k++) {
+      const o = ac.createOscillator(), g = ac.createGain(), t = t0 + k * 0.11;
+      o.frequency.setValueAtTime(base, t); o.frequency.exponentialRampToValueAtTime(base * 1.45, t + 0.07);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.045, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      o.connect(g); g.connect(dest); o.start(t); o.stop(t + 0.1);
+    }
+    SUONI25.timer.push(setTimeout(canta, 1500 + Math.random() * 4000));
+  };
+  SUONI25.timer.push(setTimeout(canta, 800));
+}
+function onde(ac, g) {
+  const onda = () => {
+    if (!SUONI25.on) return;
+    const t = ac.currentTime, su = 2.5 + Math.random() * 1.5, giu = 3.5 + Math.random() * 2;
+    g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.85 + Math.random() * 0.15, t + su); g.gain.linearRampToValueAtTime(0.18, t + su + giu);
+    SUONI25.timer.push(setTimeout(onda, (su + giu) * 1000 - 200));
+  };
+  onda();
+}
+function avviaSuoni(tipo, minuti) {
+  fermaSuoni(true);
+  try {
+    const ac = SUONI25.ac || (SUONI25.ac = new (window.AudioContext || window.webkitAudioContext)()); if (ac.state === 'suspended') ac.resume();
+    const master = guadagno(ac, 0.0001); master.connect(ac.destination);
+    master.gain.exponentialRampToValueAtTime(Math.max(0.0002, SUONI25.vol), ac.currentTime + 1.2);
+    Object.assign(SUONI25, { on: true, tipo, master, nodi: [master], timer: [] });
+    const fonte = t => { const s = ac.createBufferSource(); s.buffer = bufferRumore(ac, t); s.loop = true; s.start(); SUONI25.nodi.push(s); return s; };
+    const bianco = bufferRumore(ac, 'bianco');
+    if (tipo === 'pioggia') { catena(ac, [fonte('rosa'), filtro(ac, 'highpass', 450), filtro(ac, 'lowpass', 7000), guadagno(ac, 0.55), master]); scoppiettio(ac, bianco, master, [40, 160], 18, [2500, 6500], 0.18); }
+    else if (tipo === 'mare') { const g = guadagno(ac, 0.3); catena(ac, [fonte('marrone'), filtro(ac, 'lowpass', 750), g, master]); onde(ac, g); }
+    else if (tipo === 'bosco') { catena(ac, [fonte('rosa'), filtro(ac, 'lowpass', 1600), guadagno(ac, 0.16), master]); uccellino(ac, master); }
+    else if (tipo === 'camino') { catena(ac, [fonte('marrone'), filtro(ac, 'lowpass', 480), guadagno(ac, 0.6), master]); scoppiettio(ac, bianco, master, [70, 420], 22, [1500, 5000], 0.3); }
+    else catena(ac, [fonte('marrone'), filtro(ac, 'lowpass', 1100), guadagno(ac, 0.75), master]);
+  } catch (e) { toast('🎧 Il browser non riesce a fare i suoni: ' + e.message, 'err'); return; }
+  SUONI25.fine = minuti ? Date.now() + minuti * 60000 : 0;
+  $('#suoni').classList.add('on'); $('#sutit').textContent = NOMI_SUONI[tipo] || tipo; $('#suvol').value = Math.round(SUONI25.vol * 100);
+  clearInterval(SUONI25.conto); SUONI25.conto = setInterval(tempoSuoni, 1000); tempoSuoni();
+}
+function tempoSuoni() {
+  if (!SUONI25.on) return;
+  if (!SUONI25.fine) { $('#sutempo').textContent = '∞'; return; }
+  const r = Math.max(0, SUONI25.fine - Date.now()), m = Math.floor(r / 60000), s = Math.floor(r / 1000) % 60;
+  $('#sutempo').textContent = m + ':' + String(s).padStart(2, '0');
+  if (r <= 0) { fermaSuoni(); toast('🎧 Fine dei suoni: ' + (NOMI_SUONI[SUONI25.tipo] || ''), 'ok'); }
+}
+function fermaSuoni(subito) {
+  const vecchi = SUONI25.nodi.slice(), ac = SUONI25.ac, m = SUONI25.master;
+  SUONI25.timer.forEach(clearTimeout); SUONI25.timer = []; clearInterval(SUONI25.conto);
+  const eraOn = SUONI25.on; SUONI25.on = false; SUONI25.nodi = []; $('#suoni').classList.remove('on');
+  if (!ac || !m) return;
+  try { m.gain.cancelScheduledValues(ac.currentTime); m.gain.setValueAtTime(Math.max(0.0001, m.gain.value), ac.currentTime); m.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + (subito ? 0.05 : 0.8)); } catch (e) {}
+  setTimeout(() => vecchi.forEach(n => { try { n.stop && n.stop(); n.disconnect(); } catch (e) {} }), subito ? 80 : 900);
+  if (eraOn && !subito) caption('🔇 Suoni spenti'), captionOff(1200);
+}
+function volumeSuoni(v) { SUONI25.vol = Math.max(0, Math.min(1, v / 100)); if (SUONI25.on && SUONI25.master && SUONI25.ac) SUONI25.master.gain.setTargetAtTime(Math.max(0.0001, SUONI25.vol), SUONI25.ac.currentTime, 0.1); }
+
+// ---------- in chat, i bottoni, la tastiera ----------
+function addV25(d, obj, daAutomazione) {
+  const ag = () => agEl(d);
+  if (obj.studio) {
+    const s = obj.studio; d._studio = s;
+    if (s.ripasso && s.ripasso.carte && s.ripasso.carte.length) {
+      ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-stu="via">▶ ' + (s.nuovo ? 'Inizia il ripasso' : 'Ripassa') + ' (' + s.ripasso.carte.length + ')</button>');
+      if (!s.nuovo && !daAutomazione) setTimeout(() => apriStudio(s.ripasso), 400);
+    }
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-stu="mazzi">🃏 I miei mazzi</button>');
+  }
+  if (obj.quiz) {
+    d._quiz = obj.quiz;
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-qzf="gioca">🎮 Gioca</button>');
+    if (!daAutomazione) setTimeout(() => apriQuiz(obj.quiz), 600);
+  }
+  if (obj.suoni) {
+    if (obj.suoni.tipo === 'stop') fermaSuoni();
+    else { avviaSuoni(obj.suoni.tipo, obj.suoni.minuti); ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-su="stop">🔇 Spegni i suoni</button>'); }
+  }
+}
+document.addEventListener('click', async e => {                 // v25: carte, quiz, suoni
+  const b = e.target.closest('button[data-stu],button[data-qz],button[data-qzf],button[data-su],button[data-v]'); if (!b) return;
+  const ds = b.dataset, m = b.closest('.m');
+  if (ds.v && b.closest('#stuvoti')) { votaCarta(+ds.v); return; }
+  if (ds.stu === 'via') { const s = m && m._studio; apriStudio(s && s.ripasso); return; }
+  if (ds.stu === 'mazzi') { apriStudio(); return; }
+  if (ds.stu === 'chiudi') { chiudiStudio(); return; }
+  if (ds.stu === 'ripassa' || ds.stu === 'libero') {
+    const mz = ds.stu === 'libero' ? STU.mazzo : ds.id;
+    let r = null; try { r = await (await fetch('/studio/ripasso?mazzo=' + encodeURIComponent(mz || ''))).json(); } catch (er) {}
+    let libero = ds.stu === 'libero';
+    if (!libero && (!r || !r.carte.length)) libero = true;
+    if (libero) { try { r = await (await fetch('/studio/ripasso?libero=1&mazzo=' + encodeURIComponent(mz || ''))).json(); } catch (er) {} r && (r.carte = r.carte.slice(0, 10)); }
+    if (r && r.carte.length) avviaRipasso({ carte: r.carte, mazzo: mz, libero }); else toast('🃏 Nessuna carta in questo mazzo', 'err');
+    return;
+  }
+  if (ds.stu === 'elimina') {
+    if (!b.dataset.sicuro) { b.dataset.sicuro = '1'; b.textContent = '⚠️ Sicuro?'; b.classList.add('rischio'); return; }
+    const r = await postJ('/studio/elimina', { mazzo: ds.id }).catch(() => ({ ok: false }));
+    if (r.ok) { toast('🗑️ Mazzo eliminato', 'ok'); elencoMazzi(); const dd = add('ai', '🗑️ Ho eliminato un mazzo di carte.', 'seguito'); finalize(dd, '🗑️ Ho eliminato un mazzo di carte.', null, null); if (r.annullabile) addV23(dd, { annullabile: r.annullabile }); }
+    return;
+  }
+  if (ds.stu === 'nuovo') { const a = $('#stuarg').value.trim(); if (!a) { $('#stuarg').focus(); return; } chiudiStudio(); qs('fammi le carte su ' + a); return; }
+  if (ds.qz != null && b.closest('#qzris')) { rispondiQuiz(+ds.qz); return; }
+  if (ds.qzf === 'gioca') { apriQuiz(m && m._quiz); return; }
+  if (ds.qzf === 'chiudi') { chiudiQuiz(); return; }
+  if (ds.qzf === 'ancora') {
+    const q0 = QZ.q; let q = null;
+    try { q = await (await fetch('/quiz?tema=' + encodeURIComponent(q0.categoria === 'generale' ? '' : q0.nome || '') + '&difficolta=' + (q0.difficolta || 'medio'))).json(); } catch (er) {}
+    if (q && q.domande) apriQuiz(q); return;
+  }
+  if (ds.su === 'stop') { fermaSuoni(); return; }
+});
+document.addEventListener('keydown', e => {
+  if ($('#stumodal').classList.contains('open') && !$('#stucarta').hidden) {
+    const inInput = e.target === $('#sturisp');
+    if (e.key === 'Enter' && inInput) { e.preventDefault(); controllaScritta(); return; }
+    if (inInput) return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); STU.girata ? null : giraCarta(); return; }
+    if (STU.girata && /^[1-4]$/.test(e.key)) { e.preventDefault(); votaCarta([1, 3, 4, 5][+e.key - 1]); }
+    return;
+  }
+  if ($('#qzmodal').classList.contains('open') && !$('#qzgioco').hidden) {
+    const k = '1234'.indexOf(e.key) >= 0 ? '1234'.indexOf(e.key) : 'abcd'.indexOf((e.key || '').toLowerCase());
+    if (k >= 0 && e.key.length === 1) { e.preventDefault(); const bb = document.querySelector('#qzris button[data-qz="' + k + '"]'); if (bb && !bb.disabled) rispondiQuiz(k); return; }
+    if (e.key === 'Enter' && QZ.risposto) { e.preventDefault(); avantiQuiz(); }
+  }
+});
+async function promemoriaStudio() {                             // una volta al giorno: «hai N carte da ripassare»
+  const oggi = new Date().toISOString().slice(0, 10); if (LS.get('maik_studio_avviso', '') === oggi) return;
+  let p = null; try { p = await (await fetch('/studio')).json(); } catch (e) { return; }
+  if (p && p.da_ripassare > 0) { LS.set('maik_studio_avviso', oggi); toast('🃏 Hai ' + p.da_ripassare + ' carte da ripassare oggi: dimmi «ripassiamo»', 'ok'); }
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();}});
+$('#stumodal').addEventListener('click',e=>{if(e.target.id==='stumodal')chiudiStudio();});$('#qzmodal').addEventListener('click',e=>{if(e.target.id==='qzmodal')chiudiQuiz();});
 $('#mmmodal').addEventListener('click',e=>{if(e.target.id==='mmmodal')chiudiMente();});$('#stmodal').addEventListener('click',e=>{if(e.target.id==='stmodal')chiudiStorie();});
 $('#dgmodal').addEventListener('click',e=>{if(e.target.id==='dgmodal')closeDiagnosi();});
 $('#pfmodal').addEventListener('click',e=>{if(e.target.id==='pfmodal')closePerf();});
@@ -20476,7 +21462,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);setTimeout(controlloAvvio,2500);initMappa();initStorie();})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);setTimeout(controlloAvvio,2500);initMappa();initStorie();setTimeout(promemoriaStudio,7000);})();
 </script>
 </body></html>"""
 
@@ -20534,8 +21520,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 24.0 — Server avviato         ║
-║ show · radio · storie · mente · affidabile       ║
+║        MAIK PRIME 25.0 — Server avviato         ║
+║ accademia · quiz · suoni · show · affidabile     ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -20593,7 +21579,8 @@ def main():
     print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [v21]")
     print(f"    GET  /prestazioni · /presenza · POST /presenza   [v22]")
     print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [v23]")
-    print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [NUOVO v24]")
+    print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [v24]")
+    print(f"    GET  /studio · /studio/ripasso · /quiz · POST /studio/voto /studio/elimina /quiz/fine   [NUOVO v25]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

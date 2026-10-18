@@ -9457,6 +9457,8 @@ _RE_PRESENZA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:da\s+quanto(?:\s+
 
 def durata_it(secondi):
     m = int(secondi // 60)
+    if m < 1:
+        return "meno di un minuto"
     return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
 
 
@@ -11526,7 +11528,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V21</title>
+<title>MAIK PRIME // Zep V22</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -12046,10 +12048,26 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .labh{flex-wrap:wrap}
   @media (max-width:640px){.labframe iframe{height:300px}}
   @media (prefers-reduced-motion:reduce){.mvport,.aiutspin,.mvc,.aiutc,.aiutc.poof,.tvbox.cambia .tvin,.tvbox.cambia .tvnoise{animation:none}}
+
+  /* ===== V22 · prestazioni, webcam (conto alla rovescia), benessere ===== */
+  #camconto{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font:700 64px/1 'Share Tech Mono',monospace;color:#fff;background:rgba(0,0,0,.35);text-shadow:0 0 18px rgba(var(--accent-rgb),.9)}
+  #camconto.on{display:flex;animation:contoCam 1s ease-out infinite}
+  @keyframes contoCam{from{transform:scale(1.25);opacity:.4}to{transform:none;opacity:1}}
+  .pfgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .pft{border:1px solid rgba(var(--accent-rgb),.22);border-radius:12px;padding:9px 12px;background:rgba(0,0,0,.2);min-width:0}
+  .pft small{display:block;color:var(--dim);font-size:11.5px}.pft b{display:block;font-size:22px;margin:2px 0;font-family:'Share Tech Mono',monospace}.pft span{display:block;color:var(--dim);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pfc{margin-top:8px;font-size:13px;line-height:1.45;border-left:3px solid #f59e0b;padding:4px 10px;background:rgba(245,158,11,.07);border-radius:0 8px 8px 0}.pfc.ok{border-left-color:var(--green);background:rgba(0,0,0,.15)}
+  #pfmodal h4{margin:14px 0 4px;font-size:12px;letter-spacing:1px;color:var(--accent)}
+  #pfmodal .opt select{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:1px 4px;font:inherit}
+  .letto{white-space:pre-wrap;margin-top:6px;border-left:3px solid var(--accent);padding:6px 12px;background:rgba(0,0,0,.22);border-radius:0 10px 10px 0;font-size:14px;line-height:1.5}
+  .m.seguito.benessere{border-color:rgba(52,211,153,.6)!important;box-shadow:0 0 22px rgba(52,211,153,.14)}
+  .m.seguito.benessere .mc::before{content:'💚 BENESSERE';color:#34d399;text-transform:uppercase}
+  @media (max-width:640px){.pfgrid{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion:reduce){#camconto.on{animation:none}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V21</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V22</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -12103,13 +12121,14 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <h3>⚙ Opzioni</h3>
     <label class="opt">👂 Modalità Amico: solo se dico «Maik»<input type="checkbox" id="optwake" onchange="setOpt('wake',this.checked)"></label>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
+    <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
     <div class="note">Memoria su disco, condivisa da tutte le chat. MAIK impara da solo 🧠 e <b>agisce da solo</b> 🤖: chiedigli le cose a parole tue («stasera pasta, metti in lista gli ingredienti»). <b>📚</b> legge i tuoi documenti e cita la fonte · <b>🔁</b> si ricorda di chiederti com'è andata · <b>🫂 AMICO</b>: ti vede e ti parla.</div>
   </div>
   <div id="main">
     <div id="sphere-area">
       <div id="fbadge"><span class="fbdot"></span> MAIK · MODALITÀ AMICO</div>
-      <div id="cambox"><video id="cam" autoplay muted playsinline></video><div id="fstat">webcam</div></div>
+      <div id="cambox"><video id="cam" autoplay muted playsinline></video><div id="fstat">webcam</div><div id="camconto" aria-live="assertive"></div></div>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
@@ -12171,6 +12190,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="chatcol">
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="qs('quanto vai veloce?')">⚡ quanto vai veloce?</button>
+      <button onclick="qs('leggi quello che ti mostro')">📖 leggi quello che ti mostro</button>
+      <button onclick="qs('cosa ho in mano?')">🖐️ cosa ho in mano?</button>
+      <button onclick="qs('come mi vedi?')">🙂 come mi vedi?</button>
       <button onclick="q('chiedi al multiverso: ')">🌀 chiedi al multiverso…</button>
       <button onclick="q('inventami ')">🔬 inventami…</button>
       <button onclick="openLab()">🔬 il laboratorio</button>
@@ -12267,6 +12290,24 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="pfmodal">
+  <div class="mod" style="max-width:620px">
+    <div class="modh"><div class="modt">⚡ PRESTAZIONI</div><button class="ib" onclick="closePerf()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="pfgrid" id="pfgrid"></div>
+      <div id="pfconsigli"></div>
+      <div class="note" id="pfdett" style="margin-top:8px"></div>
+      <h4>⚙ ZEP E WEBCAM</h4>
+      <label class="opt">🪶 Modalità leggera (30 fotogrammi, risoluzione più bassa, webcam controllata meno spesso)<input type="checkbox" id="optlieve" onchange="setOpt('lieve',this.checked);applicaQualita()"></label>
+      <label class="opt">🎚️ Qualità automatica (la risoluzione si adatta al tuo PC)<input type="checkbox" id="optqauto" onchange="setOpt('qauto',this.checked);applicaQualita()"></label>
+      <h4>💚 QUANDO TI VEDO (CON LA WEBCAM ACCESA)</h4>
+      <label class="opt">Ti ricordo le pause, mi accorgo se sbadigli o se sei troppo vicino allo schermo<input type="checkbox" id="optbenessere" onchange="setOpt('benessere',this.checked)"></label>
+      <label class="opt">⏱️ Ti ricordo la pausa dopo (minuti di fila)<select id="optpausa" onchange="setOpt('pausaMin',+this.value)"><option value="30">30</option><option value="50">50</option><option value="90">90</option></select></label>
+      <div class="note" style="margin-top:8px">Tutto quello che la webcam vede resta sul tuo PC: al server mando solo quanti secondi ti ho visto (per «da quanto sono al pc?»). Le foto partono solo quando me lo chiedi tu («leggi quello che ti mostro», «cosa ho in mano?»).</div>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="labmodal">
   <div class="mod" style="max-width:720px">
@@ -12842,7 +12883,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V21 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V22 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -12858,6 +12899,7 @@ const MaikKit = (() => {
    V19: modalità PRIME — si carica e un anello di energia gli sale dai piedi alla testa (lavoro finito, automazioni).
    V20: alza al cielo una coppa d'oro quando completi una tappa o raggiungi un obiettivo.
    V21: apre un portale verde sul multiverso (il consiglio, le invenzioni, gli aiutanti, la TV) e lo indica.
+   V22: più leggero — la risoluzione si adatta a quanto ce la fa il PC, 30 fotogrammi al secondo quando è tranquillo, modalità leggera.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -13327,7 +13369,11 @@ window.ZepKit = (() => {
     const log = opts.onLog || (() => {});
     // ---------- scena ----------
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance', preserveDrawingBuffer: !!opts.preserve });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // v22: ⚡ qualità che si adatta — se i fotogrammi veri restano sotto il limite, abbasso la risoluzione (e la rialzo quando il PC respira)
+    const Q = { prMax: Math.min(window.devicePixelRatio || 1, 2), pr: 0, min: 0.6, cap: opts.maxFps || 60, quieto: 30, lieve: !!opts.lieve, auto: opts.autoQuality !== false,
+                ultimo: 0, finestra: { t: 0, n: 0, capSomma: 0 }, lenti: 0, svelti: 0, fps: 0, cambi: 0 };
+    Q.pr = Q.lieve ? Math.min(1, Q.prMax) : Q.prMax;
+    renderer.setPixelRatio(Q.pr);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     const canvas = renderer.domElement; canvas.className = 'zep-canvas';
@@ -14418,10 +14464,34 @@ window.ZepKit = (() => {
 
     // ---------- ciclo (anche nella mini-finestra: usa il requestAnimationFrame della sua finestra) ----------
     let rafWin = window, last = performance.now(), raf = 0, alive = true, paused = false;
+    function capOra(now) {                    // v22: 60 fotogrammi quando succede qualcosa, 30 quando è tranquillo (o in modalità leggera)
+      if (Q.lieve) return Math.min(Q.cap, 30);
+      const attivo = S.state !== 'idle' || now < S.speakUntil || S.acts.some(a => a.out == null && a.k !== 'beat') || drag || (S.dance && S.dance.on)
+        || (S.lookSource !== 'face' && now - S.lastLookInput < 1500);
+      return attivo ? Q.cap : Math.min(Q.cap, Q.quieto);
+    }
+    function misuraQualita(now, cap) {
+      const F = Q.finestra;
+      if (!F.t) { F.t = now; F.n = 0; F.capSomma = 0; return; }
+      F.n++; F.capSomma += cap;
+      if (now - F.t < 2000) return;
+      Q.fps = Math.round(F.n * 1000 / (now - F.t)); const capMedio = F.capSomma / F.n;
+      F.t = now; F.n = 0; F.capSomma = 0;
+      if (!Q.auto || (rafWin.document && rafWin.document.hidden)) return;
+      if (Q.fps < capMedio * 0.75) { Q.lenti++; Q.svelti = 0; } else if (Q.fps >= capMedio * 0.95) { Q.svelti++; Q.lenti = 0; } else { Q.lenti = 0; Q.svelti = 0; }
+      const tetto = Q.lieve ? Math.min(1, Q.prMax) : Q.prMax;
+      let nuovo = Q.pr;
+      if (Q.lenti >= 2 && Q.pr > Q.min) nuovo = Math.max(Q.min, +(Q.pr - 0.25).toFixed(2));
+      else if (Q.svelti >= 3 && Q.pr < tetto) nuovo = Math.min(tetto, +(Q.pr + 0.25).toFixed(2));
+      if (nuovo !== Q.pr) { Q.pr = nuovo; Q.lenti = Q.svelti = 0; Q.cambi++; renderer.setPixelRatio(Q.pr); resize(); }
+    }
     function loop() {
       if (!alive) return;
-      const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
-      if (!paused) { const t1 = performance.now(); update(dt); const t2 = performance.now(); renderer.render(scene, camera); S.perf = { u: t2 - t1, r: performance.now() - t2 }; }
+      const now = performance.now(), cap = capOra(now);
+      if (now - Q.ultimo < 1000 / cap - 2) { raf = rafWin.requestAnimationFrame(loop); return; }     // v22: questo fotogramma lo salto
+      Q.ultimo = now;
+      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      if (!paused) { const t1 = performance.now(); update(dt); const t2 = performance.now(); renderer.render(scene, camera); S.perf = { u: t2 - t1, r: performance.now() - t2 }; misuraQualita(now, cap); }
       raf = rafWin.requestAnimationFrame(loop);
     }
     raf = rafWin.requestAnimationFrame(loop);
@@ -14596,6 +14666,18 @@ window.ZepKit = (() => {
         rafWin = win; last = performance.now(); raf = rafWin.requestAnimationFrame(loop); resize();
       },
       pause(p) { paused = !!p; },
+      // v22: ⚡ la qualità: { pr (risoluzione), prMax, fps veri, cap (limite adesso), lieve, auto }
+      get qualita() { return { pr: Q.pr, prMax: Q.prMax, min: Q.min, fps: Q.fps, cap: capOra(performance.now()), lieve: Q.lieve, auto: Q.auto, cambi: Q.cambi }; },
+      setQualita(o = {}) {
+        if ('lieve' in o) Q.lieve = !!o.lieve;
+        if ('auto' in o) Q.auto = !!o.auto;
+        if ('maxFps' in o) Q.cap = Math.max(15, Math.min(120, +o.maxFps || 60));
+        const tetto = Q.lieve ? Math.min(1, Q.prMax) : Q.prMax;
+        const pr = 'pr' in o ? Math.max(Q.min, Math.min(Q.prMax, +o.pr || 1)) : (Q.auto ? Math.min(Q.pr, tetto) : tetto);
+        if (pr !== Q.pr) { Q.pr = pr; renderer.setPixelRatio(Q.pr); resize(); }
+        Q.lenti = Q.svelti = 0; Q.finestra.t = 0;
+        return this.qualita;
+      },
       // v14: ferma un gesto lungo (es. «cerca» finché leggo internet, «scrive» durante la riunione) · è in corso?
       endAct(k) { let n = 0; for (const a of S.acts) if (a.k === k && a.out == null) { a.out = 0.3; n++; } return n; },
       acting(k) { return S.acts.some(a => a.k === k && a.out == null); },
@@ -14802,7 +14884,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -14864,7 +14946,7 @@ document.addEventListener('touchend',()=>{SPH.drag=false;});
 
 // ---------- WEBCAM + PRESENZA ----------
 let camOn=false,camStream=null,faceTimer=null,present=false,awaySince=Date.now();
-async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:true});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
+async function startCam(){if(camOn)return true;try{camStream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1280},height:{ideal:720}}});camOn=true;$('#cam').srcObject=camStream;$('#cambox').style.display='block';SPH.state='detecting';detectPresence();return true;}catch(e){toast('Webcam: '+e.message,'err');return false;}}
 function stopCam(){if(SPECCHIO.on)toggleSpecchio(false);if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=null;camOn=false;$('#cambox').style.display='none';clearInterval(faceTimer);present=false;if(SPH.state==='detecting')SPH.state='idle';}
 function onPresence(pr){const s=$('#fstat');if(pr){zepAttivo();if(!present){present=true;const away=Date.now()-awaySince;if(s){s.textContent='✓ ti vedo';s.style.color='var(--green)';}if(SPH.state==='idle')SPH.state='detecting';if(away>20000&&AV)AV.gesture('wave');if(friend&&away>20000)greetBack();}}else{if(present){present=false;awaySince=Date.now();if(s){s.textContent='nessun volto';s.style.color='var(--dim)';}if(SPH.state==='detecting')SPH.state='idle';}}}
 
@@ -15078,6 +15160,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('⚡','Prestazioni e benessere',()=>openPerf(),'veloce','lento velocità fps modalità leggera pausa'),c('📖','Leggi quello che ti mostro',()=>qs('leggi quello che ti mostro'),'leggi','webcam foglio biglietto'),
+    c('🖐️','Cosa ho in mano?',()=>qs('cosa ho in mano?'),'oggetto','webcam guarda mostro'),c('🙂','Come mi vedi?',()=>qs('come mi vedi?'),'espressione','webcam faccia umore'),
     c('🌀','Chiedi al multiverso…',()=>q('chiedi al multiverso: '),'multiverso','consiglio dimensioni portale parere'),c('🔬','Laboratorio delle invenzioni',()=>openLab(),'L','inventa app gadget invenzioni'),
     c('🔬','Inventami…',()=>q('inventami '),'inventa','app gadget gioco strumento'),c('🧪','Chiama un aiutante…',()=>q('chiama un aiutante per '),'aiutante','sottofondo compito lampo'),
     c('📺','TV del multiverso',()=>qs('accendi la tv del multiverso'),'tv','canali dimensioni televisione'),
@@ -15101,7 +15185,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V21',key:'maik_boot_v21',checks:[
+  return MaikKit.boot({version:'PRIME · V22',key:'maik_boot_v22',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -15111,6 +15195,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Velocità',run:async()=>{try{const r=await (await fetch('/prestazioni')).json();const s=r.riscaldamento||{};return{ok:true,text:s.stato==='pronto'?'🔥 '+r.modello+' pronto':'⚡ '+r.modello+' · '+(s.stato||'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const r=await (await fetch('/laboratorio')).json();const n=r.invenzioni.length;return{ok:true,text:n?'🔬 '+n+(n===1?' invenzione':' invenzioni'):'🔬 pronto a inventare'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Obiettivi',run:async()=>{try{const r=await (await fetch('/obiettivi')).json();const n=r.obiettivi.length;return{ok:true,text:n?'🎯 '+n+' in corso':'🎯 nessuno (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Automazioni',run:async()=>{try{const r=await (await fetch('/automazioni')).json();const n=r.automazioni.filter(a=>a.attiva!==false).length;return{ok:true,text:n?'⚙️ '+n+' attiv'+(n===1?'a':'e'):'⚙️ nessuna (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -15125,7 +15210,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 21 🌀 Ho aperto un **portale sul multiverso**: «**chiedi al multiverso: devo cambiare lavoro?**» e 4 versioni di me da altre dimensioni (Scienziato, Prudente, Visionario, Pratico) ti danno il loro parere, poi il verdetto. Nel mio **laboratorio** 🔬 invento app vere che puoi usare subito: «**inventami un timer per il tè**», «**costruiscimi un gioco del tris**» (tasto **L**). Mando gli **aiutanti lampo** 🧪 a fare le cose in sottofondo: «**chiama un aiutante per cercare un regalo per mia sorella**». In più: la **TV del multiverso** 📺 e la modalità **Scienziato**. E tutto il resto: obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 22 ⚡ Adesso sono **molto più veloce**: tengo il cervello sempre pronto, non rileggo ogni volta le mie istruzioni e Zep si adatta a quanto ce la fa il tuo PC (guarda **⚡ Prestazioni**, o chiedimi «**quanto vai veloce?**»). Con la webcam 👀 **ti vedo meglio**: «**leggi quello che ti mostro**», «**cosa ho in mano?**», «**come mi vedi?**», mi accorgo se sbadigli e ti ricordo di fare una pausa. Poi c\'è tutto il resto: il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -15213,6 +15298,7 @@ async function avatarInit() {
     AV = await ZepKit.create($('#stage3d'), {
       modelUrl: inf.presente ? '/avatar?v=' + encodeURIComponent(inf.caricato || '') : null,
       accent: themeRGB.accent, accent2: themeRGB.accent2, framing: OPT.framing || 'busto',
+      lieve: !!OPT.lieve, autoQuality: OPT.qauto !== false,                       // v22: ⚡ qualità
       lipUnit: +LS.get('maik_lip_unit', 0) || undefined, alive: OPT.vita !== false, hour: new Date().getHours(), look: OPT.look || null,
       onPoke: onPokeZep, onSleep: () => { caption('💤 …zzz'); captionOff(2500); }, onWake: () => { caption('Eccomi! Mi ero appisolato 😅'); captionOff(2600); },
       onLog: m => console.info('[Zep]', m),
@@ -15363,7 +15449,7 @@ function detectPresence() {
   if (PC_MODE && !TRACK.mp && OPT.mediapipe !== false) tryMediaPipe();
   if (PC_MODE && OPT.mediapipe !== false && gestiOn()) tryManiMP();               // v13: gesti delle mani
   if (TRACK.mp || TRACK.gr) modoTrack();
-  TRACK.timer = setInterval(trackStep, 150);
+  pianificaTrack(150);                                                     // v22: il prossimo giro dipende da quanto costa questo
 }
 function tryMediaPipe() { return TRACK.mpP || (TRACK.mpP = caricaViso()); }
 async function caricaViso() {
@@ -15380,13 +15466,13 @@ async function trackStep() {
   trackBusy = true; let res = null;
   try {
     TRACK.asp = (v.videoWidth || 4) / (v.videoHeight || 3); TRACK.n = (TRACK.n || 0) + 1;
-    if (TRACK.gr && gestiOn() && (GIOCO.on || GEST.conta || TRACK.n % 2 === 0)) {     // v13: le mani (a turno col viso, sempre durante il gioco)
-      try { onMani(daMP(TRACK.gr.recognizeForVideo(v, performance.now()))); TRACK.maniOk = (TRACK.maniOk || 0) + 1; }
+    if (TRACK.gr && gestiOn() && (GIOCO.on || GEST.conta || TRACK.n % 3 === 0)) {     // v13: le mani (a turno col viso, sempre durante il gioco)
+      try { onMani(daMP(TRACK.gr.recognizeForVideo(piccolo(v), performance.now()))); TRACK.maniOk = (TRACK.maniOk || 0) + 1; }
       catch (e) { console.info('Gesti delle mani: errore, li spengo', e && e.message); TRACK.gr = null; }
     }
     if (TRACK.mp) {
       try {
-        const r = TRACK.mp.detectForVideo(v, performance.now());
+        const r = TRACK.mp.detectForVideo(piccolo(v), performance.now());     // v22: su un fotogramma ridotto
         res = onViso(r.faceLandmarks && r.faceLandmarks[0], ((r.faceBlendshapes && r.faceBlendshapes[0]) || {}).categories || []);
       } catch (e) { TRACK.mp = null; }
     }
@@ -16018,7 +16104,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V21'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V22'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -17926,8 +18012,192 @@ function addV21(d, obj) {
   }
 }
 
+// ============================================================
+// V22 — MAIK PRIME più veloce: le prestazioni, la webcam più leggera, quando ti vedo (espressioni, sbadigli, pause), leggi e guarda
+// ============================================================
+
+// ---------- 📷 la webcam più leggera: rilevo su un'immagine piccola, e ogni quanto ce la fa il PC ----------
+const piccoloCanvas = document.createElement('canvas'), piccoloCtx = piccoloCanvas.getContext('2d', { willReadFrequently: false });
+function piccolo(v) {                                // un fotogramma ridotto (320 px) per viso e mani: costa molto meno del video intero
+  if (TRACK.piccoloN !== TRACK.n) {
+    const w = OPT.lieve ? 256 : 320, h = Math.max(1, Math.round(w / ((v.videoWidth || 4) / (v.videoHeight || 3))));
+    if (piccoloCanvas.width !== w || piccoloCanvas.height !== h) { piccoloCanvas.width = w; piccoloCanvas.height = h; }
+    piccoloCtx.drawImage(v, 0, 0, w, h); TRACK.piccoloN = TRACK.n;
+  }
+  return piccoloCanvas;
+}
+function pianificaTrack(ms) {                        // al posto di «ogni 150 ms»: il prossimo giro dipende da quanto costa questo
+  clearTimeout(TRACK.timer);
+  TRACK.timer = setTimeout(async () => {
+    const t0 = performance.now();
+    try { await trackStep(); } catch (e) {}
+    const c = performance.now() - t0;
+    TRACK.costo = TRACK.costo ? TRACK.costo * 0.8 + c * 0.2 : c;
+    TRACK.passo = Math.round(Math.min(450, Math.max(OPT.lieve ? 220 : 130, TRACK.costo * 4)));
+    if (camOn && !document.hidden) pianificaTrack(TRACK.passo); else if (camOn) pianificaTrack(1000);
+  }, ms);
+}
+
+// ---------- 💚 quando ti vedo: espressioni, sbadigli, troppo vicino, la pausa ----------
+const VISTO = { espr: [], sbadigli: [], boccaT: 0, vicinoT: 0, sedutaDa: 0, ultimaVista: 0, avvisi: {}, secondi: 0, ultimoInvio: Date.now() };
+const _onViso0 = onViso;
+onViso = function (lm, cat) {
+  const r = _onViso0(lm, cat);
+  if (lm) analizzaViso(lm, cat);
+  return r;
+};
+function analizzaViso(lm, cat) {
+  const g = n => ((cat || []).find(c => c.categoryName === n) || {}).score || 0, now = Date.now();
+  let mn = 1, mx = 0; for (const p of lm) { if (p.x < mn) mn = p.x; if (p.x > mx) mx = p.x; }
+  const e = { t: now, sorriso: (g('mouthSmileLeft') + g('mouthSmileRight')) / 2, bocca: g('jawOpen'), occhi: (g('eyeBlinkLeft') + g('eyeBlinkRight')) / 2,
+              fronte: (g('browDownLeft') + g('browDownRight')) / 2, stupore: g('browInnerUp'), larghezza: mx - mn };
+  VISTO.espr.push(e); while (VISTO.espr.length && now - VISTO.espr[0].t > 20000) VISTO.espr.shift();
+  if (e.bocca > 0.55 && e.sorriso < 0.3) {          // 🥱 bocca spalancata (senza sorridere) per più di un secondo = uno sbadiglio
+    if (!VISTO.boccaT) VISTO.boccaT = now;
+    else if (now - VISTO.boccaT > 1100 && now - (VISTO.sbadigli[VISTO.sbadigli.length - 1] || 0) > 6000) {
+      VISTO.sbadigli.push(now); VISTO.boccaT = 0;
+      if (AV && Math.random() < 0.6) setTimeout(() => AV && AV.act('yawn'), 900);   // lo sbadiglio è contagioso 😄
+    }
+  } else if (e.bocca < 0.35) VISTO.boccaT = 0;
+  if (e.larghezza > 0.45) { if (!VISTO.vicinoT) VISTO.vicinoT = now; } else VISTO.vicinoT = 0;
+  VISTO.sbadigli = VISTO.sbadigli.filter(t => now - t < 15 * 60000);
+}
+const minutiIt = n => n === 1 ? 'un minuto' : n + ' minuti';
+function mediaVisto(k, ms) { const L = VISTO.espr.filter(e => Date.now() - e.t < (ms || 5000)); return L.length ? L.reduce((a, e) => a + e[k], 0) / L.length : null; }
+function comeTiVedo() {
+  if (!VISTO.espr.length || Date.now() - VISTO.espr[VISTO.espr.length - 1].t > 6000)
+    return TRACK.mp ? '👀 Non vedo bene il tuo viso: mettiti davanti alla webcam, con un po\' di luce, e chiedimelo di nuovo.'
+      : '👀 Per capire le espressioni mi serve il riconoscimento del viso (si scarica da solo la prima volta che accendi la webcam, poi funziona anche senza internet).';
+  const s = mediaVisto('sorriso'), o = mediaVisto('occhi'), f = mediaVisto('fronte'), st = mediaVisto('stupore'), n = VISTO.sbadigli.length;
+  let t = s > 0.45 ? 'Ti vedo **sorridente** 😄' : n >= 2 || o > 0.45 ? 'Ti vedo **un po\' stanco** 😴' : f > 0.35 ? 'Ti vedo **concentrato**, con la fronte un po\' aggrottata 🤨'
+    : st > 0.45 ? 'Ti vedo **sorpreso** 😮' : 'Ti vedo **tranquillo** 🙂';
+  if (n) t += ' · hai sbadigliato ' + (n === 1 ? 'una volta' : n + ' volte') + ' negli ultimi minuti';
+  if (VISTO.sedutaDa && Date.now() - VISTO.sedutaDa > 5 * 60000) t += ' · sei davanti al PC da ' + minutiIt(Math.round((Date.now() - VISTO.sedutaDa) / 60000)) + ' di fila';
+  return t + '.' + (n >= 2 ? ' Una pausa di cinque minuti ti farebbe bene!' : s > 0.45 ? ' Mi piace vederti così!' : '');
+}
+function benessereOk() {
+  return OPT.benessere !== false && !busy && !document.hidden && !(window.FOCUS && FOCUS.on) && !(typeof RIU !== 'undefined' && RIU.on) && !(window.LETTURA && LETTURA.on) && !(window.INTERPRETE && INTERPRETE.on);
+}
+function avvisoBenessere(tipo, testo, bottoni, gesto) {
+  VISTO.avvisi[tipo] = Date.now();
+  const d = add('ai', testo, 'seguito benessere'); finalize(d, testo, null, null);
+  if (bottoni) agEl(d).insertAdjacentHTML('beforeend', bottoni);
+  if (AV && gesto) gesto.forEach((k, i) => setTimeout(() => AV && AV.act(k), i * 2200));
+  notify('💚 MAIK PRIME', testo.replace(/\*\*/g, '')); beep(1); say(testo.replace(/\*\*/g, ''));
+  $('#msgs').scrollTop = 1e9;
+}
+function cicloBenessere() {
+  const now = Date.now();
+  if (!camOn) { VISTO.sedutaDa = 0; return; }
+  if (present) { VISTO.ultimaVista = now; if (!VISTO.sedutaDa) VISTO.sedutaDa = now; VISTO.secondi++; }
+  else if (VISTO.sedutaDa && now - VISTO.ultimaVista > 180000) VISTO.sedutaDa = 0;           // via per più di 3 minuti: la seduta ricomincia
+  if (now - VISTO.ultimoInvio >= 60000) {                                                  // ⏱️ al server solo i secondi (niente immagini)
+    if (VISTO.secondi) postJ('/presenza', { secondi: Math.min(120, VISTO.secondi) }).catch(() => {});
+    VISTO.secondi = 0; VISTO.ultimoInvio = now;
+  }
+  if (!benessereOk()) return;
+  const pausa = (+OPT.pausaMin || 50) * 60000;
+  if (VISTO.sedutaDa && now - VISTO.sedutaDa >= pausa && now - (VISTO.avvisi.pausa || 0) >= pausa)
+    avvisoBenessere('pausa', '🙆 Sei davanti al PC da **' + minutiIt(Math.round((now - VISTO.sedutaDa) / 60000)) + '** di fila: alzati, sgranchisciti e bevi un bicchiere d\'acqua. Ti aspetto qui!',
+      '<button type="button" class="agc calb" data-bn="timer">⏱️ Pausa di 5 minuti</button><button type="button" class="agc calb" data-bn="basta">🔕 Non ricordarmelo</button>', ['stretch']);
+  else if (VISTO.sbadigli.length >= 2 && now - (VISTO.avvisi.sonno || 0) > 30 * 60000)
+    avvisoBenessere('sonno', '😴 Ti ho visto sbadigliare ' + VISTO.sbadigli.length + ' volte: un po\' stanco? Una pausa, un bicchiere d\'acqua o due passi ti rimettono in sesto.',
+      '<button type="button" class="agc calb" data-bn="timer">⏱️ Pausa di 5 minuti</button>', ['yawn', 'rubeyes']);
+  else if (VISTO.vicinoT && now - VISTO.vicinoT > 15000 && now - (VISTO.avvisi.vicino || 0) > 20 * 60000) {
+    VISTO.avvisi.vicino = now; toast('👀 Sei molto vicino allo schermo: allontanati un po\', i tuoi occhi ringraziano', 'ok');
+    caption('👀 Un po\' più lontano dallo schermo…'); captionOff(3500); if (AV) AV.act('wide');
+  }
+}
+
+// ---------- 📷 leggi e guarda quello che mi mostri ----------
+const attesa = ms => new Promise(r => setTimeout(r, ms));
+function contoCam(n) { const c = $('#camconto'); c.textContent = n || ''; c.classList.toggle('on', !!n); }
+async function azioneWebcam(d, w) {
+  if (!camOn) {
+    const ok = await startCam();
+    if (!ok) { const t = '📷 Per farlo mi serve la webcam: accendila con 👀 (tasto **C**) e riprova.'; mc(d).innerHTML = renderAI(t); d.dataset.raw = t; return; }
+    TRACK.eyes = true; updateStageBar(); await attesa(1200);
+  }
+  if (w.azione === 'espressione') {
+    caption('👀 Ti guardo…'); await attesa(1600);
+    const t = comeTiVedo(), r = add('ai', t); finalize(r, t, null, null); say(t.replace(/\*\*/g, ''));
+    if (AV) AV.emote(/sorridente/.test(t) ? 'happy' : /stanco/.test(t) ? 'sad' : 'relaxed', 2500);
+    $('#msgs').scrollTop = 1e9; captionOff(1200); return;
+  }
+  for (let i = w.tra || 2; i > 0; i--) { contoCam(i); caption('📷 ' + i + '…'); beep(1); await attesa(1000); }
+  contoCam(0);
+  const img = snap(); caption(w.azione === 'leggi' ? '📖 Leggo…' : '👁️ Guardo…');
+  if (AV) AV.act(w.azione === 'leggi' ? 'legge' : 'cerca', { dur: 90 });
+  const r = add('ai', ''); mc(r).innerHTML = (w.azione === 'leggi' ? '📖 ' : '👁️ ') + '<span class="cursor"></span>';
+  let t = '', testo = '';
+  try {
+    if (w.azione === 'leggi') {
+      const o = await postJ('/ocr', { immagine: img });
+      testo = o.ok ? (o.testo || '').trim() : '';
+      t = !o.ok ? '📖 ' + (o.errore || 'Non riesco a leggere') : !testo ? '📖 Non vedo niente da leggere: avvicinalo un po\', tienilo fermo e mettilo in luce, poi chiedimelo di nuovo.'
+        : '📖 **Ecco cosa c\'è scritto:**\n\n' + testo;
+    } else {
+      const o = await (await fetch('/vedi', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ immagine: img, prompt: w.domanda || '' }) })).json();
+      t = o.ok ? '👁️ ' + o.testo : '👁️ ' + (o.errore || 'Non riesco a vedere');
+      testo = o.ok ? o.testo : '';
+    }
+  } catch (e) { t = '📷 Errore: ' + e.message; }
+  if (AV) { AV.endAct('legge'); AV.endAct('cerca'); }
+  mc(r).innerHTML = testo && w.azione === 'leggi' ? renderAI('📖 **Ecco cosa c\'è scritto:**') + '<div class="letto">' + esc(testo) + '</div>' : renderAI(t);
+  finalize(r, t, null, null); captionOff(500);
+  if (testo && w.azione === 'leggi') {
+    r._letto = testo;
+    agEl(r).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-wl="copia">📋 Copia</button><button type="button" class="agc calb" data-wl="voce">🔊 Leggimelo</button><button type="button" class="agc calb" data-wl="salva">📚 Salva nei documenti</button>');
+  }
+  if (testo) say(w.azione === 'leggi' ? 'Ecco cosa c\'è scritto.' : testo.slice(0, 260));
+  $('#msgs').scrollTop = 1e9;
+}
+
+// ---------- ⚡ il pannello delle prestazioni ----------
+const PERF = { t: null, avvisoLento: false, avvisoZep: false };
+function openPerf() { $('#pfmodal').classList.add('open'); segnaPerf(); loadPerf(); clearInterval(PERF.t); PERF.t = setInterval(() => { if ($('#pfmodal').classList.contains('open')) loadPerf(); else clearInterval(PERF.t); }, 1500); }
+function closePerf() { $('#pfmodal').classList.remove('open'); clearInterval(PERF.t); }
+function segnaPerf() { $('#optlieve').checked = !!OPT.lieve; $('#optqauto').checked = OPT.qauto !== false; $('#optbenessere').checked = OPT.benessere !== false; $('#optpausa').value = String(OPT.pausaMin || 50); }
+const numPf = (x, d) => x == null ? '—' : (+x).toLocaleString('it-IT', { maximumFractionDigits: d == null ? 1 : d });
+async function loadPerf() {
+  let p = null; try { p = await (await fetch('/prestazioni')).json(); } catch (e) {}
+  const q = AV && AV.qualita, tile = (lab, val, nota) => '<div class="pft"><small>' + lab + '</small><b>' + val + '</b>' + (nota ? '<span>' + nota + '</span>' : '') + '</div>';
+  const r = p && p.riscaldamento ? p.riscaldamento : {};
+  $('#pfgrid').innerHTML = tile('🧠 Cervello', p && p.media_tps ? numPf(p.media_tps) + ' token/s' : '—', p ? esc(p.modello) + (p.risposte ? ' · ' + p.risposte + ' risposte' : ' · ancora nessuna risposta') : 'server non raggiungibile')
+    + tile('💬 Prima parola', p && p.media_prima_parola_ms ? numPf(p.media_prima_parola_ms / 1000) + ' s' : '—', r.stato === 'pronto' ? '🔥 pronto (scaldato in ' + numPf(r.secondi) + ' s)' : r.stato ? esc(r.stato) : '')
+    + tile('🤖 Zep', q ? q.fps + ' fps' : '—', q ? 'risoluzione ' + numPf(q.pr, 2) + '× · limite ' + q.cap + ' fps' + (q.lieve ? ' · leggera' : '') : 'senza personaggio 3D')
+    + tile('📷 Webcam', camOn && TRACK.costo ? numPf(TRACK.costo, 0) + ' ms' : camOn ? '…' : 'spenta', camOn ? 'controllo ogni ' + (TRACK.passo || 150) + ' ms · ' + esc(TRACK.mode || '') : 'accendila con 👀 (C)');
+  const cons = (p && p.consigli) || [];
+  if (q && q.pr <= q.min && q.fps && q.fps < q.cap * 0.75 && !q.lieve) cons.push('Zep fatica anche alla risoluzione più bassa: prova la 🪶 modalità leggera qui sotto.');
+  $('#pfconsigli').innerHTML = cons.length ? cons.map(c => '<div class="pfc">💡 ' + esc(c) + '</div>').join('') : '<div class="pfc ok">👍 Va tutto bene: niente da cambiare.</div>';
+  $('#pfdett').textContent = p ? 'Memoria di lavoro ' + p.num_ctx + ' token · il modello resta pronto per ' + p.keep_alive : '';
+}
+function applicaQualita() { if (AV && AV.setQualita) AV.setQualita({ lieve: !!OPT.lieve, auto: OPT.qauto !== false }); }
+function controllaFatica() {                          // una volta sola: se il PC fatica, propongo la modalità leggera
+  if (!AV || !AV.qualita || PERF.avvisoZep || OPT.lieve) return;
+  const q = AV.qualita;
+  if (q.auto && q.pr <= q.min && q.fps && q.fps < Math.min(20, q.cap * 0.6)) { PERF.avvisoZep = true; toast('🪶 Il PC fatica a muovere Zep: prova la modalità leggera (⚡ Prestazioni)', 'ok'); }
+}
+
+function addV22(d, obj) {
+  if (obj.prestazioni) agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-pf="1">⚡ Apri le prestazioni</button>');
+  if (obj.presenza) agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-pf="1">💚 Pause e benessere</button>');
+  if (obj.webcam) azioneWebcam(d, obj.webcam);
+  if (obj.stat && obj.stat.tps && obj.stat.tps < 4 && !PERF.avvisoLento) { PERF.avvisoLento = true; setTimeout(() => toast('🐢 Il modello va piano su questo PC: in ⚡ Prestazioni trovi i consigli', 'ok'), 1500); }
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();}});
+$('#pfmodal').addEventListener('click',e=>{if(e.target.id==='pfmodal')closePerf();});
+document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-pf],#msgs button[data-bn],#msgs button[data-wl]');if(!b)return;     // v22
+  const ds=b.dataset;
+  if(ds.pf){openPerf();return;}
+  if(ds.bn==='timer'){qs('metti un timer di 5 minuti');return;}
+  if(ds.bn==='basta'){setOpt('benessere',false);b.disabled=true;toast('🔕 Ok, niente più promemoria per le pause (si riattivano in ⚡ Prestazioni)','ok');return;}
+  const d=b.closest('.m'),t=d&&d._letto;if(!t)return;
+  if(ds.wl==='copia'){navigator.clipboard.writeText(t).then(()=>toast('📋 Copiato','ok'),()=>toast('Non riesco a copiare','err'));}
+  else if(ds.wl==='voce'){say(t);}
+  else if(ds.wl==='salva'){b.disabled=true;await docSave('Dalla webcam — '+new Date().toLocaleString('it-IT',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).replace(/[\/:]/g,'.')+'.txt',t);}});
 ['labmodal','labvista','labcod'].forEach(id=>$('#'+id).addEventListener('click',e=>{if(e.target.id!==id)return;if(id==='labvista')chiudiVista();else $('#'+id).classList.remove('open');}));
 document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-mv],#msgs button[data-lab],#msgs button[data-labo],#msgs button[data-aiu],#msgs button[data-tv],#lablista [data-labm],#labmodal [data-labs]');if(!b)return;     // v21
   const ds=b.dataset;
@@ -18073,7 +18343,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);})();
 </script>
 </body></html>"""
 

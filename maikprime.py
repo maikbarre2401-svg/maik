@@ -12028,7 +12028,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 <div class="ov" id="labvista">
   <div class="mod">
     <div class="modh"><div class="modt">🔬 <span id="lvnome"></span></div><button class="ib" onclick="chiudiVista()" aria-label="Chiudi">✕</button></div>
-    <div class="modb"><iframe id="lvframe" sandbox="allow-scripts" referrerpolicy="no-referrer" title="L'invenzione in grande"></iframe></div>
+    <div class="modb" id="lvbox"></div>
   </div>
 </div>
 
@@ -17556,11 +17556,12 @@ document.addEventListener('load', e => {
   const n = (+f.dataset.carichi || 0) + 1; f.dataset.carichi = n;
   if (n > 1) { f.dataset.carichi = 0; f.src = f.getAttribute('src'); toast('🔒 L\'invenzione voleva uscire dalla gabbia: l\'ho rimessa a posto', 'err'); }
 }, true);
-function apriVista(id, nome) {
-  $('#lvnome').textContent = nome || 'Invenzione'; $('#lvframe').dataset.carichi = 0; $('#lvframe').src = '/laboratorio/app?id=' + encodeURIComponent(id) + '&t=' + Date.now();
+function apriVista(id, nome) {                  // la gabbia grande la creo solo quando serve (e la tolgo quando chiudi)
+  $('#lvnome').textContent = nome || 'Invenzione';
+  $('#lvbox').innerHTML = '<iframe id="lvframe" sandbox="allow-scripts" referrerpolicy="no-referrer" title="L\'invenzione in grande" src="/laboratorio/app?id=' + encodeURIComponent(id) + '&t=' + Date.now() + '"></iframe>';
   $('#labvista').classList.add('open');
 }
-function chiudiVista() { $('#labvista').classList.remove('open'); $('#lvframe').src = 'about:blank'; }
+function chiudiVista() { $('#labvista').classList.remove('open'); $('#lvbox').innerHTML = ''; }
 async function apriCodice(id, nome) {
   let t = ''; try { t = await (await fetch('/laboratorio/app?id=' + encodeURIComponent(id))).text(); } catch (e) { toast('🔬 Non riesco a leggere il codice', 'err'); return; }
   $('#lcnome').textContent = nome || ''; $('#lccode').textContent = t; $('#lcscarica').href = '/laboratorio/app?scarica=1&id=' + encodeURIComponent(id);

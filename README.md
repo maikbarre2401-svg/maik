@@ -47,6 +47,18 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🎓 Novità V25 — MAIK PRIME Accademia: le carte per studiare, il Quizzone di Zep, i suoni per concentrarti (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🃏 **Le carte per studiare** | «**fammi le carte per imparare le capitali d'Europa**», «**carte di spagnolo**», «voglio imparare l'inglese con le carte», «fammi 10 carte sulla fotosintesi», «**fammi le carte dal documento** storia.pdf» (o con un file allegato 📎: «fammi le carte da questo file»), e a mano: «**carta: hola = ciao**» (anche «… nel mazzo spagnolo»). Le carte le prepara il modello (gli chiedo risposte giuste e, per un documento, di usare solo quel testo); senza modello ho tre mazzi di serie: capitali d'Europa, inglese di base, spagnolo di base. |
+| 🔁 **Il ripasso intelligente** | «**ripassiamo**» (o «ripassiamo spagnolo», «interrogami»): la carta si gira con un'animazione 3D (Spazio), puoi **scrivere la risposta** (la controllo io: maiuscole, accenti e un errore di battitura si perdonano → «🟡 Quasi»), poi dici com'è andata — ❌ Non la sapevo · 😐 Difficile · 🙂 Bene · 🤩 Facile (tasti 1-4) — e sotto ogni voto vedi **quando tornerà** la carta. È il ripasso a intervalli (l'algoritmo SM-2, quello delle app per le lingue): le carte che sai tornano sempre più tardi, quelle che sbagli domani (e anche alla fine del giro). Zep legge la domanda e la risposta **nella lingua del mazzo** (lo spagnolo con la voce spagnola). Alla fine: i conti, quante te ne restano, 🔥 i giorni di fila; «giro libero» per ripassare senza cambiare i tempi. «**quante carte devo ripassare?**» e il pannello **🃏 Le tue carte** (mazzi, carte da ripassare, imparate, nuovo mazzo, elimina — si può annullare). Una volta al giorno ti ricordo le carte da ripassare; si può anche mettere in un'automazione («ogni sera alle 21 ripassiamo»). |
+| 🎮 **Il Quizzone di Zep** | «**facciamo un quiz**», «quiz di storia», «sfidami a un quiz sui dinosauri difficile»: 10 domande a schermo con 4 risposte (A B C D o tasti 1-4), il **timer** (20 secondi, 15 se difficile), due aiuti — **½ 50:50** e **👥 il pubblico** —, i punti (più sei veloce più ne prendi, bonus 🔥 dalla terza giusta di fila), la spiegazione dopo ogni risposta, suoni di giusto/sbagliato e Zep che esulta o allarga le braccia. Alla fine i punti e i **record** per argomento (🏆 con il trofeo di Zep). Le domande le scrive il modello (gli chiedo solo fatti veri e una sola risposta giusta; le domande fatte male le scarto e le risposte le rimescolo io); senza modello ne ho 37 di serie (geografia, storia, scienze, arte, sport). |
+| 🎧 **I suoni per concentrarti** | «**metti la pioggia**», «metti il mare», «i suoni del bosco», «accendi il camino», «il rumore marrone», «suoni per concentrarmi», «… **per 25 minuti**», «spegni i suoni». Non sono registrazioni: li genera il browser dal vivo (rumore rosa e marrone filtrato, le gocce, le onde che vanno e vengono, gli uccellini, gli scoppiettii del fuoco). Il riquadro sul palco ha il volume, il conto alla rovescia e ✕. |
+
+- Nuovi endpoint: `GET /studio` · `GET /studio/ripasso?mazzo=&libero=1` · `POST /studio/voto {id, voto: 0-5}` · `POST /studio/elimina {mazzo}` · `GET /quiz?tema=&difficolta=facile|medio|difficile` · `POST /quiz/fine {categoria, punti, giuste, totale}` (quelli che cambiano qualcosa solo dalla GUI di MAIK). `/chat/stream` restituisce anche `"studio"`, `"quiz"`, `"suoni"`.
+- I dati: `dati_maik/studio.json` (mazzi e carte, con la storia dei ripassi) e `dati_maik/quiz.json` (i record); sono nelle copie di sicurezza e si possono annullare.
+
 ## 🎬 Novità V24 — MAIK PRIME Show: Radio Maik, il tuo mese in storie, la mappa della mente (versione server)
 
 | | Cosa fa |
@@ -486,7 +498,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V24 — `maikprime.py`
+## MAIK PRIME — Server V25 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

@@ -47,6 +47,19 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🎬 Novità V24 — MAIK PRIME Show: Radio Maik, il tuo mese in storie, la mappa della mente (versione server)
+
+| | Cosa fa |
+|---|---|
+| 📻 **Radio Maik** | «**accendi radio maik**» (anche «radio maik», «fammi il notiziario», «metti la radio», «radio maik di stasera»): uno **show radiofonico tutto tuo** con due conduttori, **Zep** e **Nova**, ognuno con la sua voce. Dentro c'è la tua giornata vera: il **meteo** della tua città (con il consiglio: ombrello, giacca…), gli **impegni** del calendario, i **promemoria** di oggi, le **cose da fare**, le **notizie** principali, i tuoi **obiettivi** e la **curiosità del giorno**. Il copione lo scrive il modello usando **solo i dati veri** (gli chiedo di non inventare niente); senza modello lo scrivo io. Sul palco compare il pannello **● ON AIR** con l'equalizzatore, i segmenti (☀️ Meteo, 📅 La tua giornata, 📰 Notizie…), la battuta in onda, ⏮ ⏸ ⏭; c'è un jingle all'inizio, uno stacco tra un segmento e l'altro e la sigla finale. **Zep si mette le cuffie** e muove la testa a tempo, l'antenna lampeggia «in onda». Se scrivi o parli la radio va in pausa. Si può mettere in un'automazione: «**ogni mattina alle 8 accendi radio maik**». |
+| 🎞️ **Il tuo mese in storie** | «**il mio mese in storie**» (o «la mia settimana in storie», «il mio anno in storie»): a schermo intero, come le storie di Instagram, con la barretta in alto. Quanti **messaggi** ci siamo scritti (e il giorno e il momento preferiti), **di cosa abbiamo parlato** (la nuvola di parole e «la parola del mese»), il tuo **umore** (il grafico), i **soldi** spesi con le barre per categoria, le **abitudini** rispettate, le **cose fatte** e i pomodori, i tuoi **obiettivi**, e alla fine «**Insieme da N giorni**» con una dedica scritta per te. Tocca a destra per andare avanti e a sinistra per tornare; tieni premuto per fermarle; scorrono anche da sole; Zep le racconta (🔊/🔇). Alla fine: **⬇ Salva la cartolina**, un'immagine 1080×1350 da tenere o mandare. |
+| 🧠 **La mappa della mente** | «**mappa della mente**» (o «mostrami cosa sai di me», o il bottone 🧠): tutto quello che so di te in una **mappa viva**. Al centro ci sei tu, intorno **Chi sei** (città, lavoro…), **Persone**, **Gusti** (❤️ e 💔), **Obiettivi e sogni**, **Abitudini**, **Di cosa parliamo**, **Cose che mi hai insegnato**, **Documenti**; i **fili tratteggiati** collegano le cose che nomini insieme (es. Marco ↔ calcetto). Trascina i nodi, rotellina per ingrandire, 🔎 cerca, legenda per nascondere una categoria, tocca un nodo per i dettagli. Quello che non vuoi che ricordi: **🗑 Dimentica** (chiede conferma) — e se cambi idea, **↩ Annulla**. |
+
+- Un solo «↩ Annulla» per risposta: se la risposta ha già il suo (spesa, impegno, automazione, cosa da fare, obiettivo), quello generale della V23 non compare.
+- Nuovi endpoint: `GET /radio?momento=mattina|pomeriggio|sera` (il copione) · `GET /storie?periodo=settimana|mese|anno` · `GET /mente` · `POST /mente/dimentica {tipo: profilo|persona|fatto|sogno, chiave}` (solo dalla GUI di MAIK, si può annullare). `/chat/stream` restituisce anche `"radio"`, `"storie"`, `"mente"`.
+- Nuove variabili (per puntare il meteo altrove, es. nelle prove): `MAIK_METEO_GEO_URL`, `MAIK_METEO_URL`.
+- Il meteo e le notizie della radio vengono da internet (Open-Meteo e i feed RSS di sempre): senza internet lo show salta quelle parti.
+
 ## 🛡️ Novità V23 — MAIK PRIME affidabile: annulla, autodiagnosi, copie di sicurezza, «pensaci meglio» (versione server)
 
 Tutto quello che c'era, ma che **funziona meglio**: se sbaglio si torna indietro, se qualcosa non va te lo dico (con il rimedio) e i tuoi dati sono al sicuro.
@@ -473,7 +486,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V23 — `maikprime.py`
+## MAIK PRIME — Server V24 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

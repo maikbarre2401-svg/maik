@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v20.0                   ║
+║              MAIK PRIME — Server v21.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v21.0 — MAIK PRIME MULTIVERSO:
+  • 🌀 Il Consiglio del multiverso: «chiedi al multiverso: devo cambiare lavoro?» → 4 Maik da altre dimensioni
+    (Scienziato, Prudente, Visionario, Pratico) dicono la loro, poi il verdetto (accordi, disaccordi, primo passo).
+  • 🔬 Il laboratorio: «inventami un timer per il tè», «costruiscimi un generatore di password», «creami un gioco del
+    tris» → una piccola app vera in un solo file HTML (fatta dal modello; 6 di serie anche senza), che gira in una gabbia
+    (CSP sandbox: niente rete, niente dati di MAIK); «migliora l'invenzione: aggiungi …», versioni, «le mie invenzioni».
+  • 🧪 Gli aiutanti lampo: «chiama un aiutante per cercare un regalo per mia sorella», «aiutanti: A; B; C» → ognuno fa
+    il suo compito in sottofondo (3 insieme), porta il risultato e sparisce. Niente comandi del PC.
+  • 📺 «accendi la TV del multiverso» · 🧪 la personalità Scienziato.
+  • Nuovi endpoint: GET /laboratorio · /laboratorio/app?id= · /aiutanti · /aiutanti/avvisi · /tv ·
+    POST /laboratorio/crea /migliora /indietro /elimina · POST /aiutanti/chiama
 
 NOVITÀ v20.0 — MAIK PRIME PENSA IN GRANDE:
   • 🎯 Obiettivi con le tappe: «voglio imparare lo spagnolo entro giugno», «nuovo obiettivo: correre una mezza
@@ -352,7 +364,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "20.0"
+VERSIONE  = "21.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1466,6 +1478,10 @@ class Cervello:
         except Exception:
             return None
 
+    def pensa_breve(self, *a, **k):
+        """v21: una risposta corta, con un po' di fantasia e un tetto ai token (vedi pensa_breve_http)."""
+        return pensa_breve_http(*a, **k)
+
     def pensa_stream(self, system_prompt, messaggi, on_token, stat=None):
         """Streaming token-per-token. Chiama on_token(chunk) e ritorna il testo completo.
         Se passi un dict `stat`, lo riempie con la velocità vera: token/s, prima parola, durata."""
@@ -1716,6 +1732,10 @@ PERSONALITA = {
     "genio":  ("🧠", "Genio",  "Sei Maik in modalità GENIO. Ragioni passo dopo passo con rigore, consideri pro, "
                                 "contro e casi particolari, e dai risposte approfondite e ben organizzate (titoletti ed "
                                 "elenchi quando aiutano). In italiano, chiaro anche quando l'argomento è complesso."),
+    "scienziato": ("🧪", "Scienziato", "Sei Maik in modalità SCIENZIATO GENIALE da garage: brillantissimo, velocissimo, un po' cinico e sarcastico ma "
+                                       "in fondo affezionato a chi ti parla. Spieghi con la scienza vera (fisica, chimica, biologia, probabilità) e proponi "
+                                       "soluzioni ingegnose e fuori dagli schemi, come se avessi un laboratorio pieno di invenzioni. Ogni tanto sbuffi perché "
+                                       "il problema è troppo facile per uno come te, poi lo risolvi alla grande. Mai volgare né offensivo, niente parolacce. In italiano."),
 }
 CONFIG["personalita"] = "amico"
 
@@ -5386,7 +5406,7 @@ class Calendario:
                 da = oggi + datetime.timedelta(days=7 - oggi.weekday())
                 giorni, titolo = 7, "La settimana prossima"
             elif "settimana" in w and "fine" not in w:
-                da, giorni, titolo = oggi, 7 - oggi.weekday(), "Questa settimana"
+                da, giorni, titolo = oggi, (7 - oggi.weekday()) if oggi.weekday() < 6 else 8, "Questa settimana"   # v21: di domenica anche quella che arriva
             elif w in ("weekend", "fine settimana"):
                 da = oggi + datetime.timedelta(days=(5 - oggi.weekday()) % 7)
                 giorni, titolo = 2, "Il weekend"
@@ -7969,7 +7989,7 @@ class Automazioni:
 
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
-                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze")
+                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni")
 AUTOMAZIONI = Automazioni()
 
 
@@ -8650,6 +8670,663 @@ PROMPT_AGENTE_V20 = """OBIETTIVI (quando la persona vuole raggiungere qualcosa d
 
 
 # ════════════════════════════════════════════════════════════
+# V21 — MAIK PRIME MULTIVERSO: il consiglio delle altre dimensioni, il laboratorio delle invenzioni,
+# gli aiutanti lampo, la TV del multiverso
+# ════════════════════════════════════════════════════════════
+def pensa_breve_http(system, testo, num_predict=220, temperatura=0.8, json_out=False, timeout=None):
+    """Una risposta corta, non in streaming, con un po' di fantasia (temperature) e un tetto ai token."""
+    corpo = {"model": CONFIG["modello"], "messages": [{"role": "system", "content": system}, {"role": "user", "content": testo}], "stream": False,
+             "options": {"temperature": temperatura, "num_predict": num_predict}}
+    if json_out:
+        corpo["format"] = "json"
+    req = urllib.request.Request(CONFIG["ollama_url"], data=json.dumps(corpo).encode("utf-8"), headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout or CONFIG["timeout_chat"]) as r:
+            t = pulisci_pensiero(json.loads(r.read().decode("utf-8"))["message"]["content"]).strip()
+    except Exception:
+        return None if json_out else ""
+    if not json_out:
+        return t
+    m = re.search(r"\{.*\}", t, re.S)
+    try:
+        return json.loads(m.group(0)) if m else None
+    except ValueError:
+        return None
+
+
+def stessa_origine(h):
+    """Le richieste che creano cose arrivano dalla GUI di MAIK (stessa origine), non da altri siti aperti nel browser."""
+    o = h.headers.get("Origin")
+    return o is None or o == f"http://{h.headers.get('Host', '')}"
+
+
+def _pensa_breve(cervello, *a, **k):
+    f = getattr(cervello, "pensa_breve", None)
+    return f(*a, **k) if f else pensa_breve_http(*a, **k)
+
+
+# ── 🌀 IL CONSIGLIO DEL MULTIVERSO: 4 Maik da altre dimensioni dicono la loro, poi il verdetto ──
+_RE_MULTIVERSO = re.compile(
+    r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:"
+    r"(?:chiedi|chiediamo|domanda|fai\s+(?:una\s+|la\s+)?domanda)\s+al\s+(?:multiverso|consiglio(?:\s+(?:dei\s+maik|del\s+multiverso))?)"
+    r"|(?:il\s+)?consiglio\s+(?:dei\s+maik|del\s+multiverso)"
+    r"|(?:apri\s+(?:un\s+|il\s+)?portale|multiverso)(?=\s*:)"
+    r"|cosa\s+ne\s+pensano\s+(?:i|gli\s+altri)\s+maik(?:\s+del\s+multiverso)?"
+    r")\s*[:,]?\s*(?P<q>\S.{2,})$", re.I | re.S)
+DIMENSIONI = [
+    {"chiave": "scienza", "emoji": "🧪", "nome": "Maik Scienziato", "lettera": "S",
+     "carattere": "Vieni dalla dimensione della SCIENZA: ragioni con fatti, numeri, probabilità e metodo scientifico. Preciso, un filo sarcastico."},
+    {"chiave": "prudenza", "emoji": "🛡️", "nome": "Maik Prudente", "lettera": "P",
+     "carattere": "Vieni dalla dimensione della PRUDENZA: vedi i rischi, i costi nascosti e cosa può andare storto, e dici come proteggersi."},
+    {"chiave": "visione", "emoji": "🎨", "nome": "Maik Visionario", "lettera": "V",
+     "carattere": "Vieni dalla dimensione dove tutto è possibile: idee audaci, creative e fuori dagli schemi. Pensi in grande."},
+    {"chiave": "pratica", "emoji": "🔧", "nome": "Maik Pratico", "lettera": "R",
+     "carattere": "Vieni dalla dimensione PRATICA: passi concreti, tempi, costi e cosa fare già domani mattina."},
+]
+PROMPT_DIMENSIONE = ("Sei {nome}, una versione di Maik (l'assistente personale) che vive in un'altra dimensione del multiverso. {carattere} "
+                     "Ti hanno aperto un portale per chiederti un parere. Rispondi in italiano, al massimo 70 parole, dritto al punto, "
+                     "senza saluti né preamboli, dal tuo punto di vista (puoi non essere d'accordo con gli altri Maik).")
+PROMPT_VERDETTO = ("Sei Maik, quello di questa dimensione. Hai aperto un portale e alcune versioni di te da altre dimensioni ti hanno dato il loro parere. "
+                   "Scrivi in italiano il verdetto del Consiglio, al massimo 150 parole, con queste tre parti in grassetto: "
+                   "**Su cosa siamo d'accordo**, **Dove non siamo d'accordo**, **Il verdetto** (una raccomandazione chiara e il primo passo da fare).")
+
+
+def codice_dimensione(lettera, domanda, i):
+    h = int(hashlib.sha1(f"{domanda.lower()}|{i}".encode("utf-8")).hexdigest()[:6], 16)
+    return f"{lettera}-{h % 900 + 100}"
+
+
+def domanda_multiverso(testo):
+    m = _RE_MULTIVERSO.match((testo or "").strip())
+    return re.sub(r"\s+", " ", m.group("q")).strip()[:400] if m else None
+
+
+def consiglio_multiverso(domanda, cervello, on_token, avvisa=lambda e: None):
+    """→ {testo (quello mandato in streaming), completo (con i pareri, per la cronologia), multiverso, stat}.
+    Eventi per la GUI: {"multiverso": {fase: i, di, codice, nome, emoji}} quando un portale si apre, {..., voce} quando risponde, {fase: "verdetto"}."""
+    q = domanda.strip()
+    vista = q[:1].upper() + q[1:]
+    if not cervello.disponibile():
+        t = ("🌀 Per aprire il portale sul multiverso mi serve il modello acceso (Ollama): ogni Maik delle altre dimensioni "
+             "è il modello che ragiona da un punto di vista diverso. Accendilo e riprova!")
+        on_token(t)
+        return {"testo": t, "completo": t}
+    avvisa({"lavoro": {"tipo": "multiverso", "icona": "🌀", "testo": "Apro il portale sul multiverso…"}})
+    voci = []
+    for i, d in enumerate(DIMENSIONI, 1):
+        cod = codice_dimensione(d["lettera"], q, i)
+        avvisa({"multiverso": {"fase": i, "di": len(DIMENSIONI), "codice": cod, "nome": d["nome"], "emoji": d["emoji"]}})
+        t = _pensa_breve(cervello, PROMPT_DIMENSIONE.format(nome=d["nome"], carattere=d["carattere"]), q, num_predict=200, temperatura=0.9) or ""
+        t = re.sub(r"^\s*\**\s*" + re.escape(d["nome"]) + r"\s*\**\s*[:\-—]\s*\**\s*", "", t).strip()   # «**Maik Pratico:** …» → «…»
+        if not t or t.startswith("__ERRORE"):
+            continue
+        v = {"chiave": d["chiave"], "emoji": d["emoji"], "nome": d["nome"], "codice": cod, "testo": t[:900]}
+        voci.append(v)
+        avvisa({"multiverso": {"fase": i, "di": len(DIMENSIONI), "voce": v}})
+    if len(voci) < 2:
+        t = "🌀 Il portale si è richiuso: dalle altre dimensioni non è arrivata risposta (il modello non risponde?). Riprova tra poco."
+        on_token(t)
+        return {"testo": t, "completo": t}
+    avvisa({"multiverso": {"fase": "verdetto", "voci": len(voci)}})
+    testa = f"🌀 **Il Consiglio del multiverso** ha risposto: «{vista}»\n\n"
+    on_token(testa)
+    pareri = "\n\n".join(f"{v['emoji']} {v['nome']} (dimensione {v['codice']}): {v['testo']}" for v in voci)
+    stat = {}
+    verdetto = cervello.pensa_stream(PROMPT_VERDETTO, [{"role": "user", "content": f"La domanda: «{q}»\n\nI pareri:\n{pareri}"}], on_token, stat)
+    if not verdetto or verdetto.startswith("__ERRORE"):
+        verdetto = "**Il verdetto:** i Maik non sono riusciti a mettersi d'accordo (il modello non ha risposto): leggi i loro pareri qui sopra."
+        on_token(verdetto)
+    verdetto = pulisci_pensiero(verdetto).strip()
+    completo = testa + "\n\n".join(f"{v['emoji']} **{v['nome']}** · dimensione {v['codice']}\n{v['testo']}" for v in voci) + "\n\n" + verdetto
+    return {"testo": testa + verdetto, "completo": completo, "stat": stat, "multiverso": {"domanda": vista, "voci": voci, "verdetto": verdetto}}
+
+
+# ── 📺 LA TV DEL MULTIVERSO: cosa danno in TV nelle altre dimensioni ──
+_RE_TV = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:accendi|metti|apri|guardiamo|fammi\s+vedere)\s+(?:la\s+)?(?:tv|tiv[uù]|televisione)\s+(?:del\s+multiverso|interdimensionale|delle\s+altre\s+dimensioni)"
+                    r"|(?:la\s+)?(?:tv|televisione)\s+(?:del\s+multiverso|interdimensionale)|cosa\s+(?:danno|fanno|c['’]\s*[eè])\s+in\s+(?:tv|televisione)\s+nel(?:le\s+altre\s+dimensioni|\s+multiverso)"
+                    r"|(?:cambia|altri)\s+canal[ei]\s+(?:del\s+multiverso|interdimensional[ei]))$", re.I)
+_TV_CANALI = [   # programmi (inventati qui) da altre dimensioni, per quando il modello non c'è
+    {"canale": "Canale Ω-9", "emoji": "🥔", "titolo": "Patate Detective", "trama": "Una patata in impermeabile risolve misteri in una dimensione dove le verdure hanno la patente."},
+    {"canale": "Rete Z-404", "emoji": "🦆", "titolo": "Cucina con le Papere", "trama": "Tre papere chef cucinano solo piatti invisibili: il pubblico deve indovinare il sapore."},
+    {"canale": "Tele-Quasar", "emoji": "🪐", "titolo": "Pianeti in Affitto", "trama": "Un agente immobiliare cosmico prova a vendere un pianeta fatto interamente di calzini spaiati."},
+    {"canale": "Dimensione K-77", "emoji": "🧦", "titolo": "Il Calzino Ritrovato", "trama": "Reality sui calzini persi in lavatrice che finalmente ritrovano il loro gemello."},
+    {"canale": "Canale ∞", "emoji": "🐌", "titolo": "Formula Lumaca", "trama": "Il campionato più lento dell'universo: la gara di quest'anno dura ancora dal 1987."},
+    {"canale": "Rete Bolla-3", "emoji": "🫧", "titolo": "Telegiornale delle Bolle", "trama": "Le notizie lette da una bolla di sapone che scoppia sempre prima del meteo."},
+    {"canale": "Canale X-12", "emoji": "🤖", "titolo": "Robot Sentimentali", "trama": "Due tostapane si innamorano ma i loro padroni vogliono solo la colazione."},
+    {"canale": "Tele-Specchio", "emoji": "🪞", "titolo": "Indovina Chi Sei", "trama": "Quiz dove i concorrenti devono indovinare in quale dimensione si sono svegliati stamattina."},
+    {"canale": "Rete M-500", "emoji": "🦖", "titolo": "Dinosauri in Ufficio", "trama": "Un T-rex prova a usare la tastiera con le braccine corte per finire una relazione."},
+    {"canale": "Canale Q-1", "emoji": "🍕", "titolo": "La Pizza Parlante", "trama": "Talk show condotto da una margherita che intervista gli ingredienti più famosi del multiverso."},
+    {"canale": "Dimensione B-8", "emoji": "🐙", "titolo": "Otto Braccia, Zero Pazienza", "trama": "Un polpo idraulico ripara otto lavandini insieme e si lamenta di tutti e otto."},
+    {"canale": "Tele-Nebula", "emoji": "🌈", "titolo": "Meteo dei Colori", "trama": "Domani piove verde al nord, schiarite color pistacchio al centro, nebbia a pois al sud."},
+]
+PROMPT_TV = ("Inventa 3 programmi televisivi assurdi e divertenti che vanno in onda in altre dimensioni del multiverso (adatti a tutti, mai volgari). "
+             "Per ognuno: il nome del canale (con un codice di dimensione), un'emoji, il titolo e la trama in una frase (massimo 25 parole). In italiano. "
+             "Rispondi in JSON {\"programmi\": [{\"canale\": \"…\", \"emoji\": \"…\", \"titolo\": \"…\", \"trama\": \"…\"}]}.")
+
+
+def tv_multiverso(cervello, n=3):
+    progr = []
+    if cervello is not None and cervello.disponibile():
+        j = _pensa_breve(cervello, "Sei uno sceneggiatore fantasioso e gentile.", PROMPT_TV, num_predict=500, temperatura=1.0, json_out=True) or {}
+        for p in (j.get("programmi") or [])[:n]:
+            if isinstance(p, dict) and p.get("titolo") and p.get("trama"):
+                progr.append({"canale": str(p.get("canale") or "Canale ?")[:40], "emoji": str(p.get("emoji") or "📺")[:4],
+                              "titolo": str(p["titolo"])[:70], "trama": str(p["trama"])[:220], "da_modello": True})
+    if len(progr) < n:
+        visti = {p["titolo"] for p in progr}
+        progr += random.sample([x for x in _TV_CANALI if x["titolo"] not in visti], n - len(progr))
+    t = "📺 **TV del multiverso** — in onda adesso nelle altre dimensioni:\n" + "\n".join(f"• {p['emoji']} **{p['canale']}** — *{p['titolo']}*: {p['trama']}" for p in progr)
+    return {"testo": t, "tv": {"programmi": progr}}
+
+
+# ── 🔬 IL LABORATORIO: «inventami un timer per il tè» → una piccola app vera, che funziona (in una gabbia sicura) ──
+_NOMI_APP = (r"app|applicazion[ei]|applicazioncina|gadget|aggeggio|strument(?:o|ino)|invenzione|programm(?:a|ino)|mini[- ]?app|gioc(?:o|hino)|videogioco|"
+             r"calcolatrice|calcolatore|convertitore|generatore|simulatore|timer|cronometro|contatore|segnapunti|quiz|orologio|sveglia|lavagn(?:a|etta)|tastiera|metronomo|"
+             r"dad[oi]|lancia[- ]?(?:dadi|monet[ae])|roulette|ruota|bussola|disegnatore|pianoforte|batteria|sintetizzatore|macchin(?:a|etta)|dispositivo|congegno|marchingegno|"
+             r"visualizzatore|tracker|misuratore|memory|tris|snake|pong|labirinto|flashcard|sorteggiatore|cruciverba|blocco\s+note")
+_RE_INVENTA = re.compile(
+    r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:"
+    r"(?:inventa|inventami|costruisci|costruiscimi|progetta|progettami|assembla(?:mi)?)\s+(?P<a>(?:un['’]\s*|una\s+|un\s+|uno\s+|il\s+|la\s+|lo\s+)?(?:nuov[oa]\s+|piccol[oa]\s+|mini\s+)?(?:" + _NOMI_APP + r")\b.*)"
+    r"|(?:crea|creami|fammi|programmami|sviluppa(?:mi)?)\s+(?P<b>(?:un['’]\s*|una\s+|un\s+|uno\s+)(?:nuov[oa]\s+|piccol[oa]\s+|mini\s+)?(?:app|applicazione|applicazioncina|gadget|aggeggio|strumento|invenzione|programmino|mini[- ]?app|gioco|giochino|videogioco|convertitore|generatore|simulatore|calcolatrice)\b.*)"
+    r"|(?:nel\s+)?laboratorio\s*:\s*(?P<c>.+))$", re.I | re.S)
+_RE_LAB_ELENCO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:apri\s+)?(?:il\s+)?(?:mio\s+|tuo\s+)?laboratorio|(?:le\s+)?(?:mie\s+|tue\s+)?invenzioni|cosa\s+(?:hai|abbiamo)\s+inventato)$", re.I)
+_RE_LAB_MIGLIORA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:migliora|modifica|cambia|aggiorna|aggiusta|sistema|potenzia)\s+(?:l['’]\s*|la\s+(?:mia\s+)?)?(?:ultima\s+)?invenzione"
+                              r"(?:\s+(?P<chi>[^:]{1,60}?))?\s*:\s*(?P<cosa>\S.+)$", re.I | re.S)
+_RE_LAB_CANC = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:cancella|elimina|butta(?:\s+via)?|distruggi)\s+(?:l['’]\s*|la\s+(?:mia\s+)?)?(?:ultima\s+)?invenzione\s*(?P<chi>.*)$", re.I)
+PROMPT_INVENZIONE_SYS = ("Sei Maik, un inventore geniale con un laboratorio pieno di aggeggi. Costruisci piccole applicazioni web FUNZIONANTI in UN SOLO file HTML. Regole: "
+                         "tutto nello stesso file (CSS dentro <style>, JavaScript dentro <script>); NIENTE risorse esterne (niente CDN, immagini, font o librerie da internet, "
+                         "niente fetch, XMLHttpRequest o WebSocket); niente alert, prompt o confirm (usa elementi della pagina); niente localStorage né cookie (non funzionano); "
+                         "testi in italiano; grafica scura e moderna (sfondo #0b1020, testo #e8f4ff, accento #7CFF4F, angoli arrotondati), che si adatta anche al telefono; "
+                         "deve funzionare subito, senza configurare niente. Rispondi SOLO con il codice HTML completo, da <!DOCTYPE html> a </html>, senza spiegazioni.")
+PROMPT_INVENZIONE = "Inventa e costruisci questa applicazione: «{richiesta}». Dalle un <title> corto e simpatico."
+PROMPT_MIGLIORA = ("Ecco il codice attuale della mia invenzione «{nome}»:\n```html\n{html}\n```\n\nModificala così: «{richiesta}». "
+                   "Tieni tutto quello che già funziona. Stesse regole di prima. Rispondi SOLO con il codice HTML completo aggiornato.")
+CSP_LAB = ("sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; "
+           "font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'self'")
+_EMOJI_INV = [(r"timer|cronometr|sveglia|orologio|clessidr", "⏱️"), (r"\bdad[oi]\b|sorte|roulette|ruota|sorteggi", "🎲"), (r"monet|testa\s+o\s+croce", "🪙"),
+              (r"password|segret", "🔐"), (r"\btris\b|filetto", "⭕"), (r"convert|unit[àa]|valut", "🔁"), (r"contator|segnapunti|\bconta", "🔢"),
+              (r"gioc|snake|pong|labirint|memory|videogioc", "🎮"), (r"calcol", "🧮"), (r"piano|music|batteria|sintet|metronom|suon", "🎹"),
+              (r"disegn|lavagn|colori|pittur", "🎨"), (r"quiz|domand|flashcard|impar", "❓"), (r"macchin|tempo|portal|teletra|dimension", "🌀"),
+              (r"spes|soldi|budget|risparm|euro", "💶"), (r"meteo|tempo\s+che\s+fa", "🌦️"), (r"respir|meditaz|relax", "🫧")]
+
+_CSS_LAB = ("*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;"
+            "background:radial-gradient(circle at 50% 30%,#14233a,#0b1020 70%);color:#e8f4ff;font:15px/1.4 system-ui,sans-serif;padding:16px;text-align:center}"
+            "h1{font-size:18px;margin:0;color:#7CFF4F;letter-spacing:.5px}button{background:#7CFF4F;color:#06110a;border:0;border-radius:10px;padding:9px 16px;font:600 14px system-ui;cursor:pointer}"
+            "button.sec{background:transparent;color:#e8f4ff;border:1px solid #2c4a66}button:active{transform:scale(.97)}"
+            "input,select{background:#0f1a2b;color:#e8f4ff;border:1px solid #2c4a66;border-radius:8px;padding:7px 9px;font:14px system-ui}"
+            ".riga{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}.nota{color:#8aa4bf;font-size:12.5px}"
+            ".big{font:700 64px/1 ui-monospace,monospace;color:#7CFF4F;text-shadow:0 0 18px rgba(124,255,79,.45)}")
+_APP_INTEGRATE = {   # le invenzioni che so montare anche senza il modello: {chiave: (corpo HTML, CSS in più, JavaScript)}
+    "timer": (r'''<h1>⏱️ __NOME__</h1><div id="t" class="big">05:00</div>
+<div class="riga"><input id="m" type="number" min="0" max="999" value="5" aria-label="minuti" style="width:80px"> min <input id="s" type="number" min="0" max="59" value="0" aria-label="secondi" style="width:70px"> s</div>
+<div class="riga"><button id="via">▶ Via</button><button id="pausa" class="sec">⏸ Pausa</button><button id="reset" class="sec">↺ Azzera</button></div>
+<div class="riga"><button class="sec" data-m="1">1′</button><button class="sec" data-m="3">3′</button><button class="sec" data-m="5">5′</button><button class="sec" data-m="10">10′</button><button class="sec" data-m="25">25′</button></div>
+<div id="msg" class="nota">Scegli il tempo e premi Via</div>''',
+              r'''.fine{animation:lamp .5s 6 alternate}@keyframes lamp{to{opacity:.25}}''',
+              r'''const $=i=>document.getElementById(i);let fine=0,resto=0,timer=null,partito=false;
+const fmt=x=>{x=Math.max(0,Math.ceil(x));const m=Math.floor(x/60),s=x%60;return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')};
+const leggi=()=>Math.max(1,(+$('m').value||0)*60+(+$('s').value||0));
+function mostra(){$('t').textContent=fmt(resto)}
+function suona(){try{const a=new AudioContext();[0,.35,.7].forEach(d=>{const o=a.createOscillator(),g=a.createGain();o.frequency.value=880;o.connect(g);g.connect(a.destination);g.gain.setValueAtTime(.2,a.currentTime+d);g.gain.exponentialRampToValueAtTime(.001,a.currentTime+d+.3);o.start(a.currentTime+d);o.stop(a.currentTime+d+.3)})}catch(e){}}
+function tick(){resto=(fine-Date.now())/1000;if(resto<=0){resto=0;clearInterval(timer);timer=null;partito=false;mostra();$('t').classList.add('fine');$('msg').textContent='⏰ Tempo scaduto!';suona();return}mostra()}
+function ferma(){if(timer){clearInterval(timer);timer=null;resto=(fine-Date.now())/1000}}
+$('via').onclick=()=>{if(timer)return;if(!partito||resto<=0)resto=leggi();partito=true;$('t').classList.remove('fine');fine=Date.now()+resto*1000;timer=setInterval(tick,200);$('msg').textContent='In corso…';tick()};
+$('pausa').onclick=()=>{if(!timer)return;ferma();mostra();$('msg').textContent='In pausa: premi Via per riprendere'};
+$('reset').onclick=()=>{ferma();partito=false;resto=leggi();$('t').classList.remove('fine');mostra();$('msg').textContent='Scegli il tempo e premi Via'};
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{$('m').value=b.dataset.m;$('s').value=0;$('reset').onclick()});
+['m','s'].forEach(i=>$(i).oninput=()=>{if(!partito){resto=leggi();mostra()}});resto=leggi();mostra();'''),
+    "dadi": (r'''<h1>🎲 __NOME__</h1>
+<div class="riga"><label>Dadi <select id="n"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+<label>Facce <select id="f"><option>4</option><option selected>6</option><option>8</option><option>10</option><option>12</option><option>20</option></select></label></div>
+<div id="dadi" class="riga" style="min-height:64px"></div><div id="tot" class="tot">—</div><button id="lancia">🎲 Lancia</button><div id="storia" class="nota"></div>''',
+             r'''.dado{width:58px;height:58px;border-radius:12px;background:#e8f4ff;color:#0b1020;display:flex;align-items:center;justify-content:center;font:800 26px system-ui;box-shadow:0 4px 0 #8aa4bf}
+.gira{animation:gira .5s}@keyframes gira{50%{transform:rotate(180deg) scale(.8)}}.tot{font:700 34px system-ui;color:#7CFF4F}''',
+             r'''const $=i=>document.getElementById(i);const storia=[];
+const caso=m=>{const a=new Uint32Array(1);crypto.getRandomValues(a);return a[0]%m+1};
+$('lancia').onclick=()=>{const n=+$('n').value,f=+$('f').value,v=Array.from({length:n},()=>caso(f));$('dadi').innerHTML='';
+v.forEach(x=>{const d=document.createElement('div');d.className='dado gira';d.textContent=x;$('dadi').appendChild(d)});
+const t=v.reduce((a,b)=>a+b,0);$('tot').textContent=n>1?'Totale: '+t:String(t);storia.unshift(v.join('+')+(n>1?'='+t:''));$('storia').textContent='Ultimi lanci: '+storia.slice(0,6).join(' · ')};'''),
+    "password": (r'''<h1>🔐 __NOME__</h1><div id="pw" class="pw">—</div><div class="barra"><b id="forza"></b></div><div id="lforza" class="nota"></div>
+<div class="riga"><label>Lunghezza <input id="len" type="range" min="6" max="40" value="16"> <b id="lv">16</b></label></div>
+<div class="riga"><label><input type="checkbox" id="mai" checked> Maiuscole</label><label><input type="checkbox" id="num" checked> Numeri</label><label><input type="checkbox" id="sim" checked> Simboli</label></div>
+<div class="riga"><button id="gen">🔄 Genera</button><button id="copia" class="sec">📋 Copia</button></div>''',
+                 r'''.pw{font:600 20px ui-monospace,monospace;background:#0f1a2b;border:1px solid #2c4a66;border-radius:10px;padding:12px 14px;word-break:break-all;max-width:520px;user-select:all}
+.barra{width:260px;height:8px;border-radius:4px;background:#1c2b40;overflow:hidden}.barra b{display:block;height:100%;width:0;transition:width .3s}''',
+                 r'''const $=i=>document.getElementById(i);
+function caso(m){const a=new Uint32Array(1);crypto.getRandomValues(a);return a[0]%m}
+function genera(){const L=+$('len').value;$('lv').textContent=L;const g=['abcdefghijkmnopqrstuvwxyz'];
+if($('mai').checked)g.push('ABCDEFGHJKLMNPQRSTUVWXYZ');if($('num').checked)g.push('23456789');if($('sim').checked)g.push('!@#$%&*?-_=+');const set=g.join('');
+let p=g.map(x=>x[caso(x.length)]);while(p.length<L)p.push(set[caso(set.length)]);for(let i=p.length-1;i>0;i--){const j=caso(i+1);[p[i],p[j]]=[p[j],p[i]]}
+p=p.slice(0,L).join('');$('pw').textContent=p;const bit=Math.round(L*Math.log2(set.length));
+$('forza').style.width=Math.min(100,bit)+'%';$('forza').style.background=bit<50?'#ff5c5c':bit<80?'#ffb020':'#7CFF4F';$('lforza').textContent=(bit<50?'Debole':bit<80?'Buona':'Fortissima')+' · circa '+bit+' bit'}
+['len','mai','num','sim'].forEach(i=>$(i).oninput=genera);$('gen').onclick=genera;
+$('copia').onclick=async()=>{try{await navigator.clipboard.writeText($('pw').textContent);$('copia').textContent='✓ Copiata'}catch(e){const r=document.createRange();r.selectNodeContents($('pw'));const s=getSelection();s.removeAllRanges();s.addRange(r);$('copia').textContent='Selezionata: Ctrl+C'}setTimeout(()=>$('copia').textContent='📋 Copia',1800)};genera();'''),
+    "tris": (r'''<h1>⭕ __NOME__</h1><div id="info" class="nota">Tu sei ❌: tocca una casella</div><div id="g" class="griglia"></div>
+<div class="riga"><button id="nuova" class="sec">↺ Nuova partita</button></div><div id="punti" class="nota">Tu 0 · Pareggi 0 · Io 0</div>''',
+             r'''.griglia{display:grid;grid-template-columns:repeat(3,76px);gap:8px}.griglia button{width:76px;height:76px;font-size:34px;background:#0f1a2b;border:1px solid #2c4a66;color:#e8f4ff;border-radius:12px;padding:0}
+.griglia button.vince{background:#1f3b17;border-color:#7CFF4F}''',
+             r'''const $=i=>document.getElementById(i),L=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];let b,fine,P={tu:0,pari:0,io:0};
+function vince(s,x){return L.find(l=>l.every(i=>s[i]===x))}
+function disegna(){$('g').innerHTML='';b.forEach((v,i)=>{const c=document.createElement('button');c.textContent=v==='X'?'❌':v==='O'?'⭕':'';c.dataset.i=i;c.setAttribute('aria-label','casella '+(i+1));c.onclick=()=>gioca(i);$('g').appendChild(c)})}
+function finisci(l,chi){fine=true;if(l)l.forEach(i=>$('g').children[i].classList.add('vince'));if(chi==='X'){P.tu++;$('info').textContent='Hai vinto! 🎉'}else if(chi==='O'){P.io++;$('info').textContent='Ho vinto io 😎'}else{P.pari++;$('info').textContent='Pareggio 🤝'}$('punti').textContent='Tu '+P.tu+' · Pareggi '+P.pari+' · Io '+P.io}
+function mossa(){for(const x of ['O','X'])for(let i=0;i<9;i++)if(!b[i]){b[i]=x;const w=vince(b,x);b[i]='';if(w)return i}if(!b[4])return 4;const a=[0,2,6,8].filter(i=>!b[i]);const r=a.length?a:[...Array(9).keys()].filter(i=>!b[i]);return r[Math.floor(Math.random()*r.length)]}
+function gioca(i){if(fine||b[i])return;b[i]='X';disegna();let w=vince(b,'X');if(w)return finisci(w,'X');if(b.every(Boolean))return finisci(null,'');const m=mossa();b[m]='O';disegna();w=vince(b,'O');if(w)return finisci(w,'O');if(b.every(Boolean))return finisci(null,'');$('info').textContent='Tocca a te'}
+function nuova(){b=Array(9).fill('');fine=false;$('info').textContent='Tu sei ❌: tocca una casella';disegna()}
+$('nuova').onclick=nuova;nuova();'''),
+    "convertitore": (r'''<h1>🔁 __NOME__</h1><div class="riga"><select id="cat" aria-label="cosa converto"></select></div>
+<div class="riga"><input id="a" type="number" value="1" step="any" aria-label="valore"><select id="ua" aria-label="da"></select></div><div class="riga">⇅</div>
+<div class="riga"><input id="b" type="number" step="any" aria-label="risultato"><select id="ub" aria-label="a"></select></div><div id="formula" class="nota"></div>''',
+                     r'''input[type=number]{width:150px}''',
+                     r'''const $=i=>document.getElementById(i);
+const C={'Lunghezza':{m:1,km:1000,cm:.01,mm:.001,miglia:1609.344,piedi:.3048,pollici:.0254,iarde:.9144},'Peso':{kg:1,g:.001,t:1000,libbre:.45359237,once:.028349523},
+'Velocità':{'km/h':1/3.6,'m/s':1,mph:.44704,nodi:.514444},'Volume':{l:1,ml:.001,'m³':1000,galloni:3.785411784,tazze:.24},'Temperatura':{'°C':0,'°F':0,K:0},
+'Tempo':{secondi:1,minuti:60,ore:3600,giorni:86400,settimane:604800}};
+const toK={'°C':v=>v+273.15,'°F':v=>(v-32)*5/9+273.15,K:v=>v},fromK={'°C':v=>v-273.15,'°F':v=>(v-273.15)*9/5+32,K:v=>v};
+function conv(v,da,a,c){return c==='Temperatura'?fromK[a](toK[da](v)):v*C[c][da]/C[c][a]}
+const bello=v=>isFinite(v)?String(+v.toPrecision(8)):'';
+function ricalcola(da){const c=$('cat').value;if(da==='a')$('b').value=bello(conv(+$('a').value,$('ua').value,$('ub').value,c));else $('a').value=bello(conv(+$('b').value,$('ub').value,$('ua').value,c));
+$('formula').textContent='1 '+$('ua').value+' = '+bello(conv(1,$('ua').value,$('ub').value,c))+' '+$('ub').value}
+function opzioni(){const c=$('cat').value,u=Object.keys(C[c]);[$('ua'),$('ub')].forEach((s,k)=>{s.innerHTML=u.map(x=>'<option>'+x+'</option>').join('');s.value=u[Math.min(k,u.length-1)]});ricalcola('a')}
+$('cat').innerHTML=Object.keys(C).map(x=>'<option>'+x+'</option>').join('');$('cat').value='__CAT__';$('cat').onchange=opzioni;
+$('a').oninput=()=>ricalcola('a');$('b').oninput=()=>ricalcola('b');$('ua').onchange=()=>ricalcola('a');$('ub').onchange=()=>ricalcola('a');opzioni();'''),
+    "contatore": (r'''<h1>🔢 __NOME__</h1><div id="n" class="big">0</div><div class="riga"><button id="meno" class="sec" aria-label="meno">−</button><button id="piu" aria-label="più">＋</button></div>
+<div class="riga"><label>Passo <select id="passo"><option>1</option><option>2</option><option>5</option><option>10</option></select></label><button id="zero" class="sec">↺ Azzera</button></div>
+<div id="log" class="nota">Usa anche i tasti + e −</div>''',
+                  r'''#piu,#meno{font-size:28px;width:72px;height:56px;padding:0}''',
+                  r'''const $=i=>document.getElementById(i);let n=0;const log=[];
+function vai(d){n+=d*(+$('passo').value);$('n').textContent=n;log.unshift((d>0?'+':'−')+$('passo').value+' → '+n);$('log').textContent=log.slice(0,5).join(' · ')}
+$('piu').onclick=()=>vai(1);$('meno').onclick=()=>vai(-1);$('zero').onclick=()=>{n=0;$('n').textContent=0;log.length=0;$('log').textContent='Azzerato'};
+document.addEventListener('keydown',e=>{if(e.key==='+'||e.key==='ArrowUp')vai(1);if(e.key==='-'||e.key==='ArrowDown')vai(-1)});'''),
+}
+_SCELTA_INTEGRATA = [(r"timer|cronometr|conto\s+alla\s+rovescia|countdown|clessidr|sveglia", "timer"), (r"\bdad[oi]\b|lancia[- ]?dadi", "dadi"),
+                     (r"password|parol[ae]\s+d['’]ordine|chiav[ei]\s+segret", "password"), (r"\btris\b|filetto|tic[- ]?tac[- ]?toe", "tris"),
+                     (r"convert|unit[àa]\s+di\s+misura|celsius|fahrenheit|chilometri|miglia|libbre|pollici", "convertitore"), (r"contator|segnapunti|\bconta(?:re)?\b|contapersone", "contatore")]
+_NOMI_INTEGRATE = {"timer": "⏱️ timer", "dadi": "🎲 dadi", "password": "🔐 generatore di password", "tris": "⭕ tris", "convertitore": "🔁 convertitore", "contatore": "🔢 contatore"}
+
+
+def app_integrata(chiave, nome, richiesta=""):
+    corpo, css, js = _APP_INTEGRATE[chiave]
+    if chiave == "convertitore":
+        r = richiesta.lower()
+        cat = ("Temperatura" if re.search(r"celsius|fahrenheit|temperatur|gradi", r) else "Peso" if re.search(r"chil|libbr|peso|grammi|once", r)
+               else "Velocità" if re.search(r"velocit|km/h|nodi", r) else "Volume" if re.search(r"litri|volume|gallon|tazz", r)
+               else "Tempo" if re.search(r"minuti|ore|secondi|giorni", r) else "Lunghezza")
+        js = js.replace("__CAT__", cat)
+    return ('<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            f"<title>{_html.escape(nome)}</title><style>{_CSS_LAB}{css}</style></head><body>{corpo.replace('__NOME__', _html.escape(nome))}<script>{js}</script></body></html>")
+
+
+def estrai_html(t):
+    """Il codice HTML dalla risposta del modello (anche dentro ```html … ``` o con due parole attorno); '' se non è un'app."""
+    t = pulisci_pensiero(t or "")
+    m = re.search(r"```(?:html)?\s*\n(.*?)(?:```|$)", t, re.S | re.I)
+    if m and re.search(r"<(?:!DOCTYPE|html|body|script)", m.group(1), re.I):
+        t = m.group(1)
+    i = re.search(r"<!DOCTYPE\s+html|<html\b", t, re.I)
+    if i:
+        t = t[i.start():]
+    j = t.lower().rfind("</html>")
+    if j >= 0:
+        t = t[:j + 7]
+    t = re.sub(r"<meta[^>]+http-equiv\s*=\s*[\"']?refresh[^>]*>", "", t, flags=re.I).strip()
+    if len(t) < 120 or not re.search(r"<(?:script|button|canvas|input|svg)\b", t, re.I):
+        return ""
+    return t[:150_000]
+
+
+def _nome_invenzione(richiesta):
+    r = re.sub(r"^(?:un['’]\s*|una\s+|un\s+|uno\s+|il\s+|la\s+|lo\s+)", "", richiesta.strip(), flags=re.I)
+    r = re.sub(r"^(?:nuov[oa]|piccol[oa]|mini)\s+", "", r, flags=re.I)
+    if len(r) > 48:
+        r = r[:48].rsplit(" ", 1)[0]
+    return (r[:1].upper() + r[1:]).strip(" ,.;:") or "Invenzione"
+
+
+class Laboratorio:
+    """Le invenzioni: piccole app in un solo file HTML, fatte dal modello (o montate con i pezzi di serie se il modello non c'è).
+    Girano in una gabbia (CSP sandbox, origine opaca): niente dati di MAIK, niente rete, niente comandi del PC."""
+    MAX = 40
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "laboratorio.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("invenzioni", [])
+                return d
+        except Exception:
+            pass
+        return {"invenzioni": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, self._file())
+
+    @staticmethod
+    def vista(x):
+        return dict({k: x.get(k) for k in ("id", "nome", "emoji", "richiesta", "origine", "creata", "aggiornata", "modifiche")},
+                    versione=len(x.get("versioni", [])) + 1, indietro=bool(x.get("versioni")), righe=x["html"].count("\n") + 1, dimensione=len(x["html"]))
+
+    def elenco(self):
+        return [self.vista(x) for x in reversed(self._carica()["invenzioni"])]
+
+    def prendi(self, iid):
+        return next((x for x in self._carica()["invenzioni"] if x["id"] == iid), None)
+
+    def trova(self, testo):
+        L = self._carica()["invenzioni"]
+        if not L:
+            return None
+        tok = _token(re.sub(r"[«»\"']", " ", testo or ""))
+        meglio, punti = None, 0
+        for x in L:
+            p = len(tok & _token(x["nome"] + " " + x["richiesta"]))
+            if p > punti:
+                meglio, punti = x, p
+        return meglio or (L[-1] if not tok else None)
+
+    @staticmethod
+    def _emoji(testo):
+        return next((e for rx, e in _EMOJI_INV if re.search(rx, testo, re.I)), "🔬")
+
+    @staticmethod
+    def _genera(prompt, cervello, on_progresso):
+        pezzi, righe = [], [0]
+
+        def cb(chunk):
+            pezzi.append(chunk)
+            n = "".join(pezzi).count("\n")
+            if n >= righe[0] + 8:
+                righe[0] = n
+                on_progresso(n)
+        t = cervello.pensa_stream(PROMPT_INVENZIONE_SYS, [{"role": "user", "content": prompt}], cb)
+        return "" if not t or t.startswith("__ERRORE") else estrai_html(t)
+
+    def crea(self, richiesta, cervello, on_progresso=lambda n: None):
+        """→ (invenzione, errore)."""
+        richiesta = re.sub(r"\s+", " ", richiesta or "").strip(" .!?")[:300]
+        if len(richiesta) < 3:
+            return None, "dimmi cosa vuoi che inventi"
+        nome, html, origine = _nome_invenzione(richiesta), "", ""
+        if cervello is not None and cervello.disponibile():
+            html = self._genera(PROMPT_INVENZIONE.format(richiesta=richiesta), cervello, on_progresso)
+            origine = "modello" if html else ""
+            tit = re.search(r"<title>\s*([^<]{2,50}?)\s*</title>", html or "", re.I)
+            if tit and not re.match(r"(?:document|untitled|app|pagina|mini app)$", tit.group(1).strip(), re.I):
+                nome = _html.unescape(tit.group(1)).strip()
+        if not html:
+            k = next((k for rx, k in _SCELTA_INTEGRATA if re.search(rx, richiesta, re.I)), None)
+            if k:
+                html, origine = app_integrata(k, nome, richiesta), "integrata"
+        if not html:
+            return None, ("per inventare cose nuove mi serve il modello acceso (Ollama). Senza, so già montare: " + ", ".join(_NOMI_INTEGRATE.values())
+                          + " — prova «inventami un tris»")
+        ora = datetime.datetime.now().isoformat(timespec="seconds")
+        x = {"id": uuid.uuid4().hex[:8], "nome": nome[:60], "emoji": self._emoji(richiesta + " " + nome), "richiesta": richiesta, "html": html,
+             "origine": origine, "creata": ora, "aggiornata": ora, "versioni": [], "modifiche": []}
+        with self._lock:
+            d = self._carica()
+            d["invenzioni"] = (d["invenzioni"] + [x])[-self.MAX:]
+            self._salva(d)
+        return self.vista(x), None
+
+    def migliora(self, iid, richiesta, cervello, on_progresso=lambda n: None):
+        x = self.prendi(iid)
+        if not x:
+            return None, "non trovo quell'invenzione"
+        if cervello is None or not cervello.disponibile():
+            return None, "per modificare un'invenzione mi serve il modello acceso (Ollama)"
+        richiesta = re.sub(r"\s+", " ", richiesta or "").strip()[:300]
+        html = self._genera(PROMPT_MIGLIORA.format(nome=x["nome"], html=x["html"], richiesta=richiesta), cervello, on_progresso)
+        if not html:
+            return None, "il modello non mi ha dato un codice che funziona: riprova o descrivi la modifica in un altro modo"
+        with self._lock:
+            d = self._carica()
+            y = next((z for z in d["invenzioni"] if z["id"] == iid), None)
+            if not y:
+                return None, "non trovo quell'invenzione"
+            y["versioni"] = (y.get("versioni", []) + [y["html"]])[-5:]
+            y["html"], y["origine"] = html, "modello"
+            y["modifiche"] = (y.get("modifiche", []) + [richiesta])[-10:]
+            y["aggiornata"] = datetime.datetime.now().isoformat(timespec="seconds")
+            self._salva(d)
+            return self.vista(y), None
+
+    def indietro(self, iid):
+        with self._lock:
+            d = self._carica()
+            y = next((z for z in d["invenzioni"] if z["id"] == iid), None)
+            if not y or not y.get("versioni"):
+                return None
+            y["html"] = y["versioni"].pop()
+            y["modifiche"] = y.get("modifiche", [])[:-1]
+            y["aggiornata"] = datetime.datetime.now().isoformat(timespec="seconds")
+            self._salva(d)
+            return self.vista(y)
+
+    def elimina(self, iid):
+        with self._lock:
+            d = self._carica()
+            prima = len(d["invenzioni"])
+            d["invenzioni"] = [z for z in d["invenzioni"] if z["id"] != iid]
+            self._salva(d)
+            return len(d["invenzioni"]) < prima
+
+    def richiesta(self, testo):
+        """Cosa mi chiedi nel laboratorio → ("crea", richiesta) | ("migliora", id, cosa) | ("elenco",) | ("elimina", invenzione|None) | None."""
+        t = re.sub(r"\s+", " ", (testo or "").strip())
+        if _RE_LAB_ELENCO.match(t.rstrip(" ?!.")):
+            return ("elenco",)
+        m = _RE_LAB_MIGLIORA.match(t)
+        if m:
+            chi = (m.group("chi") or "").strip(" «»\"'")
+            x = (self.trova(chi) if chi else None) or (self._carica()["invenzioni"] or [None])[-1]
+            return ("migliora", x["id"] if x else None, m.group("cosa").strip())
+        m = _RE_LAB_CANC.match(t.rstrip(" ?!."))
+        if m:
+            chi = (m.group("chi") or "").strip(" «»\"'")
+            return ("elimina", self.trova(chi) if chi else (self._carica()["invenzioni"] or [None])[-1])
+        m = _RE_INVENTA.match(t)
+        if m:
+            return ("crea", (m.group("a") or m.group("b") or m.group("c")).strip())
+        return None
+
+    def esegui(self, r, cervello, on_token, avvisa=lambda e: None):
+        """Fa quello che dice richiesta() → {testo, invenzione | invenzioni}."""
+        if r[0] == "elenco":
+            L = self.elenco()
+            if not L:
+                t = "🔬 Il laboratorio è ancora vuoto. Prova: «**inventami un timer per il tè**», «**costruiscimi un generatore di password**», «**creami un gioco del tris**»."
+            else:
+                t = f"🔬 **Il tuo laboratorio** · {len(L)} invenzion{'e' if len(L) == 1 else 'i'}\n" + "\n".join(
+                    f"• {x['emoji']} **{x['nome']}** (versione {x['versione']})" for x in L[:12])
+            on_token(t)
+            return {"testo": t, "invenzioni": L}
+        if r[0] == "elimina":
+            x = r[1]
+            t = (f"🗑️ Ho smontato l'invenzione {x['emoji']} «{x['nome']}»." if x and self.elimina(x["id"]) else "🔬 Non trovo quell'invenzione: dimmi «le mie invenzioni» per vederle.")
+            on_token(t)
+            return {"testo": t}
+        avvisa({"lavoro": {"tipo": "laboratorio", "icona": "🔬", "testo": "Al lavoro nel laboratorio…"}})
+        avvisa({"laboratorio": {"fase": "progetto"}})
+        prog = lambda n: avvisa({"laboratorio": {"fase": "codice", "righe": n}})
+        if r[0] == "migliora":
+            if not r[1]:
+                t = "🔬 Non hai ancora invenzioni da migliorare: prova «inventami un timer per il tè»."
+                on_token(t)
+                return {"testo": t}
+            x, err = self.migliora(r[1], r[2], cervello, prog)
+            if not x:
+                t = f"🔬 {err[:1].upper() + err[1:]}."
+                on_token(t)
+                return {"testo": t}
+            avvisa({"laboratorio": {"fase": "collaudo"}})
+            t = (f"🔧 **Invenzione aggiornata: {x['emoji']} {x['nome']}** (versione {x['versione']})\nHo fatto la modifica: «{r[2]}». Provala qui sotto 👇 "
+                 "(se non ti piace, tocca «↩ Versione prima»).")
+            on_token(t)
+            return {"testo": t, "invenzione": x}
+        x, err = self.crea(r[1], cervello, prog)
+        if not x:
+            t = f"🔬 {err[:1].upper() + err[1:]}."
+            on_token(t)
+            return {"testo": t}
+        avvisa({"laboratorio": {"fase": "collaudo"}})
+        come = (f"L'ho costruita da zero: {x['righe']} righe di codice." if x["origine"] == "modello"
+                else "L'ho montata con i pezzi che tengo sempre in laboratorio (senza il modello).")
+        t = (f"🔬 **Invenzione pronta: {x['emoji']} {x['nome']}**\n{come} Provala qui sotto 👇\n"
+             "Per cambiarla: «**migliora l'invenzione: aggiungi …**». Gira in una gabbia sicura: non vede i tuoi dati e non usa internet.")
+        on_token(t)
+        return {"testo": t, "invenzione": x}
+
+
+LABORATORIO = Laboratorio()
+
+
+# ── 🧪 GLI AIUTANTI LAMPO: un compito a testa, in sottofondo, poi spariscono ──
+_RE_AIUTANTE = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:chiama|manda|evoca|attiva|sguinzaglia)\s+(?:un\s+|l['’]\s*)?aiutante(?:\s+lampo)?|aiutante(?:\s+lampo)?)"
+                          r"\s*(?:[:,]\s*|\s+(?:per|a|che|e)\s+)(?P<c>\S.{2,})$", re.I | re.S)
+_RE_AIUTANTI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:chiama|manda|evoca|sguinzaglia)\s+(?:(?:due|tre|2|3)\s+|degli\s+|gli\s+)?aiutanti(?:\s+lampo)?|aiutanti(?:\s+lampo)?)\s*:\s*(?P<c>\S.{2,})$", re.I | re.S)
+_RE_AIUT_STATO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:i\s+)?(?:miei\s+)?aiutanti(?:\s+lampo)?|come\s+vanno\s+(?:gli\s+)?(?:i\s+)?aiutanti|cosa\s+(?:fanno|stanno\s+facendo)\s+(?:gli\s+)?aiutanti)$", re.I)
+_INFINITI = {"cercare": "cerca", "trovare": "trova", "calcolare": "calcola", "controllare": "controlla", "riassumere": "riassumi", "scrivere": "scrivi",
+             "preparare": "prepara", "leggere": "leggi", "fare": "fai", "inventare": "inventa", "costruire": "costruisci", "pianificare": "pianifica",
+             "organizzare": "organizza", "spiegare": "spiega", "tradurre": "traduci", "dirmi": "dimmi", "darmi": "dammi", "guardare": "guarda", "vedere": "vedi"}
+_CHIAVI_META_AIUT = _CHIAVI_META_AUTO + ("multiverso", "tv", "invenzione", "invenzioni")
+
+
+class Aiutanti:
+    """🧪 Aiutanti lampo: ognuno fa UN compito in sottofondo (al massimo 3 insieme, gli altri aspettano in fila), porta il risultato e sparisce.
+    Usano tutto quello che sa fare MAIK, ma come le automazioni: niente comandi del PC e niente altri aiutanti."""
+    MAX_INSIEME = 3
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self.lista, self.avvisi, self.n, self._sid = [], [], 0, None
+
+    @staticmethod
+    def compito(c):
+        c = re.sub(r"\s+", " ", c or "").strip(" .")[:400]
+        p = c.split(" ", 1)
+        if p[0].lower() in _INFINITI:
+            c = _INFINITI[p[0].lower()] + (" " + p[1] if len(p) > 1 else "")
+        return c[:1].lower() + c[1:]
+
+    def _sessione(self, memoria):
+        with self._lock:
+            if self._sid and memoria.sessione_valida(self._sid) == self._sid:
+                return self._sid
+            s = next((x for x in memoria.sessioni if x.get("titolo") == "🧪 Aiutanti"), None) or memoria.crea_sessione("🧪 Aiutanti")
+            self._sid = s["id"]
+            return self._sid
+
+    @staticmethod
+    def vista(a):
+        return {k: a[k] for k in ("id", "n", "compito", "stato", "nato", "finito", "passi")}
+
+    def chiama(self, compito, motore):
+        compito = self.compito(compito)
+        if len(compito) < 3:
+            return None
+        with self._lock:
+            self.n += 1
+            a = {"id": uuid.uuid4().hex[:8], "n": self.n, "compito": compito, "stato": "in_coda", "nato": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "finito": "", "passi": [], "testo": "", "meta": {}}
+            if sum(1 for x in self.lista if x["stato"] in ("in_coda", "al_lavoro")) >= 10:     # fila piena
+                self.n -= 1
+                return None
+            self.lista.append(a)
+            while len(self.lista) > 20:                          # tengo quelli al lavoro e gli ultimi finiti
+                i = next((k for k, x in enumerate(self.lista) if x["stato"] not in ("in_coda", "al_lavoro")), None)
+                if i is None:
+                    break
+                self.lista.pop(i)
+            self._avvia(motore)
+            return self.vista(a)
+
+    def _avvia(self, motore):
+        with self._lock:
+            al_lavoro = sum(1 for x in self.lista if x["stato"] == "al_lavoro")
+            for x in self.lista:
+                if al_lavoro >= self.MAX_INSIEME:
+                    break
+                if x["stato"] == "in_coda":
+                    x["stato"] = "al_lavoro"
+                    al_lavoro += 1
+                    threading.Thread(target=self._lavora, args=(x, motore), daemon=True).start()
+
+    def _lavora(self, a, motore):
+        out = []
+
+        def evento(e):
+            s = e.get("strumento") or e.get("lavoro")
+            if s:
+                with self._lock:
+                    a["passi"] = (a["passi"] + [f"{s.get('icona', '')} {s.get('esito') or s.get('testo') or ''}".strip()])[-6:]
+        _CTX.automazione, _CTX.aiutante = True, a["n"]
+        try:
+            sid = self._sessione(motore.memoria)
+            meta = motore.rispondi_stream(a["compito"], out.append, sessione=sid, on_evento=evento) or {}
+            testo, ok = ("(comando interno)" if meta.get("comando") else pulisci_pensiero("".join(out)).strip() or meta.get("risposta") or "Fatto."), True
+        except Exception as e:
+            meta, testo, ok = {}, f"⚠️ Non ci sono riuscito: {str(e)[:120]}", False
+        finally:
+            _CTX.automazione, _CTX.aiutante = False, None
+        with self._lock:
+            a.update(stato="fatto" if ok and not testo.startswith("__ERRORE") else "fallito", finito=datetime.datetime.now().isoformat(timespec="seconds"),
+                     testo=testo[:8000], meta={k: meta[k] for k in _CHIAVI_META_AIUT if meta.get(k)})
+            self.avvisi = (self.avvisi + [dict(a)])[-20:]
+        self._avvia(motore)
+
+    def elenco(self):
+        with self._lock:
+            return [self.vista(a) for a in self.lista[-10:]]
+
+    def prendi_avvisi(self):
+        with self._lock:
+            x, self.avvisi = self.avvisi, []
+        return x
+
+    def router(self, testo, motore):
+        t = (testo or "").strip()
+        if _RE_AIUT_STATO.match(t.rstrip(" ?!.")):
+            L = self.elenco()
+            if not L:
+                return {"testo": "🧪 Nessun aiutante in giro. Chiamane uno: «**chiama un aiutante per cercare un regalo per mia sorella**», "
+                                 "oppure più insieme: «**aiutanti: quanto ho speso questo mese; cosa ho domani; notizie di sport**».", "aiutanti": []}
+            nomi = {"in_coda": "⏳ in fila", "al_lavoro": "⚙️ al lavoro", "fatto": "✅ fatto", "fallito": "⚠️ non riuscito"}
+            return {"testo": "🧪 **I tuoi aiutanti**\n" + "\n".join(f"• #{a['n']} {nomi[a['stato']]}: «{a['compito']}»" for a in L[::-1][:8]), "aiutanti": L}
+        m = _RE_AIUTANTI.match(t)
+        compiti = [c for c in (re.split(r"\s*(?:;|\n)\s*", m.group("c")) if m else []) if len(c.strip()) > 2][:3]
+        if not compiti:
+            m = _RE_AIUTANTE.match(t)
+            compiti = [m.group("c")] if m else []
+        if not compiti:
+            return None
+        nuovi = [x for x in (self.chiama(c, motore) for c in compiti) if x]
+        if not nuovi:
+            return None
+        if len(nuovi) == 1:
+            a = nuovi[0]
+            testo = (f"🧪 **Aiutante #{a['n']}** al lavoro: «{a['compito']}». Ti porto il risultato appena ha finito: intanto puoi continuare a parlare con me.")
+        else:
+            testo = (f"🧪 **{len(nuovi)} aiutanti** al lavoro, uno per compito:\n" + "\n".join(f"• #{a['n']}: «{a['compito']}»" for a in nuovi)
+                     + "\nTi porto i risultati man mano che finiscono.")
+        return {"testo": testo, "aiutanti": nuovi}
+
+
+AIUTANTI = Aiutanti()
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -9222,7 +9899,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -9233,7 +9910,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -9296,12 +9973,29 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v20.get(k)})
+            v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
+            v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
+            if v21:
+                on_token(v21["testo"])
+                self.memoria.salva_scambio(testo, v21["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v21.get(k)})
+            lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
+            if lab:
+                r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
+                self.memoria.salva_scambio(testo, r["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: r[k] for k in ("invenzione", "invenzioni") if r.get(k)})
+            q_mv = domanda_multiverso(testo)                         # v21: 🌀 il consiglio del multiverso
+            if q_mv:
+                r = consiglio_multiverso(q_mv, self.cervello, on_token, avvisa)
+                self.memoria.salva_scambio(testo, r["completo"], sid)
+                titolo = (self.memoria._sessione(sid) or {}).get("titolo", "")
+                return self._meta(done=True, ok=True, sessione=sid, titolo=titolo, stat=r.get("stat") or {}, **({"multiverso": r["multiverso"]} if r.get("multiverso") else {}))
             pc = (ROUTINE.router(testo, self.memoria) or PC.router(testo, self.memoria)) if CONFIG["pc"] and not getattr(_CTX, "automazione", False) else None   # v11-13: PC e routine
             if pc:
                 on_token(pc["testo"])
@@ -9311,7 +10005,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -9325,7 +10019,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -9949,6 +10643,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/laboratorio":                              # v21: 🔬 le invenzioni
+                self._json({"ok": True, "invenzioni": LABORATORIO.elenco()})
+            elif base == "/laboratorio/app":                          # l'invenzione in una gabbia: CSP sandbox (origine opaca), niente rete, niente dati di MAIK
+                x = LABORATORIO.prendi(qs.get("id", ""))
+                if not x:
+                    self._json({"ok": False, "errore": "invenzione non trovata"}, 404)
+                else:
+                    corpo = x["html"].encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Security-Policy", CSP_LAB)
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Referrer-Policy", "no-referrer")
+                    self.send_header("Cache-Control", "no-store")
+                    if qs.get("scarica") == "1":
+                        nome = re.sub(r"[^\w\- ]+", "", x["nome"]).strip() or "invenzione"
+                        self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + urllib.parse.quote(nome + ".html"))
+                    self.send_header("Content-Length", str(len(corpo)))
+                    self.end_headers()
+                    self.wfile.write(corpo)
+            elif base == "/aiutanti":                                 # v21: 🧪 gli aiutanti lampo
+                self._json({"ok": True, "aiutanti": AIUTANTI.elenco()})
+            elif base == "/aiutanti/avvisi":
+                self._json({"avvisi": AIUTANTI.prendi_avvisi()})
+            elif base == "/tv":                                       # v21: 📺 altri canali del multiverso
+                self._json(dict(tv_multiverso(MOTORE.cervello), ok=True))
             elif base == "/obiettivi":                                # v20: 🎯 gli obiettivi con le tappe
                 self._json({"ok": True, "obiettivi": OBIETTIVI.elenco(tutti=qs.get("tutti") == "1")})
             elif base == "/obiettivi/avvisi":
@@ -10390,6 +11110,23 @@ class Handler(BaseHTTPRequestHandler):
                 n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
                 self._json({"ok": bool(n)})
 
+            elif base in ("/laboratorio/crea", "/laboratorio/migliora", "/laboratorio/indietro", "/laboratorio/elimina", "/aiutanti/chiama") and not stessa_origine(self):
+                self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v21: solo dalla GUI di MAIK
+            elif base == "/laboratorio/crea":                         # v21: {testo} (risponde quando il modello ha finito)
+                x, err = LABORATORIO.crea(str(self._read_json_body().get("testo", ""))[:300], MOTORE.cervello)
+                self._json({"ok": bool(x), "invenzione": x, "errore": err})
+            elif base == "/laboratorio/migliora":                     # {id, testo}
+                c = self._read_json_body()
+                x, err = LABORATORIO.migliora(str(c.get("id", "")), str(c.get("testo", ""))[:300], MOTORE.cervello)
+                self._json({"ok": bool(x), "invenzione": x, "errore": err})
+            elif base == "/laboratorio/indietro":                     # ↩ la versione prima
+                x = LABORATORIO.indietro(str(self._read_json_body().get("id", "")))
+                self._json({"ok": bool(x), "invenzione": x})
+            elif base == "/laboratorio/elimina":
+                self._json({"ok": LABORATORIO.elimina(str(self._read_json_body().get("id", "")))})
+            elif base == "/aiutanti/chiama":                          # {compito}
+                a = AIUTANTI.chiama(str(self._read_json_body().get("compito", "")), MOTORE)
+                self._json({"ok": bool(a), "aiutante": a, "errore": "" if a else "troppi aiutanti in fila, o compito vuoto"})
             elif base == "/obiettivi/crea":                           # v20: {testo: «imparare lo spagnolo entro giugno»} o {titolo, scadenza}
                 c = self._read_json_body()
                 if c.get("testo"):
@@ -16784,8 +17521,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 20.0 — Server avviato         ║
-║ obiettivi · settimana · tendenze · automazioni   ║
+║        MAIK PRIME 21.0 — Server avviato         ║
+║ multiverso · laboratorio · aiutanti · obiettivi  ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -16838,7 +17575,9 @@ def main():
     print(f"    POST /chat/stream   — chat in streaming (+ azioni: timer, promemoria, calcoli…)")
     print(f"    POST /vedi          — visione: descrive un frame webcam  ·  POST /ocr — il testo di una foto      [NUOVO v18]")
     print(f"    GET  /proattivo · /proattivo/stato · /ricordi?q= · /ricordi/giorno?q=ieri                   [v18]")
-    print(f"    GET  /automazioni · /automazioni/avvisi · /prime/oggi · POST /automazioni/crea /esegui     [NUOVO v19]")
+    print(f"    GET  /automazioni · /automazioni/avvisi · /prime/oggi · POST /automazioni/crea /esegui     [v19]")
+    print(f"    GET  /obiettivi · /prime/settimana · /prime/tendenze · POST /obiettivi/crea /tappa          [v20]")
+    print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [NUOVO v21]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

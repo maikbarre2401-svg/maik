@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v22.0                   ║
+║              MAIK PRIME — Server v23.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,19 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v23.0 — MAIK PRIME AFFIDABILE:
+  • ↩ «annulla»: per ogni domanda mi segno com'erano i dati che cambio (promemoria, spese, lista, calendario, cose da
+    fare, routine…) e li rimetto com'erano. «cosa posso annullare?» → le ultime modifiche.
+  • 🩺 «funziona tutto?»: controllo Ollama, i modelli, la velocità, i file dei dati, lo spazio, le copie, internet e la voce,
+    e ti dico come sistemare quello che non va (con «Ripara» per i file rovinati o a metà: non cancello mai niente).
+  • 💾 Una copia di sicurezza al giorno da sola (MAIK_BACKUP, ne tengo MAIK_BACKUP_GIORNI), «fai un backup»,
+    «ripristina il backup di ieri» (sempre con conferma, e prima faccio una copia di come sono adesso).
+  • 🎯 «pensaci bene: …» (o il bottone 🎯 sotto la risposta): scrivo una bozza, la rileggo come un revisore e ti do la versione finale.
+  • 🔤 Capisco anche se scrivi in fretta («ricodami», «xke nn va»): correggo i refusi dei comandi, i tuoi testi restano tuoi.
+  • 🔁 Se Ollama inciampa prima di rispondere riprovo da solo; se il modello scelto non c'è più, ne uso uno che hai.
+  • Nuovi endpoint: GET /diagnosi · POST /diagnosi/ripara {cosa} · GET/POST /annulla {id?} · GET /backup ·
+    POST /backup/crea · POST /backup/ripristina {nome}. /chat/stream accetta "accurato": true.
 
 NOVITÀ v22.0 — MAIK PRIME PIÙ VELOCE:
   • ⚡ Il modello resta in memoria (MAIK_KEEP_ALIVE, 30 minuti), la memoria di lavoro è fissa (MAIK_NUM_CTX, 6144:
@@ -293,6 +306,10 @@ CONFIG = {
     "keep_alive": _env("MAIK_KEEP_ALIVE", "30m"),              # v22: quanto resta in memoria il modello dopo l'ultima domanda
     "keep_alive_visione": _env("MAIK_KEEP_ALIVE_VISIONE", "10m"),
     "riscalda": _env("MAIK_RISCALDA", "1") != "0",
+    "backup": _env("MAIK_BACKUP", "1") != "0",                  # v23: 💾 una copia di sicurezza al giorno
+    "backup_giorni": int(_env("MAIK_BACKUP_GIORNI", "7")) if str(_env("MAIK_BACKUP_GIORNI", "7")).isdigit() else 7,
+    "diagnosi_web_url": _env("MAIK_DIAGNOSI_WEB", "https://api.open-meteo.com/v1/forecast?latitude=41.9&longitude=12.5&current=temperature_2m"),
+    "riprova_pausa": 1.0,
     "num_ctx": int(_env("MAIK_NUM_CTX", "6144")) if str(_env("MAIK_NUM_CTX", "6144")).isdigit() else 6144,   # v22: sempre uguale = niente ricaricamenti
     "pausa_apprendimento": float(_env("MAIK_PAUSA_APPRENDIMENTO", "6")) if str(_env("MAIK_PAUSA_APPRENDIMENTO", "6")).replace(".", "", 1).isdigit() else 6.0,   # v22: secondi di pausa prima di imparare
     "ollama_base": _OLLAMA_BASE,
@@ -378,7 +395,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "22.0"
+VERSIONE  = "23.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1456,6 +1473,10 @@ class Cervello:
         return json.dumps(d).encode("utf-8")
 
     def pensa(self, system_prompt, messaggi):
+        """v23: come prima, ma se Ollama inciampa riprovo (e se il modello non c'è ne uso uno installato)."""
+        return pensa_robusto(self, system_prompt, messaggi)
+
+    def _pensa_v22(self, system_prompt, messaggi):
         """Risposta completa (non in streaming) — usata per i riassunti."""
         req = urllib.request.Request(
             CONFIG["ollama_url"],
@@ -1495,6 +1516,10 @@ class Cervello:
         return pensa_breve_http(*a, **k)
 
     def pensa_stream(self, system_prompt, messaggi, on_token, stat=None):
+        """v23: come prima, ma se Ollama inciampa prima della prima parola riprovo da solo."""
+        return pensa_stream_robusto(self, system_prompt, messaggi, on_token, stat)
+
+    def _pensa_stream_v22(self, system_prompt, messaggi, on_token, stat=None):
         """Streaming token-per-token. Chiama on_token(chunk) e ritorna il testo completo.
         Se passi un dict `stat`, lo riempie con la velocità vera: token/s, prima parola, durata."""
         req = urllib.request.Request(
@@ -8003,7 +8028,8 @@ class Automazioni:
 
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
-                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza")
+                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
+                     "diagnosi", "backup")
 AUTOMAZIONI = Automazioni()
 
 
@@ -9554,6 +9580,802 @@ def webcam_router(testo):
 
 
 # ════════════════════════════════════════════════════════════
+# V23 — MAIK PRIME affidabile: ↩ annulla, 🩺 autodiagnosi (e ripara), 💾 copie di sicurezza automatiche,
+# 🎯 «pensaci meglio» (bozza → controllo → risposta finale), 🔤 capisco anche se scrivi in fretta,
+# 🔁 il cervello che si riprende da solo (riprova se Ollama inciampa, cambia modello se quello scelto non c'è)
+# ════════════════════════════════════════════════════════════
+
+# ── ↩ ANNULLA: per ogni domanda mi segno com'erano i file che cambio, così «annulla» li rimette com'erano ──
+_FILE_ANNULLABILI = {                                   # file → come lo chiamo (la chat, il diario e i contatori non si annullano)
+    "promemoria.json": "⏰ promemoria", "lista.json": "📝 lista", "documenti.json": "📚 documenti", "seguiti.json": "🔁 «com'è andata?»",
+    "obiettivi.json": "🌟 obiettivi e sogni", "relazioni.json": "👥 persone", "profilo.json": "🙂 cose che so di te",
+    "imparato.json": "💡 cose imparate", "routine.json": "🎬 routine", "calendario.json": "📅 calendario", "spese.json": "💶 spese",
+    "abitudini.json": "✅ abitudini", "attivita.json": "📋 cose da fare", "automazioni.json": "⚙️ automazioni",
+    "obiettivi_prime.json": "🎯 obiettivi con le tappe", "laboratorio.json": "🔬 invenzioni",
+}
+
+
+def _leggi_byte(path):
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def _impronta(dati):
+    return None if dati is None else hashlib.sha1(dati).hexdigest()
+
+
+def _scrivi_byte(path, dati):
+    """Scrittura atomica di un file (o lo toglie, se prima non c'era)."""
+    if dati is None:
+        try:
+            os.remove(path)
+        except FileNotFoundError:
+            pass
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(dati)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def ricarica_memoria(mem, nomi_file):
+    """Dopo aver rimesso a posto dei file: la memoria (che li tiene aperti) li rilegge."""
+    mappa = {v: k[5:] for k, v in CONFIG.items() if k.startswith("file_") and isinstance(v, str)}
+    with mem._lock:
+        for nf in nomi_file:
+            attr = mappa.get(nf)
+            if attr and hasattr(mem, attr):
+                setattr(mem, attr, mem._carica(nf, {} if isinstance(getattr(mem, attr), dict) else []))
+        if CONFIG["file_sessioni"] in nomi_file:
+            mem._assicura_principale()
+        if CONFIG["file_documenti"] in nomi_file:
+            mem._indicizza_documenti()
+
+
+class Giornale:
+    MAX = 12                                            # quante cose ricordo di poter annullare
+    MAX_BYTE = 8_000_000                                # un file più grande non lo copio (non si annulla)
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.pila = []
+
+    def inizia(self, testo):
+        _CTX.giornale = {"testo": str(testo or "")[:160], "file": {}}
+
+    def prima(self, path):
+        """Chiamata prima di scrivere un file: ne tengo la copia com'era (una volta sola per domanda)."""
+        g = getattr(_CTX, "giornale", None)
+        if g is None or path in g["file"] or os.path.basename(path) not in _FILE_ANNULLABILI:
+            return
+        try:
+            g["file"][path] = False if os.path.getsize(path) > self.MAX_BYTE else _leggi_byte(path)
+        except FileNotFoundError:
+            g["file"][path] = None
+        except OSError:
+            g["file"][path] = False
+
+    def chiudi(self):
+        g = getattr(_CTX, "giornale", None)
+        _CTX.giornale = None
+        if not g:
+            return None
+        file_, dopo = {}, {}
+        for p, prima in g["file"].items():
+            if prima is False:
+                continue
+            ora = _leggi_byte(p)
+            if ora != prima:                            # salvato uguale = niente da annullare
+                file_[p], dopo[p] = prima, _impronta(ora)
+        if not file_:
+            return None
+        voce = {"id": uuid.uuid4().hex[:10], "quando": datetime.datetime.now().isoformat(timespec="seconds"),
+                "testo": g["testo"], "file": file_, "dopo": dopo}
+        with self._lock:
+            self.pila = (self.pila + [voce])[-self.MAX:]
+        return self.descrivi(voce)
+
+    @staticmethod
+    def descrivi(v):
+        return {"id": v["id"], "quando": v["quando"], "testo": v["testo"],
+                "cosa": sorted({_FILE_ANNULLABILI.get(os.path.basename(p), os.path.basename(p)) for p in v["file"]})}
+
+    def elenco(self):
+        with self._lock:
+            return [self.descrivi(v) for v in reversed(self.pila)]
+
+    def svuota(self):
+        with self._lock:
+            self.pila = []
+
+    def annulla(self, vid=None, memoria=None):
+        memoria = memoria or MOTORE.memoria
+        with self._lock:
+            if not self.pila:
+                return {"ok": False, "testo": "↩ Non c'è niente da annullare: da quando mi hai acceso non ho ancora cambiato niente (o l'ho già rimesso a posto)."}
+            v = self.pila[-1] if not vid else next((x for x in self.pila if x["id"] == vid), None)
+            if not v:
+                return {"ok": False, "testo": "↩ Questa modifica l'ho già annullata (o è troppo vecchia: ricordo solo le ultime " + str(self.MAX) + ")."}
+            cambiati = [p for p in v["file"] if _impronta(_leggi_byte(p)) != v["dopo"][p]]
+            if cambiati:
+                cosa = ", ".join(sorted({_FILE_ANNULLABILI.get(os.path.basename(p), os.path.basename(p)) for p in cambiati}))
+                return {"ok": False, "testo": f"↩ Non posso annullare «{v['testo']}»: dopo ho già cambiato di nuovo {cosa}. Annulla prima le cose più recenti (o sistemalo a mano)."}
+            for p, prima in v["file"].items():
+                _scrivi_byte(p, prima)
+            self.pila.remove(v)
+        ricarica_memoria(memoria, {os.path.basename(p) for p in v["file"]})
+        d = self.descrivi(v)
+        return {"ok": True, "annullato": d,
+                "testo": f"↩ Fatto: ho annullato «{d['testo']}» e rimesso com'erano {', '.join(d['cosa'])}. "
+                         "(Le azioni fatte sul PC, come aprire un programma, non si possono annullare.)"}
+
+
+GIORNALE = Giornale()
+
+
+def _aggancia_giornale():
+    """Ogni volta che un archivio salva, prima avviso il giornale (che tiene la copia di com'era)."""
+    if getattr(Memoria, "_v23", False):
+        return
+    salva_m = Memoria._salva
+
+    def _salva(self, filename, dati):
+        GIORNALE.prima(self._percorso(filename))
+        return salva_m(self, filename, dati)
+    Memoria._salva, Memoria._v23 = _salva, True
+    for cls in (Routines, Calendario, Spese, Abitudini, Attivita, Automazioni, Obiettivi, Laboratorio):
+        orig = cls._salva
+
+        def _salva_c(self, *a, _orig=orig, **k):
+            GIORNALE.prima(self._file())
+            return _orig(self, *a, **k)
+        cls._salva = _salva_c
+
+
+_aggancia_giornale()
+
+_RE_ANNULLA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:ho\s+sbagliato,?\s+)?annulla(?:\s+(?:l['’]\s*ultim[ao](?:\s+(?:cosa|modifica|azione|operazione))?|quello\s+che\s+hai\s+(?:appena\s+)?fatto|"
+                         r"(?:la\s+)?modifica))?(?:,?\s+ho\s+sbagliato)?|disfa|undo|ctrl\s*\+?\s*z)$", re.I)
+_RE_ANNULLABILI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:cosa\s+(?:posso|puoi)\s+annullare|le\s+ultime\s+modifiche|cosa\s+hai\s+cambiato(?:\s+ultimamente)?)$", re.I)
+
+
+def annulla_router(testo, memoria):
+    t = (testo or "").strip().rstrip(" ?!.")
+    if _RE_ANNULLA.match(t):
+        r = GIORNALE.annulla(memoria=memoria)
+        return {"testo": r["testo"], "annulla": r, "annullabili": GIORNALE.elenco()}
+    if _RE_ANNULLABILI.match(t):
+        el = GIORNALE.elenco()
+        if not el:
+            return {"testo": "↩ Da quando mi hai acceso non ho cambiato niente che si possa annullare.", "annullabili": []}
+        righe = "\n".join(f"- {datetime.datetime.fromisoformat(x['quando']).strftime('%H:%M')} · «{x['testo']}» → {', '.join(x['cosa'])}" for x in el[:6])
+        return {"testo": f"↩ **Le ultime cose che ho cambiato** (dalla più recente):\n{righe}\n\nDimmi «annulla» per togliere l'ultima, oppure usa i bottoni.", "annullabili": el}
+    return None
+
+
+# ── 💾 COPIE DI SICUREZZA: una al giorno da sole (le ultime MAIK_BACKUP_GIORNI), e quando me lo chiedi ──
+_RE_NOME_BACKUP = re.compile(r"^maik-\d{4}-\d{2}-\d{2}_\d{4}(?:\d{2})?-(?:auto|manuale|prima-del-ripristino)\.zip$")
+_NON_NEL_BACKUP = {"vettori.json", "ricordi_vettori.json"}     # si ricalcolano da soli (e sono grandi)
+
+
+class Backup:
+    TENGO = {"manuale": 5, "prima-del-ripristino": 3}
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.ultimo_errore = ""
+
+    @staticmethod
+    def cartella():
+        return os.path.join(DATA_DIR, "backup")
+
+    def elenco(self):
+        try:
+            nomi = [n for n in os.listdir(self.cartella()) if _RE_NOME_BACKUP.match(n)]
+        except OSError:
+            return []
+        out = []
+        for n in sorted(nomi, reverse=True):
+            p = os.path.join(self.cartella(), n)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            g, o = n[5:15], n[16:20]
+            out.append({"nome": n, "quando": f"{g}T{o[:2]}:{o[2:]}", "tipo": n.rsplit("-", 1)[-1][:-4] if not n.endswith("prima-del-ripristino.zip") else "prima-del-ripristino",
+                        "kb": max(1, round(st.st_size / 1024)), "giorno": data_it(datetime.date.fromisoformat(g))})
+        return out
+
+    @staticmethod
+    def _file_dati():
+        try:
+            return sorted(n for n in os.listdir(DATA_DIR) if n.endswith(".json") and n not in _NON_NEL_BACKUP and os.path.isfile(os.path.join(DATA_DIR, n)))
+        except OSError:
+            return []
+
+    def crea(self, tipo="manuale"):
+        with self._lock:
+            os.makedirs(self.cartella(), exist_ok=True)
+            ora = datetime.datetime.now()
+            nome = f"maik-{ora.strftime('%Y-%m-%d_%H%M%S')}-{tipo}.zip"
+            p = os.path.join(self.cartella(), nome)
+            file_ = self._file_dati()
+            try:
+                with zipfile.ZipFile(p + ".part", "w", zipfile.ZIP_DEFLATED) as z:
+                    for n in file_:
+                        z.write(os.path.join(DATA_DIR, n), n)
+                    z.writestr("maik_backup.txt", f"MAIK PRIME {VERSIONE} · copia del {ora.isoformat(timespec='seconds')} · {len(file_)} file\n")
+                os.replace(p + ".part", p)
+            except OSError as e:
+                self.ultimo_errore = str(e)
+                return {"ok": False, "errore": str(e)}
+            self._pulisci()
+            self.ultimo_errore = ""
+            return {"ok": True, "nome": nome, "file": len(file_), "kb": max(1, round(os.path.getsize(p) / 1024))}
+
+    def _pulisci(self):
+        per_tipo = {}
+        for b in self.elenco():
+            per_tipo.setdefault(b["tipo"], []).append(b["nome"])
+        for tipo, nomi in per_tipo.items():
+            for n in nomi[self.TENGO.get(tipo, max(1, CONFIG.get("backup_giorni", 7))):]:
+                try:
+                    os.remove(os.path.join(self.cartella(), n))
+                except OSError:
+                    pass
+
+    def automatico(self):
+        """Una copia al giorno (la controlla il ciclo in sottofondo)."""
+        if not CONFIG.get("backup", True):
+            return None
+        oggi = datetime.date.today().isoformat()
+        if any(b["tipo"] == "auto" and b["quando"].startswith(oggi) for b in self.elenco()):
+            return None
+        if not self._file_dati():
+            return None
+        return self.crea("auto")
+
+    def contenuto(self, nome):
+        if not _RE_NOME_BACKUP.match(str(nome or "")):
+            return None
+        p = os.path.join(self.cartella(), nome)
+        try:
+            with zipfile.ZipFile(p) as z:
+                return {n: z.read(n) for n in z.namelist() if n.endswith(".json") and "/" not in n and "\\" not in n and n == os.path.basename(n)}
+        except (OSError, zipfile.BadZipFile, KeyError):
+            return None
+
+    def ripristina(self, nome, memoria=None):
+        memoria = memoria or MOTORE.memoria
+        dati = self.contenuto(nome)
+        if dati is None:
+            return {"ok": False, "errore": "copia non trovata o rovinata"}
+        buoni = {}
+        for n, b in dati.items():
+            try:
+                json.loads(b.decode("utf-8"))
+                buoni[n] = b
+            except (ValueError, UnicodeDecodeError):
+                pass
+        if not buoni:
+            return {"ok": False, "errore": "nella copia non c'è niente di leggibile"}
+        prima = self.crea("prima-del-ripristino")                  # se cambi idea: c'è la copia di adesso
+        for n, b in buoni.items():
+            _scrivi_byte(os.path.join(DATA_DIR, n), b)
+        ricarica_memoria(memoria, set(buoni))
+        GIORNALE.svuota()                                         # le modifiche di prima non valgono più
+        for v in (VETTORI, RICORDI):
+            v._dati = None
+        return {"ok": True, "file": len(buoni), "nome": nome, "copia_di_adesso": prima.get("nome")}
+
+
+BACKUP = Backup()
+
+_RE_BACKUP_FAI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:fai|fammi|crea|salva)\s+(?:un[ao]?\s+|il\s+|la\s+)?(?:backup|copia\s+di\s+sicurezza|copia\s+dei\s+(?:miei\s+)?dati)(?:\s+(?:dei\s+(?:miei\s+)?dati|adesso|ora|subito))?$|^backup$", re.I)
+_RE_BACKUP_LISTA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:i\s+)?miei\s+backup|(?:mostrami|fammi\s+vedere)\s+i\s+backup|le\s+(?:mie\s+)?copie\s+di\s+sicurezza|quando\s+hai\s+fatto\s+l['’]\s*ultimo\s+backup)$", re.I)
+_RE_BACKUP_RIPR = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:ripristina|rimetti|recupera)\s+(?:il\s+|un\s+|l['’]\s*)?(?:backup|copia(?:\s+di\s+sicurezza)?|(?:i\s+)?(?:miei\s+)?dati)"
+                             r"(?:\s+(?:di|del|dell['’]|della|delle|più)\s*(.+))?$", re.I)
+
+
+def _scegli_backup(quando, elenco):
+    """«di ieri», «del 12 ottobre», «più recente», «di stamattina» → quale copia."""
+    elenco = [b for b in elenco if b["tipo"] != "prima-del-ripristino"] or elenco
+    if not elenco:
+        return None
+    q = _senza_accenti(str(quando or "").lower()).strip()
+    if not q or re.search(r"recente|ultim|nuov", q):
+        return elenco[0]
+    oggi = datetime.date.today()
+    giorno = None
+    if "ieri" in q:
+        giorno = oggi - datetime.timedelta(days=2 if "altro" in q else 1)
+    elif re.search(r"oggi|stamattina|stamani", q):
+        giorno = oggi
+    else:
+        m = re.search(r"(\d{1,2})\s+([a-z]+)", q)
+        if m and m.group(2)[:3] in [x[:3] for x in MESI_IT]:
+            mese = [x[:3] for x in MESI_IT].index(m.group(2)[:3]) + 1
+            try:
+                giorno = datetime.date(oggi.year if mese <= oggi.month else oggi.year - 1, mese, int(m.group(1)))
+            except ValueError:
+                giorno = None
+    if giorno is None:
+        return None
+    pari = [b for b in elenco if b["quando"].startswith(giorno.isoformat())]
+    if pari:
+        return pari[0]
+    prima = [b for b in elenco if b["quando"][:10] <= giorno.isoformat()]
+    return prima[0] if prima else None
+
+
+def backup_router(testo, automazione=False):
+    t = (testo or "").strip().rstrip(" ?!.")
+    if _RE_BACKUP_FAI.match(t):
+        r = BACKUP.crea("manuale")
+        if not r["ok"]:
+            return {"testo": f"💾 Non sono riuscito a fare la copia: {r['errore']}. Controlla che ci sia spazio sul disco.", "backup": {"ok": False, "elenco": BACKUP.elenco()}}
+        return {"testo": f"💾 Fatto! Copia di sicurezza dei tuoi dati: **{r['file']} file** ({r['kb']} KB), in `{os.path.join(DATA_DIR, 'backup')}`."
+                         + (" Ne faccio anche una da solo ogni giorno." if CONFIG.get("backup", True) else ""), "backup": {"ok": True, "nuovo": r["nome"], "elenco": BACKUP.elenco()}}
+    if automazione:
+        return None
+    if _RE_BACKUP_LISTA.match(t):
+        el = BACKUP.elenco()
+        if not el:
+            return {"testo": "💾 Non ho ancora nessuna copia di sicurezza. Dimmi «fai un backup» e la faccio subito.", "backup": {"ok": True, "elenco": []}}
+        righe = "\n".join(f"- **{b['giorno']}** alle {b['quando'][11:16]} · {'automatica' if b['tipo'] == 'auto' else 'fatta da te' if b['tipo'] == 'manuale' else 'prima di un ripristino'} · {b['kb']} KB" for b in el[:8])
+        return {"testo": f"💾 **Le tue copie di sicurezza** ({len(el)}):\n{righe}", "backup": {"ok": True, "elenco": el}}
+    m = _RE_BACKUP_RIPR.match(t)
+    if m:
+        el = BACKUP.elenco()
+        b = _scegli_backup(m.group(1), el)
+        if not b:
+            return {"testo": "💾 Non trovo una copia di quel giorno." + (" Le copie che ho: " + ", ".join(f"{x['giorno']} {x['quando'][11:16]}" for x in el[:5]) + "." if el else " Non ho ancora nessuna copia."),
+                    "backup": {"ok": True, "elenco": el}}
+        return {"testo": f"💾 Posso rimettere i tuoi dati com'erano **{b['giorno']} alle {b['quando'][11:16]}**. Prima faccio una copia di come sono adesso, così puoi tornare indietro. Confermi?",
+                "backup_ripristina": b, "backup": {"ok": True, "elenco": el}}
+    return None
+
+
+# ── 🩺 AUTODIAGNOSI: controllo tutto quello che serve e ti dico come sistemare quello che non va ──
+CERVELLO_STATO = {"ripreso": 0, "ultimo_errore": "", "cambio_modello": ""}
+
+
+def _ollama_versione():
+    try:
+        with urllib.request.urlopen(CONFIG["ollama_base"] + "/api/version", timeout=3) as r:
+            return json.loads(r.read().decode("utf-8")).get("version", "?")
+    except urllib.error.HTTPError:
+        return "?"                                         # risponde, ma senza /api/version (vecchio o finto)
+    except Exception:
+        return None
+
+
+def _versione_tupla(v):
+    try:
+        return tuple(int(x) for x in re.findall(r"\d+", str(v))[:3])
+    except ValueError:
+        return ()
+
+
+def _json_rotti():
+    rotti, tmp = [], []
+    try:
+        nomi = os.listdir(DATA_DIR)
+    except OSError:
+        return rotti, tmp
+    for n in sorted(nomi):
+        p = os.path.join(DATA_DIR, n)
+        if n.endswith(".tmp") and os.path.isfile(p):
+            try:
+                if time.time() - os.path.getmtime(p) > 60:
+                    tmp.append(n)
+            except OSError:
+                pass
+        elif n.endswith(".json") and os.path.isfile(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    json.load(f)
+            except (ValueError, UnicodeDecodeError):
+                rotti.append(n)
+            except OSError:
+                pass
+    return rotti, tmp
+
+
+def diagnosi(motore=None, veloce=False):
+    motore = motore or MOTORE
+    C = []
+
+    def c(chiave, stato, titolo, dettaglio, rimedio="", comando="", ripara=""):
+        C.append({"chiave": chiave, "stato": stato, "titolo": titolo, "dettaglio": dettaglio, "rimedio": rimedio, "comando": comando, "ripara": ripara})
+
+    ver = _ollama_versione()
+    if ver is None:
+        c("ollama", "errore", "🧠 Il cervello (Ollama)", f"non risponde su {CONFIG['ollama_base']}",
+          "Avvia Ollama: apri l'app Ollama, oppure scrivi questo comando in un terminale (e lascialo aperto).", "ollama serve")
+    else:
+        vt = _versione_tupla(ver)
+        if vt and vt < (0, 4):
+            c("ollama", "avviso", "🧠 Il cervello (Ollama)", f"acceso, ma è vecchio (versione {ver})", "Aggiornalo da ollama.com/download: i modelli nuovi (come llama3.2-vision) vogliono la 0.4 o più.")
+        else:
+            c("ollama", "ok", "🧠 Il cervello (Ollama)", "acceso" + (f" · versione {ver}" if ver != "?" else ""))
+        installati = [_nome_modello(m) for m in motore.cervello.modelli()]
+        voluto = _nome_modello(CONFIG["modello"])
+        chat = [m for m in installati if not _NON_CHAT.search(m)]
+        if voluto in installati:
+            c("modello", "ok", "💬 Modello per chiacchierare", f"{voluto} installato")
+        elif chat:
+            c("modello", "avviso", "💬 Modello per chiacchierare", f"«{voluto}» non è installato: uso {scegli_modello(installati, voluto)[0]}",
+              f"Se vuoi proprio {voluto}, scaricalo con questo comando (oppure scegli un altro modello con MAIK_MODELLO).", f"ollama pull {voluto}")
+        else:
+            c("modello", "errore", "💬 Modello per chiacchierare", "nessun modello installato: senza non posso ragionare",
+              "Scarica un modello con questo comando (circa 5 GB; su un PC leggero usa llama3.2:3b).", "ollama pull llama3.1")
+        vis = [m for m in (_nome_modello(CONFIG["modello_visione"]), "llava", "moondream", "llama3.2-vision") if m in installati]
+        if vis:
+            c("visione", "ok", "👁️ Modello per vedere (webcam e foto)", f"{vis[0]} installato")
+        else:
+            c("visione", "avviso", "👁️ Modello per vedere (webcam e foto)", "nessun modello di visione: non posso guardare la webcam né leggere le foto",
+              "Scarica llava (funziona su quasi tutti i PC).", "ollama pull llava")
+        if CONFIG.get("embed"):
+            emb = _nome_modello(CONFIG["modello_embed"])
+            if emb in installati:
+                c("embed", "ok", "🔎 Ricerca per significato", f"{emb} installato")
+            else:
+                c("embed", "avviso", "🔎 Ricerca per significato", f"«{emb}» non è installato: cerco nei documenti solo per parole",
+                  "Scaricalo con questo comando, oppure spegni la ricerca per significato con MAIK_EMBED=0.", f"ollama pull {emb}")
+    p = prestazioni()
+    if p.get("media_tps"):
+        lento = p["media_tps"] < 4
+        c("velocita", "avviso" if lento else "ok", "⚡ Velocità", f"{str(p['media_tps']).replace('.', ',')} token al secondo" + (f" · prima parola in {round(p['media_prima_parola_ms'] / 1000, 1)} s".replace(".", ",") if p.get("media_prima_parola_ms") else ""),
+          (p["consigli"][0] if p.get("consigli") else "Prova un modello più piccolo.") if lento else "")
+    if CERVELLO_STATO["ripreso"]:
+        c("ripreso", "info", "🔁 Mi sono ripreso da solo", f"{CERVELLO_STATO['ripreso']} volt{'a' if CERVELLO_STATO['ripreso'] == 1 else 'e'} Ollama ha inciampato e ho riprovato"
+          + (f" · {CERVELLO_STATO['cambio_modello']}" if CERVELLO_STATO["cambio_modello"] else ""))
+    # i tuoi dati
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        prova = os.path.join(DATA_DIR, ".prova_scrittura")
+        with open(prova, "w") as f:
+            f.write("ok")
+        os.remove(prova)
+        libero = shutil.disk_usage(DATA_DIR).free
+        if libero < 200 * 1024 * 1024:
+            c("disco", "avviso", "💽 Spazio sul disco", f"solo {round(libero / 1024 / 1024)} MB liberi", "Libera un po' di spazio: se il disco si riempie non riesco più a salvare.")
+        else:
+            gb = str(round(libero / 1024 ** 3, 1)).replace(".", ",")
+            c("disco", "ok", "💽 I tuoi dati", f"salvati in {DATA_DIR} · {gb} GB liberi" if libero >= 1024 ** 3 else f"salvati in {DATA_DIR}")
+    except OSError as e:
+        c("disco", "errore", "💽 I tuoi dati", f"non riesco a scrivere in {DATA_DIR} ({e.strerror or e})", "Controlla i permessi della cartella, oppure scegline un'altra con MAIK_DATA.")
+    if not veloce:
+        rotti, tmp = _json_rotti()
+        if rotti:
+            c("json", "errore", "🧩 File dei dati", f"rovinat{'o' if len(rotti) == 1 else 'i'}: {', '.join(rotti[:5])}",
+              "Con «Ripara» li metto da parte (non cancello niente) e li recupero dall'ultima copia di sicurezza, se c'è.", ripara="json")
+        else:
+            c("json", "ok", "🧩 File dei dati", "tutti leggibili")
+        if tmp:
+            c("tmp", "avviso", "🧹 File a metà", f"{len(tmp)} file temporane{'o' if len(tmp) == 1 else 'i'} rimast{'o' if len(tmp) == 1 else 'i'} (es. dopo uno spegnimento brusco)", "Con «Ripara» li tolgo.", ripara="tmp")
+    el = BACKUP.elenco()
+    if not CONFIG.get("backup", True):
+        c("backup", "info", "💾 Copie di sicurezza", "quelle automatiche sono spente (MAIK_BACKUP=0)" + (f" · l'ultima: {el[0]['giorno']}" if el else ""), "Puoi sempre dirmi «fai un backup».", ripara="backup")
+    elif not el:
+        c("backup", "avviso", "💾 Copie di sicurezza", "non ce n'è ancora nessuna", "La faccio da sola entro poco; se vuoi subito: «Ripara» (o «fai un backup»).", ripara="backup")
+    else:
+        giorni = (datetime.date.today() - datetime.date.fromisoformat(el[0]["quando"][:10])).days
+        c("backup", "ok" if giorni <= 2 else "avviso", "💾 Copie di sicurezza", f"{len(el)} · l'ultima {el[0]['giorno'].lower() if giorni < 2 else el[0]['giorno']} alle {el[0]['quando'][11:16]}",
+          "" if giorni <= 2 else "È vecchia: con «Ripara» ne faccio una adesso.", ripara="" if giorni <= 2 else "backup")
+    if CONFIG.get("web") and not veloce:
+        try:
+            with urllib.request.urlopen(urllib.request.Request(CONFIG["diagnosi_web_url"], headers={"User-Agent": "MAIK"}), timeout=4) as r:
+                r.read(256)
+            c("internet", "ok", "🌍 Internet", "raggiungibile (meteo, notizie e ricerche funzionano)")
+        except urllib.error.HTTPError:
+            c("internet", "ok", "🌍 Internet", "raggiungibile")
+        except Exception:
+            c("internet", "avviso", "🌍 Internet", "non raggiungibile: meteo, notizie e ricerche non funzionano (il resto sì)", "Controlla la connessione (o un firewall che blocca Python).")
+    vi = VOCE.info(motore.memoria)
+    if vi.get("pronta"):
+        c("voce", "ok", "🔊 Voce neurale (Piper)", f"pronta · {vi.get('voce')}")
+    else:
+        c("voce", "info", "🔊 Voce", "uso la voce del browser" + (" (Piper è installato: scarica una voce in 🎙️ Voce)" if vi.get("motore") else ""))
+    c("pc", "ok" if CONFIG["pc"] else "info", "🖥️ Comandi del PC", "attivi, sempre con la tua conferma" if CONFIG["pc"] else "spenti (MAIK_PC=0)")
+    c("python", "ok" if sys.version_info >= (3, 8) else "avviso", "🐍 Python", ".".join(map(str, sys.version_info[:3])), "" if sys.version_info >= (3, 8) else "Usa Python 3.8 o più nuovo.")
+    err = sum(1 for x in C if x["stato"] == "errore")
+    avv = sum(1 for x in C if x["stato"] == "avviso")
+    return {"ok": True, "controlli": C, "errori": err, "avvisi": avv, "a_posto": sum(1 for x in C if x["stato"] == "ok"),
+            "quando": datetime.datetime.now().isoformat(timespec="seconds"), "versione": VERSIONE, "veloce": bool(veloce)}
+
+
+def ripara(cosa, memoria=None):
+    """Le riparazioni sicure: niente si cancella davvero (i file rovinati li metto da parte)."""
+    memoria = memoria or MOTORE.memoria
+    if cosa == "tmp":
+        _, tmp = _json_rotti()
+        for n in tmp:
+            try:
+                os.remove(os.path.join(DATA_DIR, n))
+            except OSError:
+                pass
+        return {"ok": True, "testo": f"🧹 Tolti {len(tmp)} file a metà."}
+    if cosa == "backup":
+        r = BACKUP.crea("manuale")
+        return {"ok": r["ok"], "testo": f"💾 Copia di sicurezza fatta ({r.get('file', 0)} file)." if r["ok"] else f"💾 Non riesco: {r.get('errore')}"}
+    if cosa == "json":
+        rotti, _ = _json_rotti()
+        if not rotti:
+            return {"ok": True, "testo": "🧩 Tutti i file sono già a posto."}
+        copie = [b for b in BACKUP.elenco() if b["tipo"] != "prima-del-ripristino"]
+        recuperati, vuoti = [], []
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        for n in rotti:
+            p = os.path.join(DATA_DIR, n)
+            try:
+                os.replace(p, p + f".rotto-{stamp}")
+            except OSError:
+                continue
+            fatto = False
+            for b in copie:
+                dati = (BACKUP.contenuto(b["nome"]) or {}).get(n)
+                if dati:
+                    try:
+                        json.loads(dati.decode("utf-8"))
+                    except (ValueError, UnicodeDecodeError):
+                        continue
+                    _scrivi_byte(p, dati)
+                    recuperati.append(f"{n} (dalla copia del {b['giorno']})")
+                    fatto = True
+                    break
+            if not fatto:
+                vuoti.append(n)
+        ricarica_memoria(memoria, set(rotti))
+        for v in (VETTORI, RICORDI):
+            v._dati = None
+        t = "🧩 Ho messo da parte i file rovinati (finiscono con «.rotto-…», non ho cancellato niente)."
+        if recuperati:
+            t += " Recuperati: " + ", ".join(recuperati) + "."
+        if vuoti:
+            t += " Ripartono da vuoti: " + ", ".join(vuoti) + "."
+        return {"ok": True, "testo": t}
+    return {"ok": False, "testo": "Non so riparare questa cosa."}
+
+
+_RE_DIAGNOSI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:funziona\s+tutto|(?:va|vai|funzioni)\s+tutto\s+bene|controllati|fai\s+(?:una|l['’]\s*|un['’]\s*)?(?:auto)?diagnosi|(?:auto)?diagnosi|"
+                         r"cosa\s+non\s+funziona|c['’]\s*[eè]\s+qualche\s+problema|hai\s+(?:qualche\s+)?problemi|controlla\s+(?:che\s+)?(?:tutto\s+)?funzion[ai](?:\s+tutto)?|stai\s+bene\s+(?:tecnicamente|dentro))$", re.I)
+
+
+def diagnosi_router(testo, motore):
+    if not _RE_DIAGNOSI.match((testo or "").strip().rstrip(" ?!.")):
+        return None
+    d = diagnosi(motore)
+    problemi = [x for x in d["controlli"] if x["stato"] in ("errore", "avviso")]
+    if not problemi:
+        t = f"🩺 **Autodiagnosi:** tutto a posto! ✅ {d['a_posto']} controlli superati (cervello, modelli, dati, copie di sicurezza, internet…)."
+    else:
+        t = (f"🩺 **Autodiagnosi:** ✅ {d['a_posto']} cose a posto, "
+             + (f"❌ {d['errori']} da sistemare" if d["errori"] else "") + (" e " if d["errori"] and d["avvisi"] else "") + (f"⚠️ {d['avvisi']} da guardare" if d["avvisi"] else "") + ":\n")
+        for x in problemi:
+            t += f"\n{'❌' if x['stato'] == 'errore' else '⚠️'} **{x['titolo']}**: {x['dettaglio']}." + (f" {x['rimedio']}" if x["rimedio"] else "") + (f" → `{x['comando']}`" if x["comando"] else "")
+    t += "\n\nNel pannello 🩺 controllo anche microfono, webcam e voce del browser."
+    return {"testo": t, "diagnosi": d}
+
+
+# ── 🎯 PENSACI MEGLIO: una bozza, poi la rileggo come un revisore severo e ti do la versione finale ──
+PROMPT_REVISORE = ("[CONTROLLO DI QUALITÀ — la persona non lo vede]\nQuella sopra è la tua bozza. Rileggila come un revisore severo: controlla che risponda davvero "
+                   "alla domanda, che fatti, numeri e conti siano giusti, che il filo del discorso regga e che non manchi niente di importante; togli quello che "
+                   "non serve. Poi scrivi SOLO la risposta finale, corretta e completa, direttamente alla persona: niente frasi sulla bozza o sul controllo.")
+_RE_ACCURATO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:pensaci\s+bene|rifletti\s+bene|ragiona(?:ci)?\s+bene|rispondi\s+con\s+calma|con\s+calma|"
+                          r"modalit[aà]\s+accurata|risposta\s+accurata|sii\s+preciso)\s*[:,.]\s*(\S.*)$", re.I | re.S)
+
+
+def pensa_accurato(cervello, system, messaggi, on_token, stat=None, avvisa=None):
+    avvisa = avvisa or (lambda e: None)
+    t0 = time.perf_counter()
+    avvisa({"accurato": {"fase": "bozza", "testo": "📝 Scrivo una prima bozza…"}})
+    bozza = cervello.pensa(system, messaggi)
+    if not bozza or bozza.startswith("__ERRORE"):
+        return cervello.pensa_stream(system, messaggi, on_token, stat)
+    bozza = pulisci_pensiero(bozza) or bozza
+    avvisa({"accurato": {"fase": "controllo", "testo": "🔍 La rileggo come un revisore: fatti, numeri, cose mancanti…", "parole": len(bozza.split())}})
+    conv = list(messaggi) + [{"role": "assistant", "content": bozza[:12000]}, {"role": "user", "content": PROMPT_REVISORE}]
+    r = cervello.pensa_stream(system, conv, on_token, stat)
+    if not r or r.startswith("__ERRORE"):
+        on_token(bozza)
+        return bozza
+    if stat is not None:
+        stat["accurato"] = {"bozza_parole": len(bozza.split()), "secondi": round(time.perf_counter() - t0, 1)}
+    return r
+
+
+# ── 🔤 CAPISCO ANCHE SE SCRIVI IN FRETTA: correggo i refusi dei comandi (al modello va comunque il tuo testo) ──
+_REFUSI = {
+    "xke": "perché", "xké": "perché", "xkè": "perché", "xche": "perché", "xché": "perché", "xchè": "perché", "perke": "perché", "perkè": "perché", "perké": "perché",
+    "pke": "perché", "nn": "non", "cmq": "comunque", "ke": "che", "vhe": "che", "kome": "come", "ki": "chi", "anke": "anche", "qnd": "quando",
+    "qndo": "quando", "dmn": "domani", "tt": "tutto", "qlcs": "qualcosa", "qualcs": "qualcosa", "culcosa": "qualcosa", "qualkosa": "qualcosa", "qualcossa": "qualcosa",
+    "grz": "grazie", "nnt": "niente", "qst": "questo", "qsto": "questo", "sn": "sono", "fre": "fare", "abia": "abbia", "agiungi": "aggiungi",
+    "agiungere": "aggiungere", "inteligente": "intelligente", "colego": "collego", "coleghi": "colleghi", "aplicazione": "applicazione", "apuntamento": "appuntamento",
+    "apuntamenti": "appuntamenti", "obbiettivo": "obiettivo", "obbiettivi": "obiettivi", "promemora": "promemoria", "pomemoria": "promemoria", "ricodami": "ricordami",
+    "ricorami": "ricordami", "rocordami": "ricordami", "svegliammi": "svegliami", "mettimmi": "mettimi", "meteoo": "meteo", "notiize": "notizie", "notizzie": "notizie",
+    "calendraio": "calendario", "calandario": "calendario", "abbitudine": "abitudine", "abbitudini": "abitudini", "sttimana": "settimana", "setimana": "settimana",
+}
+_VERBI_COMANDO = ("ricordami", "avvisami", "svegliami", "aggiungi", "cancella", "elimina", "annulla", "cercami", "leggimi", "traduci",       # solo parole lunghe:
+                  "calcola", "mostrami", "mettimi", "segnami", "inventami", "costruiscimi", "creami", "pianificami", "pianifica", "accendi",   # le corte somigliano
+                  "riassumi", "ripristina", "controllati", "imposta", "abbassa", "digita", "promemoria")                                     # troppo a parole vere
+_NOMI_COMANDO = ("promemoria", "calendario", "appuntamento", "appuntamenti", "abitudine", "abitudini", "obiettivo", "obiettivi", "multiverso", "laboratorio",
+                 "aiutante", "aiutanti", "concentrazione", "prestazioni", "settimana", "settimane", "dopodomani", "documenti", "documento", "riassunto",
+                 "notizie", "briefing", "invenzione", "invenzioni", "diagnosi", "sveglia")
+_PAROLE_VERE = {"aiutare", "aiutami", "aiutato", "aiutata", "aiutarmi", "aiutarti", "ricordati", "ricordano", "ricordavi", "credimi", "dammi", "cancello", "cancelli",
+                "elimino", "elimini", "scrivo", "scrive", "chiudo", "chiude", "traduco", "calcolo", "calcoli", "mettiti", "segnati", "inventati", "pianifico",
+                "accendo", "accende", "spengo", "spegne", "riassume", "riassumo", "controllato", "controllata", "controllate", "imposto", "imposte", "abbasso",
+                "obiettiva", "laboratori", "prestazione", "concentrazioni", "riassunti", "notizia", "calendari", "multiversi", "aggiunge", "aggiunto", "digito",
+                "settimanale", "documentario", "abitudinario", "sveglio", "sveglie", "svegli", "invenzioni", "invenzione", "cercato", "cerchi", "mostrati",
+                "attitudine", "abitudine", "ricordatemi", "avvisatemi", "ricordavi", "ricordarmi", "avvisarmi", "svegliarmi", "cercavi", "cercarmi",
+                "leggili", "mostrarmi", "mettili", "segnali", "crearmi", "creavi", "aggiunsi", "accenti", "importa", "aiutate", "chiedi", "chiudi"}
+_VERBI_TESTO_LIBERO = {"digita", "scrivi", "batti", "annota", "traduci", "copia", "incolla", "detta", "di", "dì", "dimmi", "saluta", "annuncia"}
+_TUTTE_COMANDO = set(_VERBI_COMANDO) | set(_NOMI_COMANDO) | set(_REFUSI.values())
+
+
+def _distanza(a, b, tetto=2):
+    """Distanza tra due parole (lettere sbagliate, mancanti, in più o scambiate di posto), fermandosi a tetto+1."""
+    if abs(len(a) - len(b)) > tetto:
+        return tetto + 1
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+        if min(prev) > tetto:
+            return tetto + 1
+    return prev[-1]
+
+
+def _piu_vicina(w, candidati, minimo):
+    if len(w) < minimo or w in _TUTTE_COMANDO or w in _PAROLE_VERE:
+        return None
+    tetto = 1
+    migliori, dmin = [], tetto + 1
+    for c in candidati:
+        if c[0] != w[0] or len(c) < 4:
+            continue
+        d = _distanza(w, c, tetto)
+        if d < dmin:
+            migliori, dmin = [c], d
+        elif d == dmin:
+            migliori.append(c)
+    if dmin > tetto or len(set(migliori)) != 1:
+        return None
+    c = migliori[0]
+    if w.startswith(c) or c.startswith(w):
+        return None                                   # «cancellai», «ricordam»: è un'altra forma (o una parola a metà), non un refuso
+    if len(w) == len(c) and (w[:-1] == c[:-1] or (w[:-2] == c[:-2] and w[-1] == c[-1])):
+        return None                                   # «scrivo/scrivi», «mettiti/mettimi»: un'altra forma della parola
+    return c
+
+
+def _come(orig, nuova):
+    return nuova[:1].upper() + nuova[1:] if orig[:1].isupper() else nuova
+
+
+def capisci_fretta(testo):
+    """«ricodami di chiamare mamma» → «ricordami di chiamare mamma», «xke nn funziona» → «perché non funziona».
+    Solo refusi sicuri: nomi, testi da scrivere e citazioni restano come sono."""
+    t = testo or ""
+    if not t or len(t) > 400 or re.search(r"https?://|www\.|`|«|\"|\[\[", t):
+        return t
+    pezzi = re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]+|[^A-Za-zÀ-ÖØ-öø-ÿ]+", t)
+    idx = [i for i, p in enumerate(pezzi) if p[0].isalpha()]
+    libero, n_cmd = False, 0
+    for n, i in enumerate(idx):
+        w = pezzi[i]
+        wl = w.lower()
+        if libero:
+            break
+        if n == n_cmd and wl in ("maik", "zep", "prime"):
+            n_cmd += 1
+            continue
+        nuova = _REFUSI.get(wl)
+        if not nuova:
+            nuova = _piu_vicina(wl, _VERBI_COMANDO, 6) if n == n_cmd else _piu_vicina(wl, _NOMI_COMANDO, 7)
+        if nuova:
+            pezzi[i] = _come(w, nuova)
+        if n == n_cmd and (nuova or wl) in _VERBI_TESTO_LIBERO:
+            libero = True                             # «digita …», «scrivi …»: il resto è testo tuo, non lo tocco
+    return "".join(pezzi)
+
+
+# ── la risposta, con tutto quello che serve intorno ──
+def rispondi_v23(motore, originale, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None, accurato=False):
+    auto = getattr(_CTX, "automazione", False)
+    orig_testo, capito = testo, None
+    if testo and not allegato:
+        m = _RE_ACCURATO.match(testo.strip())
+        if m:
+            testo, orig_testo, accurato = m.group(1).strip(), m.group(1).strip(), True
+        if not rigenera:
+            c = capisci_fretta(testo)
+            if c != testo:
+                capito, testo = c, c
+    _CTX.accurato, _CTX.testo_originale = bool(accurato), (orig_testo if capito else None)
+    if not auto:
+        GIORNALE.inizia(testo)
+    try:
+        meta = originale(testo, on_token, allegato=allegato, rigenera=rigenera, sessione=sessione, on_evento=on_evento)
+    finally:
+        _CTX.accurato, _CTX.testo_originale = False, None
+        mod = None if auto else GIORNALE.chiudi()
+    if isinstance(meta, dict):
+        if mod:
+            meta["annullabile"] = mod
+        if capito and meta.get("azione"):
+            meta["capito"] = capito                     # il refuso corretto mi ha fatto capire il comando: te lo faccio vedere
+        if accurato and meta.get("ok") is not False and not meta.get("azione"):
+            meta["accurato"] = True
+    return meta
+
+
+def v23_router(testo, motore):
+    auto = getattr(_CTX, "automazione", False)
+    if not auto:
+        r = annulla_router(testo, motore.memoria)
+        if r:
+            return r
+    return diagnosi_router(testo, motore) or backup_router(testo, automazione=auto)
+
+
+# ── 🔁 IL CERVELLO CHE SI RIPRENDE DA SOLO ──
+_RE_ERR_PASSEGGERO = re.compile(r"HTTP Error 50[0234]|Remote end closed|Connection reset|IncompleteRead|EOF occurred|Connection aborted|BadStatusLine", re.I)
+
+
+def _riprova_cervello(cervello, prova):
+    """prova() → (risultato, ha_già_scritto_qualcosa). Se Ollama inciampa prima della prima parola, riprovo (fino a 2 volte);
+    se il modello scelto non c'è (404), passo a uno che hai installato."""
+    cambiato = False
+    for tentativo in range(3):
+        r, scritto = prova()
+        if not isinstance(r, str) or not r.startswith("__ERRORE") or scritto:
+            if tentativo:
+                CERVELLO_STATO["ripreso"] += 1
+            return r
+        CERVELLO_STATO["ultimo_errore"] = r[11:200]
+        if "HTTP Error 404" in r and not cambiato:
+            nome, cambia = scegli_modello(cervello.modelli(), CONFIG["modello"])
+            if cambia:
+                print(f"  ℹ  il modello «{CONFIG['modello']}» non c'è più: passo a «{nome}»")
+                CERVELLO_STATO["cambio_modello"] = f"«{CONFIG['modello']}» non c'era: uso «{nome}»"
+                CONFIG["modello"], cambiato = nome, True
+                continue
+            return r
+        if _RE_ERR_PASSEGGERO.search(r) and tentativo < 2:
+            time.sleep(0.8 * (tentativo + 1) * CONFIG.get("riprova_pausa", 1.0))
+            continue
+        return r
+    return r
+
+
+def pensa_stream_robusto(cervello, system_prompt, messaggi, on_token, stat=None):
+    def prova():
+        n = [0]
+
+        def tok(c):
+            n[0] += 1
+            on_token(c)
+        return cervello._pensa_stream_v22(system_prompt, messaggi, tok, stat), n[0] > 0
+    return _riprova_cervello(cervello, prova)
+
+
+def pensa_robusto(cervello, system_prompt, messaggi):
+    return _riprova_cervello(cervello, lambda: (cervello._pensa_v22(system_prompt, messaggi), False))
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -10134,7 +10956,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -10145,7 +10967,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -10183,7 +11005,11 @@ Oggi è {oggi}.{extra}
         s = self.memoria.aggiungi_seguito(ev["evento"], ev["quando"], ev["chiedi"], ev["domanda"], testo)
         return {"evento": s["evento"], "quando": fmt_quando(ev["quando"]), "chiedi": s["chiedi"]}
 
-    def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None):
+    def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None, accurato=False):
+        """v23: prima capisco i refusi e «pensaci bene: …», poi rispondo (e mi segno cosa cambio, per «annulla»)."""
+        return rispondi_v23(self, self._rispondi_stream_v22, testo, on_token, allegato, rigenera, sessione, on_evento, accurato)
+
+    def _rispondi_stream_v22(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None):
         """Versione in streaming: chiama on_token(chunk) e ritorna i metadati finali.
         allegato = {"nome", "contenuto"}: un file di testo che va al modello ma NON alle azioni/estrattori.
         rigenera = True: rifà l'ultima risposta (toglie lo scambio precedente dal diario).
@@ -10203,28 +11029,33 @@ Oggi è {oggi}.{extra}
             cmd = self._gestisci_comando(testo)
             if cmd:
                 return {"done": True, "comando": cmd}
+            v23 = v23_router(testo, self)                            # v23: ↩ annulla · 🩺 funziona tutto? · 💾 backup
+            if v23:
+                on_token(v23["testo"])
+                self.memoria.salva_scambio(testo, v23["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v23.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -10245,7 +11076,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -10259,7 +11090,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -10277,7 +11108,7 @@ Oggi è {oggi}.{extra}
         nuovo = bool(testo) and not rigenera
         imparato = Estrattore.analizza(testo, self.memoria) if nuovo else None
         seguito = self._nota_seguito(testo) if nuovo and not allegato else None
-        msg, nome = testo, ""
+        msg, nome = getattr(_CTX, "testo_originale", None) or testo, ""      # v23: al modello va il testo come l'hai scritto tu
         if allegato:
             nome = str(allegato.get("nome") or "file")[:80]
             contenuto = str(allegato.get("contenuto") or "")[:12000]
@@ -10345,7 +11176,8 @@ Oggi è {oggi}.{extra}
         stat = {}
         agente = CONFIG["agente"]
         filtro = FiltroTag(on_token) if agente else on_token
-        risposta = self.cervello.pensa_stream(system, messaggi, filtro, stat)
+        risposta = (pensa_accurato(self.cervello, system, messaggi, filtro, stat, avvisa) if getattr(_CTX, "accurato", False)    # v23: 🎯 bozza → controllo → finale
+                    else self.cervello.pensa_stream(system, messaggi, filtro, stat))
         if agente:
             filtro.fine()
         if (not risposta or risposta.startswith("__ERRORE")) and fonti_web:     # senza modello: i risultati così come sono
@@ -10359,8 +11191,8 @@ Oggi è {oggi}.{extra}
             risposta = Ricordi.testo_senza_modello(ricordi_meta)
             on_token(risposta)
         if not risposta or risposta.startswith("__ERRORE"):
-            return {"done": True, "ok": False,
-                    "risposta": "Ollama non risponde. Controlla che sia acceso."}
+            return {"done": True, "ok": False, "offline": True, "errore": (risposta or "")[11:160],         # v23: la GUI riprova da sola quando torna
+                    "risposta": "Ollama non risponde. Controlla che sia acceso (apri l'app Ollama, oppure scrivi «ollama serve» in un terminale): appena torna, ti rimando la domanda."}
         finale, azioni = pulisci_pensiero(risposta) or risposta, []
         notizie_meta = agenda_meta = spese_meta = None
         passo = 1
@@ -10439,7 +11271,7 @@ Oggi è {oggi}.{extra}
                        "citata": f["nome"].lower() in finale.lower()} for f in fonti]
         fonti_web = [dict(f, citata=f"[{f['n']}]" in finale) for f in fonti_web]
         # in memoria va la risposta senza il "ragionamento" <think> e senza tag (risparmia contesto)
-        self.memoria.salva_scambio(testo + (f" [📎 {nome}]" if allegato else ""), finale, sid,
+        self.memoria.salva_scambio((getattr(_CTX, "testo_originale", None) or testo) + (f" [📎 {nome}]" if allegato else ""), finale, sid,
                                    extra={"azioni": chip, "fonti": [{"nome": f["nome"], "pezzo": f["pezzo"]} for f in fonti_meta],
                                           **({"fonti_web": [{k: f[k] for k in ("n", "titolo", "url", "sito")} for f in fonti_web]} if fonti_web else {})})
         if nuovo:
@@ -10883,6 +11715,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/diagnosi":                                 # v23: 🩺 funziona tutto? (?veloce=1: senza internet e file)
+                self._json(diagnosi(MOTORE, veloce=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("veloce", ["0"])[0] == "1"))
+            elif base == "/annulla":                                  # v23: ↩ le ultime modifiche che posso annullare
+                self._json({"ok": True, "annullabili": GIORNALE.elenco()})
+            elif base == "/backup":                                   # v23: 💾 le copie di sicurezza
+                self._json({"ok": True, "elenco": BACKUP.elenco(), "automatico": CONFIG.get("backup", True), "giorni": CONFIG.get("backup_giorni", 7),
+                            "cartella": BACKUP.cartella()})
             elif base == "/prestazioni":                              # v22: ⚡ quanto vado veloce (e i consigli)
                 self._json(prestazioni())
             elif base == "/presenza":                                 # v22: ⏱️ il tempo davanti al PC
@@ -11363,6 +12202,20 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     sec = 0
                 self._json(dict(PRESENZA.aggiungi(sec), ok=True))
+            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina") and not stessa_origine(self):
+                self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/diagnosi/ripara":                          # v23: {cosa: json|tmp|backup} (niente si cancella davvero)
+                r = ripara(str(self._read_json_body().get("cosa", "")), MOTORE.memoria)
+                self._json(dict(r, diagnosi=diagnosi(MOTORE)))
+            elif base == "/annulla":                                  # v23: {id?} → rimette com'erano i dati cambiati
+                r = GIORNALE.annulla(str(self._read_json_body().get("id") or "") or None, MOTORE.memoria)
+                self._json(dict(r, annullabili=GIORNALE.elenco()))
+            elif base == "/backup/crea":                              # v23: 💾 una copia adesso
+                r = BACKUP.crea("manuale")
+                self._json(dict(r, elenco=BACKUP.elenco()))
+            elif base == "/backup/ripristina":                        # v23: {nome} (la GUI chiede sempre conferma)
+                r = BACKUP.ripristina(str(self._read_json_body().get("nome", "")), MOTORE.memoria)
+                self._json(dict(r, elenco=BACKUP.elenco()), 200 if r["ok"] else 400)
             elif base in ("/laboratorio/crea", "/laboratorio/migliora", "/laboratorio/indietro", "/laboratorio/elimina", "/aiutanti/chiama") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v21: solo dalla GUI di MAIK
             elif base == "/laboratorio/crea":                         # v21: {testo} (risponde quando il modello ha finito)
@@ -11511,7 +12364,7 @@ class Handler(BaseHTTPRequestHandler):
         MOTORE.ultima_chat = time.time()
         try:
             meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}), allegato=allegato,
-                                          rigenera=rigenera, sessione=sessione, on_evento=invia)
+                                          rigenera=rigenera, sessione=sessione, on_evento=invia, accurato=bool(corpo.get("accurato")))
             invia(meta)
         except (BrokenPipeError, ConnectionResetError):
             pass  # il client ha chiuso, niente da fare
@@ -18380,6 +19233,10 @@ def _ciclo_sfondo():
             OBIETTIVI.sincronizza()                                  # v20: 🎯 una tappa spuntata → la prossima (e 🏆)
         except Exception as e:
             print(f"  ⚠  automazioni: {e}")
+        try:
+            BACKUP.automatico()                                      # v23: 💾 una copia di sicurezza al giorno
+        except Exception as e:
+            print(f"  ⚠  backup: {e}")
         if time.time() - ultimo_ricordi >= 60:                      # v18: i vettori delle chiacchierate nuove
             ultimo_ricordi = time.time()
             RICORDI.programma(MOTORE.memoria)
@@ -18398,8 +19255,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 22.0 — Server avviato         ║
-║ più veloce · webcam · multiverso · laboratorio   ║
+║        MAIK PRIME 23.0 — Server avviato         ║
+║ affidabile · veloce · webcam · multiverso        ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -18455,7 +19312,8 @@ def main():
     print(f"    GET  /automazioni · /automazioni/avvisi · /prime/oggi · POST /automazioni/crea /esegui     [v19]")
     print(f"    GET  /obiettivi · /prime/settimana · /prime/tendenze · POST /obiettivi/crea /tappa          [v20]")
     print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [v21]")
-    print(f"    GET  /prestazioni · /presenza · POST /presenza   [NUOVO v22]")
+    print(f"    GET  /prestazioni · /presenza · POST /presenza   [v22]")
+    print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [NUOVO v23]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

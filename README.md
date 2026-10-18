@@ -47,6 +47,24 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🌀 Novità V21 — MAIK PRIME Multiverso: il consiglio delle altre dimensioni, il laboratorio delle invenzioni, gli aiutanti lampo (versione server)
+
+Ispirata alle cose che fa uno scienziato pazzo dei cartoni (portali, invenzioni nel garage, versioni di sé da altri universi), ma con nomi e grafica tutti nostri.
+
+| | Cosa fa |
+|---|---|
+| 🌀 **Il Consiglio del multiverso** | «**chiedi al multiverso: devo cambiare lavoro?**», «consiglio dei maik: meglio Roma o Milano?», «cosa ne pensano i maik di comprare un'auto elettrica»: Zep apre un **portale verde** e da 4 dimensioni arrivano 4 versioni di Maik, ognuna col suo carattere — 🧪 **Scienziato** (fatti e numeri), 🛡️ **Prudente** (i rischi), 🎨 **Visionario** (idee audaci), 🔧 **Pratico** (cosa fare domani). Le vedi comparire una alla volta (con il codice della dimensione, es. «dimensione S-978»), poi Maik scrive il **verdetto**: su cosa sono d'accordo, dove no, e il primo passo. Serve il modello (Ollama): ogni Maik è il modello che ragiona da un punto di vista diverso. |
+| 🔬 **Il laboratorio delle invenzioni** | «**inventami un timer per il tè**», «**costruiscimi un generatore di password**», «**creami un gioco del tris**», «fammi un'app per dividere il conto», «laboratorio: un quiz sulle capitali»: Maik **scrive una piccola app vera** (un solo file HTML, con grafica e codice) e te la fa usare **subito dentro la chat**. Mentre la costruisce vedi «📐 Progetto… ⌨️ Scrivo il codice · 42 righe… 🧪 Collaudo» e Zep lavora alla tastiera, poi l'invenzione esce dal portale. Bottoni: **⛶ Apri in grande**, **🔧 Miglioralo** («migliora l'invenzione: aggiungi un suono»), **↩ Versione prima** (tengo le ultime 5), **&lt;/&gt; Codice**, **⬇ Scarica** (il file .html da tenere). Senza il modello ne so montare 6 **di serie**: ⏱️ timer, 🎲 dadi, 🔐 password, ⭕ tris, 🔁 convertitore di unità, 🔢 contatore. Tutte le invenzioni nella finestra **🔬 Laboratorio** (tasto **L**, o il bottone 🔬 in alto). |
+| 🔒 **La gabbia** | Le invenzioni girano in una **gabbia di sicurezza** (iframe *sandbox* + *Content-Security-Policy* con origine opaca): non possono leggere i tuoi dati di MAIK né la pagina, non possono caricare script, immagini o dati da internet, non hanno cookie né localStorage e non possono usare i comandi del PC. Se un'invenzione prova ad aprire un'altra pagina dentro il suo riquadro, la rimetto subito a posto (e te lo dico). Le richieste che creano o cambiano invenzioni sono accettate solo dalla GUI di MAIK (non da altri siti aperti nel browser). |
+| 🧪 **Gli aiutanti lampo** | «**chiama un aiutante per cercare un regalo per mia sorella**», «manda un aiutante a controllare quanto ho speso», oppure più insieme: «**aiutanti: quanto ho speso questo mese; cosa ho domani; cerca su internet le offerte dei voli per Parigi**». Ogni aiutante fa **un compito in sottofondo** (al massimo 3 insieme, gli altri in fila) mentre tu continui a parlare con me: sul palco compare la sua **bollicina** «🧪 #3 …» che gira finché lavora. Quando ha finito arriva il messaggio **🧪 AIUTANTE #3** con il risultato (con le schede: spese, fonti, notizie…), Zep fa 👍, e la bollicina sparisce con un *puf*. I risultati restano nella chat «🧪 Aiutanti». «i miei aiutanti» per vedere chi sta facendo cosa. Come le automazioni: **niente comandi del PC** e niente altri aiutanti dentro un aiutante. |
+| 📺 **La TV del multiverso** | «**accendi la tv del multiverso**»: un vecchio televisore con 3 programmi assurdi che vanno in onda nelle altre dimensioni (li inventa il modello; senza modello ne ho 12 di scorta). ◀ ▶ per cambiare canale, 🔄 per altri canali. |
+| 🧪 **Lo Scienziato** e il tema **Portale** | Una nuova personalità, **🧪 Scienziato**: geniale, veloce, un po' sarcastico ma affezionato, spiega con la scienza vera e propone soluzioni ingegnose (mai volgare). E un nuovo tema colori **Portale** (verde acido). |
+
+- Il tasto **L** ora apre il laboratorio (mentre ti leggo una pagina resta pausa / riprendi). I suggerimenti sotto la chat stanno su 3 righe (il resto scorrendo), con le novità per prime, così i messaggi hanno più spazio.
+- Di domenica «impegni di questa settimana» mostra anche la settimana che arriva.
+- Nuovi endpoint: `GET /laboratorio` · `GET /laboratorio/app?id=` (l'app, con la gabbia; `&scarica=1` per salvarla) · `POST /laboratorio/crea {testo}` · `/laboratorio/migliora {id, testo}` · `/laboratorio/indietro {id}` · `/laboratorio/elimina {id}` · `GET /aiutanti` · `GET /aiutanti/avvisi` · `POST /aiutanti/chiama {compito}` · `GET /tv`. `/chat/stream` manda gli eventi `"multiverso"` e `"laboratorio"` e restituisce `"multiverso"`, `"invenzione"`, `"invenzioni"`, `"aiutanti"`, `"tv"`.
+- I dati: `dati_maik/laboratorio.json` (le invenzioni, con le versioni); i risultati degli aiutanti nella chat «🧪 Aiutanti».
+
 ## 🏆 Novità V20 — MAIK PRIME pensa in grande: obiettivi con le tappe, la tua settimana, le tendenze del mese (versione server)
 
 | | Cosa fa |
@@ -411,7 +429,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V20 — `maikprime.py`
+## MAIK PRIME — Server V21 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

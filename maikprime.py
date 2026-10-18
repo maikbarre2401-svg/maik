@@ -17550,8 +17550,14 @@ function labInventa(t) {
   t = (t || $('#labtesto').value).trim(); if (!t) { $('#labtesto').focus(); return; }
   $('#labtesto').value = ''; closeLab(); qs('laboratorio: ' + t);
 }
+// 🔒 la gabbia non vieta all'invenzione di aprire un'altra pagina dentro il suo riquadro: se ci prova (un secondo caricamento), la rimetto a posto
+document.addEventListener('load', e => {
+  const f = e.target; if (!(f instanceof HTMLIFrameElement) || !/^\/laboratorio\/app\?id=/.test(f.getAttribute('src') || '')) return;
+  const n = (+f.dataset.carichi || 0) + 1; f.dataset.carichi = n;
+  if (n > 1) { f.dataset.carichi = 0; f.src = f.getAttribute('src'); toast('🔒 L\'invenzione voleva uscire dalla gabbia: l\'ho rimessa a posto', 'err'); }
+}, true);
 function apriVista(id, nome) {
-  $('#lvnome').textContent = nome || 'Invenzione'; $('#lvframe').src = '/laboratorio/app?id=' + encodeURIComponent(id) + '&t=' + Date.now();
+  $('#lvnome').textContent = nome || 'Invenzione'; $('#lvframe').dataset.carichi = 0; $('#lvframe').src = '/laboratorio/app?id=' + encodeURIComponent(id) + '&t=' + Date.now();
   $('#labvista').classList.add('open');
 }
 function chiudiVista() { $('#labvista').classList.remove('open'); $('#lvframe').src = 'about:blank'; }

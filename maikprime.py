@@ -11271,7 +11271,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V20</title>
+<title>MAIK PRIME // Zep V21</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -11742,16 +11742,66 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .vzmini .vzkpis{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));margin:4px 0 8px}
   @media (max-width:980px){.swgrid{grid-template-columns:repeat(4,minmax(0,1fr))}.vzkpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
   @media (max-width:640px){.swgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.vzgrid2{grid-template-columns:1fr}.vzkpis{grid-template-columns:repeat(2,minmax(0,1fr))}.vzcat{grid-template-columns:100px 1fr 64px}}
+
+  /* ===== V21 · multiverso, laboratorio, aiutanti lampo, TV ===== */
+  :root{--portale:#8dff4f}
+  .mvbox{margin:2px 0 10px;border:1px solid rgba(141,255,79,.35);border-radius:14px;padding:10px;background:radial-gradient(circle at 12% 0%,rgba(141,255,79,.12),transparent 60%),rgba(0,0,0,.22)}
+  .mvtit{display:flex;align-items:center;gap:8px;font:600 11.5px 'Share Tech Mono',monospace;letter-spacing:2px;color:var(--portale);margin-bottom:8px}.mvtit small{margin-left:auto;color:var(--dim);letter-spacing:1px}
+  .mvport{width:16px;height:16px;flex:none;border-radius:50%;background:conic-gradient(from 0deg,#0a3d14,#8dff4f,#d8ff9e,#21a33a,#0a3d14);animation:mvgira 1.6s linear infinite;box-shadow:0 0 10px rgba(141,255,79,.7)}
+  .mvbox.fatto .mvport{animation-duration:6s}
+  @keyframes mvgira{to{transform:rotate(360deg)}}
+  .mvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+  .mvc{border:1px solid rgba(141,255,79,.22);border-radius:12px;padding:8px 10px;background:rgba(5,15,8,.55);animation:mvesce .5s cubic-bezier(.2,1.4,.4,1);min-width:0}
+  @keyframes mvesce{from{transform:scale(.6) rotate(-6deg);opacity:0;filter:blur(3px)}}
+  .mvh{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:6px;margin-bottom:4px}.mvh b{font-size:13px}.mvh small{flex-basis:100%;font:10.5px 'Share Tech Mono',monospace;color:var(--dim);letter-spacing:.5px}
+  .mvt{font-size:13px;line-height:1.45}.mvt p{margin:0}.mvc.attesa .mvt{color:var(--dim);font-style:italic}
+  .mvdots i{display:inline-block;width:5px;height:5px;margin-right:3px;border-radius:50%;background:var(--portale);animation:mvdot 1s infinite}.mvdots i:nth-child(2){animation-delay:.15s}.mvdots i:nth-child(3){animation-delay:.3s}
+  @keyframes mvdot{50%{opacity:.2}}
+  .labcard{margin:8px 0 4px;border:1px solid rgba(141,255,79,.35);border-radius:14px;overflow:hidden;background:#0b1020}
+  .labh{display:flex;align-items:baseline;gap:8px;padding:8px 12px;border-bottom:1px solid rgba(141,255,79,.18)}.labh b{font-size:14px}.labh small{margin-left:auto;color:var(--dim);font-size:11px;text-align:right}
+  .labe{font-size:18px}
+  .labframe iframe{display:block;width:100%;height:360px;border:0;background:#0b1020}
+  a.agc{text-decoration:none;display:inline-flex;align-items:center}
+  #labvista .mod{max-width:min(1100px,96vw);width:96vw}#lvframe{display:block;width:100%;height:min(76vh,760px);border:0;border-radius:10px;background:#0b1020}
+  #lccode{max-height:62vh;overflow:auto;background:#060a10;border:1px solid var(--border);border-radius:10px;padding:12px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-word;margin:0}
+  .labr{display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid rgba(var(--accent-rgb),.08)}.labr .labn{flex:1;min-width:0;display:flex;flex-direction:column}.labr small{color:var(--dim);font-size:11px}
+  .labr button,.labr a,.labserie button{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:8px;padding:3px 9px;cursor:pointer;font:inherit;font-size:12px;text-decoration:none}
+  .labserie{margin:10px 0;font-size:12.5px;color:var(--dim);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  #labmodal .abnew .tbtn{flex:0 0 auto;padding:9px 16px}
+  #aiutbar{position:absolute;top:50px;left:14px;z-index:20;display:flex;flex-direction:column;align-items:flex-start;gap:6px;pointer-events:none;max-width:min(330px,60%)}
+  .aiutc{display:flex;align-items:center;gap:7px;max-width:100%;padding:5px 11px;border-radius:999px;background:rgba(5,15,8,.72);border:1px solid rgba(141,255,79,.5);backdrop-filter:blur(8px);font-size:12px;color:#e9ffe0;animation:aiutnasce .55s cubic-bezier(.2,1.5,.4,1);box-shadow:0 0 14px rgba(141,255,79,.25)}
+  .aiutc b{color:var(--portale);font-family:'Share Tech Mono',monospace;flex:none}.aiutc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .aiutc.in_coda{opacity:.7;border-style:dashed}
+  .aiutspin{width:11px;height:11px;border-radius:50%;border:2px solid rgba(141,255,79,.25);border-top-color:var(--portale);animation:mvgira .8s linear infinite;flex:none}
+  .aiutc.poof{animation:aiutpoof .85s forwards}
+  @keyframes aiutnasce{from{transform:scale(.2) translateX(-30px);opacity:0}}
+  @keyframes aiutpoof{40%{transform:scale(1.15);filter:brightness(1.8)}100%{transform:scale(.1);opacity:0;filter:blur(4px)}}
+  .aiutlist{margin-top:6px;display:flex;flex-direction:column;gap:3px;font-size:12.5px}.aiutlist b{color:var(--portale)}
+  .m.seguito.aiut{border-color:rgba(141,255,79,.6)!important;box-shadow:0 0 22px rgba(141,255,79,.15)}
+  .m.seguito.aiut .mc::before{content:'🧪 AIUTANTE ' attr(data-aiut);color:var(--portale);text-transform:uppercase}
+  .tvbox{margin:8px 0 2px;max-width:420px}
+  .tvscr{position:relative;aspect-ratio:4/3;border-radius:22px;border:10px solid #2a2f3a;background:radial-gradient(circle at 50% 40%,#16323a,#060b10 75%);overflow:hidden;box-shadow:inset 0 0 40px rgba(0,0,0,.8),0 0 0 2px #11151c}
+  .tvin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:14px;text-align:center}
+  .tve{font-size:54px;line-height:1;filter:drop-shadow(0 0 12px rgba(141,255,79,.5))}.tvc{font:11px 'Share Tech Mono',monospace;letter-spacing:2px;color:var(--portale)}.tvt{font-weight:700;font-size:16px;color:#fff}.tvp{font-size:12.5px;color:#cfe3ef;max-width:92%}
+  .tvnoise{position:absolute;inset:0;opacity:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.14) 0 1px,transparent 1px 3px)}
+  .tvbox.cambia .tvnoise{animation:tvrumore .45s steps(6)}.tvbox.cambia .tvin{animation:tvacc .45s ease-out}
+  @keyframes tvrumore{0%{opacity:.9}100%{opacity:0}}@keyframes tvacc{0%{opacity:0;transform:scaleY(.02)}60%{opacity:1;transform:scaleY(1.05)}100%{transform:none}}
+  .tvctl{display:flex;align-items:center;gap:6px;margin-top:6px}.tvctl button{border:1px solid var(--border);background:transparent;color:var(--text);border-radius:8px;padding:3px 10px;cursor:pointer;font:inherit;font-size:12.5px}.tvn{font:11px 'Share Tech Mono',monospace;color:var(--dim)}
+  .quick{max-height:98px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(var(--accent-rgb),.3) transparent}   /* i suggerimenti: 3 righe, il resto scorrendo (la chat resta grande) */
+  .labh{flex-wrap:wrap}
+  @media (max-width:640px){.labframe iframe{height:300px}}
+  @media (prefers-reduced-motion:reduce){.mvport,.aiutspin,.mvc,.aiutc,.aiutc.poof,.tvbox.cambia .tvin,.tvbox.cambia .tvnoise{animation:none}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V20</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V21</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
     <button class="hbtn" id="fbtn" onclick="toggleFriend()" title="Modalità Amico" aria-label="Modalità Amico">🫂<span class="hx"> AMICO</span></button>
     <button class="hbtn" onclick="guarda()" title="MAIK guarda dalla webcam" aria-label="MAIK guarda dalla webcam">👁️</button>
     <button class="hbtn" id="sbprime" onclick="openPrime()" title="Centro di controllo (Y): la tua giornata e il punteggio Prime" aria-label="Centro di controllo">🛰️</button>
+    <button class="hbtn" id="sblab" onclick="openLab()" title="Laboratorio (L): le app che invento per te" aria-label="Laboratorio">🔬</button>
     <button class="hbtn" id="sbidea" onclick="openIdee()" title="Idee e ricordi (U): le idee che ti propongo e le nostre chiacchierate" aria-label="Idee e ricordi">💡</button>
     <button class="hbtn" onclick="openTools()" title="Strumenti" aria-label="Strumenti">🧰</button>
     <button class="hbtn" id="sidebtn" onclick="toggleSide()" title="Barra laterale" aria-label="Mostra o nascondi la barra laterale">≡</button>
@@ -11807,6 +11857,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="cambox"><video id="cam" autoplay muted playsinline></video><div id="fstat">webcam</div></div>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
+      <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
       <div id="avpill" aria-live="polite"><span id="avdot"></span><b id="avname">Zep</b><span id="avstate">pronto</span></div>
       <div id="stagebar" role="toolbar" aria-label="Comandi del personaggio">
         <button id="sbtts" onclick="toggleTTS()" title="Voce di Zep on/off (V)" aria-label="Voce">🔊</button>
@@ -11865,6 +11916,11 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="chatcol">
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="q('chiedi al multiverso: ')">🌀 chiedi al multiverso…</button>
+      <button onclick="q('inventami ')">🔬 inventami…</button>
+      <button onclick="openLab()">🔬 il laboratorio</button>
+      <button onclick="q('chiama un aiutante per ')">🧪 chiama un aiutante…</button>
+      <button onclick="qs('accendi la tv del multiverso')">📺 TV del multiverso</button>
       <button onclick="newChat()">💬 nuova chat</button>
       <button onclick="qs('briefing')">☀️ briefing</button>
       <button onclick="q('Metti un timer di 5 minuti')">⏱️ timer</button>
@@ -11956,6 +12012,32 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="labmodal">
+  <div class="mod" style="max-width:720px">
+    <div class="modh"><div class="modt">🔬 LABORATORIO</div><button class="ib" onclick="closeLab()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="abnew"><input class="tfield" id="labtesto" maxlength="300" placeholder="es. un timer per il tè · un quiz sulle capitali · un generatore di nomi per gatti" onkeydown="if(event.key==='Enter')labInventa()"><button class="tbtn solid" type="button" onclick="labInventa()">🔬 Inventa</button></div>
+      <div class="labserie">Di serie, anche senza modello: <button type="button" data-labs="un timer">⏱️ timer</button><button type="button" data-labs="un lancia dadi">🎲 dadi</button><button type="button" data-labs="un generatore di password">🔐 password</button><button type="button" data-labs="un gioco del tris">⭕ tris</button><button type="button" data-labs="un convertitore di unità">🔁 convertitore</button><button type="button" data-labs="un contatore">🔢 contatore</button></div>
+      <div id="lablista"></div>
+      <div class="note" style="margin-top:10px">Le invenzioni girano in una gabbia: non vedono i tuoi dati, non usano internet e non comandano il PC. Per cambiarne una: «migliora l'invenzione: …» (tengo le ultime 5 versioni).</div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="labvista">
+  <div class="mod">
+    <div class="modh"><div class="modt">🔬 <span id="lvnome"></span></div><button class="ib" onclick="chiudiVista()" aria-label="Chiudi">✕</button></div>
+    <div class="modb"><iframe id="lvframe" sandbox="allow-scripts" referrerpolicy="no-referrer" title="L'invenzione in grande"></iframe></div>
+  </div>
+</div>
+
+<div class="ov" id="labcod">
+  <div class="mod" style="max-width:860px">
+    <div class="modh"><div class="modt">&lt;/&gt; IL CODICE · <span id="lcnome"></span></div><button class="ib" onclick="$('#labcod').classList.remove('open')" aria-label="Chiudi">✕</button></div>
+    <div class="modb"><pre id="lccode"></pre><div class="prbtn" style="margin-top:8px"><button type="button" onclick="navigator.clipboard.writeText($('#lccode').textContent).then(()=>toast('📋 Codice copiato','ok'),()=>toast('Non riesco a copiare','err'))">📋 Copia</button><a id="lcscarica" class="agc calb" download>⬇ Scarica il file .html</a></div></div>
+  </div>
+</div>
 
 <div class="ov" id="aumodal">
   <div class="mod" style="max-width:680px">
@@ -12051,7 +12133,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>N</kbd> modalità riunione: prendo appunti, poi riassunto e cose da fare</div>
       <div><kbd>E</kbd> calendario (eventi della settimana)</div>
       <div><kbd>T</kbd> interprete (italiano ⇄ un'altra lingua)</div>
-      <div><kbd>L</kbd> mentre leggo: pausa / riprendi</div>
+      <div><kbd>L</kbd> laboratorio delle invenzioni (mentre leggo: pausa / riprendi)</div>
       <div><kbd>D</kbd> le tue spese · <kbd>O</kbd> le tue abitudini · <kbd>W</kbd> com'è andata la settimana</div>
       <div><kbd>K</kbd> le cose da fare · <kbd>Q</kbd> modalità concentrazione (pomodoro)</div>
       <div><kbd>Y</kbd> centro di controllo · <kbd>X</kbd> automazioni</div>
@@ -12151,6 +12233,7 @@ const MaikKit = (() => {
     solar:     { nm: 'Solar',     accent: '#ffb020', accent2: '#ff3d6e', bg: '#0d0805' },
     ice:       { nm: 'Ice',       accent: '#a5f3fc', accent2: '#6366f1', bg: '#060912' },
     ruby:      { nm: 'Ruby',      accent: '#ff3d5a', accent2: '#f59e0b', bg: '#0d0507' },
+    portale:   { nm: 'Portale',   accent: '#8dff4f', accent2: '#00d9c0', bg: '#040b07' },
   };
   function applyTheme(key) {
     const t = THEMES[key] || THEMES.neon, s = document.documentElement.style;
@@ -12504,7 +12587,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V20 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V21 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -12519,6 +12602,7 @@ const MaikKit = (() => {
    V18: ha un'idea! Alza il dito e sopra la testa gli si accende una lampadina (con le scintille).
    V19: modalità PRIME — si carica e un anello di energia gli sale dai piedi alla testa (lavoro finito, automazioni).
    V20: alza al cielo una coppa d'oro quando completi una tappa o raggiungi un obiettivo.
+   V21: apre un portale verde sul multiverso (il consiglio, le invenzioni, gli aiutanti, la TV) e lo indica.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -12745,6 +12829,7 @@ window.ZepKit = (() => {
   const THINK = { sx: -1.35, sy: -0.65, sz: 0.2, ex: -1.75, ey: -0.25, ez: 0, wr: 0.3 };      // mano al mento (robot)
   const IDEA_POSE = [{ sx: -0.55, sy: 0, sz: 0.5, ex: -1.85, ey: -0.1, ez: 0 }, { sx: -1.5, sy: 0, sz: 0.6, ex: -1.6, ey: -0.3, ez: 0 }];   // v18: il dito in alto («eureka!») · robot, umanoide
   const TROFEO_POSE = [{ sz: 2.9, sx: -0.05, sy: 0, ex: -0.1, ey: 0, ez: 0, wr: 0 }, { sz: 0.4, sx: -1.0, sy: 0, ex: -1.8, ey: -0.5, ez: 0, wr: 0 }];   // v20: la coppa in alto · robot (al cielo), umanoide (accanto alla testa, così sta nell'inquadratura)
+  const PORTALE_POSE = [{ sz: 1.15, sx: -0.75, sy: 0, ex: -0.3, ey: 0, ez: 0, wr: 0 }, { sz: 1.1, sx: -0.85, sy: 0, ex: -0.35, ey: 0, ez: 0, wr: 0 }];   // v21: il braccio sinistro verso il portale · robot, umanoide
   const THINK_H = { sx: -0.55, sy: -0.35, sz: 0.15, ex: -2.3, ey: -0.55, ez: 0, wr: 0.3 };    // (umanoide)
   const FACE_POSE = {      // mano alla bocca / sul viso / agli occhi: [robot, umanoide]
     yawn: [{ sx: -1.55, sy: -0.6, sz: 0.25, ex: -1.6, ey: -0.2, ez: 0, wr: 0.4 }, { sx: -0.6, sy: -0.4, sz: 0.15, ex: -2.45, ey: -0.6, ez: 0, wr: 0.4 }],
@@ -12802,6 +12887,9 @@ window.ZepKit = (() => {
     rpsShake: { dur: 1.8, arms: 'R', f(a, w, P) { const b = Math.abs(Math.sin(a.t * Math.PI / 0.6)); armTo(P.armR, { sx: -0.95, sy: -0.2, sz: 0.25, ex: -1.25 - 0.4 * b, ey: -0.25, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.head.x += 0.06 * b * w; P.face.brow += 0.3 * w; } },
     rpsShow: { dur: 2.6, arms: 'R', f(a, w, P) { armTo(P.armR, { sx: -1.05, sy: -0.2, sz: 0.25, ex: -0.75, ey: -0.2, ez: 0, wr: a.shape === 'carta' ? 0 : 0.2 }, w); P.hand.R = [a.shape === 'carta' ? 'open' : a.shape === 'forbici' ? 'count2' : 'fist', w]; } },
     fistbump: { dur: 1.5, arms: 'R', f(a, w, P) { const k = smooth(a.p / 0.4); armTo(P.armR, { sx: -1.2 * k - 0.3, sy: -0.15, sz: 0.2, ex: -1.5 + 1.1 * k, ey: -0.1, ez: 0, wr: 0 }, w); P.hand.R = ['fist', w]; P.face.smile += 0.6 * w; } },
+    portale: { dur: 4, lungo: 1, arms: 'L', f(a, w, P) { const ap = smooth(clamp(a.t / 0.6, 0, 1)), on = 0.04 * Math.sin(a.t * 2.2);
+      armTo(P.armL, Object.assign({}, PORTALE_POSE[P.robot ? 0 : 1], { sx: PORTALE_POSE[P.robot ? 0 : 1].sx + on }), w * ap); P.hand.L = ['open', w];
+      P.look = [0.55, 0.05, w]; P.face.wide += 0.35 * w; P.face.brow += 0.3 * w; P.face.smile += 0.25 * w; P.head.y += 0.1 * w; P.portale = Math.max(P.portale, w); } },
     trofeo: { dur: 3.6, arms: 'R', f(a, w, P) { const su = smooth(clamp(a.t / 0.45, 0, 1)), b = Math.abs(Math.sin(a.t * 5.5));
       armTo(P.armR, TROFEO_POSE[P.robot ? 0 : 1], w * su); P.hand.R = ['fist', w];
       P.root.py += 0.03 * b * su * w; P.face.mode.happy += w; P.face.smile += w; P.face.wide += 0.25 * w; P.head.z += 0.07 * w; P.look = [0.12, 0.45, w];
@@ -13562,7 +13650,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0, trofeo: 0,
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0, trofeo: 0, portale: 0,
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -13649,6 +13737,7 @@ window.ZepKit = (() => {
       aggiornaLampadina(P, dt, now);                                      // v18: 💡
       aggiornaAnello(P, dt, now);                                         // v19: ⚡ PRIME
       aggiornaTrofeo(P, dt, now);                                         // v20: 🏆
+      aggiornaPortale(P, dt, now);                                        // v21: 🌀
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -13782,6 +13871,53 @@ window.ZepKit = (() => {
       coppa.scale.setScalar(height * 0.085 * U.s * (U.s < 0.98 ? 1 + 0.15 * Math.sin(Math.PI * U.s) : 1));
       coppa.rotation.y = 0.5 * Math.sin(now / 420); coppa.rotation.z = 0.08 * Math.sin(now / 260);
       if (U.s > 0.8 && now - coppaStella > 160) { coppaStella = now; const q = p.clone(); q.y += height * 0.12; spawn(pick(['★', '✦']), q, { size: 0.04, vx: rnd(-0.12, 0.12), vy: 0.1, life: 1.3 }); }
+    }
+    // ---------- v21: 🌀 il portale (un vortice verde accanto a Zep, dal lato della mano sinistra, sempre rivolto alla camera) ----------
+    let portale = null, portaleScintilla = 0;
+    function creaPortale() {
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { t: { value: 0 }, a: { value: 0 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+        vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `varying vec2 vUv; uniform float t; uniform float a;
+          void main(){
+            vec2 p = vUv * 2.0 - 1.0; float r = length(p); if (r > 1.0) discard;
+            float ang = atan(p.y, p.x);
+            float sw = sin(ang * 3.0 + r * 16.0 - t * 4.0) * 0.5 + 0.5, sw2 = sin(ang * 5.0 - r * 9.0 + t * 2.3) * 0.5 + 0.5;
+            vec3 col = mix(vec3(0.02, 0.25, 0.08), mix(vec3(0.23, 0.95, 0.30), vec3(0.72, 1.0, 0.35), sw2), sw);
+            col += vec3(0.6, 1.0, 0.5) * smoothstep(0.78, 0.96, r) * (1.0 - smoothstep(0.96, 1.0, r)) * 1.4;
+            col = mix(col, vec3(0.88, 1.0, 0.82), (1.0 - smoothstep(0.0, 0.32, r)) * 0.55);
+            gl_FragColor = vec4(col, a * (1.0 - smoothstep(0.9, 1.0, r)) * (0.82 + 0.18 * sw));
+          }` });
+      const M = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); M.name = 'portale'; M.renderOrder = 2;
+      M.userData = { s: 0, t: 0, k: 0 }; M.visible = false; scene.add(M);
+      return M;
+    }
+    function aggiornaPortale(P, dt, now) {
+      const w = clamp(P.portale || 0, 0, 1);
+      if (!portale && w < 0.02) return;
+      portale = portale || creaPortale();
+      const U = portale.userData;
+      U.s = damp(U.s, w > 0.05 ? 1 : 0, w > 0.05 ? 5 : 8, dt);
+      portale.visible = U.s > 0.02;
+      if (!portale.visible) return;
+      U.t += dt;
+      const dx = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), dz = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      const p = headTop(0); p.y -= height * 0.47; p.addScaledVector(dx, height * 0.42).addScaledVector(dz, height * 0.12);
+      U.k = height * 0.24 * U.s * (U.s < 0.98 ? 1 + 0.22 * Math.sin(Math.PI * U.s) : 1);
+      const c = p.clone().project(camera), e = p.clone().addScaledVector(dx, U.k * 0.8).project(camera), f = p.clone(); f.y += U.k; f.project(camera);
+      let rx = Math.abs(e.x - c.x), ry = Math.abs(f.y - c.y);                    // tutto dentro l'inquadratura: al massimo un terzo dello schermo, mai tagliato dal bordo
+      const sc = Math.min(1, 0.34 / Math.max(rx, 1e-4), 0.5 / Math.max(ry, 1e-4));
+      if (sc < 1) { U.k *= sc; rx *= sc; ry *= sc; }
+      c.x = Math.min(c.x, 0.94 - rx); c.y = Math.max(Math.min(c.y, 0.94 - ry), -0.94 + ry);
+      p.copy(c.unproject(camera));
+      portale.position.copy(p); portale.quaternion.copy(camera.quaternion);
+      portale.scale.set(U.k * 0.8, U.k, 1);
+      portale.material.uniforms.t.value = U.t; portale.material.uniforms.a.value = Math.min(1, U.s * 1.2);
+      if (U.s > 0.7 && now - portaleScintilla > 110) {
+        portaleScintilla = now; const ang = rnd(0, Math.PI * 2);
+        const q = p.clone().addScaledVector(dx, Math.cos(ang) * U.k * 0.8); q.y += Math.sin(ang) * U.k;
+        spawn(pick(['✦', '✧', '•']), q, { size: 0.03, vx: Math.cos(ang) * 0.16, vy: Math.sin(ang) * 0.16, life: 0.9 });
+      }
     }
     function headTop(dx = 0) {
       const v = new THREE.Vector3();
@@ -14211,6 +14347,8 @@ window.ZepKit = (() => {
       // v16: cosa c'è scritto sul display della calcolatrice (es. «345,60 €»)
       calcolatrice(testo) { S.calcTesto = testo; const B = rig && rig.robot; if (B && B.props && B.props.calcolatrice) disegnaDisplay(B.props.calcolatrice, testo); },
       get testoCalcolatrice() { return S.calcTesto; },
+      get portale() { return portale ? { visibile: portale.visible, raggio: +(portale.userData.k || 0).toFixed(3), pos: portale.position.toArray().map(x => +x.toFixed(3)),
+        schermo: portale.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, pos: null }; },
       get trofeo() { return coppa ? { visibile: coppa.visible, pos: coppa.position.toArray().map(x => +x.toFixed(3)), schermo: coppa.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, pos: null }; },
       get anelloPrime() { return anello ? { visibile: anello.visible, y: +anello.position.y.toFixed(3), opacita: +anello.userData.m1.opacity.toFixed(2), raggio: +anello.scale.x.toFixed(3) } : { visibile: false, y: 0, opacita: 0, raggio: 0 }; },
       get lampadina() { return lamp ? { visibile: lamp.visible, accesa: +lamp.userData.accesa.toFixed(2), luce: +lamp.userData.luce.intensity.toFixed(2), pos: lamp.position.toArray().map(x => +x.toFixed(3)), schermo: lamp.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, accesa: 0, luce: 0, pos: null }; },
@@ -14399,7 +14537,7 @@ async function invia(opt){
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
         if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
         if(obj.passo)passoAgente(bubble,obj.passo);
-        if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
+        if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);if(obj.multiverso&&!obj.done)faseMultiverso(bubble,obj.multiverso);if(obj.laboratorio&&!obj.done)faseLab(bubble,obj.laboratorio);   // v21: 🌀 i portali · 🔬 il codice                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
         if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){
@@ -14409,7 +14547,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -14685,6 +14823,9 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🌀','Chiedi al multiverso…',()=>q('chiedi al multiverso: '),'multiverso','consiglio dimensioni portale parere'),c('🔬','Laboratorio delle invenzioni',()=>openLab(),'L','inventa app gadget invenzioni'),
+    c('🔬','Inventami…',()=>q('inventami '),'inventa','app gadget gioco strumento'),c('🧪','Chiama un aiutante…',()=>q('chiama un aiutante per '),'aiutante','sottofondo compito lampo'),
+    c('📺','TV del multiverso',()=>qs('accendi la tv del multiverso'),'tv','canali dimensioni televisione'),
     c('🎯','I miei obiettivi',()=>apriPrime('obiettivi'),'obiettivi','traguardi tappe progetti'),c('🎯','Nuovo obiettivo…',()=>q('voglio '),'obiettivo','entro tappe traguardo'),
     c('🗓️','Pianificami la settimana',()=>qs('pianificami la settimana'),'settimana','piano organizza giorni'),c('📈','Le mie tendenze',()=>apriPrime('tendenze'),'tendenze','statistiche grafici mese andamento'),
     c('🛰️','Centro di controllo',()=>openPrime(),'Y','dashboard punteggio prime giornata panoramica'),c('⚙️','Automazioni',()=>openAuto(),'X','programmate ogni giorno routine automatiche'),
@@ -14705,7 +14846,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V20',key:'maik_boot_v20',checks:[
+  return MaikKit.boot({version:'PRIME · V21',key:'maik_boot_v21',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -14715,6 +14856,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Laboratorio',run:async()=>{try{const r=await (await fetch('/laboratorio')).json();const n=r.invenzioni.length;return{ok:true,text:n?'🔬 '+n+(n===1?' invenzione':' invenzioni'):'🔬 pronto a inventare'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Obiettivi',run:async()=>{try{const r=await (await fetch('/obiettivi')).json();const n=r.obiettivi.length;return{ok:true,text:n?'🎯 '+n+' in corso':'🎯 nessuno (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Automazioni',run:async()=>{try{const r=await (await fetch('/automazioni')).json();const n=r.automazioni.filter(a=>a.attiva!==false).length;return{ok:true,text:n?'⚙️ '+n+' attiv'+(n===1?'a':'e'):'⚙️ nessuna (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Idee e ricordi',run:async()=>{try{const [s,g]=await Promise.all([fetch('/proattivo/stato').then(r=>r.json()),fetch('/ricordi').then(r=>r.json())]);return{ok:true,text:(s.attivo?'💡 idee accese ('+s.oggi+'/'+s.massimo+' oggi)':'💡 idee spente')+' · 🧠 '+g.info.chiacchierate+' messaggi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -14728,7 +14870,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 20 🏆 Ora **penso in grande**: «**voglio imparare lo spagnolo entro giugno**» e te lo divido in tappe con le date, una alla volta nelle cose da fare, e festeggio a ogni traguardo. «**pianificami la settimana**» 🗓️ e «**come sto andando questo mese?**» 📈 con i grafici delle tue tendenze. Lavoro anche da solo (⚙️ «ogni mattina alle 8 dimmi il meteo e le notizie»), faccio ricerche approfondite 🔬 e il **centro di controllo** 🛰️ (tasto **Y**) ha tutto: oggi, obiettivi, settimana e tendenze. E poi: ricordo le nostre chiacchierate 🧠, ti propongo idee 💡, ragiono a più passi 🤖, leggo foto e PDF scansionati 📷, cose da fare 📋, concentrazione 🍅, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 21 🌀 Ho aperto un **portale sul multiverso**: «**chiedi al multiverso: devo cambiare lavoro?**» e 4 versioni di me da altre dimensioni (Scienziato, Prudente, Visionario, Pratico) ti danno il loro parere, poi il verdetto. Nel mio **laboratorio** 🔬 invento app vere che puoi usare subito: «**inventami un timer per il tè**», «**costruiscimi un gioco del tris**» (tasto **L**). Mando gli **aiutanti lampo** 🧪 a fare le cose in sottofondo: «**chiama un aiutante per cercare un regalo per mia sorella**». In più: la **TV del multiverso** 📺 e la modalità **Scienziato**. E tutto il resto: obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -15086,7 +15228,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { y: openPrime, x: openAuto, u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => pausaLettura(), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { y: openPrime, x: openAuto, u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => (window.LETTURA && LETTURA.on ? pausaLettura() : openLab()), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -15621,7 +15763,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V20'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V21'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -17081,6 +17223,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
+  addV20(d, m); addV21(d, m);                                                                    // v21: anche obiettivi, TV, invenzioni, multiverso
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -17332,8 +17475,209 @@ function addV20(d, obj) {
   }
 }
 
+// ============================================================
+// V21 — MAIK PRIME MULTIVERSO: il consiglio delle altre dimensioni, il laboratorio delle invenzioni, gli aiutanti lampo, la TV del multiverso
+// ============================================================
+const _lavoroInCorso0 = lavoroInCorso;
+lavoroInCorso = function (l) {                     // multiverso e laboratorio hanno i loro gesti (portale, lavora), non la lente
+  if (l && /^(?:multiverso|laboratorio)$/.test(l.tipo)) { caption((l.icona || '🌀') + ' ' + (l.testo || '')); return; }
+  return _lavoroInCorso0(l);
+};
+
+// ---------- 🌀 il consiglio del multiverso ----------
+function mvVoceHTML(v, attesa) {
+  return '<div class="mvc' + (attesa ? ' attesa' : '') + '" data-cod="' + escA(v.codice) + '"><div class="mvh"><span class="mve">' + v.emoji + '</span><b>' + esc(v.nome) + '</b><small>dimensione ' + esc(v.codice) + '</small></div>'
+    + '<div class="mvt">' + (attesa ? '<span class="mvdots"><i></i><i></i><i></i></span> il portale si apre…' : renderAI(v.testo)) + '</div></div>';
+}
+function mvBox(bubble) {
+  let box = bubble.querySelector('.mvbox');
+  if (!box) {
+    box = document.createElement('div'); box.className = 'mvbox';
+    box.innerHTML = '<div class="mvtit"><span class="mvport" aria-hidden="true"></span>IL CONSIGLIO DEL MULTIVERSO</div><div class="mvgrid"></div>';
+    bubble.insertBefore(box, mc(bubble));
+  }
+  return box;
+}
+function faseMultiverso(bubble, f) {
+  const box = mvBox(bubble), g = box.querySelector('.mvgrid');
+  if (AV && !AV.acting('portale')) AV.act('portale', { dur: 180 });
+  if (f.fase === 'verdetto') { box.classList.add('decide'); caption('⚖️ Il consiglio dei Maik decide…'); if (core) core.pulse(1.2); return; }
+  if (f.voce) {
+    const el = g.querySelector('[data-cod="' + CSS.escape(f.voce.codice) + '"]'), h = mvVoceHTML(f.voce, false);
+    if (el) el.outerHTML = h; else g.insertAdjacentHTML('beforeend', h);
+    caption(f.voce.emoji + ' ' + f.voce.nome + ' ha detto la sua');
+    if (core) core.pulse(0.9);
+  } else {
+    g.insertAdjacentHTML('beforeend', mvVoceHTML({ codice: f.codice, nome: f.nome, emoji: f.emoji }, true));
+    caption('🌀 Apro la dimensione ' + f.codice + ': ' + f.nome + '…');
+  }
+  $('#msgs').scrollTop = 1e9;
+}
+
+// ---------- 🔬 il laboratorio ----------
+const LABF = { progetto: '📐 Progetto l\'invenzione…', collaudo: '🧪 Collaudo l\'invenzione…' };
+function faseLab(bubble, f) {
+  let el = bubble.querySelector('.passi.lab');
+  if (!el) { el = document.createElement('div'); el.className = 'passi lab'; bubble.insertBefore(el, mc(bubble)); }
+  const t = f.fase === 'codice' ? '⌨️ Scrivo il codice · ' + f.righe + ' righe' : LABF[f.fase] || '🔬 Al lavoro…';
+  el.innerHTML = '<i></i>' + esc(t); caption(t);
+  if (AV) { if (f.fase === 'collaudo') AV.endAct('lavora'); else if (!AV.acting('lavora')) AV.act('lavora', { dur: 240 }); }
+  if (core) core.pulse(0.7);
+}
+function invenzioneHTML(x) {
+  return '<div class="labcard" data-inv="' + escA(x.id) + '"><div class="labh"><span class="labe">' + esc(x.emoji) + '</span><b>' + esc(x.nome) + '</b><small>versione ' + x.versione + ' · ' + x.righe + ' righe · '
+    + (x.origine === 'modello' ? 'costruita dal modello' : 'di serie') + '</small></div><div class="labframe"><iframe sandbox="allow-scripts" referrerpolicy="no-referrer" title="' + escA('Invenzione: ' + x.nome)
+    + '" src="/laboratorio/app?id=' + encodeURIComponent(x.id) + '&v=' + x.versione + '"></iframe></div></div>';
+}
+function labBottoni(x) {
+  const id = escA(x.id);
+  return '<button type="button" class="agc calb" data-lab="grande" data-id="' + id + '">⛶ Apri in grande</button><button type="button" class="agc calb" data-lab="migliora" data-id="' + id + '" data-n="' + escA(x.nome) + '">🔧 Miglioralo</button>'
+    + (x.indietro ? '<button type="button" class="agc calb" data-lab="indietro" data-id="' + id + '">↩ Versione prima</button>' : '')
+    + '<button type="button" class="agc calb" data-lab="codice" data-id="' + id + '">&lt;/&gt; Codice</button><a class="agc calb" href="/laboratorio/app?scarica=1&id=' + encodeURIComponent(x.id) + '" download>⬇ Scarica</a>';
+}
+const dataLab = s => { const d = new Date(s); return isNaN(d) ? '' : d.toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+function openLab() { $('#labmodal').classList.add('open'); loadLab(); setTimeout(() => $('#labtesto').focus(), 50); }
+function closeLab() { $('#labmodal').classList.remove('open'); }
+async function loadLab() {
+  let r; try { r = await (await fetch('/laboratorio')).json(); } catch (e) { $('#lablista').innerHTML = '<div class="note">Server non raggiungibile</div>'; return; }
+  const L = r.invenzioni || [];
+  $('#lablista').innerHTML = L.length ? L.map(x => '<div class="labr" data-id="' + escA(x.id) + '" data-n="' + escA(x.nome) + '"><span class="labe">' + esc(x.emoji) + '</span><span class="labn"><b>' + esc(x.nome) + '</b><small>versione ' + x.versione + ' · ' + x.righe + ' righe · ' + esc(dataLab(x.aggiornata))
+    + '</small></span><button type="button" data-labm="grande">▶ Apri</button><button type="button" data-labm="migliora" title="Miglioralo">🔧</button><button type="button" data-labm="codice" title="Il codice">&lt;/&gt;</button><a href="/laboratorio/app?scarica=1&id=' + encodeURIComponent(x.id)
+    + '" download title="Scarica il file .html">⬇</a><button type="button" data-labm="elimina" title="Smonta l\'invenzione">🗑️</button></div>').join('')
+    : '<div class="note" style="margin:10px 0">Il laboratorio è vuoto: scrivi qui sopra cosa vuoi che inventi, o prova una di quelle di serie.</div>';
+}
+function labInventa(t) {
+  t = (t || $('#labtesto').value).trim(); if (!t) { $('#labtesto').focus(); return; }
+  $('#labtesto').value = ''; closeLab(); qs('laboratorio: ' + t);
+}
+function apriVista(id, nome) {
+  $('#lvnome').textContent = nome || 'Invenzione'; $('#lvframe').src = '/laboratorio/app?id=' + encodeURIComponent(id) + '&t=' + Date.now();
+  $('#labvista').classList.add('open');
+}
+function chiudiVista() { $('#labvista').classList.remove('open'); $('#lvframe').src = 'about:blank'; }
+async function apriCodice(id, nome) {
+  let t = ''; try { t = await (await fetch('/laboratorio/app?id=' + encodeURIComponent(id))).text(); } catch (e) { toast('🔬 Non riesco a leggere il codice', 'err'); return; }
+  $('#lcnome').textContent = nome || ''; $('#lccode').textContent = t; $('#lcscarica').href = '/laboratorio/app?scarica=1&id=' + encodeURIComponent(id);
+  $('#labcod').classList.add('open');
+}
+function miglioraInv(nome) { const i = $('#inp'); i.value = 'migliora l\'invenzione «' + nome + '»: '; i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+async function labAzione(z, b) {
+  const id = b.dataset.id, nome = b.dataset.n || (b.closest('.m') && (b.closest('.m').querySelector('.labcard[data-inv="' + CSS.escape(id) + '"] .labh b') || {}).textContent) || '';
+  if (z === 'grande') return apriVista(id, nome);
+  if (z === 'codice') return apriCodice(id, nome);
+  if (z === 'migliora') return miglioraInv(nome);
+  if (z === 'indietro') {
+    b.disabled = true;
+    const r = await postJ('/laboratorio/indietro', { id }).catch(() => ({ ok: false }));
+    if (!r.ok) { b.disabled = false; toast('🔬 Non c\'è una versione prima', 'err'); return; }
+    const card = b.closest('.m').querySelector('.labcard[data-inv="' + CSS.escape(id) + '"]'); if (card) card.outerHTML = invenzioneHTML(r.invenzione);
+    if (r.invenzione.indietro) b.disabled = false; else b.remove();
+    toast('↩ ' + r.invenzione.nome + ': tornata alla versione ' + r.invenzione.versione, 'ok');
+  }
+}
+
+// ---------- 🧪 gli aiutanti lampo ----------
+const AIUT = { t: null };
+function aiutChipHTML(a) {
+  const st = { in_coda: '⏳', al_lavoro: '<span class="aiutspin" aria-hidden="true"></span>', fatto: '✅', fallito: '⚠️' }[a.stato] || '';
+  return '<div class="aiutc ' + a.stato + '" data-id="' + escA(a.id) + '" title="' + escA((a.passi || []).join(' · ') || a.compito) + '"><b>🧪 #' + a.n + '</b><span>' + esc(corto(a.compito, 38)) + '</span>' + st + '</div>';
+}
+async function aggiornaAiutanti() {
+  let r; try { r = await (await fetch('/aiutanti')).json(); } catch (e) { r = null; }
+  const vivi = r ? (r.aiutanti || []).filter(a => a.stato === 'in_coda' || a.stato === 'al_lavoro') : [], bar = $('#aiutbar');
+  if (r) {
+    bar.querySelectorAll('.aiutc').forEach(c => { if (!vivi.some(a => a.id === c.dataset.id) && !c.classList.contains('poof')) { c.classList.add('poof'); setTimeout(() => c.remove(), 900); } });   // ✨ puf: sparito
+    vivi.forEach(a => { const c = bar.querySelector('.aiutc[data-id="' + CSS.escape(a.id) + '"]'); if (c) { if (!c.classList.contains(a.stato)) c.outerHTML = aiutChipHTML(a); else c.title = (a.passi || []).join(' · ') || a.compito; } else bar.insertAdjacentHTML('beforeend', aiutChipHTML(a)); });
+  }
+  clearTimeout(AIUT.t); AIUT.t = setTimeout(cicloAiutanti, vivi.length ? 2000 : 15000);
+}
+async function cicloAiutanti() { await checkAiutAvvisi(); await aggiornaAiutanti(); }
+async function checkAiutAvvisi() {
+  if (busy || document.hidden) return;
+  if ((window.FOCUS && FOCUS.on && FOCUS.fase === 'lavoro') || (typeof RIU !== 'undefined' && RIU.on) || (window.LETTURA && LETTURA.on) || (window.INTERPRETE && INTERPRETE.on)) return;
+  let r; try { r = await (await fetch('/aiutanti/avvisi')).json(); } catch (e) { return; }
+  (r.avvisi || []).forEach((a, k) => setTimeout(() => mostraAiutante(a), k * 1200));
+}
+function mostraAiutante(a) {
+  const t = a.testo || 'Fatto.';
+  const d = add('ai', t, 'seguito aiut'); mc(d).dataset.aiut = '#' + a.n + ' · ' + corto(a.compito, 50);
+  finalize(d, t, null, null);
+  const m = a.meta || {};
+  addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true); addV20(d, m); addV21(d, m);
+  agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-aiu="stato">🧪 I miei aiutanti</button>');
+  const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
+  toast('🧪 Aiutante #' + a.n + (a.stato === 'fatto' ? ': fatto!' : ': non ci è riuscito'), a.stato === 'fatto' ? 'ok' : 'err'); notify('🧪 MAIK PRIME · aiutante #' + a.n, piano.slice(0, 140)); beep(1);
+  if (AV) { AV.gesture('thumbsup'); AV.emote('happy', 2500); } if (core) core.pulse(1.2);
+  say('Il mio aiutante numero ' + a.n + ' ha finito. ' + piano.slice(0, 200));
+  $('#msgs').scrollTop = 1e9;
+}
+
+// ---------- 📺 la TV del multiverso ----------
+function tvHTML() {
+  return '<div class="tvbox" data-i="0"><div class="tvscr"><div class="tvin"></div><div class="tvnoise"></div></div><div class="tvctl"><button type="button" data-tv="-1" aria-label="Canale prima">◀</button><span class="tvn"></span>'
+    + '<button type="button" data-tv="1" aria-label="Canale dopo">▶</button><button type="button" data-tv="altri">🔄 Altri canali</button></div></div>';
+}
+function tvMostra(box, i) {
+  const P = box._tv.programmi; i = ((i % P.length) + P.length) % P.length; box.dataset.i = i; const p = P[i];
+  box.querySelector('.tvin').innerHTML = '<div class="tve">' + esc(p.emoji) + '</div><div class="tvc">' + esc(p.canale) + '</div><div class="tvt">' + esc(p.titolo) + '</div><div class="tvp">' + esc(p.trama) + '</div>';
+  box.querySelector('.tvn').textContent = (i + 1) + ' / ' + P.length;
+  box.classList.remove('cambia'); void box.offsetWidth; box.classList.add('cambia');
+}
+
+function addV21(d, obj) {
+  if (obj.multiverso) {
+    const m = obj.multiverso, box = mvBox(d), g = box.querySelector('.mvgrid');
+    if (!g.querySelector('.mvc:not(.attesa)')) g.innerHTML = m.voci.map(v => mvVoceHTML(v, false)).join('');   // (arrivato da un aiutante o da un'automazione)
+    g.querySelectorAll('.mvc.attesa').forEach(x => x.remove());
+    box.classList.remove('decide'); box.classList.add('fatto');
+    if (!box.querySelector('.mvtit small')) box.querySelector('.mvtit').insertAdjacentHTML('beforeend', '<small>' + m.voci.length + ' dimensioni</small>');
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-mv="ancora">🌀 Un\'altra domanda al multiverso</button>');
+    if (AV) { AV.endAct('portale'); AV.emote('happy', 2500); }
+  }
+  if (obj.invenzione) {
+    const x = obj.invenzione, ps = d.querySelector('.passi.lab');
+    if (ps) { ps.classList.add('fatto'); ps.innerHTML = '🔬 ' + esc(x.emoji + ' ' + x.nome) + ' · ' + x.righe + ' righe · versione ' + x.versione; }
+    mc(d).insertAdjacentHTML('beforeend', invenzioneHTML(x));
+    agEl(d).insertAdjacentHTML('beforeend', labBottoni(x));
+    if (AV) { AV.endAct('lavora'); AV.act('portale', { dur: 3.5 }); AV.emote('happy', 3000); }
+    coriandoli(40); if (core) core.pulse(1.5);
+  }
+  if (obj.invenzioni && obj.invenzioni.length) {
+    const primo = (d.dataset.raw || '').split('\n')[0];
+    mc(d).innerHTML = renderAI(primo) + '<div class="rccard">' + obj.invenzioni.slice(0, 12).map(x => '<div class="rc"><span class="rcq">' + esc(x.emoji) + '</span><span class="rct"><b>' + esc(x.nome) + '</b> · versione ' + x.versione + '</span><button type="button" data-lab="grande" data-id="' + escA(x.id) + '" data-n="' + escA(x.nome) + '">▶ Apri</button></div>').join('') + '</div>';
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-labo="1">🔬 Il laboratorio</button>');
+  }
+  if (obj.aiutanti) {
+    const nomi = { in_coda: '⏳ in fila', al_lavoro: '⚙️ al lavoro', fatto: '✅ fatto', fallito: '⚠️ non riuscito' };
+    if (obj.aiutanti.length) mc(d).insertAdjacentHTML('beforeend', '<div class="aiutlist">' + obj.aiutanti.map(a => '<div><b>🧪 #' + a.n + '</b> ' + nomi[a.stato] + ' · «' + esc(a.compito) + '»</div>').join('') + '</div>');
+    if (obj.aiutanti.some(a => a.stato === 'in_coda' || a.stato === 'al_lavoro')) {
+      const bar = $('#aiutbar');                     // le bollicine sul palco subito (poi le aggiorna e le fa sparire cicloAiutanti)
+      obj.aiutanti.filter(a => (a.stato === 'in_coda' || a.stato === 'al_lavoro') && !bar.querySelector('.aiutc[data-id="' + CSS.escape(a.id) + '"]')).forEach(a => bar.insertAdjacentHTML('beforeend', aiutChipHTML(a)));
+      if (AV && /al lavoro/.test(d.dataset.raw || '')) { AV.act('portale', { dur: 3 }); AV.emote('happy', 2000); }
+      clearTimeout(AIUT.t); AIUT.t = setTimeout(cicloAiutanti, 600);
+    }
+  }
+  if (obj.tv) {
+    mc(d).innerHTML = renderAI((d.dataset.raw || '').split('\n')[0]) + tvHTML();
+    const box = d.querySelector('.tvbox'); box._tv = obj.tv; tvMostra(box, 0);
+    if (AV) { AV.act('portale', { dur: 3.5 }); AV.emote('happy', 3000); }
+  }
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');}});
+['labmodal','labvista','labcod'].forEach(id=>$('#'+id).addEventListener('click',e=>{if(e.target.id!==id)return;if(id==='labvista')chiudiVista();else $('#'+id).classList.remove('open');}));
+document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-mv],#msgs button[data-lab],#msgs button[data-labo],#msgs button[data-aiu],#msgs button[data-tv],#lablista [data-labm],#labmodal [data-labs]');if(!b)return;     // v21
+  const ds=b.dataset;
+  if(ds.mv){q('chiedi al multiverso: ');return;}
+  if(ds.lab){await labAzione(ds.lab,b);return;}
+  if(ds.labo){openLab();return;}
+  if(ds.aiu){qs('i miei aiutanti');return;}
+  if(ds.labs){labInventa(ds.labs);return;}
+  if(ds.labm){const r=b.closest('.labr'),id=r.dataset.id,n=r.dataset.n;
+    if(ds.labm==='grande')apriVista(id,n);else if(ds.labm==='codice')apriCodice(id,n);else if(ds.labm==='migliora'){closeLab();miglioraInv(n);}
+    else if(ds.labm==='elimina'&&confirm('Smontare l\'invenzione «'+n+'»?')){await postJ('/laboratorio/elimina',{id}).catch(()=>null);loadLab();}return;}
+  if(ds.tv){const box=b.closest('.tvbox');if(ds.tv==='altri'){b.disabled=true;const r=await fetch('/tv').then(x=>x.json()).catch(()=>null);b.disabled=false;if(r&&r.tv){box._tv=r.tv;tvMostra(box,0);if(AV)AV.act('portale',{dur:2.5});}}else tvMostra(box,+box.dataset.i+(+ds.tv));}});
 $('#prtabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(!b)return;PR.tab=b.dataset.tab;loadPrime();});
 $('#prcorpo').addEventListener('pointermove',vzTip);$('#prcorpo').addEventListener('pointerleave',()=>{$('#vztip').style.display='none';});
 $('#prcorpo').addEventListener('change',e=>{if(e.target.closest('input[data-prt]'))setTimeout(checkObAvvisi,700);});     // v20: la cosa spuntata era una tappa? → 🏆
@@ -17467,7 +17811,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);})();
 </script>
 </body></html>"""
 

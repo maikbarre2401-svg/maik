@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v23.0                   ║
+║              MAIK PRIME — Server v24.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,16 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v24.0 — MAIK PRIME SHOW:
+  • 📻 «accendi radio maik» (o «fammi il notiziario»): uno show tutto tuo con due voci, Zep e Nova — il meteo, la tua
+    giornata (impegni, promemoria, cose da fare), le notizie, i tuoi obiettivi, la curiosità del giorno. Il copione lo scrive
+    il modello con i dati veri (senza modello lo scrivo io). Si può mettere in un'automazione («ogni mattina alle 8 accendi radio maik»).
+  • 🎞️ «il mio mese in storie» (o la settimana, o l'anno): le tue storie da sfogliare — i messaggi, di cosa abbiamo parlato,
+    l'umore, le spese, le abitudini, le cose fatte, gli obiettivi — e alla fine la cartolina da salvare.
+  • 🧠 «mappa della mente»: tutto quello che so di te in una mappa da esplorare (chi sei, persone, gusti, obiettivi, abitudini,
+    di cosa parliamo, cose che mi hai insegnato, documenti) con i fili tra le cose; quello che non vuoi lo faccio dimenticare.
+  • Nuovi endpoint: GET /radio?momento= · GET /storie?periodo= · GET /mente · POST /mente/dimentica {tipo, chiave}
 
 NOVITÀ v23.0 — MAIK PRIME AFFIDABILE:
   • ↩ «annulla»: per ogni domanda mi segno com'erano i dati che cambio (promemoria, spese, lista, calendario, cose da
@@ -391,11 +401,11 @@ che avete vissuto insieme, citalo con calore.""",
     "ogni_n_riassumi": 8,
     "timeout_chat":   int(_env("MAIK_TIMEOUT", "300")),
     # Open-Meteo (gratuito, no key)
-    "meteo_geo_url":      "https://geocoding-api.open-meteo.com/v1/search",
-    "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
+    "meteo_geo_url":      _env("MAIK_METEO_GEO_URL", "https://geocoding-api.open-meteo.com/v1/search"),
+    "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "23.0"
+VERSIONE  = "24.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -8029,7 +8039,7 @@ class Automazioni:
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
                      "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
-                     "diagnosi", "backup")
+                     "diagnosi", "backup", "radio", "storie")
 AUTOMAZIONI = Automazioni()
 
 
@@ -10410,6 +10420,447 @@ def pensa_robusto(cervello, system_prompt, messaggi):
 
 
 # ════════════════════════════════════════════════════════════
+# V24 — MAIK PRIME Show: 📻 Radio Maik (uno show tutto tuo, con Zep e Nova), 🎞️ il tuo mese in storie,
+# 🧠 la mappa della mente (tutto quello che so di te, da esplorare e da far dimenticare)
+# ════════════════════════════════════════════════════════════
+
+# ── 📻 RADIO MAIK: meteo, la tua giornata, le notizie, i tuoi obiettivi e una curiosità, raccontati da due voci ──
+CURIOSITA_RADIO = (
+    "il miele, se conservato bene, praticamente non scade: ne hanno trovato ancora buono nelle tombe egizie",
+    "i polpi hanno tre cuori e il sangue blu",
+    "su Venere un giorno dura più di un anno: il pianeta gira su se stesso lentissimo",
+    "le banane, per i botanici, sono bacche; le fragole invece no",
+    "d'estate la Torre Eiffel si allunga di una quindicina di centimetri per il caldo",
+    "i fenicotteri sono rosa per i pigmenti dei gamberetti e delle alghe che mangiano",
+    "le lontre marine dormono tenendosi per mano, così la corrente non le separa",
+    "la parola «robot» viene dal ceco e voleva dire «lavoro faticoso»",
+    "la luce del Sole ci mette circa otto minuti per arrivare fino a noi",
+    "le api si raccontano dove sono i fiori ballando",
+    "il cervello usa circa un quinto di tutta l'energia del corpo",
+    "sulla Luna le impronte degli astronauti resteranno per milioni di anni: non c'è vento a cancellarle",
+    "un fulmine è circa cinque volte più caldo della superficie del Sole",
+    "i gatti passano circa due terzi della loro vita a dormire",
+    "secondo la tradizione la pizza Margherita deve il nome alla regina Margherita di Savoia",
+)
+SEGMENTI_RADIO = {"apertura": "🎙️ Apertura", "meteo": "☀️ Meteo", "giornata": "📅 La tua giornata", "notizie": "📰 Notizie",
+                  "obiettivi": "🎯 Obiettivi", "curiosita": "💡 Curiosità", "chiusura": "👋 Chiusura"}
+_RE_RADIO = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:accendi|metti|fai\s+partire|avvia|fammi\s+sentire)\s+(?:la\s+)?radio(?:\s+maik)?|radio\s+maik|"
+                       r"(?:fammi|fai)\s+(?:il|un)\s+(?:notiziario|radiogiornale|giornale\s+radio)|(?:il\s+)?notiziario|"
+                       r"radio\s+(?:della|del)\s+(?:mattina|sera|pomeriggio)|(?:accendi|fammi)\s+(?:lo\s+|il\s+mio\s+)?show|il\s+mio\s+show)"
+                       r"(?:\s+(?:di\s+|del(?:la)?\s+)?(oggi|stasera|stamattina|mattina|pomeriggio|sera|adesso))?(?:\s+per\s+favore)?$", re.I)
+
+
+def momento_radio(ora=None, parola=""):
+    p = (parola or "").lower()
+    if p in ("stamattina", "mattina"):
+        return "mattina"
+    if p == "pomeriggio":
+        return "pomeriggio"
+    if p in ("stasera", "sera"):
+        return "sera"
+    h = (ora or datetime.datetime.now()).hour
+    return "mattina" if 4 <= h < 12 else "pomeriggio" if 12 <= h < 18 else "sera"
+
+
+def fatti_radio(memoria, ora=None):
+    """Quello che è vero oggi (lo usa il modello per il copione, o io senza modello)."""
+    ora = ora or datetime.datetime.now()
+    oggi = ora.date()
+    nome = memoria.get_valore_profilo("nome")
+    citta = memoria.get_valore_profilo("citta") or "Roma"
+    meteo = notizie = None
+    if CONFIG.get("web"):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:      # meteo e notizie insieme: si aspetta una volta sola
+            fm = ex.submit(ottieni_meteo, citta, 5)
+            fn = ex.submit(NOTIZIE.prendi, "principali", 3, 5)
+            try:
+                m = fm.result(timeout=9)
+                meteo = m if isinstance(m, dict) and m.get("temp") is not None else None
+            except Exception:
+                meteo = None
+            try:
+                n = fn.result(timeout=9)
+                notizie = [x["titolo"] for x in (n.get("notizie") or [])[:3] if x.get("titolo")] if isinstance(n, dict) and n.get("ok", True) else None
+            except Exception:
+                notizie = None
+    eventi = []
+    try:
+        eventi = [f"{e['ora']} {e['titolo']}" for e in CAL.agenda(datetime.datetime.combine(oggi, datetime.time()), 1)["giorni"][0]["eventi"]][:5]
+    except Exception:
+        pass
+    prom = []
+    for p in memoria.promemoria:
+        q = str(p.get("quando") or "")
+        if q[:10] == oggi.isoformat() and not p.get("fatto") and not p.get("completato") and q[11:16] >= ora.strftime("%H:%M"):
+            prom.append(f"{q[11:16]} {p.get('testo', '')}".strip())
+    try:
+        todo = [a["testo"] for a in ATTIVITA.aperte()][:4]
+    except Exception:
+        todo = []
+    try:
+        ob = [{"titolo": o.get("titolo"), "emoji": o.get("emoji", "🎯"), "percentuale": o.get("perc"), "prossima": ((o.get("prossima") or {}).get("nome") or (o.get("prossima") or {}).get("titolo")) if isinstance(o.get("prossima"), dict) else o.get("prossima")}
+              for o in OBIETTIVI.elenco()][:2]
+    except Exception:
+        ob = []
+    return {"nome": nome, "citta": citta, "giorno": data_it(oggi), "ora": ora.strftime("%H:%M"), "momento": momento_radio(ora),
+            "meteo": {k: meteo[k] for k in ("citta", "temp", "percepita", "descrizione", "emoji", "pioggia") if k in meteo} if meteo else None,
+            "impegni": eventi, "promemoria": prom[:4], "cose_da_fare": todo, "notizie": notizie, "obiettivi": ob,
+            "curiosita": random.choice(CURIOSITA_RADIO)}
+
+
+def _copione_di_serie(f, momento):
+    """Senza modello: il copione lo scrivo io, con i dati veri."""
+    n = f.get("nome") or ""
+    ciao = {"mattina": "Buongiorno", "pomeriggio": "Buon pomeriggio", "sera": "Buonasera"}[momento]
+    B = [("zep", "apertura", f"{ciao}{' ' + n if n else ''}! Qui è Radio Maik, la radio che parla solo di te. Io sono Zep…"),
+         ("nova", "apertura", f"…e io sono Nova! Sono le {f['ora']} di {f['giorno']}: ecco il tuo show del{'la' if momento != 'pomeriggio' else ''} {momento}.")]
+    m = f.get("meteo")
+    if m:
+        B.append(("zep", "meteo", f"Il meteo a {m.get('citta') or f['citta']}: {m['temp']} gradi, {str(m.get('descrizione', '')).lower()} {m.get('emoji', '')}".strip() + "."))
+        consiglio = ("Ombrello in borsa, mi raccomando!" if (m.get("pioggia") or 0) > 0 or re.search(r"piogg|temporal|rovesc", str(m.get("descrizione", "")), re.I)
+                     else "Copriti bene, fa freschino!" if m["temp"] <= 10 else "Bevi tanta acqua, fa caldo!" if m["temp"] >= 28 else "Una giornata perfetta per due passi.")
+        B.append(("nova", "meteo", consiglio))
+    if f.get("impegni"):
+        B.append(("nova", "giornata", "In calendario oggi: " + "; ".join(f["impegni"][:3]) + "."))
+    else:
+        B.append(("nova", "giornata", "Il calendario di oggi è libero: tempo tutto per te!" if momento != "sera" else "Il calendario è libero: serata tranquilla."))
+    if f.get("promemoria"):
+        B.append(("zep", "giornata", "Ti ricordo: " + "; ".join(f["promemoria"][:2]) + "."))
+    if f.get("cose_da_fare"):
+        k = len(f["cose_da_fare"])
+        B.append(("zep", "giornata", f"Nella lista delle cose da fare ce n'{'è una' if k == 1 else 'sono ' + str(k)}: si parte da «{f['cose_da_fare'][0]}»."))
+    if f.get("notizie"):
+        B.append(("zep", "notizie", "Passiamo alle notizie. " + f["notizie"][0].rstrip(".") + "."))
+        for i, t in enumerate(f["notizie"][1:3]):
+            B.append(("nova" if i % 2 == 0 else "zep", "notizie", t.rstrip(".") + "."))
+    for o in f.get("obiettivi") or []:
+        B.append(("nova", "obiettivi", f"Il tuo obiettivo «{o['titolo']}» è al {o.get('percentuale') or 0}%" + (f": prossima tappa, {o['prossima']}." if o.get("prossima") else ".") + " Forza, ci sei quasi!"))
+        break
+    B.append(("zep", "curiosita", f"E ora la curiosità del giorno: lo sapevi che {f['curiosita']}?"))
+    B.append(("nova", "curiosita", "Non lo sapevo! Me lo segno."))
+    B.append(("nova", "chiusura", "Per oggi è tutto da Radio Maik."))
+    B.append(("zep", "chiusura", {"mattina": "Buona giornata", "pomeriggio": "Buon proseguimento", "sera": "Buona serata"}[momento] + (f", {n}" if n else "") + "! Alla prossima puntata! 🎧"))
+    return [{"chi": c, "segmento": s, "testo": t} for c, s, t in B]
+
+
+def _copione_buono(j):
+    if not isinstance(j, dict) or not isinstance(j.get("battute"), list):
+        return None
+    out = []
+    for b in j["battute"][:22]:
+        if not isinstance(b, dict):
+            continue
+        t = re.sub(r"\s+", " ", str(b.get("testo") or "")).strip()[:320]
+        chi = str(b.get("chi") or "").lower()
+        if not t or chi not in ("zep", "nova"):
+            continue
+        seg = str(b.get("segmento") or "").lower().replace("à", "a")
+        out.append({"chi": chi, "segmento": seg if seg in SEGMENTI_RADIO else "apertura" if not out else out[-1]["segmento"], "testo": t})
+    return out if len(out) >= 4 else None
+
+
+def radio_maik(motore, momento=None, avvisa=None):
+    avvisa = avvisa or (lambda e: None)
+    momento = momento or momento_radio()
+    avvisa({"lavoro": {"tipo": "radio", "icona": "📻", "testo": "Preparo lo show: meteo, la tua giornata, le notizie…"}})
+    f = fatti_radio(motore.memoria)
+    f["momento"] = momento
+    battute, fonte = None, "di serie"
+    prompt = (f"Sei l'autore di «Radio Maik», un piccolo show radiofonico personale in italiano per {f['nome'] or 'la persona'}. I conduttori sono ZEP (un robot simpatico ed energico) "
+              f"e NOVA (la co-conduttrice, calma e spiritosa). Scrivi il copione dello show del{'la' if momento != 'pomeriggio' else ''} {momento} usando SOLO questi dati veri "
+              f"(non inventare impegni, notizie, numeri o meteo che non ci sono; se un dato manca salta quella parte):\n{json.dumps(f, ensure_ascii=False)}\n\n"
+              "Ordine: apertura (saluto, giorno e ora), meteo, la giornata (impegni, promemoria, cose da fare), notizie (una frase ciascuna), obiettivi (un incoraggiamento), "
+              "la curiosità del giorno (quella nei dati), chiusura. Da 10 a 16 battute brevi (al massimo 30 parole ciascuna) che si alternano tra zep e nova in modo naturale, "
+              "allegro e affettuoso, come una vera radio del mattino. Niente emoji tranne al massimo una alla fine. Rispondi SOLO in JSON: "
+              '{"titolo": "…", "battute": [{"chi": "zep" | "nova", "segmento": "apertura|meteo|giornata|notizie|obiettivi|curiosita|chiusura", "testo": "…"}]}')
+    j = None
+    try:
+        j = motore.cervello.pensa_json(prompt, timeout=150, num_predict=1100)
+    except Exception:
+        j = None
+    battute = _copione_buono(j)
+    titolo = None
+    if battute:
+        fonte = "modello"
+        titolo = re.sub(r"\s+", " ", str(j.get("titolo") or "")).strip()[:70] or None
+    else:
+        battute = _copione_di_serie(f, momento)
+    segmenti = []
+    for b in battute:
+        if b["segmento"] not in segmenti:
+            segmenti.append(b["segmento"])
+    parole = sum(len(b["testo"].split()) for b in battute)
+    return {"titolo": titolo or f"Radio Maik · lo show del{'la' if momento != 'pomeriggio' else ''} {momento}", "momento": momento, "battute": battute,
+            "segmenti": [{"chiave": s, "nome": SEGMENTI_RADIO.get(s, s)} for s in segmenti], "fonte": fonte, "minuti": max(1, round(parole / 150)),
+            "fatti": {k: bool(f.get(k)) for k in ("meteo", "impegni", "promemoria", "cose_da_fare", "notizie", "obiettivi")}}
+
+
+def radio_router(testo, motore, avvisa=None):
+    m = _RE_RADIO.match((testo or "").strip().rstrip(" ?!."))
+    if not m:
+        return None
+    r = radio_maik(motore, momento_radio(parola=m.group(1) or ""), avvisa)
+    parti = ", ".join(s["nome"].split(" ", 1)[1].lower() for s in r["segmenti"] if s["chiave"] not in ("apertura", "chiusura"))
+    return {"testo": f"📻 **{r['titolo']}** è in onda! {len(r['battute'])} battute tra Zep e Nova ({parti}), circa {r['minuti']} minut{'o' if r['minuti'] == 1 else 'i'}. 🎧", "radio": r}
+
+
+# ── 🎞️ LE STORIE: il tuo mese (o la settimana, o l'anno) con me, in tante schermate da sfogliare ──
+_STOP_STORIE = _STOP | _STOP_DOMANDE | set(("ricordami avvisami grazie ciao buongiorno buonasera buonanotte maik zep prime fammi dimmi mostrami vorrei sono "
+                                           "stai come va bene male oggi domani ieri adesso quanto quando dove perche niente qualcosa tutto tutti alle alla allo "
+                                           "devo puoi voglio vuoi fare fatto fai dopo prima ogni anche ancora molto poco tanto tanta sempre minuti ore giorno "
+                                           "giorni settimana mese anno euro speso metti aggiungi togli segna apri chiudi cerca leggi scrivi annulla pensaci radio storie mappa mente "
+                                           "notiziario backup diagnosi funziona show accendi spegni mostrami controllati").split())
+_RE_STORIE = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:fammi\s+(?:vedere\s+)?|mostrami\s+|apri\s+)?(?:le\s+)?(?:mie\s+)?storie(?:\s+del(?:la|l['’])?\s*(mese|settimana|anno))?|"
+                        r"(?:il\s+mio|la\s+mia)\s+(mese|settimana|anno)\s+in\s+storie|(?:il\s+)?riassunto\s+animato\s+(?:del(?:la|l['’])?\s*)?(mese|settimana|anno)|"
+                        r"(?:il\s+)?mio\s+(mese|anno)\s+con\s+(?:maik|te)|wrapped)$", re.I)
+
+
+def _parole_frequenti(testi, n=6):
+    c = collections.Counter()
+    forme = {}
+    for t in testi:
+        visti = set()
+        for w in re.findall(r"[a-zà-ÿ]{4,}", (t or "").lower()):
+            k = _senza_accenti(w)
+            if k in _STOP_STORIE or k[:6] in visti or k.isdigit():
+                continue
+            visti.add(k[:6])
+            c[k[:6]] += 1
+            forme.setdefault(k[:6], collections.Counter())[w] += 1
+    return [(forme[k].most_common(1)[0][0], v) for k, v in c.most_common(n) if v >= 2]
+
+
+def storie(memoria, periodo="mese", oggi=None):
+    oggi = oggi or datetime.date.today()
+    periodo = periodo if periodo in ("settimana", "mese", "anno") else "mese"
+    giorni = {"settimana": 7, "mese": 30, "anno": 365}[periodo]
+    dal = oggi - datetime.timedelta(days=giorni - 1)
+    nome = memoria.get_valore_profilo("nome")
+    S = []
+    nomi_p = {"settimana": "La tua settimana", "mese": "Il tuo mese", "anno": "Il tuo anno"}[periodo]
+    art = {"settimana": "della ", "mese": "del ", "anno": "dell'"}[periodo]
+    S.append({"tipo": "intro", "emoji": "🎞️", "titolo": f"{nomi_p} con Maik", "sotto": f"dal {dal.day} {MESI_IT[dal.month - 1]} al {oggi.day} {MESI_IT[oggi.month - 1]}",
+              "voce": f"{'Ciao ' + nome + '! ' if nome else ''}Ecco {nomi_p.lower()} con me, in poche storie."})
+    diario = [x for x in memoria.diario if str(x.get("quando", ""))[:10] >= dal.isoformat()]
+    if diario:
+        date = collections.Counter(x["quando"][:10] for x in diario)
+        gs = collections.Counter(datetime.date.fromisoformat(d).weekday() for d in date.elements())
+        fasce = collections.Counter(("di notte" if h < 6 else "di mattina" if h < 12 else "di pomeriggio" if h < 18 else "di sera") for h in (int(x["quando"][11:13] or 0) for x in diario))
+        S.append({"tipo": "numero", "emoji": "💬", "numero": len(diario), "titolo": "messaggi tra noi", "sotto": f"in {len(date)} giorn{'o' if len(date) == 1 else 'i'} diversi · "
+                  f"il giorno preferito: {GIORNI_LUNGHI[gs.most_common(1)[0][0]]}, soprattutto {fasce.most_common(1)[0][0]}",
+                  "voce": f"Ci siamo scritti {len(diario)} volte, soprattutto {fasce.most_common(1)[0][0]}."})
+        top = _parole_frequenti([x.get("tu", "") for x in diario])
+        if top:
+            S.append({"tipo": "parole", "emoji": "🗣️", "titolo": "Di cosa abbiamo parlato", "parole": [{"parola": w, "volte": v} for w, v in top],
+                      "sotto": f"la parola {art}{periodo}: «{top[0][0]}»",
+                      "voce": f"La parola più usata è stata {top[0][0]}."})
+    um = [u for u in memoria.umore if str(u.get("data", ""))[:10] >= dal.isoformat()]
+    if um:
+        per_g = collections.defaultdict(list)
+        for u in um:
+            per_g[u["data"]].append(valenza_umore(u.get("umore"), u.get("intensita", 5)))
+        serie = [round(sum(per_g[d]) / len(per_g[d]), 1) for d in sorted(per_g)]
+        media = sum(serie) / len(serie)
+        meta = len(serie) // 2
+        trend = (sum(serie[meta:]) / max(1, len(serie[meta:])) - sum(serie[:meta]) / max(1, len(serie[:meta]))) if meta else 0
+        frequente = collections.Counter(str(u.get("umore") or "") for u in um).most_common(1)[0][0]
+        S.append({"tipo": "umore", "emoji": "😊" if media > 1 else "🙂" if media > -1 else "😔", "titolo": "Il tuo umore", "serie": serie,
+                  "sotto": f"il più frequente: {frequente}" + (" · in salita 📈" if trend > 0.7 else " · un po' in calo 📉" if trend < -0.7 else " · stabile"),
+                  "voce": "Il tuo umore è stato " + ("in salita, che bello!" if trend > 0.7 else "un po' in calo: io ci sono, se vuoi parlarne." if trend < -0.7 else "abbastanza stabile.")})
+    spese = [s for s in SPESE.tutte() if dal.isoformat() <= s["data"] <= oggi.isoformat()]
+    if spese:
+        tot = round(sum(s["importo"] for s in spese), 2)
+        cat = collections.defaultdict(float)
+        for s in spese:
+            cat[s["categoria"]] += s["importo"]
+        barre = [{"emoji": CAT_SPESE.get(k, {}).get("emoji", "•"), "nome": CAT_SPESE.get(k, {}).get("nome", k), "euro": round(v, 2), "perc": round(100 * v / tot) if tot else 0}
+                 for k, v in sorted(cat.items(), key=lambda x: -x[1])[:4]]
+        S.append({"tipo": "soldi", "emoji": "💶", "numero": tot, "valuta": True, "titolo": "spesi", "barre": barre,
+                  "sotto": f"{len(spese)} spes{'a' if len(spese) == 1 else 'e'} · la voce più grossa: {barre[0]['emoji']} {barre[0]['nome'].lower()}",
+                  "voce": f"Hai speso {euro(tot)}, soprattutto per {barre[0]['nome'].lower()}."})
+    t = tendenze(memoria, min(giorni, 90), oggi)
+    k = t["kpi"]
+    if k.get("abitudini") is not None:
+        migliore = next((x for x in t["insight"] if x.startswith("🔥")), "")
+        S.append({"tipo": "numero", "emoji": "✅", "numero": k["abitudini"], "percento": True, "titolo": "delle abitudini rispettate",
+                  "sotto": migliore.replace("🔥 ", "") or "continua così!", "voce": f"Hai rispettato le tue abitudini il {k['abitudini']} per cento delle volte."})
+    if k.get("fatte") or k.get("pomodori"):
+        S.append({"tipo": "numero", "emoji": "📋", "numero": k.get("fatte") or 0, "titolo": f"cos{'a' if k.get('fatte') == 1 else 'e'} fatte",
+                  "sotto": f"e {k.get('pomodori') or 0} pomodor{'o' if k.get('pomodori') == 1 else 'i'} di concentrazione 🍅", "voce": f"Hai fatto {k.get('fatte') or 0} cose della tua lista."})
+    try:
+        ob = OBIETTIVI.elenco(tutti=True)
+    except Exception:
+        ob = []
+    if ob:
+        raggiunti = [o for o in ob if o.get("ritmo") == "raggiunto"]
+        S.append({"tipo": "obiettivi", "emoji": "🏆" if raggiunti else "🎯", "titolo": f"{len(raggiunti)} obiettiv{'o' if len(raggiunti) == 1 else 'i'} raggiunt{'o' if len(raggiunti) == 1 else 'i'}" if raggiunti else "I tuoi obiettivi",
+                  "barre": [{"emoji": o.get("emoji", "🎯"), "nome": o.get("titolo", ""), "perc": o.get("perc") or 0} for o in ob[:4]],
+                  "sotto": "e gli altri avanzano" if raggiunti else "passo dopo passo", "voce": "Ecco come vanno i tuoi obiettivi."})
+    gi = memoria.ricordi.get("giorni_insieme", 1)
+    dedica = None
+    if len(S) > 1:
+        dati = "; ".join(f"{s['titolo']}: {s.get('numero', '')} {s.get('sotto', '')}" for s in S[1:])[:900]
+        try:
+            d = pensa_breve_http("Sei Maik, un assistente affettuoso. Scrivi UNA frase (al massimo 22 parole, in italiano, senza virgolette) per chiudere il riepilogo "
+                                 f"{art}{periodo}{' di ' + nome if nome else ''}: calda, sincera, che dia energia.", dati, num_predict=70, timeout=40)
+            d = re.sub(r"\s+", " ", pulisci_pensiero(d or "")).strip().strip('"«»')
+            dedica = d if 15 <= len(d) <= 220 and not d.startswith("__ERRORE") else None
+        except Exception:
+            dedica = None
+    dedica = dedica or ("Siamo solo all'inizio: scrivimi, raccontami e la prossima volta qui ci sarà tutta la tua storia. 💚" if len(S) == 1
+                        else "Ogni giorno un passo in più: sono fiero di te, e il prossimo sarà ancora meglio. 💚")
+    S.append({"tipo": "finale", "emoji": "💚", "titolo": f"Insieme da {gi} giorn{'o' if gi == 1 else 'i'}", "sotto": dedica, "voce": dedica})
+    return {"periodo": periodo, "titolo": f"{nomi_p} con Maik", "dal": dal.isoformat(), "al": oggi.isoformat(), "nome": nome, "slides": S}
+
+
+def storie_router(testo, memoria):
+    m = _RE_STORIE.match((testo or "").strip().rstrip(" ?!."))
+    if not m:
+        return None
+    periodo = next((g.lower() for g in m.groups() if g), "mese")
+    s = storie(memoria, periodo)
+    return {"testo": f"🎞️ **{s['titolo']}**: {len(s['slides'])} storie pronte da sfogliare (tocca a destra per andare avanti, a sinistra per tornare). Alla fine puoi salvare la cartolina! ✨", "storie": s}
+
+
+# ── 🧠 LA MAPPA DELLA MENTE: tutto quello che so di te, in una mappa da esplorare (e da far dimenticare) ──
+_RE_MENTE = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:mostrami\s+|apri\s+|fammi\s+vedere\s+)?(?:la\s+)?(?:mia\s+|tua\s+)?mappa\s+(?:della\s+)?(?:mente|memoria)|"
+                       r"(?:mostrami|fammi\s+vedere)\s+(?:cosa|tutto\s+quello\s+che)\s+(?:sai|ricordi)\s+di\s+me|la\s+tua\s+mente|cosa\s+c['’]\s*[eè]\s+nella\s+tua\s+(?:testa|mente))$", re.I)
+_RE_GUSTO_SI = re.compile(r"^(?:mi piace|adoro|amo|sono appassionato di|la mia passione è|nel tempo libero)\s+", re.I)
+_RE_GUSTO_NO = re.compile(r"^(?:odio|detesto|non sopporto|non mi piace)\s+", re.I)
+_CHI_PROFILO = {"nome": "🙂", "età": "🎂", "eta": "🎂", "citta": "📍", "lavoro": "💼", "studio": "🎓"}
+_CONTA_MENTE = {"chi": ("cosa su chi sei", "cose su chi sei"), "persone": ("persona", "persone"), "gusti": ("gusto", "gusti"), "obiettivi": ("obiettivo o sogno", "obiettivi e sogni"),
+                "abitudini": ("abitudine", "abitudini"), "argomenti": ("argomento", "argomenti"), "fatti": ("cosa che mi hai insegnato", "cose che mi hai insegnato"), "documenti": ("documento", "documenti")}
+HUB_MENTE = [("chi", "🪪", "Chi sei"), ("persone", "👥", "Persone"), ("gusti", "❤️", "Gusti"), ("obiettivi", "🎯", "Obiettivi e sogni"),
+             ("abitudini", "✅", "Abitudini"), ("argomenti", "💬", "Di cosa parliamo"), ("fatti", "💡", "Cose che mi hai insegnato"), ("documenti", "📚", "Documenti")]
+
+
+def mente(memoria):
+    N, L = [], []
+    nome = memoria.get_valore_profilo("nome")
+
+    def nodo(id_, tipo, etichetta, emoji, dettaglio="", peso=1, rif=None, apri=None):
+        N.append({"id": id_, "tipo": tipo, "etichetta": str(etichetta)[:60], "emoji": emoji, "dettaglio": str(dettaglio)[:400], "peso": peso,
+                  **({"rif": rif} if rif else {}), **({"apri": apri} if apri else {})})
+    nodo("tu", "tu", nome or "Tu", "🧑", f"Ci conosciamo da {memoria.ricordi.get('giorni_insieme', 1)} giorni · {memoria.numero_scambi()} messaggi", peso=6)
+    figli = collections.defaultdict(list)
+    for k, v in memoria.profilo.items():
+        val = v.get("valore") if isinstance(v, dict) else v
+        if not val:
+            continue
+        sc = (v.get("scoperto") if isinstance(v, dict) else "") or ""
+        quando = f" (il {sc})" if sc else ""
+        if k.startswith("hobby"):
+            cosa = _RE_GUSTO_SI.sub("", str(val))
+            figli["gusti"].append((f"p:{k}", cosa, "❤️", f"Mi hai detto: «{val}»{quando}", {"tipo": "profilo", "chiave": k}))
+        elif k.startswith("antipatia"):
+            cosa = _RE_GUSTO_NO.sub("", str(val))
+            figli["gusti"].append((f"p:{k}", cosa, "💔", f"Mi hai detto: «{val}»{quando}", {"tipo": "profilo", "chiave": k}))
+        elif k != "nome":
+            figli["chi"].append((f"p:{k}", f"{val}", _CHI_PROFILO.get(k, "🔹"), f"{k.replace('_', ' ').capitalize()}: {val}" + (f" · lo so dal {sc}" if sc else ""), {"tipo": "profilo", "chiave": k}))
+    for kk, p in memoria.relazioni.items():
+        if isinstance(p, dict) and p.get("nome"):
+            figli["persone"].append((f"r:{kk}", f"{p['nome']}" + (f" ({p['ruolo']})" if p.get("ruolo") else ""), "👤", p.get("dettaglio") or f"{p.get('ruolo', '')}", {"tipo": "persona", "chiave": kk}))
+    for i, o in enumerate(memoria.obiettivi):
+        if o.get("stato", "attivo") == "attivo" and o.get("testo"):
+            figli["obiettivi"].append((f"s:{i}", o["testo"], "🌟", f"Un tuo {o.get('tipo', 'sogno')} (dal {o.get('data', '?')})", {"tipo": "sogno", "chiave": str(i)}))
+    try:
+        for o in OBIETTIVI.elenco():
+            figli["obiettivi"].append((f"o:{o.get('id', o.get('titolo'))}", o.get("titolo", ""), o.get("emoji", "🎯"), f"{o.get('perc', 0)}% · {o.get('ritmo', '')}", None))
+    except Exception:
+        pass
+    try:
+        for a in ABITUDINI._carica()["abitudini"][:12]:
+            figli["abitudini"].append((f"a:{a.get('id')}", a.get("nome", ""), a.get("emoji", "✅"), "Un'abitudine che stai costruendo", None))
+    except Exception:
+        pass
+    for d in memoria.documenti[-12:]:
+        figli["documenti"].append((f"d:{d.get('id')}", d.get("nome", "documento"), "📄", f"{len(d.get('contenuto', '') or '')} caratteri", None))
+    for i, x in list(enumerate(memoria.imparato))[-15:]:
+        if x.get("cosa"):
+            figli["fatti"].append((f"f:{i}", x["cosa"], "💡", f"Me l'hai insegnato il {x.get('data', '?')}", {"tipo": "fatto", "chiave": str(i)}))
+    recenti = [x.get("tu", "") for x in memoria.diario[-300:]]
+    argomenti = _parole_frequenti(recenti, 8)
+    for w, v in argomenti:
+        figli["argomenti"].append((f"t:{w}", w, "💬", f"Ne abbiamo parlato in {v} messaggi", None, v))
+    for hid, emo, etichetta in HUB_MENTE:
+        if not figli[hid]:
+            continue
+        nodo(f"h:{hid}", "hub", etichetta, emo, f"{len(figli[hid])} cos{'a' if len(figli[hid]) == 1 else 'e'}", peso=4, apri={"abitudini": "abitudini", "documenti": "documenti", "obiettivi": "obiettivi"}.get(hid))
+        L.append({"da": "tu", "a": f"h:{hid}"})
+        for f in figli[hid]:
+            id_, et, emo2, det, rif = f[:5]
+            nodo(id_, hid, et, emo2, det, peso=(2 + min(3, f[5] // 3)) if len(f) > 5 else 2, rif=rif)
+            L.append({"da": f"h:{hid}", "a": id_})
+    # i fili tra le cose: una persona e un argomento che compaiono negli stessi messaggi, un argomento dentro un obiettivo
+    persone = [(n["id"], _senza_accenti(memoria.relazioni[n["id"][2:]]["nome"].lower())) for n in N if n["id"].startswith("r:")]
+    temi = [(n["id"], _senza_accenti(n["etichetta"].lower())[:6]) for n in N if n["id"].startswith("t:")]
+    msgs = [_senza_accenti(t.lower()) for t in recenti]
+    fili = collections.Counter()
+    for pid, pn in persone:
+        for tid, tw in temi:
+            k = sum(1 for m in msgs if pn in m and tw in m)
+            if k:
+                fili[(pid, tid)] = k
+    for n in N:
+        if n["tipo"] == "obiettivi":
+            for tid, tw in temi:
+                if tw in _senza_accenti(n["etichetta"].lower()):
+                    fili[(n["id"], tid)] += 1
+    for (a, b), k in fili.most_common(24):
+        L.append({"da": a, "a": b, "filo": True, "forza": k})
+    return {"nodi": N, "legami": L, "n": len(N) - 1, "nome": nome, "categorie": [{"id": h, "emoji": e, "nome": n} for h, e, n in HUB_MENTE]}
+
+
+def dimentica_nodo(memoria, tipo, chiave):
+    """Dalla mappa: «dimentica» (si può annullare, come tutto il resto)."""
+    GIORNALE.inizia(f"dimentica ({tipo})")
+    fatto, cosa = False, ""
+    try:
+        with memoria._lock:
+            if tipo == "profilo" and chiave in memoria.profilo:
+                v = memoria.profilo[chiave]
+                cosa = str(v.get("valore") if isinstance(v, dict) else v)
+                memoria.dimentica_fatto(chiave)
+                fatto = True
+            elif tipo == "persona" and chiave in memoria.relazioni:
+                cosa = memoria.relazioni[chiave].get("nome", chiave)
+                del memoria.relazioni[chiave]
+                memoria._salva(CONFIG["file_relazioni"], memoria.relazioni)
+                fatto = True
+            elif tipo == "fatto" and str(chiave).isdigit() and int(chiave) < len(memoria.imparato):
+                cosa = memoria.imparato[int(chiave)].get("cosa", "")
+                memoria.dimentica_elemento("imparato", int(chiave))
+                fatto = True
+            elif tipo == "sogno" and str(chiave).isdigit() and int(chiave) < len(memoria.obiettivi):
+                cosa = memoria.obiettivi[int(chiave)].get("testo", "")
+                del memoria.obiettivi[int(chiave)]
+                memoria._salva(CONFIG["file_obiettivi"], memoria.obiettivi)
+                fatto = True
+    finally:
+        if fatto and getattr(_CTX, "giornale", None):
+            _CTX.giornale["testo"] = f"dimentica «{cosa[:60]}»"
+        mod = GIORNALE.chiudi()
+    if not fatto:
+        return {"ok": False, "errore": "non trovo questa cosa (forse l'avevo già dimenticata)"}
+    return {"ok": True, "testo": f"🧠 Ho dimenticato «{cosa[:80]}».", "annullabile": mod}
+
+
+def mente_router(testo, memoria):
+    if not _RE_MENTE.match((testo or "").strip().rstrip(" ?!.")):
+        return None
+    m = mente(memoria)
+    per = collections.Counter(n["tipo"] for n in m["nodi"] if n["tipo"] not in ("tu", "hub"))
+    if not m["n"] or not per:
+        return {"testo": "🧠 La mia mappa di te è ancora quasi vuota: raccontami qualcosa («mi chiamo…», «vivo a…», «mi piace…», «mia sorella si chiama…») e la vedrai crescere!", "mente": m}
+    parti = ", ".join(f"{e} {per[h]} {_CONTA_MENTE[h][0 if per[h] == 1 else 1]}" for h, e, n in HUB_MENTE if per.get(h))
+    return {"testo": f"🧠 **La mappa della mia mente** su di te: {parti}. Trascina i nodi, toccali per i dettagli; quello che non vuoi che ricordi lo puoi far dimenticare (e si può annullare).", "mente": m}
+
+
+def v24_router(testo, motore, avvisa=None):
+    return radio_router(testo, motore, avvisa) or storie_router(testo, motore.memoria) or mente_router(testo, motore.memoria)
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -10990,7 +11441,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -11001,7 +11452,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -11067,29 +11518,34 @@ Oggi è {oggi}.{extra}
             if v23:
                 on_token(v23["testo"])
                 self.memoria.salva_scambio(testo, v23["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v23.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v23.get(k)})
+            v24 = v24_router(testo, self, avvisa)                    # v24: 📻 radio maik · 🎞️ storie · 🧠 mappa della mente
+            if v24:
+                on_token(v24["testo"])
+                self.memoria.salva_scambio(testo, v24["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v24.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -11110,7 +11566,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -11124,7 +11580,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -11749,6 +12205,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/radio":                                    # v24: 📻 il copione dello show (?momento=mattina|pomeriggio|sera)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                mo = q.get("momento", [""])[0]
+                self._json(dict(radio_maik(MOTORE, mo if mo in ("mattina", "pomeriggio", "sera") else None), ok=True))
+            elif base == "/storie":                                   # v24: 🎞️ le storie (?periodo=settimana|mese|anno)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                self._json(dict(storie(MOTORE.memoria, q.get("periodo", ["mese"])[0]), ok=True))
+            elif base == "/mente":                                    # v24: 🧠 la mappa della mente
+                self._json(dict(mente(MOTORE.memoria), ok=True))
             elif base == "/diagnosi":                                 # v23: 🩺 funziona tutto? (?veloce=1: senza internet e file)
                 self._json(diagnosi(MOTORE, veloce=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("veloce", ["0"])[0] == "1"))
             elif base == "/annulla":                                  # v23: ↩ le ultime modifiche che posso annullare
@@ -12236,8 +12701,12 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     sec = 0
                 self._json(dict(PRESENZA.aggiungi(sec), ok=True))
-            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina") and not stessa_origine(self):
+            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/mente/dimentica":                          # v24: {tipo: profilo|persona|fatto|sogno, chiave} (si può annullare)
+                c = self._read_json_body()
+                r = dimentica_nodo(MOTORE.memoria, str(c.get("tipo", "")), str(c.get("chiave", "")))
+                self._json(dict(r, mente=mente(MOTORE.memoria)) if r["ok"] else r, 200 if r["ok"] else 404)
             elif base == "/diagnosi/ripara":                          # v23: {cosa: json|tmp|backup} (niente si cancella davvero)
                 r = ripara(str(self._read_json_body().get("cosa", "")), MOTORE.memoria)
                 self._json(dict(r, diagnosi=diagnosi(MOTORE)))
@@ -19576,8 +20045,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 23.0 — Server avviato         ║
-║ affidabile · veloce · webcam · multiverso        ║
+║        MAIK PRIME 24.0 — Server avviato         ║
+║ show · radio · storie · mente · affidabile       ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -19634,7 +20103,8 @@ def main():
     print(f"    GET  /obiettivi · /prime/settimana · /prime/tendenze · POST /obiettivi/crea /tappa          [v20]")
     print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [v21]")
     print(f"    GET  /prestazioni · /presenza · POST /presenza   [v22]")
-    print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [NUOVO v23]")
+    print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [v23]")
+    print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [NUOVO v24]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

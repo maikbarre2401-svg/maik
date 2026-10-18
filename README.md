@@ -47,6 +47,31 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## ⚡ Novità V22 — MAIK PRIME più veloce, e più attento quando ti vede (versione server)
+
+Prima: la prima risposta ci metteva tanto, e con la webcam accesa tutto rallentava. Ora:
+
+| | Cosa fa |
+|---|---|
+| 🧠 **Il cervello sempre pronto** | Il modello **resta caricato** in Ollama tra una domanda e l'altra (`keep_alive`, 30 minuti; la visione 10), la **memoria di lavoro è fissa** (`num_ctx` 6144: cambiarla a ogni domanda faceva ricaricare il modello a Ollama; si allarga solo se il discorso è davvero lungo), e le istruzioni hanno la **parte fissa davanti** (carattere + strumenti) e quella che cambia (ora, ricordi, documenti) in fondo, così Ollama riusa il lavoro già fatto e la prima parola arriva prima. |
+| 🔥 **Riscaldamento** | All'avvio (e quando cambi personalità) MAIK **scalda il modello in sottofondo**: quando fai la prima domanda è già pronto. Se il modello configurato non è installato, ne scelgo da solo uno che hai (e lo scrivo nel terminale). |
+| 🐢➡️🐇 **Impara quando sei in pausa** | Le cose «pesanti» dopo la risposta (imparare fatti su di te, riassunti) aspettano che tu smetta di scrivere per qualche secondo: non rubano più il modello mentre mi fai la domanda dopo. |
+| ⚡ **«quanto vai veloce?»** | Ti dico il modello, quanti **token al secondo** fa sul tuo PC, dopo quanto arriva la **prima parola**, se il riscaldamento è andato, e **consigli** concreti se va piano (un modello più piccolo, `MAIK_EMBED=0`…). Anche «perché sei così lento?», «le tue prestazioni». |
+| 📊 **Pannello ⚡ Prestazioni e benessere** | Nella barra a sinistra (e dalla palette): 4 riquadri — 🧠 Cervello (token/s), ⏱️ Prima parola, 🤖 Zep (fotogrammi al secondo e risoluzione), 📷 Webcam (quanto costa ogni controllo). Opzioni: **🪶 modalità leggera**, qualità automatica di Zep, avvisi di benessere, «ti ricordo la pausa dopo N minuti di fila». |
+| 🤖 **Zep più leggero** | La **risoluzione si adatta** a quanto ce la fa il tuo PC (scende se i fotogrammi calano, risale quando il PC respira), **30 fotogrammi al secondo quando è tranquillo** e 60 solo quando si muove/parla, e una **modalità leggera** per i PC più vecchi. Se il PC fatica davvero, te la propongo io. |
+| 📷 **Webcam molto più leggera** | Il riconoscimento del viso lavora su un'immagine piccola (320 px) e **si regola da solo**: controlla più spesso se il PC è veloce, meno se è lento (da 130 a 450 ms); le mani una volta su tre. Niente più scatti quando accendi la webcam. |
+| 📖 **«leggi quello che ti mostro»** | Avvicina un foglio, un biglietto, un'etichetta, uno scontrino alla webcam: conto alla rovescia 3… 2… 1…, scatto, e ti scrivo **cosa c'è scritto** in un riquadro, con **📋 Copia**, **🔊 Leggimelo** e **📚 Salva nei documenti**. Anche «leggi questo biglietto», «leggimi l'etichetta». |
+| 🖐️ **«cosa ho in mano?»** | Mostra un oggetto: 3… 2… 1…, e il modello visione ti dice cos'è (anche «cosa ti sto mostrando?», «indovina cosa ho in mano»). |
+| 🙂 **«come mi vedi?»** | Ti dico come ti vedo negli ultimi minuti: se sorridi, se sembri stanco o concentrato, se hai sbadigliato. Lo calcolo **sul tuo PC** dai movimenti del viso (niente foto mandate, niente modello). |
+| 💚 **Quando ti vedo** | Con la webcam accesa: se **sbadigli** 2 volte in poco tempo ti propongo una pausa (e a volte sbadiglia anche Zep 😄); se sei **troppo vicino** allo schermo te lo dico; dopo **50 minuti di fila** (lo scegli tu) ti ricordo di alzarti e bere un bicchiere d'acqua, con il bottone **⏱️ Pausa di 5 minuti**. Gli avvisi non arrivano mentre sei in concentrazione, in riunione, mentre leggo o faccio da interprete. Si spengono nel pannello ⚡. |
+| ⏱️ **«da quanto sono al pc?»** | Ti dico da quanto sei davanti al PC **di fila**, **oggi** e nella **settimana**. Al server arrivano solo i secondi in cui ti vedo, mai le immagini. |
+
+- **Cosa non fa:** MAIK **non riconosce chi sei dal viso** (non identifica le persone) e i **comandi del PC restano quelli di prima**, sempre con la tua conferma.
+- Se il PC è lento: un modello più piccolo (`MAIK_MODELLO=llama3.2:3b`), `MAIK_EMBED=0` (un modello in meno in memoria), la modalità leggera di Zep. Il pannello ⚡ ti dice dove sta il collo di bottiglia.
+- Nuove variabili: `MAIK_KEEP_ALIVE` (default `30m`), `MAIK_KEEP_ALIVE_VISIONE` (`10m`), `MAIK_NUM_CTX` (`6144`; più alto = ricorda discorsi più lunghi ma usa più memoria), `MAIK_RISCALDA=0` (niente riscaldamento all'avvio).
+- Nuovi endpoint: `GET /prestazioni` · `GET /presenza` · `POST /presenza {secondi}`. `/chat/stream` restituisce anche `"prestazioni"`, `"presenza"` e `"webcam"` (cosa fare con la webcam: leggere, guardare o dirti come ti vedo).
+- I dati: il tempo davanti al PC in `dati_maik/presenza.json` (solo i secondi per giorno).
+
 ## 🌀 Novità V21 — MAIK PRIME Multiverso: il consiglio delle altre dimensioni, il laboratorio delle invenzioni, gli aiutanti lampo (versione server)
 
 Ispirata alle cose che fa uno scienziato pazzo dei cartoni (portali, invenzioni nel garage, versioni di sé da altri universi), ma con nomi e grafica tutti nostri.
@@ -429,7 +454,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V21 — `maikprime.py`
+## MAIK PRIME — Server V22 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
@@ -487,6 +512,7 @@ MAIK_MODELLO=llama3.2 MAIK_PORTA=9000 python maikprime.py
 MAIK_APPRENDIMENTO_IA=0 python maikprime.py     # spegne l'apprendimento con l'IA
 MAIK_AGENTE=0 python maikprime.py               # spegne gli strumenti dell'agente
 MAIK_SEGUITI_RITARDO=30 python maikprime.py     # demo: chiede «com'è andata?» dopo 30 secondi
+MAIK_KEEP_ALIVE=2h MAIK_NUM_CTX=8192 python maikprime.py   # V22: modello pronto per 2 ore, memoria di lavoro più grande
 ```
 
 > 📲 Per installarlo sul **telefono** come app serve HTTPS (i browser lo chiedono per i service worker); sul computer

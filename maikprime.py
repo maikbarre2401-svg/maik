@@ -9717,22 +9717,53 @@ class Giornale:
 
 
 GIORNALE = Giornale()
+FILE_MESSI_DA_PARTE = []                                 # file rovinati che ho spostato invece di riscriverci sopra
+
+
+def metti_da_parte_se_rotto(path, limite=3_000_000):
+    """Se un file dei dati è rovinato (JSON illeggibile), lo sposto in «nome.rotto-…» prima che qualcuno ci riscriva sopra:
+    prima un file rovinato veniva sostituito da uno vuoto e i dati andavano persi."""
+    try:
+        if os.path.getsize(path) > limite:
+            return None
+        with open(path, encoding="utf-8") as f:
+            json.load(f)
+        return None
+    except (FileNotFoundError, IsADirectoryError):
+        return None
+    except (ValueError, UnicodeDecodeError):
+        nuovo = path + ".rotto-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        try:
+            os.replace(path, nuovo)
+        except OSError:
+            return None
+        FILE_MESSI_DA_PARTE.append(os.path.basename(nuovo))
+        print(f"  ⚠  {os.path.basename(path)} era rovinato: l'ho messo da parte in {os.path.basename(nuovo)}")
+        return nuovo
+    except OSError:
+        return None
 
 
 def _aggancia_giornale():
-    """Ogni volta che un archivio salva, prima avviso il giornale (che tiene la copia di com'era)."""
+    """Ogni volta che un archivio salva, prima avviso il giornale (che tiene la copia di com'era)
+    e controllo che il file che sto per sostituire non sia rovinato (se lo è, lo metto da parte)."""
     if getattr(Memoria, "_v23", False):
         return
-    salva_m = Memoria._salva
+    salva_m, carica_m = Memoria._salva, Memoria._carica
 
     def _salva(self, filename, dati):
         GIORNALE.prima(self._percorso(filename))
         return salva_m(self, filename, dati)
-    Memoria._salva, Memoria._v23 = _salva, True
-    for cls in (Routines, Calendario, Spese, Abitudini, Attivita, Automazioni, Obiettivi, Laboratorio):
+
+    def _carica(self, filename, default):
+        metti_da_parte_se_rotto(self._percorso(filename), limite=200_000_000)     # all'avvio: anche i file grandi
+        return carica_m(self, filename, default)
+    Memoria._salva, Memoria._carica, Memoria._v23 = _salva, _carica, True
+    for cls in (Routines, Calendario, Spese, Abitudini, Attivita, Automazioni, Obiettivi, Laboratorio, Proattivo, Presenza):
         orig = cls._salva
 
         def _salva_c(self, *a, _orig=orig, **k):
+            metti_da_parte_se_rotto(self._file())
             GIORNALE.prima(self._file())
             return _orig(self, *a, **k)
         cls._salva = _salva_c
@@ -10034,6 +10065,9 @@ def diagnosi(motore=None, veloce=False):
         lento = p["media_tps"] < 4
         c("velocita", "avviso" if lento else "ok", "⚡ Velocità", f"{str(p['media_tps']).replace('.', ',')} token al secondo" + (f" · prima parola in {round(p['media_prima_parola_ms'] / 1000, 1)} s".replace(".", ",") if p.get("media_prima_parola_ms") else ""),
           (p["consigli"][0] if p.get("consigli") else "Prova un modello più piccolo.") if lento else "")
+    if FILE_MESSI_DA_PARTE:
+        c("salvati", "avviso", "🧩 File rovinati messi da parte", ", ".join(FILE_MESSI_DA_PARTE[-4:]),
+          "Erano illeggibili: li ho spostati invece di riscriverci sopra. I dati vecchi sono lì dentro (o nell'ultima copia di sicurezza, che puoi ripristinare qui sotto).")
     if CERVELLO_STATO["ripreso"]:
         c("ripreso", "info", "🔁 Mi sono ripreso da solo", f"{CERVELLO_STATO['ripreso']} volt{'a' if CERVELLO_STATO['ripreso'] == 1 else 'e'} Ollama ha inciampato e ho riprovato"
           + (f" · {CERVELLO_STATO['cambio_modello']}" if CERVELLO_STATO["cambio_modello"] else ""))
@@ -12382,7 +12416,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V22</title>
+<title>MAIK PRIME // Zep V23</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -12918,10 +12952,33 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .m.seguito.benessere .mc::before{content:'💚 BENESSERE';color:#34d399;text-transform:uppercase}
   @media (max-width:640px){.pfgrid{grid-template-columns:1fr}}
   @media (prefers-reduced-motion:reduce){#camconto.on{animation:none}}
+
+  /* ===== V23 · Ollama spento, diagnosi, copie, annulla, pensaci meglio ===== */
+  #offbar{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px;padding:8px 12px;border:1px solid rgba(239,68,68,.55);border-radius:12px;background:rgba(239,68,68,.09);font-size:13.5px;line-height:1.4}
+  #offbar.on{display:flex}#offbar.ok{border-color:rgba(52,211,153,.6);background:rgba(52,211,153,.09)}
+  #offbar .obt{flex:1 1 240px;min-width:0}#offbar code{font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,.3);padding:0 5px;border-radius:5px}
+  #offbar button{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 10px;font:inherit;cursor:pointer}#offbar button:hover{border-color:var(--accent);color:var(--accent)}
+  #dgsom{font-size:14.5px;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.22);border:1px solid rgba(var(--accent-rgb),.22)}#dgsom small{display:block;color:var(--dim);font-size:11.5px;margin-top:2px}
+  #dgmodal h4{margin:14px 0 6px;font-size:12px;letter-spacing:1px;color:var(--accent)}
+  .dgr{display:flex;align-items:flex-start;gap:9px;padding:7px 4px;border-bottom:1px solid rgba(var(--accent-rgb),.1);font-size:13.5px;line-height:1.4}
+  .dgr .dgi{flex:0 0 auto}.dgr .dgt{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}.dgr .dgt span{color:var(--dim)}
+  .dgr.errore{background:rgba(239,68,68,.07)}.dgr.avviso{background:rgba(245,158,11,.06)}
+  .dgrim{margin-top:2px;font-size:12.5px}.dgcmd{display:flex;gap:6px;align-items:center;margin-top:4px;flex-wrap:wrap}
+  .dgcmd code{font-family:'Share Tech Mono',monospace;background:rgba(0,0,0,.35);padding:2px 8px;border-radius:6px;overflow-wrap:anywhere}
+  .dgcmd button,.dgfix,.bkr button,.dgbar button{background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:3px 9px;font:inherit;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .dgcmd button:hover,.dgfix:hover,.bkr button:hover,.dgbar button:hover{border-color:var(--accent);color:var(--accent)}.dgfix{flex:0 0 auto;align-self:center}
+  .bkr{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 4px;border-bottom:1px solid rgba(var(--accent-rgb),.1);font-size:13.5px}.bkr>span{flex:1 1 220px;min-width:0}.bkr small{color:var(--dim)}
+  .bkr button.si,.bkconf button[data-bksi]{border-color:#f59e0b;color:#fbbf24}.bkq{flex:1 1 220px}
+  .dgbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .capito{font-size:12px;color:var(--dim);margin-bottom:4px;font-family:'Share Tech Mono',monospace}
+  .accfase{color:var(--dim);font-style:italic}.accfase small{font-style:normal}
+  .m.ai.accurata{border-color:rgba(251,191,36,.55)!important;box-shadow:0 0 22px rgba(251,191,36,.10)}
+  .m.ai.accurata .mc::before{content:'🎯 RILETTA DA UN REVISORE';display:block;font:600 10.5px/1.7 'Share Tech Mono',monospace;letter-spacing:1px;color:#fbbf24;margin-bottom:2px}
+  .agc.fatto{opacity:.7}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V22</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V23</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -12976,6 +13033,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">👂 Modalità Amico: solo se dico «Maik»<input type="checkbox" id="optwake" onchange="setOpt('wake',this.checked)"></label>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
+    <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
     <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
     <div class="note">Memoria su disco, condivisa da tutte le chat. MAIK impara da solo 🧠 e <b>agisce da solo</b> 🤖: chiedigli le cose a parole tue («stasera pasta, metti in lista gli ingredienti»). <b>📚</b> legge i tuoi documenti e cita la fonte · <b>🔁</b> si ricorda di chiederti com'è andata · <b>🫂 AMICO</b>: ti vede e ti parla.</div>
   </div>
@@ -13042,8 +13100,13 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="stagedrop">📤 Lascia qui il tuo personaggio (.vrm o .glb)</div>
     </div>
     <div id="chatcol">
+    <div id="offbar" role="status" aria-live="polite"></div>
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="qs('funziona tutto?')">🩺 funziona tutto?</button>
+      <button onclick="qs('annulla')">↩ annulla</button>
+      <button onclick="$('#inp').value='pensaci bene: ';$('#inp').focus()">🎯 pensaci bene: …</button>
+      <button onclick="qs('fai un backup')">💾 fai un backup</button>
       <button onclick="qs('quanto vai veloce?')">⚡ quanto vai veloce?</button>
       <button onclick="qs('leggi quello che ti mostro')">📖 leggi quello che ti mostro</button>
       <button onclick="qs('cosa ho in mano?')">🖐️ cosa ho in mano?</button>
@@ -13144,6 +13207,27 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="dgmodal">
+  <div class="mod" style="max-width:680px">
+    <div class="modh"><div class="modt">🩺 DIAGNOSI · COPIE · ANNULLA</div><button class="ib" onclick="closeDiagnosi()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div id="dgsom"></div>
+      <div class="dgbar"><button type="button" onclick="loadDiagnosi()">🔄 Ricontrolla</button></div>
+      <h4>🧠 IL SERVER (CERVELLO, MODELLI, DATI, INTERNET)</h4>
+      <div id="dgsrv"></div>
+      <h4>🌐 QUESTO BROWSER (MICROFONO, WEBCAM, VOCE, GRAFICA)</h4>
+      <div id="dgbr"></div>
+      <h4>💾 COPIE DI SICUREZZA</h4>
+      <div class="note" id="bknota"></div>
+      <div class="dgbar"><button type="button" data-bknuova="1">💾 Fai una copia adesso</button></div>
+      <div id="bklist"></div>
+      <h4>↩ ULTIME MODIFICHE (SI POSSONO ANNULLARE)</h4>
+      <div id="unlist"></div>
+      <div class="note" style="margin-top:8px">Annullo i tuoi dati (promemoria, spese, lista, calendario, cose da fare, routine…), non le azioni già fatte sul PC. Prima di ogni ripristino faccio una copia di come sono adesso: non si perde mai niente.</div>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="pfmodal">
   <div class="mod" style="max-width:620px">
@@ -15670,7 +15754,7 @@ function fmtStats(st){if(!st||!st.tps)return '';const t=ms=>ms<1000?Math.round(m
   return '⚡ <b>'+st.tps.toLocaleString('it-IT',{maximumFractionDigits:1})+'</b> tok/s · prima parola '+t(st.ttft_ms)+' · totale '+t(st.totale_ms);}
 // azioni sotto la risposta: copia, ascolta, rigenera (solo l'ultima) + velocità vera del modello
 function finalize(d,raw,st,q){d.dataset.raw=raw;if(q!=null)d.dataset.q=q;let a=d.querySelector('.acts');if(!a){a=document.createElement('div');a.className='acts';d.appendChild(a);}
-  a.innerHTML='<button type="button" data-act="copy">⧉ copia</button><button type="button" data-act="speak">🔊</button>'+(q!=null?'<button type="button" class="act-regen" data-act="regen">↻ rigenera</button>':'')+(st&&st.tps?'<span class="meta">'+fmtStats(st)+'</span>':'');markLast();}
+  a.innerHTML='<button type="button" data-act="copy">⧉ copia</button><button type="button" data-act="speak">🔊</button>'+(q!=null?'<button type="button" class="act-regen" data-act="regen">↻ rigenera</button><button type="button" class="act-regen act-deep" data-act="deep" title="Ci ripenso: scrivo una bozza, la rileggo come un revisore e ti do la versione finale">🎯 pensaci meglio</button>':'')+(st&&st.tps?'<span class="meta">'+fmtStats(st)+'</span>':'');markLast();}
 function markLast(){document.querySelectorAll('#msgs .m.ai.last').forEach(x=>x.classList.remove('last'));const all=[...document.querySelectorAll('#msgs .m')];const l=all[all.length-1];if(l&&l.classList.contains('ai')&&l.dataset.raw!=null)l.classList.add('last');}
 let busy=false,ctl=null,att=null;
 async function invia(opt){
@@ -15716,7 +15800,7 @@ async function invia(opt){
   }
   let full='';ctl=new AbortController();$('#stopbtn').style.display='inline-block';
   try{
-    const body={testo:t,sessione:CUR};if(regen)body.rigenera=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
+    const body={testo:t,sessione:CUR};if(regen)body.rigenera=true;if(opt.accurato)body.accurato=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
     const resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
     const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
     while(true){
@@ -15726,19 +15810,20 @@ async function invia(opt){
         const line=buf.slice(0,i).trim();buf=buf.slice(i+2);
         if(!line.startsWith('data:'))continue;
         let obj;try{obj=JSON.parse(line.slice(5).trim());}catch(e){continue;}
-        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';mc(bubble).innerHTML=renderAI(full)+'<span class="cursor"></span>';$('#msgs').scrollTop=1e9;feedSpeech(full,false);}
+        if(obj.t){full+=obj.t;SPH.state=splitThink(full).open?'thinking':'speaking';disegnaPresto(bubble,full);}   // v23: a fotogrammi, non a ogni pezzetto
+        if(obj.accurato&&!obj.done&&!full)faseAccurata(bubble,obj.accurato);                                     // v23: 📝 bozza → 🔍 controllo
         if(obj.passo)passoAgente(bubble,obj.passo);
         if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);if(obj.multiverso&&!obj.done)faseMultiverso(bubble,obj.multiverso);if(obj.laboratorio&&!obj.done)faseLab(bubble,obj.laboratorio);   // v21: 🌀 i portali · 🔬 il codice                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
         if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
-        if(obj.done){
+        if(obj.done){fermaDisegno();
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
-          else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';}
+          else if(obj.ok===false){mc(bubble).textContent=obj.risposta||'Errore.';if(obj.offline)ollamaSpento(A?null:t,bubble);if(obj.annullabile)addV23(bubble,{annullabile:obj.annullabile});}   // v23: 🔌 riprovo da solo
           else{
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -15751,7 +15836,7 @@ async function invia(opt){
         }
       }
     }
-  }catch(e){
+  }catch(e){fermaDisegno();
     if(e.name==='AbortError'){const out=(full?full+'\n\n':'')+'*(interrotta)*';mc(bubble).innerHTML=renderAI(out);finalize(bubble,out,null,null);}   // tieni ciò che aveva scritto
     else mc(bubble).textContent='Errore di connessione: '+e.message;
   }
@@ -16014,6 +16099,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🩺','Diagnosi: funziona tutto?',()=>openDiagnosi(),'diagnosi','controlla problemi ollama modelli ripara errori'),c('↩','Annulla l\'ultima cosa che ho cambiato',()=>annullaModifica(null,null),'annulla','undo ctrl z torna indietro sbagliato'),
+    c('💾','Copie di sicurezza (backup)',()=>openDiagnosi(),'backup','copia ripristina dati salva'),c('🎯','Pensaci bene: …',()=>{$('#inp').value='pensaci bene: ';$('#inp').focus();},'accurato','ragiona rifletti revisore preciso'),
     c('⚡','Prestazioni e benessere',()=>openPerf(),'veloce','lento velocità fps modalità leggera pausa'),c('📖','Leggi quello che ti mostro',()=>qs('leggi quello che ti mostro'),'leggi','webcam foglio biglietto'),
     c('🖐️','Cosa ho in mano?',()=>qs('cosa ho in mano?'),'oggetto','webcam guarda mostro'),c('🙂','Come mi vedi?',()=>qs('come mi vedi?'),'espressione','webcam faccia umore'),
     c('🌀','Chiedi al multiverso…',()=>q('chiedi al multiverso: '),'multiverso','consiglio dimensioni portale parere'),c('🔬','Laboratorio delle invenzioni',()=>openLab(),'L','inventa app gadget invenzioni'),
@@ -16039,7 +16126,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V22',key:'maik_boot_v22',checks:[
+  return MaikKit.boot({version:'PRIME · V23',key:'maik_boot_v23',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16049,6 +16136,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Diagnosi',run:async()=>{try{const d=await (await fetch('/diagnosi?veloce=1')).json();return{ok:!d.errori,text:d.errori?'❌ '+d.errori+' da sistemare':d.avvisi?'⚠️ '+d.avvisi+' da guardare':'✅ tutto a posto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Velocità',run:async()=>{try{const r=await (await fetch('/prestazioni')).json();const s=r.riscaldamento||{};return{ok:true,text:s.stato==='pronto'?'🔥 '+r.modello+' pronto':'⚡ '+r.modello+' · '+(s.stato||'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const r=await (await fetch('/laboratorio')).json();const n=r.invenzioni.length;return{ok:true,text:n?'🔬 '+n+(n===1?' invenzione':' invenzioni'):'🔬 pronto a inventare'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Obiettivi',run:async()=>{try{const r=await (await fetch('/obiettivi')).json();const n=r.obiettivi.length;return{ok:true,text:n?'🎯 '+n+' in corso':'🎯 nessuno (ancora)'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16064,7 +16152,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 22 ⚡ Adesso sono **molto più veloce**: tengo il cervello sempre pronto, non rileggo ogni volta le mie istruzioni e Zep si adatta a quanto ce la fa il tuo PC (guarda **⚡ Prestazioni**, o chiedimi «**quanto vai veloce?**»). Con la webcam 👀 **ti vedo meglio**: «**leggi quello che ti mostro**», «**cosa ho in mano?**», «**come mi vedi?**», mi accorgo se sbadigli e ti ricordo di fare una pausa. Poi c\'è tutto il resto: il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 23 🛡️ Adesso sono **più affidabile**: se sbaglio qualcosa dimmi «**annulla**» (o premi ↩ sotto la risposta, o Ctrl+Z) e rimetto tutto com\'era; chiedimi «**funziona tutto?**» e controllo cervello, modelli, dati, internet, microfono e webcam, con il rimedio per ogni problema (🩺 **Diagnosi**); faccio da solo una **copia di sicurezza** dei tuoi dati ogni giorno («fai un backup», «ripristina il backup di ieri»); per le domande difficili «**pensaci bene: …**» (o 🎯 sotto la risposta): scrivo una bozza, la rileggo come un revisore e ti do la versione finale. Capisco anche se scrivi in fretta («ricodami», «xke nn va»), e se Ollama si spegne ti rimando la domanda appena torna. Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro», «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni (tasto **L**), gli aiutanti lampo, obiettivi con le tappe, «pianificami la settimana», automazioni, ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), cose da fare, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -16958,7 +17046,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V22'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V23'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -19040,8 +19128,240 @@ function addV22(d, obj) {
   if (obj.stat && obj.stat.tps && obj.stat.tps < 4 && !PERF.avvisoLento) { PERF.avvisoLento = true; setTimeout(() => toast('🐢 Il modello va piano su questo PC: in ⚡ Prestazioni trovi i consigli', 'ok'), 1500); }
 }
 
+// V23 — MAIK PRIME affidabile: ↩ annulla, 🩺 diagnosi (server + browser) e ripara, 💾 copie di sicurezza, 🎯 pensaci meglio,
+// 🔌 quando Ollama è spento riprovo da solo, 🔤 «ho capito», risposte disegnate a fotogrammi (più fluide)
+
+// ---------- ⚡ la risposta si disegna al massimo ~25 volte al secondo (prima: a ogni pezzetto, rifacendo tutto il testo) ----------
+const DISEGNO = { t: 0, ultimo: 0, bolla: null, testo: '' };
+function disegnaPresto(b, testo) {
+  DISEGNO.bolla = b; DISEGNO.testo = testo;
+  if (DISEGNO.t) return;
+  DISEGNO.t = setTimeout(disegnaOra, Math.max(0, 40 - (performance.now() - DISEGNO.ultimo)));
+}
+function disegnaOra() {
+  clearTimeout(DISEGNO.t); DISEGNO.t = 0;
+  const b = DISEGNO.bolla; if (!b) return;
+  DISEGNO.ultimo = performance.now();
+  const box = $('#msgs'), inFondo = box.scrollHeight - box.scrollTop - box.clientHeight < 160;
+  mc(b).innerHTML = renderAI(DISEGNO.testo) + '<span class="cursor"></span>';
+  if (inFondo) box.scrollTop = 1e9;                        // se stai leggendo più su, non ti trascino in fondo
+  feedSpeech(DISEGNO.testo, false);
+}
+function fermaDisegno() { clearTimeout(DISEGNO.t); DISEGNO.t = 0; DISEGNO.bolla = null; }
+
+// ---------- 🎯 pensaci meglio ----------
+function pensaMeglio(d) {
+  if (busy) return;
+  const q = d.dataset.q;
+  if (q == null) { toast('Su questa risposta non posso ripensarci', 'err'); return; }
+  d.remove(); invia({ text: q, regen: true, accurato: true });
+}
+function faseAccurata(b, f) {
+  mc(b).innerHTML = '<span class="accfase">' + esc(f.testo || '') + (f.parole ? ' <small>(bozza di ' + f.parole + ' parole)</small>' : '') + '</span><span class="cursor"></span>';
+  caption(f.testo || '🎯'); SPH.state = 'thinking';
+  if (AV) { AV.setState('thinking'); if (f.fase === 'controllo') AV.act('legge', { dur: 30 }); }
+}
+
+// ---------- ↩ annulla ----------
+const cosaAnn = a => (a && a.cosa || []).join(', ');
+function bottoneAnnulla(a, etichetta) {
+  return '<button type="button" class="agc calb" data-un="' + escA(a.id) + '" title="Rimetto com\'erano: ' + escA(cosaAnn(a)) + '">↩ ' + esc(etichetta || 'Annulla') + '</button>';
+}
+async function annullaModifica(id, b) {
+  if (b) b.disabled = true;
+  let r; try { r = await postJ('/annulla', id ? { id } : {}); } catch (e) { r = { ok: false, testo: 'Il server non risponde' }; }
+  if (r.ok) {
+    if (b) { b.textContent = '✓ annullato'; b.classList.add('fatto'); }
+    document.querySelectorAll('#msgs button[data-un="' + CSS.escape(r.annullato.id) + '"]').forEach(x => { x.disabled = true; x.textContent = '✓ annullato'; });
+    toast('↩ Annullato: ' + cosaAnn(r.annullato), 'ok'); if (AV) AV.gesture('nod');
+    aggiornaDopo();
+  } else { if (b) b.disabled = false; toast(String(r.testo || r.errore || 'Non riesco').replace(/\*\*/g, ''), 'err'); }
+  if ($('#dgmodal').classList.contains('open')) loadAnnulla();
+  return r;
+}
+function aggiornaDopo() {                                    // i dati sono cambiati: rinfresco quello che si vede
+  try { loadPr(); } catch (e) {}
+  try { stato(); profilo(); } catch (e) {}
+  for (const [id, fn] of [['spmodal', 'loadSpese'], ['calmodal', 'loadCal'], ['tdmodal', 'loadTodo'], ['abmodal', 'loadAbitudini']]) {
+    const m = document.getElementById(id); if (m && m.classList.contains('open') && typeof window[fn] === 'function') { try { window[fn](); } catch (e) {} }
+  }
+}
+document.addEventListener('keydown', e => {                 // Ctrl+Z fuori dalla casella di testo = annulla l'ultima cosa che ho cambiato
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || (e.key || '').toLowerCase() !== 'z') return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || '') || e.target.isContentEditable || document.querySelector('.ov.open') || busy) return;
+  e.preventDefault(); annullaModifica(null, null);
+});
+
+// ---------- 🔌 quando il cervello (Ollama) è spento ----------
+const SPENTO = { on: false, t: 0, q: null, bolla: null, dal: 0 };
+function ollamaSpento(q, bolla) {
+  SPENTO.q = q || SPENTO.q; SPENTO.bolla = bolla || SPENTO.bolla;
+  if (!SPENTO.on) { SPENTO.on = true; SPENTO.dal = Date.now(); }
+  const b = $('#offbar'); b.className = 'on';
+  b.innerHTML = '<span class="obt">🔌 <b>Il mio cervello (Ollama) è spento.</b> Aprilo (o scrivi <code>ollama serve</code> in un terminale): ' + (SPENTO.q ? 'appena torna ti rimando la domanda.' : 'appena torna te lo dico.') + '</span>'
+    + '<button type="button" onclick="controllaOllama(true)">🔁 Riprova</button><button type="button" onclick="openDiagnosi()">🩺 Diagnosi</button>';
+  clearInterval(SPENTO.t); SPENTO.t = setInterval(controllaOllama, 4000);
+  if (AV) AV.emote('sad', 2500);
+}
+async function controllaOllama(aMano) {
+  let ok = false;
+  try { ok = !!(await (await fetch('/salute')).json()).online; } catch (e) {}
+  if (!ok) { if (aMano) toast('🔌 Ancora spento: controlla che Ollama sia aperto', 'err'); return false; }
+  clearInterval(SPENTO.t); SPENTO.on = false;
+  const b = $('#offbar'); b.className = 'on ok'; b.innerHTML = '<span class="obt">✅ <b>Il mio cervello è tornato!</b></span>';
+  setTimeout(() => { if (!SPENTO.on) b.className = ''; }, 3500);
+  if (AV) { AV.emote('happy', 2500); AV.gesture('thumbsup'); }
+  const q = SPENTO.q, bolla = SPENTO.bolla; SPENTO.q = SPENTO.bolla = null;
+  if (q) {
+    const rimanda = () => { if (busy) { setTimeout(rimanda, 800); return; } if (bolla && bolla.isConnected) bolla.remove(); toast('🔁 Ti rimando la domanda', 'ok'); invia({ text: q, regen: true }); };
+    rimanda();
+  }
+  return true;
+}
+
+// ---------- 🩺 diagnosi: quello che controlla il server + quello che posso controllare solo qui nel browser ----------
+const ICONA_ST = { ok: '✅', avviso: '⚠️', errore: '❌', info: 'ℹ️' };
+let DIAG = null;
+function openDiagnosi() { $('#dgmodal').classList.add('open'); loadDiagnosi(); loadBackup(); loadAnnulla(); }
+function closeDiagnosi() { $('#dgmodal').classList.remove('open'); }
+async function permesso(nome) { try { return (await navigator.permissions.query({ name: nome })).state; } catch (e) { return ''; } }
+async function controlliBrowser() {
+  const C = [], c = (titolo, stato, dettaglio, rimedio) => C.push({ titolo, stato, dettaglio, rimedio: rimedio || '' });
+  const mic = await permesso('microphone'), cam = await permesso('camera');
+  const reco = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  c('🎤 Microfono', mic === 'denied' ? 'errore' : reco ? 'ok' : 'avviso', (mic === 'granted' ? 'permesso dato' : mic === 'denied' ? 'permesso negato' : 'te lo chiedo quando serve') + ' · ' + (reco ? 'capisco la voce' : 'questo browser non sa trasformare la voce in testo'),
+    mic === 'denied' ? 'Clicca il lucchetto 🔒 accanto all\'indirizzo e consenti il microfono.' : reco ? '' : 'Per parlarmi usa Chrome o Edge.');
+  c('📷 Webcam', cam === 'denied' ? 'errore' : 'ok', camOn ? 'accesa' + (TRACK && TRACK.costo ? ' · ogni controllo ' + Math.round(TRACK.costo) + ' ms' : '') : cam === 'granted' ? 'permesso dato (spenta)' : cam === 'denied' ? 'permesso negato' : 'te lo chiedo quando serve',
+    cam === 'denied' ? 'Clicca il lucchetto 🔒 accanto all\'indirizzo e consenti la fotocamera.' : '');
+  let voci = []; try { voci = speechSynthesis.getVoices().filter(v => /^it/i.test(v.lang)); } catch (e) {}
+  const neur = typeof NEURALE !== 'undefined' && OPT.piper && !NEURALE.rotta;
+  c('🔊 Voce', voci.length || neur ? 'ok' : 'avviso', neur ? 'voce neurale (Piper)' : voci.length ? voci.length + ' voc' + (voci.length === 1 ? 'e' : 'i') + ' italian' + (voci.length === 1 ? 'a' : 'e') + ' nel browser' : 'nessuna voce italiana nel browser',
+    voci.length || neur ? '' : 'Installa la voce italiana nelle impostazioni del sistema (Lingua → Voce), oppure usa la voce neurale in 🎙️ Voce.');
+  let gl = false; try { const cv = document.createElement('canvas'); gl = !!(cv.getContext('webgl2') || cv.getContext('webgl')); } catch (e) {}
+  const q = AV && AV.qualita;
+  c('🧊 Grafica 3D (Zep)', gl ? (q && q.fps && q.fps < 15 ? 'avviso' : 'ok') : 'avviso', gl ? (q ? q.fps + ' fotogrammi al secondo' + (q.lieve ? ' · modalità leggera' : '') : 'disponibile') : 'WebGL non disponibile: Zep non può muoversi',
+    gl ? (q && q.fps && q.fps < 15 ? 'Prova la 🪶 modalità leggera in ⚡ Prestazioni.' : '') : 'Attiva l\'accelerazione hardware nelle impostazioni del browser.');
+  const np = 'Notification' in window ? Notification.permission : 'no';
+  c('🔔 Avvisi quando sei su un\'altra finestra', np === 'granted' ? 'ok' : np === 'denied' ? 'avviso' : 'info', np === 'granted' ? 'attivi' : np === 'denied' ? 'bloccati: i promemoria suonano solo con MAIK aperto davanti' : np === 'no' ? 'non supportati da questo browser' : 'non ancora chiesti',
+    np === 'denied' ? 'Clicca il lucchetto 🔒 e consenti le notifiche.' : '');
+  c('🔒 Pagina sicura', window.isSecureContext ? 'ok' : 'avviso', window.isSecureContext ? 'sì (microfono e webcam permessi)' : 'no: microfono e webcam non funzionano', window.isSecureContext ? '' : 'Apri MAIK da http://localhost:8137 sul PC dove gira, oppure con HTTPS.');
+  return C;
+}
+function rigaDiag(x, i) {
+  return '<div class="dgr ' + x.stato + '"><span class="dgi">' + (ICONA_ST[x.stato] || '•') + '</span><div class="dgt"><b>' + esc(x.titolo) + '</b> <span>' + esc(x.dettaglio || '') + '</span>'
+    + (x.rimedio ? '<div class="dgrim">' + esc(x.rimedio) + '</div>' : '')
+    + (x.comando ? '<div class="dgcmd"><code>' + esc(x.comando) + '</code><button type="button" data-dgcopia="' + escA(x.comando) + '">📋 Copia</button></div>' : '') + '</div>'
+    + (x.ripara ? '<button type="button" class="dgfix" data-dgfix="' + escA(x.ripara) + '">' + ({ backup: '💾 Fai una copia', tmp: '🧹 Pulisci' }[x.ripara] || '🔧 Ripara') + '</button>' : '') + '</div>';
+}
+async function loadDiagnosi(d) {
+  $('#dgsom').innerHTML = '<span class="dgwait">🩺 Controllo…</span>';
+  try { DIAG = d || await (await fetch('/diagnosi')).json(); } catch (e) { DIAG = null; }
+  const br = await controlliBrowser();
+  if (!DIAG) { $('#dgsom').innerHTML = '❌ Il server di MAIK non risponde'; $('#dgsrv').innerHTML = ''; }
+  else {
+    const tutti = DIAG.controlli.concat(br), err = tutti.filter(x => x.stato === 'errore').length, avv = tutti.filter(x => x.stato === 'avviso').length, ok = tutti.filter(x => x.stato === 'ok').length;
+    $('#dgsom').innerHTML = (err || avv ? '' : '🎉 <b>Tutto a posto!</b> ') + '✅ ' + ok + ' a posto' + (avv ? ' · ⚠️ ' + avv + ' da guardare' : '') + (err ? ' · ❌ ' + err + ' da sistemare' : '')
+      + '<small>controllato alle ' + new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) + ' · MAIK PRIME ' + esc(DIAG.versione || '') + '</small>';
+    const ordina = a => a.slice().sort((x, y) => ({ errore: 0, avviso: 1, info: 2, ok: 3 }[x.stato] - { errore: 0, avviso: 1, info: 2, ok: 3 }[y.stato]));
+    $('#dgsrv').innerHTML = ordina(DIAG.controlli).map(rigaDiag).join('');
+    if (DIAG.controlli.some(x => x.chiave === 'ollama' && x.stato === 'errore')) ollamaSpento(); else if (SPENTO.on) controllaOllama();
+  }
+  $('#dgbr').innerHTML = br.map(rigaDiag).join('');
+}
+async function riparaDiag(cosa, b) {
+  b.disabled = true; b.textContent = '…';
+  let r; try { r = await postJ('/diagnosi/ripara', { cosa }); } catch (e) { r = { ok: false, testo: 'Il server non risponde' }; }
+  toast(r.testo || (r.ok ? 'Fatto' : 'Non riesco'), r.ok ? 'ok' : 'err');
+  if (r.diagnosi) loadDiagnosi(r.diagnosi);
+  if (cosa === 'backup' || cosa === 'json') loadBackup();
+  if (cosa === 'json') aggiornaDopo();
+}
+
+// ---------- 💾 copie di sicurezza ----------
+let BKP = [];
+const tipoBk = t => t === 'auto' ? 'automatica' : t === 'manuale' ? 'fatta da te' : 'prima di un ripristino';
+async function loadBackup() {
+  let r = null; try { r = await (await fetch('/backup')).json(); } catch (e) {}
+  BKP = r && r.elenco || [];
+  $('#bknota').textContent = r ? (r.automatico ? 'Ne faccio una da solo ogni giorno (tengo le ultime ' + r.giorni + ').' : 'Le copie automatiche sono spente (MAIK_BACKUP=0).') + ' Cartella: ' + r.cartella : '';
+  $('#bklist').innerHTML = BKP.length ? BKP.slice(0, 12).map(b => '<div class="bkr" data-nome="' + escA(b.nome) + '"><span>💾 <b>' + esc(b.giorno) + '</b> alle ' + esc(b.quando.slice(11, 16)) + ' <small>' + tipoBk(b.tipo) + ' · ' + b.kb + ' KB</small></span>'
+    + '<button type="button" data-bkr="' + escA(b.nome) + '">↩ Ripristina</button></div>').join('') : '<div class="note">Ancora nessuna copia: premi «Fai una copia adesso».</div>';
+}
+function chiediRipristino(nome, dove) {                     // sempre una conferma, nella riga stessa
+  const b = BKP.find(x => x.nome === nome) || { giorno: nome, quando: '' };
+  dove.innerHTML = '<span class="bkq">⚠️ Rimetto <b>tutti</b> i tuoi dati com\'erano <b>' + esc(b.giorno) + (b.quando ? ' alle ' + esc(b.quando.slice(11, 16)) : '') + '</b>? Prima faccio una copia di adesso.</span>'
+    + '<button type="button" class="si" data-bksi="' + escA(nome) + '">✓ Sì, ripristina</button><button type="button" data-bkno="1">✕ No</button>';
+}
+async function ripristina(nome, b) {
+  b.disabled = true; b.textContent = '↩ …';
+  let r; try { r = await postJ('/backup/ripristina', { nome }); } catch (e) { r = { ok: false, errore: 'il server non risponde' }; }
+  if (r.ok) {
+    toast('✅ Dati rimessi com\'erano (' + r.file + ' file). La copia di prima si chiama ' + (r.copia_di_adesso || '—'), 'ok'); if (AV) AV.gesture('thumbsup');
+    aggiornaDopo(); try { loadChats(); } catch (e) {}
+    const card = b.closest('.bkconf'); if (card) card.innerHTML = '<span class="bkq">✅ Ripristinato: i dati sono com\'erano ' + esc((BKP.find(x => x.nome === nome) || {}).giorno || 'nella copia') + '.</span>';
+  } else toast('💾 Non riesco: ' + (r.errore || '?'), 'err');
+  if ($('#dgmodal').classList.contains('open')) { loadBackup(); loadAnnulla(); }
+  return r;
+}
+async function nuovaCopia(b) {
+  if (b) b.disabled = true;
+  let r; try { r = await postJ('/backup/crea', {}); } catch (e) { r = { ok: false }; }
+  toast(r.ok ? '💾 Copia fatta: ' + r.file + ' file (' + r.kb + ' KB)' : '💾 Non riesco: ' + (r.errore || 'il server non risponde'), r.ok ? 'ok' : 'err');
+  if (b) b.disabled = false;
+  if ($('#dgmodal').classList.contains('open')) { loadBackup(); loadDiagnosi(); }
+}
+async function loadAnnulla() {
+  let r = null; try { r = await (await fetch('/annulla')).json(); } catch (e) {}
+  const a = r && r.annullabili || [];
+  $('#unlist').innerHTML = a.length ? a.slice(0, 8).map(x => '<div class="bkr"><span>↩ <b>«' + esc(x.testo) + '»</b> <small>' + esc(x.quando.slice(11, 16)) + ' · ' + esc(cosaAnn(x)) + '</small></span>'
+    + '<button type="button" data-un="' + escA(x.id) + '">↩ Annulla</button></div>').join('') : '<div class="note">Niente da annullare: da quando mi hai acceso non ho cambiato i tuoi dati (o li ho già rimessi a posto).</div>';
+}
+
+// ---------- in chat ----------
+function addV23(d, obj) {
+  const ag = () => agEl(d);
+  if (obj.capito) d.querySelector('.mc').insertAdjacentHTML('afterbegin', '<div class="capito">🔤 Ho capito: «' + esc(obj.capito) + '»</div>');
+  if (obj.accurato) d.classList.add('accurata');
+  if (obj.annullabile) ag().insertAdjacentHTML('beforeend', bottoneAnnulla(obj.annullabile, 'Annulla (' + cosaAnn(obj.annullabile) + ')'));
+  if (obj.annullabili && obj.annullabili.length && !obj.annulla) ag().insertAdjacentHTML('beforeend', obj.annullabili.slice(0, 4).map(a => bottoneAnnulla(a, '«' + (a.testo.length > 28 ? a.testo.slice(0, 27) + '…' : a.testo) + '»')).join(''));
+  if (obj.annulla && obj.annulla.ok) {
+    document.querySelectorAll('#msgs button[data-un="' + CSS.escape(obj.annulla.annullato.id) + '"]').forEach(x => { x.disabled = true; x.textContent = '✓ annullato'; });
+    aggiornaDopo(); if (AV) AV.gesture('nod');
+  }
+  if (obj.diagnosi) ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-dg="1">🩺 Apri la diagnosi</button>');
+  if (obj.backup_ripristina) {
+    const b = obj.backup_ripristina, w = document.createElement('div'); w.className = 'pcwrap';
+    w.innerHTML = '<div class="pcconf bkconf"><div class="pct">💾 Rimetto i dati com\'erano <b>' + esc(b.giorno) + ' alle ' + esc(b.quando.slice(11, 16)) + '</b>?</div><div class="pcb">'
+      + '<button type="button" data-bksi="' + escA(b.nome) + '">✓ Sì, ripristina</button><button type="button" data-bkno="1">✕ No</button></div></div>';
+    d.insertBefore(w, d.querySelector('.acts'));
+  } else if (obj.backup) ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-dg="1">💾 Le copie di sicurezza</button>');
+}
+document.addEventListener('click', async e => {             // v23: annulla, diagnosi, copie
+  const b = e.target.closest('button[data-un],button[data-dg],button[data-dgfix],button[data-dgcopia],button[data-bkr],button[data-bksi],button[data-bkno],button[data-bknuova]');
+  if (!b) return;
+  const ds = b.dataset;
+  if (ds.un) { annullaModifica(ds.un, b); return; }
+  if (ds.dg) { openDiagnosi(); return; }
+  if (ds.dgfix) { riparaDiag(ds.dgfix, b); return; }
+  if (ds.dgcopia) { navigator.clipboard.writeText(ds.dgcopia).then(() => toast('📋 Comando copiato: incollalo in un terminale', 'ok'), () => toast('Non riesco a copiare', 'err')); return; }
+  if (ds.bknuova) { nuovaCopia(b); return; }
+  if (ds.bkr) { chiediRipristino(ds.bkr, b.closest('.bkr')); return; }
+  if (ds.bksi) { ripristina(ds.bksi, b); return; }
+  if (ds.bkno) { const c = b.closest('.bkconf'); if (c) c.innerHTML = '<span class="bkq">Ok, lascio tutto com\'è.</span>'; else loadBackup(); }
+});
+
+// ---------- all'avvio: un controllo veloce ----------
+async function controlloAvvio() {
+  let d = null; try { d = await (await fetch('/diagnosi?veloce=1')).json(); } catch (e) { return; }
+  if (!d || !d.controlli) return;
+  if (d.controlli.some(x => x.chiave === 'ollama' && x.stato === 'errore')) { ollamaSpento(); return; }
+  const e = d.controlli.find(x => x.stato === 'errore');
+  if (e) toast('🩺 ' + e.titolo + ': ' + e.dettaglio + ' — apri 🩺 Diagnosi', 'err');
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();}});
+$('#dgmodal').addEventListener('click',e=>{if(e.target.id==='dgmodal')closeDiagnosi();});
 $('#pfmodal').addEventListener('click',e=>{if(e.target.id==='pfmodal')closePerf();});
 document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-pf],#msgs button[data-bn],#msgs button[data-wl]');if(!b)return;     // v22
   const ds=b.dataset;
@@ -19176,7 +19496,8 @@ $('#msgs').addEventListener('click',e=>{const v14=e.target.closest('button[data-
   const im=e.target.closest('img[data-big]');if(im){window.open(im.dataset.big,'_blank');return;}const b=e.target.closest('.acts button');if(!b)return;const d=b.closest('.m'),raw=d.dataset.raw||'';
   if(b.dataset.act==='copy')(navigator.clipboard?navigator.clipboard.writeText(stripThink(raw)):Promise.reject()).then(()=>toast('Copiato ✓','ok'),()=>toast('Copia non riuscita','err'));
   else if(b.dataset.act==='speak'){const w=ttsOn;ttsOn=true;say(raw);ttsOn=w;}
-  else if(b.dataset.act==='regen')regen(d);});
+  else if(b.dataset.act==='regen')regen(d);
+  else if(b.dataset.act==='deep')pensaMeglio(d);});
 // allegati: trascina e rilascia, incolla un'immagine
 ['dragenter','dragover'].forEach(ev=>$('#main').addEventListener(ev,e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){e.preventDefault();$('#main').classList.add('drop');}}));
 ['dragleave','drop'].forEach(ev=>$('#main').addEventListener(ev,()=>$('#main').classList.remove('drop')));
@@ -19197,7 +19518,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);setTimeout(controlloAvvio,2500);})();
 </script>
 </body></html>"""
 

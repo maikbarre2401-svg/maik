@@ -7712,7 +7712,8 @@ _CTX = threading.local()          # cosa sta facendo questo thread (in un'automa
 
 # ── ⚙️ AUTOMAZIONI: «ogni lunedì alle 9 dimmi quanto ho speso», e MAIK lo fa da solo ──
 _VERBI_AUTO = (r"dimmi|dammi|fammi|mandami|leggimi|mostrami|ricordami|ricorda(?:mi)?|fai|prepara(?:mi)?|controlla|cerca|riassumi(?:mi)?|esegui|calcola|"
-               r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami")
+               r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami|"
+               r"accendi|radio|notiziario|storie")                       # v24: «ogni mattina alle 8 accendi radio maik»
 _RE_AUTO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:crea|nuova|aggiungi|imposta)\s+(?:un['’]\s*|una\s+)?automazione\s*[:,]?\s*|automazione\s*[:,]\s*)?"
                            r"(?P<quando>(?:ogni|tutti\s+i|tutte\s+le)\s+[^,]+?|nei\s+giorni\s+feriali|nel\s+(?:weekend|fine\s+settimana)|dal\s+luned[iì]\s+al\s+venerd[iì])"
                            r"(?:\s+(?:alle|all['’]|verso\s+le)\s*(?P<ora>\d{1,2}(?:[:.]\d{2})?))?\s*[,:]?\s+(?P<cosa>(?:" + _VERBI_AUTO + r")\b.*)$", re.I)
@@ -10777,7 +10778,7 @@ def mente(memoria):
         figli["documenti"].append((f"d:{d.get('id')}", d.get("nome", "documento"), "📄", f"{len(d.get('contenuto', '') or '')} caratteri", None))
     for i, x in list(enumerate(memoria.imparato))[-15:]:
         if x.get("cosa"):
-            figli["fatti"].append((f"f:{i}", x["cosa"], "💡", f"Me l'hai insegnato il {x.get('data', '?')}", {"tipo": "fatto", "chiave": str(i)}))
+            figli["fatti"].append((f"f:{i}", x["cosa"][:1].upper() + x["cosa"][1:], "💡", f"Me l'hai insegnato il {x.get('data', '?')}", {"tipo": "fatto", "chiave": str(i)}))
     recenti = [x.get("tu", "") for x in memoria.diario[-300:]]
     argomenti = _parole_frequenti(recenti, 8)
     for w, v in argomenti:
@@ -12885,7 +12886,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V23</title>
+<title>MAIK PRIME // Zep V24</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -13444,10 +13445,67 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .m.ai.accurata{border-color:rgba(251,191,36,.55)!important;box-shadow:0 0 22px rgba(251,191,36,.10)}
   .m.ai.accurata .mc::before{content:'🎯 RILETTA DA UN REVISORE';display:block;font:600 10.5px/1.7 'Share Tech Mono',monospace;letter-spacing:1px;color:#fbbf24;margin-bottom:2px}
   .agc.fatto{opacity:.7}
+
+  /* ===== V24 · Radio Maik, storie, mappa della mente ===== */
+  #radio{position:absolute;left:16px;bottom:96px;width:min(380px,calc(100% - 32px));display:none;z-index:6;border-radius:16px;padding:10px 12px;background:rgba(8,12,28,.84);backdrop-filter:blur(8px);border:1px solid rgba(var(--accent-rgb),.4);box-shadow:0 0 30px rgba(var(--accent-rgb),.18)}
+  #radio.on{display:block}
+  .rdh{display:flex;align-items:center;gap:8px}.rdh button{background:transparent;border:0;color:var(--dim);cursor:pointer;font-size:14px}
+  .onair{font:700 11px/1 'Share Tech Mono',monospace;color:#fff;background:#dc2626;padding:4px 7px;border-radius:6px;letter-spacing:1px;animation:onair 1.6s ease-in-out infinite}
+  #radio.fine .onair{background:#475569;animation:none}
+  @keyframes onair{50%{opacity:.5}}
+  #rdtit{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px}
+  .rdeq{display:flex;gap:3px;align-items:flex-end;height:26px;margin:8px 0 6px}
+  .rdeq i{flex:1;background:linear-gradient(var(--accent),rgba(var(--accent-rgb),.25));border-radius:2px;height:12%}
+  #radio.parla .rdeq i{animation:rdEq .5s ease-in-out infinite alternate}
+  #radio.parla[data-chi="nova"] .rdeq i{background:linear-gradient(#f472b6,rgba(244,114,182,.25))}
+  .rdeq i:nth-child(odd){animation-duration:.42s!important}.rdeq i:nth-child(3n){animation-duration:.61s!important}.rdeq i:nth-child(4n){animation-delay:.12s}.rdeq i:nth-child(5n){animation-duration:.35s!important}
+  @keyframes rdEq{from{height:12%}to{height:100%}}
+  #rdseg{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}#rdseg span{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--border);color:var(--dim)}
+  #rdseg span.qui{color:#fff;border-color:var(--accent);background:rgba(var(--accent-rgb),.2)}
+  #rdnow{font-size:13.5px;line-height:1.45;min-height:40px;max-height:96px;overflow:auto}
+  .rdchi{font:700 11px 'Share Tech Mono',monospace;letter-spacing:1px;color:var(--accent);margin-right:4px}.rdchi.nova{color:#f472b6}
+  .rdctl{display:flex;align-items:center;gap:6px;margin-top:6px}.rdctl button,#rdnow button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:3px 9px;cursor:pointer;font:inherit}
+  .rdctl button:hover,#rdnow button:hover{border-color:var(--accent);color:var(--accent)}
+  #rdpos{margin-left:auto;font:12px 'Share Tech Mono',monospace;color:var(--dim)}#rdmuto{font-size:11.5px;color:#fbbf24}
+  #stmodal{background:rgba(2,4,12,.92)}
+  .stwrap{position:relative;width:min(420px,94vw);height:min(86vh,760px);margin:auto}
+  #stcard{position:absolute;inset:0;border-radius:22px;overflow:hidden;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,.6);user-select:none;touch-action:manipulation;cursor:pointer;transition:background .6s}
+  #stbar{position:absolute;top:10px;left:12px;right:12px;display:flex;gap:4px;z-index:2}#stbar i{flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:2px;overflow:hidden}
+  #stbar i b{display:block;height:100%;width:0;background:#fff}
+  .sttop{position:absolute;top:22px;left:14px;right:14px;display:flex;justify-content:space-between;align-items:center;z-index:2;font:600 12px 'Share Tech Mono',monospace;letter-spacing:1px}
+  .sttop span{display:flex;gap:6px}.sttop button{background:rgba(0,0,0,.25);border:0;color:#fff;border-radius:999px;width:34px;height:34px;cursor:pointer;font-size:15px}
+  #stcont{position:absolute;inset:64px 22px 30px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:12px}
+  #stcont.entra>*{animation:stEntra .55s cubic-bezier(.2,.8,.2,1) both}#stcont.entra>*:nth-child(2){animation-delay:.08s}#stcont.entra>*:nth-child(3){animation-delay:.16s}#stcont.entra>*:nth-child(4){animation-delay:.24s}#stcont.entra>*:nth-child(5){animation-delay:.32s}
+  @keyframes stEntra{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+  .stemo{font-size:64px;filter:drop-shadow(0 6px 18px rgba(0,0,0,.3))}.stnum{font:800 64px/1 system-ui,sans-serif;letter-spacing:-1px}.sttit{font:700 24px/1.2 system-ui,sans-serif}
+  .stsotto{font-size:16px;line-height:1.45;opacity:.94;max-width:34ch}
+  .stcloud{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;align-items:baseline;max-width:340px}.stcloud span{font-weight:800;animation:stEntra .6s both}
+  .stspark{width:100%;max-width:300px;height:auto}
+  .stbarre{width:100%;max-width:330px;display:flex;flex-direction:column;gap:9px;text-align:left}.stb{display:grid;grid-template-columns:1fr auto;gap:3px 8px;font-size:14px}
+  .stb span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.stb i{grid-column:1/-1;grid-row:2;height:8px;background:rgba(255,255,255,.22);border-radius:4px;overflow:hidden}
+  .stb i b{display:block;height:100%;width:var(--w);background:#fff;border-radius:4px;animation:stBarra .9s cubic-bezier(.2,.8,.2,1) both}.stb em{font-style:normal;font-weight:700}
+  @keyframes stBarra{from{width:0}}
+  .stfine{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;justify-content:center}.stfine button{background:#fff;color:#111;border:0;border-radius:999px;padding:10px 16px;font-weight:700;cursor:pointer}
+  .stfine button+button{background:rgba(255,255,255,.2);color:#fff}
+  #stmodal.pausa #stcard::after{content:'⏸';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:48px;opacity:.6}
+  #mmmodal .mod{max-width:1180px;width:96vw}#mmmodal .modb{padding:0;position:relative}
+  .mmbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--border)}
+  #mmcerca{flex:1 1 180px;min-width:0;background:transparent;border:1px solid var(--border);border-radius:10px;padding:6px 10px;color:var(--text);font:inherit}
+  #mmleg{display:flex;gap:6px;flex-wrap:wrap}#mmleg button{border:1px solid var(--c);color:var(--c);background:transparent;border-radius:999px;padding:3px 9px;font-size:12px;cursor:pointer}
+  #mmleg button.off{opacity:.35;text-decoration:line-through}#mmconta{font:12px 'Share Tech Mono',monospace;color:var(--dim)}
+  #mmcv{display:block;width:100%;height:min(66vh,640px);touch-action:none;cursor:grab;background:radial-gradient(circle at 50% 50%,rgba(var(--accent-rgb),.09),transparent 62%)}
+  #mmdet{position:absolute;right:14px;top:62px;width:min(300px,calc(100% - 28px));background:rgba(8,12,28,.95);border:1px solid var(--border);border-radius:14px;padding:12px;font-size:13.5px;line-height:1.45;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  #mmdet p{margin:6px 0 0;overflow-wrap:anywhere}.mmdh{display:flex;gap:8px;align-items:center;font-size:15px}.mmdh span{font-size:24px}.mmdh b{color:var(--c);overflow-wrap:anywhere}.mmcat{color:var(--dim);font-size:12px;margin-top:2px}
+  .mmbtn{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.mmbtn button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12.5px}
+  .mmbtn button:hover{border-color:var(--accent);color:var(--accent)}.mmbtn button.rischio{border-color:#ef4444;color:#fca5a5}
+  #mmvuota{position:absolute;inset:60px 0 30px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--dim);pointer-events:none;padding:20px;font-size:14px}
+  .mmnota{padding:6px 14px 10px;font-size:12px;color:var(--dim)}#mmvuota[hidden],#mmdet[hidden],#rdmuto[hidden]{display:none}
+  .sbshow{display:flex;gap:6px;margin-top:8px}.sbshow .tbtn{flex:1;padding-left:4px;padding-right:4px;font-size:12px}
+  @media (prefers-reduced-motion:reduce){.onair,#radio.parla .rdeq i,#stcont.entra>*,.stb i b,.stcloud span{animation:none}#radio.parla .rdeq i{height:60%}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V23</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V24</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -13503,6 +13561,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="qs('accendi radio maik')" title="Radio Maik">📻 Radio</button><button class="tbtn" type="button" onclick="qs('il mio mese in storie')" title="Il tuo mese in storie">🎞️ Storie</button><button class="tbtn" type="button" onclick="apriMente()" title="La mappa della mente">🧠 Mente</button></div>
     <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
     <div class="note">Memoria su disco, condivisa da tutte le chat. MAIK impara da solo 🧠 e <b>agisce da solo</b> 🤖: chiedigli le cose a parole tue («stasera pasta, metti in lista gli ingredienti»). <b>📚</b> legge i tuoi documenti e cita la fonte · <b>🔁</b> si ricorda di chiederti com'è andata · <b>🫂 AMICO</b>: ti vede e ti parla.</div>
   </div>
@@ -13513,6 +13572,13 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
+      <div id="radio" role="region" aria-label="Radio Maik">
+        <div class="rdh"><span class="onair">● ON AIR</span><b id="rdtit">Radio Maik</b><button type="button" onclick="fermaRadio()" aria-label="Spegni la radio" title="Spegni la radio">✕</button></div>
+        <div class="rdeq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div id="rdseg"></div>
+        <div id="rdnow" aria-live="polite"></div>
+        <div class="rdctl"><button type="button" onclick="saltaRadio(-1)" aria-label="Battuta prima">⏮</button><button type="button" id="rdplay" onclick="pausaRadio()" aria-label="Pausa o riprendi">⏸</button><button type="button" onclick="saltaRadio(1)" aria-label="Battuta dopo">⏭</button><span id="rdmuto" hidden>🔇 voce spenta: leggi qui</span><span id="rdpos"></span></div>
+      </div>
       <div id="avpill" aria-live="polite"><span id="avdot"></span><b id="avname">Zep</b><span id="avstate">pronto</span></div>
       <div id="stagebar" role="toolbar" aria-label="Comandi del personaggio">
         <button id="sbtts" onclick="toggleTTS()" title="Voce di Zep on/off (V)" aria-label="Voce">🔊</button>
@@ -13572,6 +13638,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="offbar" role="status" aria-live="polite"></div>
     <div id="msgs"></div>
     <div class="quick">
+      <button onclick="qs('accendi radio maik')">📻 accendi radio maik</button>
+      <button onclick="qs('il mio mese in storie')">🎞️ il mio mese in storie</button>
+      <button onclick="qs('mappa della mente')">🧠 mappa della mente</button>
       <button onclick="qs('funziona tutto?')">🩺 funziona tutto?</button>
       <button onclick="qs('annulla')">↩ annulla</button>
       <button onclick="$('#inp').value='pensaci bene: ';$('#inp').focus()">🎯 pensaci bene: …</button>
@@ -13676,6 +13745,29 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="stmodal" aria-label="Le tue storie">
+  <div class="stwrap">
+    <div id="stcard">
+      <div id="stbar"></div>
+      <div class="sttop"><b>MAIK PRIME · STORIE</b><span><button type="button" id="stvoce" onclick="STORIE.voce=!STORIE.voce;this.textContent=STORIE.voce?'🔊':'🔇';if(!STORIE.voce)stopSpeech()" aria-label="Voce di Zep">🔊</button><button type="button" onclick="chiudiStorie()" aria-label="Chiudi">✕</button></span></div>
+      <div id="stcont"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="mmmodal">
+  <div class="mod">
+    <div class="modh"><div class="modt">🧠 LA MAPPA DELLA MIA MENTE <span id="mmconta"></span></div><button class="ib" onclick="chiudiMente()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="mmbar"><input id="mmcerca" placeholder="🔎 Cerca nella mappa…" aria-label="Cerca nella mappa"><div id="mmleg"></div><button type="button" class="ib" onclick="apriMente()" title="Aggiorna">🔄</button></div>
+      <canvas id="mmcv" aria-label="La mappa: trascina i nodi, rotellina per ingrandire, tocca un nodo per i dettagli"></canvas>
+      <div id="mmvuota" hidden>La mia mappa di te è ancora quasi vuota: raccontami qualcosa («mi chiamo…», «vivo a…», «mi piace…», «mia sorella si chiama…») e la vedrai crescere.</div>
+      <div id="mmdet" hidden></div>
+      <div class="mmnota">Trascina i nodi · rotellina per ingrandire · tocca per i dettagli · i fili tratteggiati sono le cose che nomini insieme · «Dimentica» si può annullare.</div>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="dgmodal">
   <div class="mod" style="max-width:680px">
@@ -14290,7 +14382,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V22 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V24 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -14307,6 +14399,7 @@ const MaikKit = (() => {
    V20: alza al cielo una coppa d'oro quando completi una tappa o raggiungi un obiettivo.
    V21: apre un portale verde sul multiverso (il consiglio, le invenzioni, gli aiutanti, la TV) e lo indica.
    V22: più leggero — la risoluzione si adatta a quanto ce la fa il PC, 30 fotogrammi al secondo quando è tranquillo, modalità leggera.
+   V24: fa la radio («dj»): cuffie in testa, la testa che va a tempo, l'antenna che lampeggia «in onda».
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -14621,6 +14714,10 @@ window.ZepKit = (() => {
       for (const [s, t] of [['L', tl], ['R', tr]]) { armTo(P['arm' + s], Object.assign({}, pr, { sx: pr.sx + LAVORA_ADJ.sx + 0.05 * t, ey: pr.ey + LAVORA_ADJ.ey, ex: pr.ex + LAVORA_ADJ.ex - 0.04 * t, sz: pr.sz + LAVORA_ADJ.sz, wr: 0.2 }), w); P.hand[s] = ['relax', w]; }
       P.look = [0.02, -0.45 + 0.5 * su, w]; P.head.x += 0.1 * (1 - su) * w; P.face.squint += 0.2 * w * (1 - su); P.face.brow += 0.25 * su * w; P.face.smile += 0.15 * su * w;
       P.props.portatile = Math.max(P.props.portatile, w); P.props.cuffiette = Math.max(P.props.cuffiette, w); P.props.digita = tl + tr; } },
+    // v24: 📻 fa la radio — cuffie in testa, la testa a tempo (anche mentre parla: le braccia restano libere per i gesti), l'antenna «in onda»
+    dj: { dur: 10, lungo: 1, f(a, w, P) { const bt = a.t * Math.PI * 2 * 1.6, b = Math.max(0, Math.sin(bt)), sw = Math.sin(bt / 2);
+      P.head.x += 0.06 * b * w; P.head.z += 0.045 * sw * w; P.root.py += 0.012 * b * w; P.spine.z += 0.025 * sw * w;
+      P.face.smile += 0.45 * w; P.face.mode.happy += 0.25 * w; P.props.cuffiette = Math.max(P.props.cuffiette, w); P.antenna += (0.15 + 0.2 * b) * w; } },
     scrive: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const su = Math.pow(Math.max(0, Math.sin(a.t * 0.8 - 1.2)), 8), sc = Math.sin(a.t * 9) * (1 - su), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { ey: pr.ey + 0.07 * sc, sx: pr.sx + 0.035 * Math.sin(a.t * 3.1) * (1 - su) }), w); P.hand.L = ['open', w]; P.hand.R = ['pinch', w]; P.look = [0.05 + 0.06 * sc, -0.75 + 0.85 * su, w]; P.head.x += 0.16 * (1 - su) * w; P.head.z += 0.05 * w; P.face.squint += 0.25 * w * (1 - su); P.face.brow += 0.3 * su * w; P.props.blocco = Math.max(P.props.blocco, w); P.props.penna = Math.max(P.props.penna, w); } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
@@ -15740,7 +15837,7 @@ window.ZepKit = (() => {
       tex.needsUpdate = true;
     }
     function aggiornaProps(B, props) {
-      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02 || props.calcolatrice > 0.02 || props.portatile > 0.02)) return;
+      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02 || props.calcolatrice > 0.02 || props.portatile > 0.02 || props.cuffiette > 0.02)) return;   // v24: anche solo le cuffie (la radio)
       const pr = propsRobot(B);
       for (const k in pr) {
         const w = clamp(props[k] || 0, 0, 1), o = pr[k], q = PROP_POS[k];
@@ -16292,7 +16389,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -16568,6 +16665,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('📻','Radio Maik',()=>qs('accendi radio maik'),'radio','show notiziario musica nova zep'),c('🎞️','Il mio mese in storie',()=>qs('il mio mese in storie'),'storie','wrapped riassunto mese anno settimana'),
+    c('🧠','Mappa della mente',()=>apriMente(),'mente','memoria cosa sai di me grafo dimentica'),
     c('🩺','Diagnosi: funziona tutto?',()=>openDiagnosi(),'diagnosi','controlla problemi ollama modelli ripara errori'),c('↩','Annulla l\'ultima cosa che ho cambiato',()=>annullaModifica(null,null),'annulla','undo ctrl z torna indietro sbagliato'),
     c('💾','Copie di sicurezza (backup)',()=>openDiagnosi(),'backup','copia ripristina dati salva'),c('🎯','Pensaci bene: …',()=>{$('#inp').value='pensaci bene: ';$('#inp').focus();},'accurato','ragiona rifletti revisore preciso'),
     c('⚡','Prestazioni e benessere',()=>openPerf(),'veloce','lento velocità fps modalità leggera pausa'),c('📖','Leggi quello che ti mostro',()=>qs('leggi quello che ti mostro'),'leggi','webcam foglio biglietto'),
@@ -16595,7 +16694,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V23',key:'maik_boot_v23',checks:[
+  return MaikKit.boot({version:'PRIME · V24',key:'maik_boot_v24',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16605,6 +16704,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Mente',run:async()=>{try{const m=await (await fetch('/mente')).json();return{ok:true,text:'🧠 '+(m.n||0)+' cose che so di te'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Diagnosi',run:async()=>{try{const d=await (await fetch('/diagnosi?veloce=1')).json();return{ok:!d.errori,text:d.errori?'❌ '+d.errori+' da sistemare':d.avvisi?'⚠️ '+d.avvisi+' da guardare':'✅ tutto a posto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Velocità',run:async()=>{try{const r=await (await fetch('/prestazioni')).json();const s=r.riscaldamento||{};return{ok:true,text:s.stato==='pronto'?'🔥 '+r.modello+' pronto':'⚡ '+r.modello+' · '+(s.stato||'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const r=await (await fetch('/laboratorio')).json();const n=r.invenzioni.length;return{ok:true,text:n?'🔬 '+n+(n===1?' invenzione':' invenzioni'):'🔬 pronto a inventare'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -16621,7 +16721,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 23 🛡️ Adesso sono **più affidabile**: se sbaglio qualcosa dimmi «**annulla**» (o premi ↩ sotto la risposta, o Ctrl+Z) e rimetto tutto com\'era; chiedimi «**funziona tutto?**» e controllo cervello, modelli, dati, internet, microfono e webcam, con il rimedio per ogni problema (🩺 **Diagnosi**); faccio da solo una **copia di sicurezza** dei tuoi dati ogni giorno («fai un backup», «ripristina il backup di ieri»); per le domande difficili «**pensaci bene: …**» (o 🎯 sotto la risposta): scrivo una bozza, la rileggo come un revisore e ti do la versione finale. Capisco anche se scrivi in fretta («ricodami», «xke nn va»), e se Ollama si spegne ti rimando la domanda appena torna. Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 24 🎬 Adesso faccio anche lo **show**: «**accendi radio maik**» e Zep si mette le cuffie per il tuo programma radio con Nova (meteo, la tua giornata, le notizie, i tuoi obiettivi e la curiosità del giorno); «**il mio mese in storie**» per rivedere il tuo mese come le storie di Instagram (e salvare la cartolina); «**mappa della mente**» per esplorare tutto quello che so di te, con i fili tra le cose (e far dimenticare quello che non vuoi). Sono anche più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -17515,7 +17615,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V23'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V24'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -18975,7 +19075,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
-  addV20(d, m); addV21(d, m);                                                                    // v21: anche obiettivi, TV, invenzioni, multiverso
+  addV20(d, m); addV21(d, m); addV24(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -19791,7 +19891,8 @@ function addV23(d, obj) {
   const ag = () => agEl(d);
   if (obj.capito) d.querySelector('.mc').insertAdjacentHTML('afterbegin', '<div class="capito">🔤 Ho capito: «' + esc(obj.capito) + '»</div>');
   if (obj.accurato) d.classList.add('accurata');
-  if (obj.annullabile) ag().insertAdjacentHTML('beforeend', bottoneAnnulla(obj.annullabile, 'Annulla (' + cosaAnn(obj.annullabile) + ')'));
+  if (obj.annullabile && !d.querySelector('button[data-au2="annulla"],button[data-sp="annulla"],button[data-cal="annulla"],button[data-td="annulla"],button[data-obc="annulla"]'))
+    ag().insertAdjacentHTML('beforeend', bottoneAnnulla(obj.annullabile, 'Annulla (' + cosaAnn(obj.annullabile) + ')'));
   if (obj.annullabili && obj.annullabili.length && !obj.annulla) ag().insertAdjacentHTML('beforeend', obj.annullabili.slice(0, 4).map(a => bottoneAnnulla(a, '«' + (a.testo.length > 28 ? a.testo.slice(0, 27) + '…' : a.testo) + '»')).join(''));
   if (obj.annulla && obj.annulla.ok) {
     document.querySelectorAll('#msgs button[data-un="' + CSS.escape(obj.annulla.annullato.id) + '"]').forEach(x => { x.disabled = true; x.textContent = '✓ annullato'; });
@@ -19828,8 +19929,396 @@ async function controlloAvvio() {
   if (e) toast('🩺 ' + e.titolo + ': ' + e.dettaglio + ' — apri 🩺 Diagnosi', 'err');
 }
 
+// V24 — MAIK PRIME Show: 📻 Radio Maik (due voci, jingle, ON AIR, Zep con le cuffie), 🎞️ le storie a schermo intero (con la cartolina da salvare),
+// 🧠 la mappa della mente (un grafo vivo: trascini, ingrandisci, tocchi, fai dimenticare)
+
+// ---------- 📻 RADIO MAIK ----------
+const RADIO = { on: false, r: null, i: 0, pausa: false, gen: 0, t: 0, ac: null, voci: null, ultimoSeg: '' };
+const CHI_RADIO = { zep: { nome: 'ZEP', icona: '🤖' }, nova: { nome: 'NOVA', icona: '🎙️' } };
+function suonoRadio(tipo) {                                    // jingle e stacchi, fatti al volo con l'audio del browser
+  try {
+    const ac = RADIO.ac || (RADIO.ac = new (window.AudioContext || window.webkitAudioContext)());
+    if (ac.state === 'suspended') ac.resume();
+    const note = tipo === 'chiusura' ? [784, 659, 523, 392, 523] : tipo === 'stacco' ? [988, 1319] : [523, 659, 784, 1047, 784, 1047];
+    const passo = tipo === 'stacco' ? 0.09 : 0.13, t0 = ac.currentTime + 0.03;
+    note.forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = i % 2 ? 'triangle' : 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + i * passo); g.gain.exponentialRampToValueAtTime(0.16, t0 + i * passo + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * passo + 0.32);
+      o.connect(g); g.connect(ac.destination); o.start(t0 + i * passo); o.stop(t0 + i * passo + 0.36);
+    });
+    return Math.round((note.length * passo + 0.3) * 1000);
+  } catch (e) { return 0; }
+}
+function vociRadio() {                                         // due voci diverse se il sistema ne ha due italiane, altrimenti la stessa con un tono diverso
+  let it = []; try { it = speechSynthesis.getVoices().filter(v => /^it/i.test(v.lang)); } catch (e) {}
+  const scelta = it.find(v => v.name === OPT.voce) || it[0] || null, altra = it.find(v => v !== scelta) || scelta;
+  return { zep: { voce: scelta, tono: 1, vel: 1.06 }, nova: { voce: altra, tono: altra && altra !== scelta ? 1.08 : 1.38, vel: 1.02 } };
+}
+function avviaRadio(r) {
+  if (!r || !r.battute || !r.battute.length) return;
+  stopSpeech(); fermaRadio(true);
+  Object.assign(RADIO, { on: true, r, i: 0, pausa: false, gen: RADIO.gen + 1, voci: vociRadio(), ultimoSeg: '' });
+  const p = $('#radio'); p.classList.add('on'); p.classList.remove('fine');
+  $('#rdtit').textContent = r.titolo || 'Radio Maik';
+  $('#rdseg').innerHTML = (r.segmenti || []).map(s => '<span data-s="' + escA(s.chiave) + '">' + esc(s.nome) + '</span>').join('');
+  $('#rdplay').textContent = '⏸'; $('#rdmuto').hidden = ttsOn && voceDisponibile();
+  if (AV) { AV.act('dj', { dur: 3600 }); AV.gesture('wave'); }
+  const g = RADIO.gen, d = suonoRadio('apertura');
+  RADIO.t = setTimeout(() => { if (RADIO.gen === g) battutaRadio(0); }, d + 150);
+}
+function battutaRadio(i) {
+  const r = RADIO.r; if (!RADIO.on || !r) return;
+  if (i >= r.battute.length) { fineRadio(); return; }
+  RADIO.i = i; const b = r.battute[i], g = RADIO.gen, chi = CHI_RADIO[b.chi] || CHI_RADIO.zep;
+  document.querySelectorAll('#rdseg span').forEach(s => s.classList.toggle('qui', s.dataset.s === b.segmento));
+  $('#rdnow').innerHTML = '<span class="rdchi ' + b.chi + '">' + chi.icona + ' ' + chi.nome + '</span> ' + esc(b.testo);
+  $('#rdpos').textContent = (i + 1) + ' / ' + r.battute.length;
+  const p = $('#radio'); p.classList.add('parla'); p.dataset.chi = b.chi;
+  const dopo = () => { if (RADIO.gen !== g || !RADIO.on || RADIO.pausa) return; p.classList.remove('parla'); if (AV) AV.stopSpeaking();
+    RADIO.t = setTimeout(() => { if (RADIO.gen === g && !RADIO.pausa) battutaRadio(i + 1); }, 260); };
+  const parte = () => {
+    if (RADIO.gen !== g || RADIO.pausa) return;
+    caption((b.chi === 'nova' ? '🎙️ ' : '') + b.testo);
+    if (b.chi === 'zep' && AV) { AV.setState('speaking'); AV.speakLine(b.testo, { rate: 1.06 }); }
+    else if (AV) { AV.setState('listening'); }
+    if (!ttsOn || !voceDisponibile()) { RADIO.t = setTimeout(dopo, Math.max(1400, b.testo.split(/\s+/).length * 330)); return; }
+    try {
+      const v = RADIO.voci[b.chi] || RADIO.voci.zep, u = new SpeechSynthesisUtterance(b.testo.replace(/[🎧🎙️📻]/gu, ''));
+      u.lang = 'it-IT'; if (v.voce) u.voice = v.voce; u.pitch = v.tono; u.rate = v.vel;
+      u.onend = dopo; u.onerror = e => { if (e && e.error === 'canceled') return; dopo(); };
+      RADIO.utt = u; speechSynthesis.speak(u);
+    } catch (e) { RADIO.t = setTimeout(dopo, 2000); }
+  };
+  if (b.segmento !== RADIO.ultimoSeg && RADIO.ultimoSeg && b.segmento !== 'chiusura') { RADIO.ultimoSeg = b.segmento; RADIO.t = setTimeout(parte, suonoRadio('stacco') + 80); }
+  else { RADIO.ultimoSeg = b.segmento; parte(); }
+}
+function fineRadio() {
+  const g = RADIO.gen; RADIO.on = false; $('#radio').classList.remove('parla'); $('#radio').classList.add('fine');
+  $('#rdnow').innerHTML = '<span class="rdchi">📻</span> Fine dello show. Grazie per averci ascoltato! <button type="button" data-rd="ancora">🔁 Riascolta</button>';
+  $('#rdplay').textContent = '▶'; suonoRadio('chiusura'); captionOff(800);
+  if (AV) { AV.endAct('dj'); AV.gesture('wave'); AV.setState('idle'); }
+  setTimeout(() => { if (RADIO.gen === g && !RADIO.on) $('#radio').classList.remove('on', 'fine'); }, 9000);
+}
+function fermaRadio(silenzioso) {
+  clearTimeout(RADIO.t); RADIO.gen++;
+  const eraOn = RADIO.on; RADIO.on = false; RADIO.pausa = false;
+  try { if (RADIO.utt) { RADIO.utt.onend = RADIO.utt.onerror = null; speechSynthesis.cancel(); } } catch (e) {}
+  RADIO.utt = null; $('#radio').classList.remove('on', 'parla', 'fine');
+  if (AV) { AV.endAct('dj'); AV.stopSpeaking(); if (eraOn) AV.setState('idle'); }
+  if (eraOn && !silenzioso) { captionOff(300); toast('📻 Radio spenta', 'ok'); }
+}
+function pausaRadio(forza) {
+  if (!RADIO.r) return;
+  if (RADIO.on && (!RADIO.pausa || forza === true)) {
+    RADIO.pausa = true; clearTimeout(RADIO.t); RADIO.gen++;
+    try { if (RADIO.utt) { RADIO.utt.onend = RADIO.utt.onerror = null; speechSynthesis.cancel(); } } catch (e) {}
+    $('#radio').classList.remove('parla'); $('#rdplay').textContent = '▶'; if (AV) AV.stopSpeaking(); captionOff(200);
+  } else if (RADIO.pausa && forza !== true) { RADIO.pausa = false; RADIO.on = true; RADIO.gen++; $('#rdplay').textContent = '⏸'; battutaRadio(RADIO.i); }
+  else if (!RADIO.on) avviaRadio(RADIO.r);
+}
+function saltaRadio(d) {
+  if (!RADIO.r) return;
+  const i = Math.max(0, Math.min(RADIO.r.battute.length - 1, RADIO.i + d));
+  clearTimeout(RADIO.t); RADIO.gen++;
+  try { if (RADIO.utt) { RADIO.utt.onend = RADIO.utt.onerror = null; speechSynthesis.cancel(); } } catch (e) {}
+  if (!RADIO.on) { RADIO.on = true; $('#radio').classList.add('on'); $('#radio').classList.remove('fine'); if (AV) AV.act('dj', { dur: 3600 }); }
+  RADIO.pausa = false; $('#rdplay').textContent = '⏸'; battutaRadio(i);
+}
+{ const s0 = stopSpeech; stopSpeech = function () { if (RADIO.on && !RADIO.pausa) pausaRadio(true); return s0.apply(this, arguments); }; }   // parli tu (o rispondo io): la radio si mette in pausa
+
+// ---------- 🎞️ LE STORIE ----------
+const STORIE = { s: null, i: 0, t: 0, t0: 0, durata: 6500, pausa: false, resto: 0, voce: true, premuto: 0 };
+const SFONDO_ST = { intro: ['#7c3aed', '#0ea5e9'], numero: ['#0f766e', '#22c55e'], parole: ['#9333ea', '#ec4899'], umore: ['#f59e0b', '#ef4444'], soldi: ['#065f46', '#0ea5e9'],
+                    obiettivi: ['#b45309', '#facc15'], finale: ['#0f172a', '#7c3aed'] };
+function apriStorie(s) {
+  if (!s || !s.slides || !s.slides.length) return;
+  Object.assign(STORIE, { s, i: 0, pausa: false, voce: ttsOn && voceDisponibile() });
+  stopSpeech();
+  $('#stbar').innerHTML = s.slides.map(() => '<i><b></b></i>').join('');
+  $('#stmodal').classList.add('open'); $('#stvoce').textContent = STORIE.voce ? '🔊' : '🔇';
+  if (AV) AV.gesture('prime');
+  mostraStoria(0);
+}
+function chiudiStorie() { if (!$('#stmodal').classList.contains('open')) return; clearTimeout(STORIE.t); cancelAnimationFrame(STORIE.raf); $('#stmodal').classList.remove('open'); STORIE.s = null; stopSpeech(); }
+function contaSu(el, fino, valuta, percento) {
+  const t0 = performance.now(), dur = 1100, fmt = v => valuta ? euroIt(v) : percento ? Math.round(v) + '%' : Math.round(v).toLocaleString('it-IT');
+  const passo = now => { const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(fino * e); if (k < 1 && el.isConnected) requestAnimationFrame(passo); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(fino); return; }
+  requestAnimationFrame(passo);
+}
+function sparkline(serie) {
+  if (!serie || serie.length < 2) return '';
+  const W = 280, H = 80, mn = Math.min(...serie, -1), mx = Math.max(...serie, 1), x = i => (i / (serie.length - 1)) * W, y = v => H - 6 - ((v - mn) / (mx - mn || 1)) * (H - 12);
+  const d = serie.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+  return '<svg class="stspark" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true"><path d="' + d + ' L' + W + ' ' + H + ' L0 ' + H + 'Z" fill="rgba(255,255,255,.14)"/><path d="' + d + '" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
+    + '<circle cx="' + x(serie.length - 1).toFixed(1) + '" cy="' + y(serie[serie.length - 1]).toFixed(1) + '" r="5" fill="#fff"/></svg>';
+}
+function mostraStoria(i) {
+  const s = STORIE.s; if (!s) return;
+  if (i < 0) i = 0;
+  if (i >= s.slides.length) { chiudiStorie(); return; }
+  STORIE.i = i; const sl = s.slides[i], [c1, c2] = SFONDO_ST[sl.tipo] || SFONDO_ST.numero;
+  $('#stcard').style.background = 'linear-gradient(160deg,' + c1 + ',' + c2 + ')';
+  [...document.querySelectorAll('#stbar i')].forEach((x, k) => { x.className = k < i ? 'fatta' : ''; x.firstChild.style.width = k < i ? '100%' : '0%'; });
+  let corpo = '<div class="stemo">' + esc(sl.emoji || '✨') + '</div>';
+  if (sl.numero != null) corpo += '<div class="stnum" data-n="' + sl.numero + '">0</div>';
+  corpo += '<div class="sttit">' + esc(sl.titolo || '') + '</div>';
+  if (sl.parole) { const mx = Math.max(...sl.parole.map(p => p.volte)); corpo += '<div class="stcloud">' + sl.parole.map((p, k) => '<span style="font-size:' + (16 + 26 * p.volte / mx).toFixed(0) + 'px;animation-delay:' + (k * 0.12) + 's">' + esc(p.parola) + '</span>').join('') + '</div>'; }
+  if (sl.serie) corpo += sparkline(sl.serie);
+  if (sl.barre) corpo += '<div class="stbarre">' + sl.barre.map((b, k) => '<div class="stb"><span>' + esc(b.emoji) + ' ' + esc(b.nome) + '</span><i><b style="--w:' + Math.max(3, b.perc) + '%;animation-delay:' + (0.2 + k * 0.15) + 's"></b></i><em>' + (b.euro != null ? euroIt(b.euro) : b.perc + '%') + '</em></div>').join('') + '</div>';
+  if (sl.sotto) corpo += '<div class="stsotto">' + esc(sl.sotto) + '</div>';
+  if (sl.tipo === 'finale') corpo += '<div class="stfine"><button type="button" data-st="cartolina">⬇ Salva la cartolina</button><button type="button" data-st="ancora">🔁 Rivedi</button></div>';
+  const c = $('#stcont'); c.innerHTML = corpo; c.classList.remove('entra'); void c.offsetWidth; c.classList.add('entra');
+  const n = c.querySelector('.stnum'); if (n) contaSu(n, +sl.numero, sl.valuta, sl.percento);
+  if (STORIE.voce && sl.voce) { stopSpeech(); say(sl.voce); }
+  if (AV) { if (sl.tipo === 'finale') AV.gesture('celebrate'); else if (i) AV.gesture(['nod', 'thumbsup', 'idea'][i % 3]); }
+  avviaTempoStoria(STORIE.durata);
+}
+function avviaTempoStoria(ms) {
+  clearTimeout(STORIE.t); cancelAnimationFrame(STORIE.raf);
+  const s = STORIE.s; if (!s) return;
+  const sl = s.slides[STORIE.i], barra = document.querySelectorAll('#stbar i b')[STORIE.i];
+  if (sl.tipo === 'finale') { if (barra) barra.style.width = '100%'; return; }              // l'ultima resta lì (c'è la cartolina)
+  STORIE.t0 = performance.now(); STORIE.resto = ms;
+  const anima = now => { if (STORIE.pausa || !STORIE.s) return; const k = Math.min(1, 1 - (STORIE.resto - (now - STORIE.t0)) / STORIE.durata); if (barra) barra.style.width = (k * 100).toFixed(1) + '%'; if (k < 1) STORIE.raf = requestAnimationFrame(anima); };
+  STORIE.raf = requestAnimationFrame(anima);
+  STORIE.t = setTimeout(() => { if (!STORIE.pausa) mostraStoria(STORIE.i + 1); }, ms);
+}
+function pausaStorie(on) {
+  if (!STORIE.s) return;
+  if (on && !STORIE.pausa) { STORIE.pausa = true; clearTimeout(STORIE.t); STORIE.resto -= performance.now() - STORIE.t0; $('#stmodal').classList.add('pausa'); }
+  else if (!on && STORIE.pausa) { STORIE.pausa = false; $('#stmodal').classList.remove('pausa'); avviaTempoStoria(Math.max(600, STORIE.resto)); }
+}
+function cartolina() {                                          // la cartolina: un'immagine da tenere (o mandare a qualcuno)
+  const s = STORIE.s; if (!s) return null;
+  const cv = document.createElement('canvas'); cv.width = 1080; cv.height = 1350; const x = cv.getContext('2d');
+  const gr = x.createLinearGradient(0, 0, 1080, 1350); gr.addColorStop(0, '#7c3aed'); gr.addColorStop(1, '#0ea5e9'); x.fillStyle = gr; x.fillRect(0, 0, 1080, 1350);
+  x.fillStyle = 'rgba(255,255,255,.08)'; for (let k = 0; k < 40; k++) { x.beginPath(); x.arc((k * 197) % 1080, (k * 311) % 1350, 4 + (k % 5) * 3, 0, 7); x.fill(); }
+  x.fillStyle = '#fff'; x.textAlign = 'center';
+  x.font = '600 44px system-ui, sans-serif'; x.fillText('MAIK PRIME', 540, 120);
+  x.font = '800 76px system-ui, sans-serif'; x.fillText(s.titolo || 'Il tuo mese', 540, 230);
+  const sotto = s.slides[0] && s.slides[0].sotto; x.font = '400 38px system-ui, sans-serif'; if (sotto) x.fillText(sotto, 540, 295);
+  let yy = 420;
+  s.slides.filter(sl => sl.numero != null).slice(0, 4).forEach(sl => {
+    x.fillStyle = 'rgba(255,255,255,.14)'; x.beginPath(); (x.roundRect ? x.roundRect(120, yy - 70, 840, 140, 30) : x.rect(120, yy - 70, 840, 140)); x.fill();
+    x.fillStyle = '#fff'; x.textAlign = 'left'; x.font = '64px system-ui, sans-serif'; x.fillText(sl.emoji || '✨', 160, yy + 22);
+    x.font = '800 54px system-ui, sans-serif'; x.fillText(sl.valuta ? euroIt(sl.numero) : sl.percento ? sl.numero + '%' : Number(sl.numero).toLocaleString('it-IT'), 270, yy + 2);
+    x.font = '400 30px system-ui, sans-serif'; x.fillText(String(sl.titolo || '').slice(0, 42), 270, yy + 46);
+    x.textAlign = 'center'; yy += 165;
+  });
+  const pp = s.slides.find(sl => sl.parole);
+  if (pp) { x.font = '600 36px system-ui, sans-serif'; x.fillText('🗣️ ' + pp.parole.slice(0, 4).map(w => w.parola).join(' · '), 540, yy - 20); yy += 70; }
+  const fin = s.slides[s.slides.length - 1], parole = String(fin.sotto || '').split(' '), righe = [];
+  let riga = ''; x.font = 'italic 40px system-ui, sans-serif';
+  for (const w of parole) { if (x.measureText(riga + ' ' + w).width > 860) { righe.push(riga); riga = w; } else riga = (riga ? riga + ' ' : '') + w; }
+  if (riga) righe.push(riga);
+  const yd = Math.min(1080, Math.max(yy + 30, 760));
+  righe.slice(0, 4).forEach((r, k) => x.fillText(r, 540, yd + k * 54));
+  x.font = '600 34px system-ui, sans-serif'; x.fillText('💚 ' + (fin.titolo || ''), 540, 1290);
+  return cv;
+}
+function salvaCartolina() {
+  const cv = cartolina(); if (!cv) return;
+  const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = 'maik-' + (STORIE.s.periodo || 'mese') + '-' + new Date().toISOString().slice(0, 10) + '.png';
+  document.body.appendChild(a); a.click(); a.remove(); toast('🖼️ Cartolina salvata', 'ok');
+}
+
+// ---------- 🧠 LA MAPPA DELLA MENTE ----------
+const COL_MENTE = { tu: '#e0f2fe', chi: '#38bdf8', persone: '#f472b6', gusti: '#fb7185', obiettivi: '#fbbf24', abitudini: '#34d399', argomenti: '#a78bfa', fatti: '#facc15', documenti: '#94a3b8' };
+const MAPPA = { m: null, N: [], L: [], byId: {}, zoom: 1, ox: 0, oy: 0, sel: null, trasc: null, pan: null, alpha: 0, raf: 0, cerca: '', nascosti: new Set(), w: 0, h: 0, ptr: null };
+function apriMente(m) {
+  $('#mmmodal').classList.add('open');
+  if (m) caricaMappa(m); else fetch('/mente').then(r => r.json()).then(caricaMappa).catch(() => toast('🧠 Non riesco a leggere la mappa', 'err'));
+  if (AV) AV.gesture('idea');
+}
+function chiudiMente() { if (!$('#mmmodal').classList.contains('open')) return; $('#mmmodal').classList.remove('open'); cancelAnimationFrame(MAPPA.raf); MAPPA.raf = 0; }
+function caricaMappa(m) {
+  const vecchi = MAPPA.byId; MAPPA.m = m;
+  const cv = $('#mmcv'), r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  MAPPA.w = r.width || 800; MAPPA.h = r.height || 560; cv.width = MAPPA.w * dpr; cv.height = MAPPA.h * dpr; MAPPA.dpr = dpr;
+  const hub = m.nodi.filter(n => n.tipo === 'hub'), nh = hub.length || 1;
+  MAPPA.N = m.nodi.map(n => {
+    const v = vecchi[n.id]; if (v) return Object.assign(v, n);
+    let x = 0, y = 0;
+    if (n.tipo === 'hub') { const k = hub.indexOf(n), a = k / nh * Math.PI * 2; x = Math.cos(a) * 170; y = Math.sin(a) * 170; }
+    else if (n.tipo !== 'tu') { const h = hub.findIndex(hh => hh.id === 'h:' + n.tipo), a = (h < 0 ? Math.random() : h / nh) * Math.PI * 2 + (Math.random() - 0.5) * 0.9; x = Math.cos(a) * 300; y = Math.sin(a) * 300; }
+    return Object.assign({ x, y, vx: 0, vy: 0 }, n);
+  });
+  MAPPA.byId = {}; MAPPA.N.forEach(n => { MAPPA.byId[n.id] = n; });
+  MAPPA.L = m.legami.map(l => Object.assign({}, l, { A: MAPPA.byId[l.da], B: MAPPA.byId[l.a] })).filter(l => l.A && l.B);
+  $('#mmconta').textContent = m.n ? m.n + ' cose che so di te' : 'ancora quasi vuota';
+  $('#mmleg').innerHTML = (m.categorie || []).filter(c => MAPPA.N.some(n => n.tipo === c.id)).map(c => '<button type="button" data-mmcat="' + escA(c.id) + '" class="' + (MAPPA.nascosti.has(c.id) ? 'off' : '') + '" style="--c:' + COL_MENTE[c.id] + '">' + esc(c.emoji + ' ' + c.nome) + '</button>').join('');
+  if (MAPPA.sel && !MAPPA.byId[MAPPA.sel]) dettaglioNodo(null);
+  MAPPA.alpha = 1;
+  const nuovi = MAPPA.N.filter(n => !vecchi[n.id]).length;
+  if (nuovi > 3) for (let k = 0; k < 180; k++) fisica();                // una buona disposizione subito, poi si assesta dal vivo
+  disegnaMappa();                                                     // subito, senza aspettare il prossimo fotogramma
+  if (!MAPPA.raf) MAPPA.raf = requestAnimationFrame(passoMappa);
+  $('#mmvuota').hidden = !!m.n;
+}
+const visibile = n => !(MAPPA.nascosti.has(n.tipo) || (n.tipo === 'hub' && MAPPA.nascosti.has(n.id.slice(2))));
+function fisica() {
+  const N = MAPPA.N.filter(visibile), a = MAPPA.alpha;
+  for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
+    const p = N[i], q = N[j]; let dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy || 0.01;
+    if (d2 > 160000) continue;
+    const f = 2600 * a / d2, d = Math.sqrt(d2); dx /= d; dy /= d;
+    p.vx -= dx * f; p.vy -= dy * f; q.vx += dx * f; q.vy += dy * f;
+  }
+  for (const l of MAPPA.L) {
+    if (!visibile(l.A) || !visibile(l.B)) continue;
+    const dx = l.B.x - l.A.x, dy = l.B.y - l.A.y, d = Math.hypot(dx, dy) || 1, rest = l.filo ? 150 : l.A.tipo === 'tu' ? 165 : 85, k = (l.filo ? 0.004 : 0.03) * a, f = (d - rest) * k;
+    l.A.vx += dx / d * f; l.A.vy += dy / d * f; l.B.vx -= dx / d * f; l.B.vy -= dy / d * f;
+  }
+  for (const n of N) {
+    if (n.tipo === 'tu') { n.x *= 0.8; n.y *= 0.8; n.vx = n.vy = 0; continue; }
+    if (MAPPA.trasc && MAPPA.trasc.n === n) { n.vx = n.vy = 0; continue; }
+    n.vx -= n.x * 0.0009 * a; n.vy -= n.y * 0.0009 * a;
+    n.vx *= 0.82; n.vy *= 0.82; n.x += Math.max(-30, Math.min(30, n.vx)); n.y += Math.max(-30, Math.min(30, n.vy));
+  }
+  MAPPA.alpha = Math.max(MAPPA.trasc ? 0.3 : 0.02, MAPPA.alpha * 0.975);
+}
+function raggio(n) { return n.tipo === 'tu' ? 30 : n.tipo === 'hub' ? 21 : 11 + Math.min(5, (n.peso || 1) * 1.2); }
+function disegnaMappa() {
+  const cv = $('#mmcv'), x = cv.getContext('2d'), z = MAPPA.zoom, t = performance.now() / 1000;
+  x.setTransform(MAPPA.dpr, 0, 0, MAPPA.dpr, 0, 0); x.clearRect(0, 0, MAPPA.w, MAPPA.h);
+  x.save(); x.translate(MAPPA.w / 2 + MAPPA.ox, MAPPA.h / 2 + MAPPA.oy); x.scale(z, z);
+  const q = MAPPA.cerca, trovato = n => q && (n.etichetta || '').toLowerCase().includes(q), sel = MAPPA.sel && MAPPA.byId[MAPPA.sel];
+  const vicini = new Set(); if (sel) MAPPA.L.forEach(l => { if (l.A === sel) vicini.add(l.B.id); if (l.B === sel) vicini.add(l.A.id); });
+  for (const l of MAPPA.L) {
+    if (!visibile(l.A) || !visibile(l.B)) continue;
+    const acceso = sel && (l.A === sel || l.B === sel);
+    x.strokeStyle = l.filo ? 'rgba(167,139,250,' + (acceso ? 0.95 : 0.45) + ')' : 'rgba(148,163,184,' + (acceso ? 0.9 : sel ? 0.12 : 0.32) + ')';
+    x.lineWidth = (l.filo ? 1.4 + Math.min(3, l.forza || 1) * 0.5 : 1.2) / Math.sqrt(z);
+    if (l.filo) { x.setLineDash([5, 6]); x.lineDashOffset = -t * 12; } else x.setLineDash([]);
+    x.beginPath(); x.moveTo(l.A.x, l.A.y); x.lineTo(l.B.x, l.B.y); x.stroke();
+  }
+  x.setLineDash([]);
+  for (const n of MAPPA.N) {
+    if (!visibile(n)) continue;
+    const r = raggio(n), col = COL_MENTE[n.tipo === 'hub' ? n.id.slice(2) : n.tipo] || '#e2e8f0', spento = sel && n !== sel && !vicini.has(n.id) && n.tipo !== 'tu';
+    x.globalAlpha = spento ? 0.3 : 1;
+    const gl = x.createRadialGradient(n.x, n.y, r * 0.3, n.x, n.y, r * (n.tipo === 'tu' ? 2.6 + 0.25 * Math.sin(t * 2) : 2));
+    gl.addColorStop(0, col + '66'); gl.addColorStop(1, col + '00'); x.fillStyle = gl; x.beginPath(); x.arc(n.x, n.y, r * 2.6, 0, 7); x.fill();
+    x.fillStyle = 'rgba(8,12,24,.92)'; x.beginPath(); x.arc(n.x, n.y, r, 0, 7); x.fill();
+    x.strokeStyle = trovato(n) ? '#fff' : col; x.lineWidth = (n === sel || trovato(n) ? 3.5 : 2) / Math.sqrt(z); x.stroke();
+    x.font = (r * 1.05).toFixed(0) + 'px system-ui, "Segoe UI Emoji", "Noto Color Emoji", sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.fillText(n.emoji || '•', n.x, n.y + 1);
+    if (n.tipo === 'tu' || n.tipo === 'hub' || z > 0.85 || n === sel || trovato(n) || vicini.has(n.id)) {
+      const et = n.etichetta.length > 26 ? n.etichetta.slice(0, 25) + '…' : n.etichetta;
+      x.font = (n.tipo === 'tu' ? '700 15px' : n.tipo === 'hub' ? '600 13px' : '12px') + ' system-ui, sans-serif'; x.textBaseline = 'top';
+      x.lineWidth = 3.5; x.strokeStyle = 'rgba(5,8,18,.85)'; x.strokeText(et, n.x, n.y + r + 5); x.fillStyle = n.tipo === 'hub' ? col : '#e5e7eb'; x.fillText(et, n.x, n.y + r + 5);
+    }
+    x.globalAlpha = 1;
+  }
+  x.restore();
+}
+function passoMappa() {
+  if (!$('#mmmodal').classList.contains('open')) { MAPPA.raf = 0; return; }
+  if (MAPPA.alpha > 0.02 || MAPPA.trasc) fisica();
+  disegnaMappa(); MAPPA.raf = requestAnimationFrame(passoMappa);
+}
+function nodoA(px, py) {
+  const r = $('#mmcv').getBoundingClientRect(), x = (px - r.left - MAPPA.w / 2 - MAPPA.ox) / MAPPA.zoom, y = (py - r.top - MAPPA.h / 2 - MAPPA.oy) / MAPPA.zoom;
+  let meglio = null, dm = 1e9;
+  for (const n of MAPPA.N) { if (!visibile(n)) continue; const d = Math.hypot(n.x - x, n.y - y); if (d < raggio(n) + 6 && d < dm) { meglio = n; dm = d; } }
+  return { n: meglio, x, y };
+}
+function dettaglioNodo(n) {
+  MAPPA.sel = n ? n.id : null; const d = $('#mmdet');
+  if (!n) { d.hidden = true; return; }
+  d.hidden = false;
+  const cat = n.tipo === 'hub' ? n.id.slice(2) : n.tipo, c = (MAPPA.m.categorie || []).find(x => x.id === cat);
+  d.innerHTML = '<div class="mmdh" style="--c:' + (COL_MENTE[cat] || '#e5e7eb') + '"><span>' + esc(n.emoji || '•') + '</span><b>' + esc(n.etichetta) + '</b></div>'
+    + (c && n.tipo !== 'hub' ? '<div class="mmcat">' + esc(c.emoji + ' ' + c.nome) + '</div>' : '') + (n.dettaglio ? '<p>' + esc(n.dettaglio) + '</p>' : '')
+    + '<div class="mmbtn">' + (n.rif ? '<button type="button" data-mm="dimentica">🗑 Dimentica</button>' : '') + (n.apri ? '<button type="button" data-mm="apri" data-apri="' + escA(n.apri) + '">↗ Apri</button>' : '')
+    + (n.tipo === 'argomenti' ? '<button type="button" data-mm="chiedi">💬 Parliamone</button>' : '') + '<button type="button" data-mm="chiudi">✕</button></div>';
+}
+async function dimenticaNodo(n, b) {
+  if (!n || !n.rif) return;
+  if (!b.dataset.sicuro) { b.dataset.sicuro = '1'; b.textContent = '⚠️ Sicuro? Tocca di nuovo'; b.classList.add('rischio'); return; }
+  b.disabled = true;
+  let r; try { r = await postJ('/mente/dimentica', n.rif); } catch (e) { r = { ok: false, errore: 'il server non risponde' }; }
+  if (!r.ok) { toast('🧠 ' + (r.errore || 'Non riesco'), 'err'); b.disabled = false; return; }
+  dettaglioNodo(null); caricaMappa(r.mente);
+  const d = add('ai', r.testo, 'seguito'); finalize(d, r.testo, null, null); if (r.annullabile) addV23(d, { annullabile: r.annullabile });
+  toast(r.testo, 'ok'); if (AV) AV.gesture('nod'); try { profilo(); } catch (e) {}
+}
+function initMappa() {
+  const cv = $('#mmcv');
+  cv.addEventListener('pointerdown', e => {
+    cv.setPointerCapture(e.pointerId); const h = nodoA(e.clientX, e.clientY);
+    MAPPA.ptr = { x: e.clientX, y: e.clientY, mosso: false, n: h.n };
+    if (h.n && h.n.tipo !== 'tu') { MAPPA.trasc = { n: h.n, dx: h.n.x - h.x, dy: h.n.y - h.y }; MAPPA.alpha = Math.max(MAPPA.alpha, 0.3); }
+    else MAPPA.pan = { x: e.clientX - MAPPA.ox, y: e.clientY - MAPPA.oy };
+  });
+  cv.addEventListener('pointermove', e => {
+    const p = MAPPA.ptr; if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > 4) p.mosso = true;
+    if (MAPPA.trasc) { const h = nodoA(e.clientX, e.clientY); MAPPA.trasc.n.x = h.x + MAPPA.trasc.dx; MAPPA.trasc.n.y = h.y + MAPPA.trasc.dy; }
+    else if (MAPPA.pan) { MAPPA.ox = e.clientX - MAPPA.pan.x; MAPPA.oy = e.clientY - MAPPA.pan.y; }
+    else cv.style.cursor = nodoA(e.clientX, e.clientY).n ? 'pointer' : 'grab';
+  });
+  const fine = () => { const p = MAPPA.ptr; if (p && !p.mosso) dettaglioNodo(p.n || null); MAPPA.trasc = MAPPA.pan = MAPPA.ptr = null; };
+  cv.addEventListener('pointerup', fine); cv.addEventListener('pointercancel', fine);
+  cv.addEventListener('wheel', e => { e.preventDefault(); const z0 = MAPPA.zoom, z = Math.max(0.35, Math.min(2.6, z0 * (e.deltaY < 0 ? 1.12 : 0.89))), r = cv.getBoundingClientRect();
+    const mx = e.clientX - r.left - MAPPA.w / 2 - MAPPA.ox, my = e.clientY - r.top - MAPPA.h / 2 - MAPPA.oy; MAPPA.ox -= mx * (z / z0 - 1); MAPPA.oy -= my * (z / z0 - 1); MAPPA.zoom = z; }, { passive: false });
+  $('#mmcerca').addEventListener('input', e => { MAPPA.cerca = e.target.value.trim().toLowerCase(); const n = MAPPA.cerca && MAPPA.N.find(x => (x.etichetta || '').toLowerCase().includes(MAPPA.cerca)); if (n) dettaglioNodo(n); });
+  window.addEventListener('resize', () => { if ($('#mmmodal').classList.contains('open') && MAPPA.m) caricaMappa(MAPPA.m); });
+}
+
+// ---------- in chat, e i bottoni ----------
+function addV24(d, obj, daAutomazione) {
+  const ag = () => agEl(d);
+  if (obj.radio) {
+    d._radio = obj.radio; stopSpeech();                         // la risposta in chat non la leggo: parte lo show
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-rd="ascolta">▶ Ascolta Radio Maik</button>');
+    setTimeout(() => avviaRadio(obj.radio), daAutomazione ? 3200 : 450);
+  }
+  if (obj.storie) {
+    d._storie = obj.storie;
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-st="apri">🎞️ Guarda le storie</button>');
+    if (!daAutomazione) setTimeout(() => apriStorie(obj.storie), 500);
+  }
+  if (obj.mente) {
+    d._mente = obj.mente;
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-mm="apri-mappa">🧠 Apri la mappa</button>');
+    if (!daAutomazione) setTimeout(() => apriMente(obj.mente), 400);
+  }
+}
+document.addEventListener('click', e => {                       // v24: radio, storie, mappa
+  const b = e.target.closest('button[data-rd],button[data-st],button[data-mm],button[data-mmcat]'); if (!b) return;
+  const ds = b.dataset, m = b.closest('.m');
+  if (ds.rd === 'ascolta') { avviaRadio(m && m._radio || RADIO.r); return; }
+  if (ds.rd === 'ancora') { avviaRadio(RADIO.r); return; }
+  if (ds.st === 'apri') { apriStorie(m && m._storie); return; }
+  if (ds.st === 'ancora') { mostraStoria(0); return; }
+  if (ds.st === 'cartolina') { salvaCartolina(); return; }
+  if (ds.mm === 'apri-mappa') { apriMente(); return; }
+  if (ds.mmcat) { MAPPA.nascosti.has(ds.mmcat) ? MAPPA.nascosti.delete(ds.mmcat) : MAPPA.nascosti.add(ds.mmcat); b.classList.toggle('off'); MAPPA.alpha = 0.6; return; }
+  const n = MAPPA.sel && MAPPA.byId[MAPPA.sel];
+  if (ds.mm === 'dimentica') dimenticaNodo(n, b);
+  else if (ds.mm === 'chiudi') dettaglioNodo(null);
+  else if (ds.mm === 'chiedi' && n) { chiudiMente(); qs('ti ricordi cosa ti avevo detto su ' + n.etichetta + '?'); }
+  else if (ds.mm === 'apri') { chiudiMente(); const f = { abitudini: window.openAbitudini, documenti: window.openDocs, obiettivi: window.openPrime }[ds.apri]; if (f) f(); }
+});
+function initStorie() {
+  const c = $('#stcard');
+  c.addEventListener('pointerdown', e => { if (e.target.closest('button')) return; STORIE.premuto = performance.now(); STORIE.tieni = setTimeout(() => pausaStorie(true), 260); });
+  c.addEventListener('pointerup', e => {
+    if (e.target.closest('button')) return; clearTimeout(STORIE.tieni);
+    if (STORIE.pausa) { pausaStorie(false); if (performance.now() - STORIE.premuto > 260) return; }
+    const r = c.getBoundingClientRect(); mostraStoria(STORIE.i + (e.clientX - r.left < r.width / 3 ? -1 : 1));
+  });
+  document.addEventListener('keydown', e => {
+    if (!$('#stmodal').classList.contains('open')) return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); mostraStoria(STORIE.i + 1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); mostraStoria(STORIE.i - 1); }
+    else if (e.key === ' ') { e.preventDefault(); pausaStorie(!STORIE.pausa); }
+  });
+}
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();}});
+$('#mmmodal').addEventListener('click',e=>{if(e.target.id==='mmmodal')chiudiMente();});$('#stmodal').addEventListener('click',e=>{if(e.target.id==='stmodal')chiudiStorie();});
 $('#dgmodal').addEventListener('click',e=>{if(e.target.id==='dgmodal')closeDiagnosi();});
 $('#pfmodal').addEventListener('click',e=>{if(e.target.id==='pfmodal')closePerf();});
 document.addEventListener('click',async e=>{const b=e.target.closest('#msgs button[data-pf],#msgs button[data-bn],#msgs button[data-wl]');if(!b)return;     // v22
@@ -19987,7 +20476,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)checkSegui
 (async()=>{await loadChats();const n=await loadHistory();      // riapre la chat dov'eri rimasto
   let brief=null;try{brief=(await (await fetch('/briefing?auto=1')).json()).testo;}catch(e){}
   if(brief)add('ai',brief);else if(!n)add('ai',CUR==='principale'?WELCOME:NUOVA);
-  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);setTimeout(controlloAvvio,2500);})();
+  setTimeout(checkSeguiti,2500);bozzaRiunione();setTimeout(checkCalAvvisi,3000);setInterval(checkCalAvvisi,30000);setTimeout(checkAbAvvisi,3500);setInterval(checkAbAvvisi,30000);setTimeout(checkIdee,6000);setInterval(checkIdee,30000);setTimeout(checkAutoAvvisi,7000);setInterval(checkAutoAvvisi,20000);setTimeout(checkObAvvisi,8000);setInterval(checkObAvvisi,15000);setTimeout(cicloAiutanti,9000);setInterval(cicloBenessere,1000);setInterval(controllaFatica,5000);setTimeout(controlloAvvio,2500);initMappa();initStorie();})();
 </script>
 </body></html>"""
 

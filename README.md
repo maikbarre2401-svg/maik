@@ -47,6 +47,25 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🛡️ Novità V23 — MAIK PRIME affidabile: annulla, autodiagnosi, copie di sicurezza, «pensaci meglio» (versione server)
+
+Tutto quello che c'era, ma che **funziona meglio**: se sbaglio si torna indietro, se qualcosa non va te lo dico (con il rimedio) e i tuoi dati sono al sicuro.
+
+| | Cosa fa |
+|---|---|
+| ↩ **Annulla** | Per ogni domanda mi segno com'erano i dati che cambio (promemoria, lista, spese, calendario, cose da fare, abitudini, routine, automazioni, obiettivi, invenzioni, documenti, quello che so di te). Sotto la risposta compare **↩ Annulla (⏰ promemoria)**; oppure scrivi «**annulla**», oppure premi **Ctrl+Z** (fuori dalla casella di testo). «**cosa posso annullare?**» → le ultime modifiche, ognuna col suo bottone. Se dopo hai già cambiato di nuovo la stessa cosa, la modifica vecchia non la tocco e te lo spiego. Le azioni già fatte sul PC (aprire un programma…) non si possono annullare. |
+| 🩺 **Autodiagnosi** | «**funziona tutto?**», «controllati», «cosa non funziona?» → controllo il cervello (Ollama acceso? versione?), i modelli (chat, visione, ricerca per significato), la velocità, i file dei dati (leggibili? file a metà?), lo spazio sul disco, le copie di sicurezza, internet, la voce e i comandi del PC. Per ogni problema: cosa succede, **come si sistema** e, se serve, il **comando da copiare** (es. `ollama pull llava`). Il pannello **🩺 Diagnosi, copie e annulla** (barra a sinistra, o Ctrl+K «diagnosi») controlla anche il **browser**: microfono, webcam, voce italiana, grafica 3D, notifiche, pagina sicura. |
+| 🔧 **Ripara** | Nel pannello: i **file dei dati rovinati** li metto da parte (`nome.json.rotto-…`, non cancello mai niente) e li recupero dall'ultima copia di sicurezza; i **file a metà** (dopo uno spegnimento brusco) li tolgo. E adesso un file rovinato **non viene più sovrascritto** da uno vuoto: lo sposto prima, così i dati restano lì. |
+| 💾 **Copie di sicurezza** | Ogni giorno faccio da sola una copia di tutti i tuoi dati (uno zip in `dati_maik/backup`, tengo le ultime 7). «**fai un backup**» → una copia subito; «**i miei backup**» → l'elenco; «**ripristina il backup di ieri**» (o «del 12 ottobre», «più recente») → ti propongo la copia giusta e **chiedo sempre conferma**; prima di ripristinare faccio una copia di come sono adesso, così puoi tornare indietro. Dal pannello: «Fai una copia adesso» e «↩ Ripristina» (con conferma nella riga stessa). |
+| 🎯 **Pensaci meglio** | Per le domande difficili: «**pensaci bene: …**» (anche «rifletti bene: …», «rispondi con calma: …»), oppure il bottone **🎯 pensaci meglio** sotto l'ultima risposta. Scrivo una **bozza**, la rileggo come un **revisore severo** (fatti, numeri, conti, cose mancanti) e ti do solo la **versione finale**, segnata «🎯 RILETTA DA UN REVISORE». Mentre lavoro vedi «📝 Scrivo una prima bozza… → 🔍 La rileggo…». Ci metto un po' di più (due passaggi), per questo lo fai partire tu. |
+| 🔤 **Capisco anche se scrivi in fretta** | «ricodami di chiamare mamma», «agiungi il latte alla lista», «apri il calendraio», «xke nn funziona», «cmq»… correggo i **refusi dei comandi** e te lo faccio vedere («🔤 Ho capito: «ricordami di …»»). Solo correzioni sicure: le parole vere («chiedi», «credimi», «scrivo»…), i nomi, i testi da scrivere («digita …»), le citazioni e i link restano come sono, e al modello arriva comunque il tuo testo originale. |
+| 🔁 **Il cervello che si riprende da solo** | Se Ollama inciampa prima di rispondere (occupato, si sta riavviando) **riprovo da solo**; se il modello che hai scelto non c'è più, ne uso uno che hai installato (e lo scrivo nel terminale). Se Ollama è proprio **spento**, in alto compare la barra **🔌 Il mio cervello è spento** con 🔁 Riprova e 🩺 Diagnosi: appena torna, **ti rimando la domanda da solo**. |
+| ⚡ **Risposte più fluide** | Il testo che arriva lo disegno al massimo ~25 volte al secondo invece che a ogni pezzetto (prima rifacevo tutto il testo per ogni parola): con i modelli veloci e le risposte lunghe la pagina non si impunta più. E se stai leggendo più su, non ti trascino in fondo. |
+
+- Nuove variabili: `MAIK_BACKUP=0` (niente copie automatiche), `MAIK_BACKUP_GIORNI` (quante copie automatiche tengo, default `7`), `MAIK_DIAGNOSI_WEB` (l'indirizzo che uso per controllare internet).
+- Nuovi endpoint: `GET /diagnosi` (`?veloce=1` senza internet né file) · `POST /diagnosi/ripara {cosa: json|tmp|backup}` · `GET /annulla` · `POST /annulla {id?}` · `GET /backup` · `POST /backup/crea` · `POST /backup/ripristina {nome}`. Le richieste che cambiano qualcosa sono accettate solo dalla GUI di MAIK. `/chat/stream` accetta `"accurato": true`, manda gli eventi `"accurato"` (le fasi) e restituisce `"annullabile"`, `"capito"`, `"accurato"`, `"offline"`, `"diagnosi"`, `"backup"`, `"backup_ripristina"`.
+- I dati: le copie in `dati_maik/backup/maik-AAAA-MM-GG_HHMMSS-(auto|manuale|prima-del-ripristino).zip` (tutti i `.json`, tranne gli indici di ricerca che si ricalcolano da soli).
+
 ## ⚡ Novità V22 — MAIK PRIME più veloce, e più attento quando ti vede (versione server)
 
 Prima: la prima risposta ci metteva tanto, e con la webcam accesa tutto rallentava. Ora:
@@ -454,7 +473,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V22 — `maikprime.py`
+## MAIK PRIME — Server V23 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 
@@ -513,6 +532,7 @@ MAIK_APPRENDIMENTO_IA=0 python maikprime.py     # spegne l'apprendimento con l'I
 MAIK_AGENTE=0 python maikprime.py               # spegne gli strumenti dell'agente
 MAIK_SEGUITI_RITARDO=30 python maikprime.py     # demo: chiede «com'è andata?» dopo 30 secondi
 MAIK_KEEP_ALIVE=2h MAIK_NUM_CTX=8192 python maikprime.py   # V22: modello pronto per 2 ore, memoria di lavoro più grande
+MAIK_BACKUP_GIORNI=30 python maikprime.py     # V23: tengo un mese di copie di sicurezza automatiche
 ```
 
 > 📲 Per installarlo sul **telefono** come app serve HTTPS (i browser lo chiedono per i service worker); sul computer

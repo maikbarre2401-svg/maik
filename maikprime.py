@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v25.0                   ║
+║              MAIK PRIME — Server v26.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,18 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v26.0 — MAIK PRIME CHEF & COACH:
+  • 🍳 Chef Zep: «ricetta della carbonara» (anche «per 6 persone»: le quantità si ricalcolano), «come si fanno le polpette?»,
+    «cosa cucino con uova, zucchine e parmigiano?», «fammi il menu della settimana» (vegetariano, veloce, per N persone) con la
+    spesa divisa per reparto → «aggiungi tutto alla lista». «cuciniamo!»: la modalità cucina passo passo, a voce, con i timer.
+    «salva la ricetta», «le mie ricette». 10 ricette di serie anche senza il modello.
+  • 🗣️ Il tutor di conversazione: «parliamo in inglese» (spagnolo, francese, tedesco, portoghese; «al ristorante», «in aeroporto»,
+    «al colloquio di lavoro»…; «principiante» o «avanzato»): Zep risponde nella lingua, ti corregge in italiano e le correzioni
+    diventano carte da ripassare. «basta» per il riepilogo. «come va il mio inglese?»
+  • 🫧 Il respiro guidato: «facciamo un esercizio di respirazione» (quadrata, 4-7-8, coerenza cardiaca; «per 5 minuti», «con il mare»).
+  • Nuovi endpoint: GET /cucina · GET /cucina/ricetta?id=&persone= · POST /cucina/salva {ricetta} · POST /cucina/elimina {id} ·
+    POST /cucina/spesa {voci} · POST /cucina/cucinata {id} · GET /tutor · GET /respiro · POST /respiro/fine {tecnica, secondi}
 
 NOVITÀ v25.0 — MAIK PRIME ACCADEMIA:
   • 🃏 Le carte per studiare: «fammi le carte per imparare le capitali d'Europa», «carte di spagnolo», «fammi le carte dal
@@ -415,7 +427,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "25.0"
+VERSIONE  = "26.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -7723,7 +7735,7 @@ _CTX = threading.local()          # cosa sta facendo questo thread (in un'automa
 # ── ⚙️ AUTOMAZIONI: «ogni lunedì alle 9 dimmi quanto ho speso», e MAIK lo fa da solo ──
 _VERBI_AUTO = (r"dimmi|dammi|fammi|mandami|leggimi|mostrami|ricordami|ricorda(?:mi)?|fai|prepara(?:mi)?|controlla|cerca|riassumi(?:mi)?|esegui|calcola|"
                r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami|"
-               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz")   # v24-25: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo»
+               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz|menu|ricetta|respiriamo")   # v24-26: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo», «ogni domenica alle 10 fammi il menu della settimana»
 _RE_AUTO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:crea|nuova|aggiungi|imposta)\s+(?:un['’]\s*|una\s+)?automazione\s*[:,]?\s*|automazione\s*[:,]\s*)?"
                            r"(?P<quando>(?:ogni|tutti\s+i|tutte\s+le)\s+[^,]+?|nei\s+giorni\s+feriali|nel\s+(?:weekend|fine\s+settimana)|dal\s+luned[iì]\s+al\s+venerd[iì])"
                            r"(?:\s+(?:alle|all['’]|verso\s+le)\s*(?P<ora>\d{1,2}(?:[:.]\d{2})?))?\s*[,:]?\s+(?P<cosa>(?:" + _VERBI_AUTO + r")\b.*)$", re.I)
@@ -8050,7 +8062,7 @@ class Automazioni:
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
                      "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
-                     "diagnosi", "backup", "radio", "storie", "studio", "quiz")
+                     "diagnosi", "backup", "radio", "storie", "studio", "quiz", "ricetta", "menu", "respiro")
 AUTOMAZIONI = Automazioni()
 
 
@@ -11371,6 +11383,861 @@ _aggancia_giornale_v25()
 
 
 # ════════════════════════════════════════════════════════════
+# V26 — MAIK PRIME Chef & Coach: 🍳 Chef Zep (le ricette con le porzioni giuste, «cosa cucino con…», il menu della settimana
+# con la spesa divisa per reparto, il ricettario, la modalità cucina passo passo con i timer), 🗣️ il tutor di conversazione
+# nelle lingue (le correzioni diventano carte da ripassare), 🫧 il respiro guidato
+# ════════════════════════════════════════════════════════════
+
+# ── 🍳 CHEF ZEP: le ricette di serie (per 4 persone; sale e pepe «q.b.») ──
+REPARTI = {"verdura": "🥬 Frutta e verdura", "carne": "🥩 Carne e pesce", "latticini": "🧀 Latte, uova e formaggi", "pasta": "🍝 Pasta, riso e pane",
+           "dispensa": "🥫 Dispensa", "condimenti": "🧂 Spezie e condimenti", "altro": "🛒 Altro"}
+_BASE_DISPENSA = re.compile(r"^(?:sale(?:\s+(?:grosso|fino))?|pepe(?:\s+nero)?|sale\s+e\s+pepe|olio(?:\s+extravergine)?(?:\s+d['’]oliva)?|acqua)$", re.I)
+
+RICETTE_DI_SERIE = {
+    "carbonara": {"nome": "Spaghetti alla carbonara", "emoji": "🍝", "tempo": 25, "difficolta": "facile", "tag": ["veloce"], "alias": r"carbonara",
+        "ingredienti": [("Spaghetti", 320, "g", "pasta"), ("Guanciale", 150, "g", "carne"), ("Tuorli d'uovo", 4, "", "latticini"), ("Pecorino romano", 50, "g", "latticini"),
+                        ("Pepe nero", None, "", "condimenti"), ("Sale grosso", None, "", "condimenti")],
+        "passi": [("Metti a bollire una pentola grande d'acqua; quando bolle, salala con il sale grosso.", 10),
+                  ("Taglia il guanciale a listarelle e fallo rosolare in padella, senza olio, a fuoco medio, finché è croccante.", 8),
+                  ("In una ciotola sbatti i tuorli con il pecorino grattugiato e tanto pepe nero: deve venire una crema densa.", 0),
+                  ("Butta gli spaghetti e cuocili al dente.", 10),
+                  ("Spegni il fuoco sotto il guanciale. Scola la pasta tenendo da parte un mestolo d'acqua di cottura e versala nella padella.", 0),
+                  ("Fuori dal fuoco aggiungi la crema di uova e mescola veloce, allungando con un po' d'acqua di cottura: deve diventare cremosa.", 0),
+                  ("Servi subito con altro pecorino e una macinata di pepe.", 0)],
+        "consiglio": "Il segreto: mai le uova sul fuoco acceso, se no diventa una frittata."},
+    "pomodoro": {"nome": "Pasta al pomodoro e basilico", "emoji": "🍅", "tempo": 30, "difficolta": "facile", "tag": ["vegetariana"], "alias": r"(?:pasta|spaghetti|penne)\s+al\s+pomodoro|sugo\s+(?:di|al)\s+pomodoro|\bpomodoro\s+e\s+basilico",
+        "ingredienti": [("Pasta (spaghetti o penne)", 320, "g", "pasta"), ("Passata di pomodoro", 500, "g", "dispensa"), ("Aglio", 1, "spicchio", "verdura"),
+                        ("Basilico fresco", 1, "mazzetto", "verdura"), ("Olio extravergine d'oliva", 3, "cucchiai", "condimenti"), ("Parmigiano", 40, "g", "latticini"), ("Sale", None, "", "condimenti")],
+        "passi": [("In un tegame scalda l'olio con lo spicchio d'aglio schiacciato, senza farlo bruciare.", 2),
+                  ("Aggiungi la passata, un pizzico di sale e qualche foglia di basilico. Cuoci a fuoco basso con il coperchio socchiuso.", 15),
+                  ("Intanto metti a bollire l'acqua per la pasta e salala.", 10),
+                  ("Cuoci la pasta al dente.", 10),
+                  ("Togli l'aglio, scola la pasta e saltala nel sugo per un minuto.", 1),
+                  ("Servi con il basilico fresco e il parmigiano.", 0)],
+        "consiglio": "Un pizzico di zucchero nel sugo toglie l'acidità del pomodoro."},
+    "aglio_olio": {"nome": "Spaghetti aglio, olio e peperoncino", "emoji": "🌶️", "tempo": 20, "difficolta": "facile", "tag": ["vegetariana", "veloce"], "alias": r"aglio,?\s+(?:e\s+)?olio",
+        "ingredienti": [("Spaghetti", 320, "g", "pasta"), ("Aglio", 3, "spicchi", "verdura"), ("Peperoncino", 1, "", "verdura"), ("Olio extravergine d'oliva", 6, "cucchiai", "condimenti"),
+                        ("Prezzemolo", 1, "ciuffo", "verdura"), ("Sale", None, "", "condimenti")],
+        "passi": [("Metti a bollire l'acqua per la pasta e salala.", 10),
+                  ("Cuoci gli spaghetti al dente.", 9),
+                  ("Intanto scalda l'olio in padella a fuoco basso con l'aglio a fettine e il peperoncino: l'aglio deve diventare appena dorato.", 3),
+                  ("Scola gli spaghetti tenendo un po' d'acqua di cottura e saltali in padella con un goccio d'acqua.", 1),
+                  ("Spolvera di prezzemolo tritato e servi subito.", 0)],
+        "consiglio": "L'aglio bruciato diventa amaro: fuoco basso e occhio aperto!"},
+    "risotto": {"nome": "Risotto alla milanese", "emoji": "🍚", "tempo": 35, "difficolta": "media", "tag": ["vegetariana"], "alias": r"risotto(?:\s+(?:alla\s+milanese|allo\s+zafferano))?",
+        "ingredienti": [("Riso Carnaroli", 320, "g", "pasta"), ("Brodo vegetale", 1.2, "l", "dispensa"), ("Cipolla", 1, "", "verdura"), ("Burro", 60, "g", "latticini"),
+                        ("Parmigiano", 60, "g", "latticini"), ("Zafferano", 1, "bustina", "condimenti"), ("Vino bianco", 1, "bicchiere", "dispensa"), ("Sale", None, "", "condimenti")],
+        "passi": [("Scalda il brodo e tienilo caldo sul fuoco.", 5),
+                  ("Trita la cipolla e falla appassire in una casseruola con metà del burro, a fuoco dolce.", 5),
+                  ("Aggiungi il riso e tostalo mescolando.", 2),
+                  ("Sfuma con il vino bianco e lascialo evaporare.", 1),
+                  ("Cuoci il riso aggiungendo un mestolo di brodo alla volta, quando il precedente si è assorbito, e mescola spesso. A metà cottura aggiungi lo zafferano sciolto in un po' di brodo.", 16),
+                  ("Spegni, aggiungi il burro rimasto e il parmigiano e manteca. Copri e lascia riposare.", 2)],
+        "consiglio": "Il riso non si lava: l'amido è quello che lo rende cremoso."},
+    "frittata": {"nome": "Frittata di zucchine", "emoji": "🍳", "tempo": 25, "difficolta": "facile", "tag": ["vegetariana", "veloce"], "alias": r"frittata",
+        "ingredienti": [("Uova", 6, "", "latticini"), ("Zucchine", 2, "", "verdura"), ("Cipolla", 1, "", "verdura"), ("Parmigiano", 40, "g", "latticini"),
+                        ("Olio extravergine d'oliva", 2, "cucchiai", "condimenti"), ("Sale e pepe", None, "", "condimenti")],
+        "passi": [("Taglia le zucchine a rondelle sottili e la cipolla a fettine.", 0),
+                  ("Cuocile in padella con l'olio a fuoco medio, finché sono morbide e dorate.", 10),
+                  ("Sbatti le uova con il parmigiano, sale e pepe.", 0),
+                  ("Versa le uova sulle zucchine, abbassa il fuoco e cuoci con il coperchio.", 8),
+                  ("Gira la frittata aiutandoti con il coperchio e cuocila dall'altra parte.", 3),
+                  ("Lasciala intiepidire un minuto e tagliala a spicchi.", 0)],
+        "consiglio": "Fuoco basso e coperchio: la frittata viene alta e morbida."},
+    "pollo_limone": {"nome": "Pollo al limone", "emoji": "🍋", "tempo": 25, "difficolta": "facile", "tag": ["veloce"], "alias": r"pollo\s+al\s+limone|scaloppine(?:\s+al\s+limone)?",
+        "ingredienti": [("Petto di pollo", 600, "g", "carne"), ("Limoni", 2, "", "verdura"), ("Farina", 3, "cucchiai", "dispensa"), ("Burro", 30, "g", "latticini"),
+                        ("Olio extravergine d'oliva", 2, "cucchiai", "condimenti"), ("Prezzemolo", 1, "ciuffo", "verdura"), ("Sale e pepe", None, "", "condimenti")],
+        "passi": [("Taglia il petto di pollo a fette sottili e infarinale bene da tutti e due i lati.", 0),
+                  ("Scalda l'olio con il burro in padella e rosola le fette di pollo, 3 minuti per lato.", 6),
+                  ("Aggiungi il succo dei limoni, un po' di scorza grattugiata, sale e pepe.", 0),
+                  ("Cuoci ancora, girando le fette, finché la salsa diventa cremosa.", 4),
+                  ("Servi con il prezzemolo tritato.", 0)],
+        "consiglio": "La farina sul pollo è quella che fa diventare cremosa la salsa."},
+    "minestrone": {"nome": "Minestrone di verdure", "emoji": "🥣", "tempo": 55, "difficolta": "facile", "tag": ["vegetariana"], "alias": r"minestrone|minestra\s+di\s+verdur",
+        "ingredienti": [("Patate", 2, "", "verdura"), ("Carote", 2, "", "verdura"), ("Zucchine", 2, "", "verdura"), ("Sedano", 1, "costa", "verdura"), ("Cipolla", 1, "", "verdura"),
+                        ("Fagioli cannellini (in scatola)", 240, "g", "dispensa"), ("Pomodori pelati", 200, "g", "dispensa"), ("Brodo vegetale", 1.5, "l", "dispensa"),
+                        ("Pasta corta (ditalini)", 150, "g", "pasta"), ("Olio extravergine d'oliva", 3, "cucchiai", "condimenti"), ("Parmigiano", None, "", "latticini"), ("Sale", None, "", "condimenti")],
+        "passi": [("Lava e taglia a dadini tutte le verdure.", 0),
+                  ("In una pentola grande soffriggi cipolla, carote e sedano con l'olio.", 5),
+                  ("Aggiungi le altre verdure, i pelati e il brodo. Copri e cuoci a fuoco basso.", 30),
+                  ("Aggiungi i fagioli scolati e la pasta e cuoci finché la pasta è pronta.", 10),
+                  ("Servi con un filo d'olio e il parmigiano.", 0)],
+        "consiglio": "Il giorno dopo è ancora più buono: se avanza, scaldalo con un filo d'olio."},
+    "polpette": {"nome": "Polpette al sugo", "emoji": "🧆", "tempo": 45, "difficolta": "facile", "tag": [], "alias": r"polpett",
+        "ingredienti": [("Carne macinata", 500, "g", "carne"), ("Uova", 1, "", "latticini"), ("Pane raffermo", 2, "fette", "pasta"), ("Latte", 100, "ml", "latticini"),
+                        ("Parmigiano", 50, "g", "latticini"), ("Prezzemolo", 1, "ciuffo", "verdura"), ("Passata di pomodoro", 700, "g", "dispensa"), ("Aglio", 1, "spicchio", "verdura"),
+                        ("Olio extravergine d'oliva", 3, "cucchiai", "condimenti"), ("Sale", None, "", "condimenti")],
+        "passi": [("Ammolla il pane nel latte, poi strizzalo bene.", 5),
+                  ("In una ciotola impasta la carne con il pane, l'uovo, il parmigiano, il prezzemolo tritato e un pizzico di sale.", 0),
+                  ("Forma delle polpette grandi come una noce.", 0),
+                  ("In un tegame scalda l'olio con l'aglio, aggiungi la passata e un pizzico di sale.", 5),
+                  ("Metti le polpette nel sugo, copri e cuoci a fuoco basso, girandole ogni tanto.", 25),
+                  ("Servile con il loro sugo (e il pane per la scarpetta!).", 0)],
+        "consiglio": "Con le mani bagnate le polpette non si attaccano."},
+    "tiramisu": {"nome": "Tiramisù", "emoji": "🍰", "tempo": 30, "difficolta": "facile", "tag": ["dolce", "vegetariana"], "alias": r"tiramis[uù]",
+        "ingredienti": [("Mascarpone", 500, "g", "latticini"), ("Uova", 4, "", "latticini"), ("Zucchero", 100, "g", "dispensa"), ("Savoiardi", 300, "g", "altro"),
+                        ("Caffè", 300, "ml", "dispensa"), ("Cacao amaro", None, "", "dispensa")],
+        "passi": [("Prepara il caffè e lascialo raffreddare.", 5),
+                  ("Separa i tuorli dagli albumi. Monta i tuorli con lo zucchero finché sono chiari e spumosi.", 5),
+                  ("Aggiungi il mascarpone ai tuorli e mescola fino a una crema liscia.", 0),
+                  ("Monta gli albumi a neve ferma e uniscili alla crema, mescolando piano dal basso verso l'alto.", 0),
+                  ("Bagna velocemente i savoiardi nel caffè e fai uno strato nella pirofila; coprilo con la crema. Ripeti.", 0),
+                  ("Spolvera di cacao e metti in frigo per almeno 4 ore.", 0)],
+        "consiglio": "Le uova devono essere freschissime: il tiramisù non si cuoce."},
+    "pasta_ceci": {"nome": "Pasta e ceci", "emoji": "🫘", "tempo": 30, "difficolta": "facile", "tag": ["vegetariana"], "alias": r"pasta\s+e\s+ceci",
+        "ingredienti": [("Pasta corta (ditalini)", 250, "g", "pasta"), ("Ceci (in scatola)", 480, "g", "dispensa"), ("Passata di pomodoro", 150, "g", "dispensa"), ("Aglio", 1, "spicchio", "verdura"),
+                        ("Rosmarino", 1, "rametto", "verdura"), ("Brodo vegetale", 1, "l", "dispensa"), ("Olio extravergine d'oliva", 3, "cucchiai", "condimenti"), ("Sale e pepe", None, "", "condimenti")],
+        "passi": [("In una pentola scalda l'olio con l'aglio e il rosmarino.", 2),
+                  ("Aggiungi i ceci scolati e la passata e fai insaporire.", 5),
+                  ("Togli il rosmarino, frulla metà dei ceci con un po' di brodo e rimettili nella pentola.", 0),
+                  ("Aggiungi il resto del brodo e, quando bolle, la pasta.", 0),
+                  ("Cuoci la pasta mescolando spesso, con un po' di brodo in più se si asciuga troppo.", 10),
+                  ("Servi con un filo d'olio e una macinata di pepe.", 0)],
+        "consiglio": "Frullare una parte dei ceci la rende cremosa senza panna."},
+}
+_RE_ALIAS_RICETTE = {k: re.compile(r["alias"], re.I) for k, r in RICETTE_DI_SERIE.items()}
+_RE_CIBO = re.compile(r"pasta|spaghett|penne|risott|riso\b|torta|pizza|pane\b|biscott|sugo|zupp|minestr|lasagn|gnocch|tiramis|polpett|pollo|carne|pesce|insalat|frittat|dolce|crema|salsa|rag[uù]"
+                      r"|pesto|focacc|crostat|ciambell|muffin|pancake|brownie|cheesecake|curry|hamburger|omelette|uov|patat|verdur|legum|ceci|fagiol|lenticch|melanzan|parmigiana|cotolett|arrost"
+                      r"|spezzatin|polenta|tortellin|raviol|amatriciana|gricia|cacio\s+e\s+pepe|puttanesca|bolognese|panna\s+cotta|gelato|budino|mousse|zucchin|salmone|tonno|gamber|cozze"
+                      r"|vongole|calamar|orata|branzino|merluzz|baccal|bruschett|piadin|cr[eê]p|frittell|bign|cornett|brioche|semifreddo|marmellat|smoothie|frullat|cous\s*cous|paella|sushi"
+                      r"|tacos|burrito|kebab|falafel|hummus|guacamole|ramen|noodle|wok|bistecc|scaloppin|involtin|polpett|crocchett|arancin|supplì|calzone|strudel|muffin|plumcake|cannoli|caff[eè]"
+                      r"|sfogliat|babà|pastiera|panettone|colomba|cantucci|granita|tisana|cioccolat", re.I)
+
+
+def _num_cucina(v):
+    """3 → «3», 0.5 → «½», 1.5 → «1 ½», 1.2 → «1,2»."""
+    if v is None:
+        return ""
+    if abs(v - round(v)) < 1e-9:
+        return str(int(round(v)))
+    if abs(v * 2 - round(v * 2)) < 1e-9 and v < 10:
+        return ("" if v < 1 else str(int(v)) + " ") + "½"
+    return f"{v:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _qt(q, unita):
+    return "q.b." if q is None else (_num_cucina(q) + (" " + unita if unita else "")).strip()
+
+
+def _arrotonda(q, unita, nome):
+    if unita in ("g", "ml"):
+        return max(5, round(q / 10) * 10) if q >= 100 else max(5, round(q / 5) * 5)
+    if unita in ("l", "kg"):
+        return max(0.1, round(q * 10) / 10)
+    if re.search(r"uov|tuorl", nome, re.I):                # le uova intere
+        return max(1, int(q + 0.5))
+    return max(0.5, round(q * 2) / 2)
+
+
+def prepara_ricetta(r, persone=None, rid=None, fonte="di serie"):
+    """La ricetta pronta per la GUI, con le quantità per il numero di persone che vuoi (e quelle di partenza, per ricalcolarle)."""
+    pb = max(1, min(20, int(r.get("persone") or 4)))
+    p = max(1, min(20, int(persone or pb)))
+    k = p / pb
+    ingr = []
+    for x in r.get("ingredienti") or []:
+        if isinstance(x, dict):
+            nome, q, u, rep = str(x.get("nome") or "").strip()[:60], x.get("quantita"), str(x.get("unita") or "").strip()[:14], str(x.get("reparto") or "altro")
+        else:
+            nome, q, u, rep = x
+        if not nome:
+            continue
+        try:
+            q = None if q in (None, "", 0) else float(q)
+        except (TypeError, ValueError):
+            q = None
+        if q is not None and not 0 < q <= 5000:
+            q = None
+        qs = None if q is None else _arrotonda(q * k, u, nome) if k != 1 else q
+        ingr.append({"nome": nome, "quantita": qs, "base": q, "unita": u, "reparto": rep if rep in REPARTI else "altro", "qt": _qt(qs, u)})
+    passi = []
+    for x in r.get("passi") or []:
+        t, m = (x.get("testo"), x.get("minuti")) if isinstance(x, dict) else x
+        t = re.sub(r"\s+", " ", str(t or "")).strip()[:300]
+        try:
+            m = max(0, min(600, int(m or 0)))
+        except (TypeError, ValueError):
+            m = 0
+        if t:
+            passi.append({"testo": t, "minuti": m})
+    try:
+        tempo = max(1, min(1440, int(r.get("tempo") or sum(x["minuti"] for x in passi) or 30)))
+    except (TypeError, ValueError):
+        tempo = 30
+    diff = str(r.get("difficolta") or "facile").lower()
+    return {"id": rid or r.get("id") or uuid.uuid4().hex[:8], "nome": re.sub(r"\s+", " ", str(r.get("nome") or "La ricetta")).strip()[:70], "emoji": str(r.get("emoji") or "🍽️")[:4],
+            "persone": p, "persone_base": pb, "tempo": tempo, "difficolta": diff if diff in ("facile", "media", "difficile") else "facile",
+            "tag": [t for t in (r.get("tag") or []) if isinstance(t, str)][:5], "ingredienti": ingr, "passi": passi,
+            "consiglio": re.sub(r"\s+", " ", str(r.get("consiglio") or "")).strip()[:240], "fonte": r.get("fonte") or fonte}
+
+
+def ricetta_di_serie(testo):
+    return next((k for k, rx in _RE_ALIAS_RICETTE.items() if rx.search(testo or "")), None)
+
+
+def ricetta_dal_modello(piatto, persone, cervello, casa=None):
+    if casa:
+        compito = (f"Ho in casa: {', '.join(casa)}. Proponi UNA ricetta buona e semplice (italiana se possibile) che usi soprattutto questi ingredienti; puoi aggiungere solo "
+                   f"cose da dispensa (sale, pepe, olio, aglio, cipolla, pasta, riso, farina, uova). Per {persone} persone.")
+    else:
+        compito = f"Scrivi la ricetta di «{piatto}» per {persone} persone, come la farebbe un bravo cuoco di casa italiano."
+    prompt = (compito + " Quantità precise (in g, ml, cucchiai o pezzi; null per sale e pepe), passi brevi e chiari (uno per azione) con i minuti per i passi che hanno "
+              "un tempo (cottura, riposo) e 0 per gli altri. Il reparto di ogni ingrediente: verdura, carne, latticini, pasta, dispensa, condimenti o altro. Non inventare piatti "
+              "che non esistono. Rispondi SOLO in JSON: "
+              '{"nome": "…", "emoji": "una emoji", "persone": 4, "tempo": 30, "difficolta": "facile", "ingredienti": [{"nome": "…", "quantita": 200, "unita": "g", "reparto": "pasta"}], '
+              '"passi": [{"testo": "…", "minuti": 10}], "consiglio": "un consiglio da cuoco", "perche": "una frase: perché questa ricetta"}')
+    try:
+        j = cervello.pensa_json(prompt, timeout=150, num_predict=1500)
+    except Exception:
+        j = None
+    if not isinstance(j, dict) or not isinstance(j.get("ingredienti"), list) or not isinstance(j.get("passi"), list):
+        return None
+    r = prepara_ricetta(dict(j, persone=j.get("persone") or persone), persone, fonte="modello")
+    if len(r["ingredienti"]) < 3 or len(r["passi"]) < 3:
+        return None
+    r["perche"] = re.sub(r"\s+", " ", str(j.get("perche") or "")).strip()[:200]
+    return r
+
+
+_CLASSI_CIBO = {"spaghetti": "pasta", "penne": "pasta", "ditalini": "pasta", "fusilli": "pasta", "rigatoni": "pasta", "maccheroni": "pasta", "tagliatelle": "pasta",
+                "tuorli": "uova", "tuorlo": "uova", "uovo": "uova", "pancetta": "guanciale", "pollo": "pollo", "macinato": "carne", "macinata": "carne",
+                "passata": "pomodoro", "pelati": "pomodoro", "pomodori": "pomodoro", "pecorino": "formaggio", "parmigiano": "formaggio", "grana": "formaggio"}
+
+
+def _radici(s):
+    out = set()
+    for w in re.findall(r"[a-zà-ú]{3,}", _senza_accenti(str(s or "").lower())):
+        w = _CLASSI_CIBO.get(w, w)
+        out.add(w[:max(3, len(w) - 1)][:5])
+    return out - {"con", "per", "di", "del", "in", "scat", "fres", "corta", "cort"}
+
+
+def proposte_con(casa):
+    """Le mie ricette ordinate per quanto si possono fare con quello che hai (sale, pepe e olio li do per scontati)."""
+    rc = set().union(*[_radici(x) for x in casa]) if casa else set()
+    out = []
+    for k, r in RICETTE_DI_SERIE.items():
+        princ = [x for x in r["ingredienti"] if x[1] is not None and not _BASE_DISPENSA.match(x[0])]
+        hai = [x[0] for x in princ if _radici(x[0]) & rc]
+        if hai:
+            out.append({"id": k, "nome": r["nome"], "emoji": r["emoji"], "tempo": r["tempo"], "punti": round(len(hai) / max(1, len(princ)), 2),
+                        "hai": hai, "manca": [x[0] for x in princ if x[0] not in hai]})
+    out.sort(key=lambda x: (-x["punti"], x["tempo"]))
+    return out
+
+
+GIORNI_MENU = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+
+
+def _chiave_ingr(nome):
+    n = _senza_accenti(re.sub(r"\(.*?\)", "", nome).lower()).strip()
+    return {"pasta": "pasta"}.get(n, n)
+
+
+def lista_spesa(ricette):
+    """Gli ingredienti di più ricette sommati e divisi per reparto; sale, pepe e olio a parte («controlla di averli»)."""
+    tot, ordine = {}, []
+    for r in ricette:
+        for x in r["ingredienti"]:
+            k = (_chiave_ingr(x["nome"]), x["unita"])
+            if k not in tot:
+                tot[k] = dict(x)
+                ordine.append(k)
+            elif x["quantita"] is not None and tot[k]["quantita"] is not None:
+                tot[k]["quantita"] = round(tot[k]["quantita"] + x["quantita"], 2)
+    voci, base = [], []
+    for k in ordine:
+        x = tot[k]
+        x["qt"] = _qt(x["quantita"], x["unita"])
+        if _BASE_DISPENSA.match(x["nome"]):
+            base.append(x["nome"])
+            continue
+        voci.append({"nome": x["nome"], "qt": x["qt"], "reparto": x["reparto"], "testo": x["nome"] + ("" if x["quantita"] is None else f" ({x['qt']})")})
+    reparti = [{"reparto": REPARTI[rp], "voci": [v for v in voci if v["reparto"] == rp]} for rp in REPARTI if any(v["reparto"] == rp for v in voci)]
+    return {"reparti": reparti, "voci": [v["testo"] for v in voci], "controlla": sorted(set(base))}
+
+
+def menu_settimana(persone=2, vegetariano=False, veloce=False):
+    L = [k for k, r in RICETTE_DI_SERIE.items() if "dolce" not in r["tag"] and (not vegetariano or "vegetariana" in r["tag"]) and (not veloce or r["tempo"] <= 30)]
+    if not L:
+        L = [k for k, r in RICETTE_DI_SERIE.items() if "dolce" not in r["tag"]]
+    random.shuffle(L)
+    scelte = (L * 7)[:7]                                   # se le ricette sono meno di 7, si ripetono il più lontano possibile
+    ricette = [prepara_ricetta(RICETTE_DI_SERIE[k], persone, k) for k in scelte]
+    return {"persone": persone, "vegetariano": vegetariano, "veloce": veloce,
+            "giorni": [{"giorno": g, "id": r["id"], "nome": r["nome"], "emoji": r["emoji"], "tempo": r["tempo"]} for g, r in zip(GIORNI_MENU, ricette)],
+            "spesa": lista_spesa(ricette)}
+
+
+class Ricettario:
+    """Le ricette che salvi (⭐) e quante volte le hai cucinate."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "ricette.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("ricette", []); d.setdefault("cucinate", {})
+                return d
+        except Exception:
+            pass
+        return {"ricette": [], "cucinate": {}}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def elenco(self):
+        d = self._carica()
+        return [dict(r, cucinata=d["cucinate"].get(r["id"], {}).get("volte", 0)) for r in d["ricette"]]
+
+    def salva(self, r):
+        r = prepara_ricetta(r, r.get("persone"), r.get("id"), r.get("fonte") or "modello")
+        with self._lock:
+            d = self._carica()
+            n = Studio._norm(r["nome"])
+            d["ricette"] = [x for x in d["ricette"] if Studio._norm(x["nome"]) != n and x["id"] != r["id"]]
+            r["salvata"] = datetime.date.today().isoformat()
+            d["ricette"].append(r)
+            d["ricette"] = d["ricette"][-200:]
+            self._salva(d)
+        return r
+
+    def trova(self, nome):
+        n = Studio._norm(nome)
+        if not n:
+            return None
+        L = self._carica()["ricette"]
+        return (next((r for r in L if r["id"] == nome or Studio._norm(r["nome"]) == n), None)
+                or next((r for r in L if n in Studio._norm(r["nome"]) or Studio._norm(r["nome"]) in n), None))
+
+    def elimina(self, rid):
+        with self._lock:
+            d = self._carica()
+            r = next((x for x in d["ricette"] if x["id"] == rid), None)
+            if r:
+                d["ricette"] = [x for x in d["ricette"] if x["id"] != rid]
+                self._salva(d)
+            return r
+
+    def cucinata(self, rid):
+        with self._lock:
+            d = self._carica()
+            c = d["cucinate"].setdefault(str(rid)[:40], {"volte": 0})
+            c["volte"] += 1
+            c["ultima"] = datetime.date.today().isoformat()
+            self._salva(d)
+            return c
+
+
+RICETTARIO = Ricettario()
+_FILE_ANNULLABILI["ricette.json"] = "🍳 ricettario"
+CUCINA_ULTIMA = {}                                         # chat → {"ricetta", "menu", "ultimo", "quando"}: per «per 6 persone», «cuciniamo!», «aggiungi gli ingredienti alla lista»
+
+
+def _ricorda_cucina(sid, **k):
+    x = CUCINA_ULTIMA.setdefault(sid or "-", {})
+    x.update(k, quando=time.time())
+
+
+def _cucina_recente(sid):
+    x = CUCINA_ULTIMA.get(sid or "-")
+    return x if x and time.time() - x.get("quando", 0) < 3 * 3600 else {}
+
+
+def trova_ricetta(nome, persone=None):
+    """Una ricetta per nome: prima il tuo ricettario, poi le mie di serie."""
+    r = RICETTARIO.trova(nome)
+    if r:
+        return prepara_ricetta(r, persone or r.get("persone"), r["id"], r.get("fonte") or "ricettario")
+    k = ricetta_di_serie(nome)
+    return prepara_ricetta(RICETTE_DI_SERIE[k], persone, k) if k else None
+
+
+def testo_ricetta(r, intro=""):
+    ing = "\n".join(f"- {x['nome']}: {x['qt']}" for x in r["ingredienti"])
+    pas = "\n".join(f"{i}. {p['testo']}" + (f" _(⏱️ {p['minuti']} min)_" if p["minuti"] else "") for i, p in enumerate(r["passi"], 1))
+    return (intro + f"{r['emoji']} **{r['nome']}** · per {r['persone']} person{'a' if r['persone'] == 1 else 'e'} · ⏱️ {r['tempo']} minuti · {r['difficolta']}\n\n"
+            f"**Ingredienti**\n{ing}\n\n**Come si fa**\n{pas}" + (f"\n\n💡 {r['consiglio']}" if r.get("consiglio") else "")
+            + "\n\nDimmi «**cuciniamo!**» e ti guido passo passo, con i timer 👨‍🍳")
+
+
+_P = r"(?:(?:maik|zep|prime)[,!]?\s+)?"
+_RE_RICETTA = re.compile(_P + r"(?:(?:dammi|dimmi|mi\s+dai|fammi\s+vedere|voglio|cerca(?:mi)?|mostrami|trovami|scrivimi|qual\s+[eè])\s+)?(?:la\s+|una\s+)?ricetta\s+"
+                         r"(?:della|del|dello|dei|degli|delle|dell['’]|di|d['’]|per\s+(?:fare\s+)?(?:la|il|lo|i|gli|le|l['’]|un|una|uno)?)\s*(?P<p>.+?)"
+                         r"(?:\s+per\s+(?P<n>\d{1,2})(?:\s+persone)?)?$", re.I)
+_RE_COME_SI_FA = re.compile(_P + r"(?:come\s+si\s+(?:fa|fanno|prepara|preparano|cucina|cucinano)|come\s+(?:faccio|posso\s+fare|preparo|cucino)|insegnami\s+a\s+(?:fare|cucinare|preparare))\s+"
+                            r"(?:il|lo|la|l['’]|i|gli|le|un|una|uno|un['’])?\s*(?P<p>.+?)(?:\s+per\s+(?P<n>\d{1,2})(?:\s+persone)?)?$", re.I)
+_RE_PERSONE = re.compile(r"^(?:e\s+|ok\s+|fall[ao]\s+|rifall[ao]\s+|la\s+voglio\s+|me\s+la\s+fai\s+)?per\s+(?P<n>\d{1,2})(?:\s+persone)?$", re.I)
+_RE_CUCINIAMO = re.compile(_P + r"(?:cuciniamo|iniziamo\s+a\s+cucinare|si\s+cucina|modalit[aà]\s+cucina|apri\s+la\s+modalit[aà]\s+cucina|ai\s+fornelli)(?:\s+(?:il|lo|la|l['’]|i|gli|le)?\s*(?P<p>.+))?$", re.I)
+_RE_COSA_CUCINO = re.compile(_P + r"(?:(?:cosa|che\s+cosa|che)\s+(?:cucino|preparo|faccio\s+da\s+mangiare|mangio|posso\s+(?:cucinare|preparare|fare))(?:\s+(?:oggi|stasera|per\s+cena|per\s+pranzo|a\s+cena|a\s+pranzo|di\s+buono))*"
+                             r"(?:\s+con\s+(?P<i>.+))?|(?:ho\s+(?:in\s+(?:frigo|casa|dispensa)\s+)?|in\s+frigo\s+ho\s+)(?P<i2>.+?)[,:;]?\s+(?:cosa|che)\s+(?:cucino|preparo|ci\s+faccio|posso\s+fare|posso\s+cucinare))$", re.I)
+_RE_MENU = re.compile(_P + r"(?:(?:fammi|preparami|crea(?:mi)?|organizzami|pianifica(?:mi)?|fai|dammi|proponimi)\s+(?:il|un)\s+menu\s+(?:della|per\s+la|di\s+questa|per\s+questa)\s+settimana"
+                      r"|(?:il\s+)?menu\s+(?:della\s+)?settimana(?:le)?|cosa\s+(?:mangio|cucino)\s+questa\s+settimana)(?P<o>.*)$", re.I)
+_RE_INGR_LISTA = re.compile(_P + r"(?:aggiungi|metti|segna|manda)(?:mi)?\s+(?:gli\s+ingredienti|tutto|la\s+spesa)\s+(?:alla|nella|in)\s+(?:mia\s+)?(?:lista|spesa)(?:\s+della\s+spesa)?$"
+                            r"|^(?:mettili|aggiungili|segnali)\s+(?:alla|nella|in)\s+(?:lista|spesa)(?:\s+della\s+spesa)?$", re.I)
+_RE_SALVA_RICETTA = re.compile(_P + r"(?:salva|salvami|metti\s+da\s+parte|aggiungi\s+(?:al\s+ricettario|ai\s+preferiti))\s+(?:la\s+|questa\s+)?ricetta(?:\s+(?:al\s+ricettario|nei\s+preferiti))?$|^salvala$", re.I)
+_RE_MIE_RICETTE = re.compile(_P + r"(?:(?:le\s+)?mie\s+ricette|(?:il\s+)?mio\s+ricettario|ricettario|le\s+ricette\s+salvate)$", re.I)
+
+
+def cucina_router(testo, motore, avvisa=None, sid=None):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    avv = avvisa or (lambda e: None)
+    rec = _cucina_recente(sid)
+    m = _RE_PERSONE.match(t)
+    if m and rec.get("ricetta"):
+        r0 = rec["ricetta"]
+        r = prepara_ricetta(dict(r0, ingredienti=[dict(x, quantita=x.get("base")) for x in r0["ingredienti"]], persone=r0["persone_base"]), int(m.group("n")), r0["id"], r0["fonte"])
+        _ricorda_cucina(sid, ricetta=r, ultimo="ricetta")
+        return {"testo": testo_ricetta(r, f"👨‍🍳 Ricalcolata per {r['persone']}!\n\n"), "ricetta": r}
+    if _RE_MIE_RICETTE.match(t):
+        L = RICETTARIO.elenco()
+        if not L:
+            return {"testo": "📖 Il tuo ricettario è vuoto. Chiedimi una ricetta («ricetta della carbonara») e tocca ⭐ **Salva**. Le mie di serie: "
+                             + ", ".join(f"{r['emoji']} {r['nome']}" for r in RICETTE_DI_SERIE.values()) + ".", "cucina": {"ricettario": []}}
+        return {"testo": "📖 **Il tuo ricettario**:\n" + "\n".join(f"- {r['emoji']} **{r['nome']}** · {r['tempo']} min" + (f" · cucinata {r['cucinata']} volt{'a' if r['cucinata'] == 1 else 'e'}" if r["cucinata"] else "") for r in L),
+                "cucina": {"ricettario": L}}
+    if _RE_SALVA_RICETTA.match(t):
+        if not rec.get("ricetta"):
+            return {"testo": "⭐ Quale ricetta? Prima chiedimene una («ricetta del tiramisù»), poi «salvala»."}
+        r = RICETTARIO.salva(rec["ricetta"])
+        return {"testo": f"⭐ Salvata nel ricettario: **{r['emoji']} {r['nome']}**. La ritrovi con «le mie ricette».", "cucina": {"salvata": r["id"]}}
+    if _RE_INGR_LISTA.match(t):
+        if rec.get("ultimo") == "menu" and rec.get("menu"):
+            voci, cosa = rec["menu"]["spesa"]["voci"], "del menu della settimana"
+        elif rec.get("ricetta"):
+            voci, cosa = lista_spesa([rec["ricetta"]])["voci"], f"di «{rec['ricetta']['nome']}»"
+        else:
+            return None                                    # «aggiungi tutto alla lista» senza una ricetta: ci pensa la lista normale
+        agg = motore.memoria.lista_aggiungi(voci)
+        return {"testo": (f"🛒 Ho messo nella lista della spesa gli ingredienti {cosa}: **{len(agg)}** cose" + (f" ({len(voci) - len(agg)} c'erano già)" if len(agg) < len(voci) else "")
+                          + ". Sale, pepe e olio li hai, vero? 😉") if agg else f"🛒 Gli ingredienti {cosa} sono già tutti nella lista.", "cucina": {"spesa": agg}}
+    m = _RE_MENU.match(t)
+    if m:
+        o = m.group("o") or ""
+        n = re.search(r"per\s+(\d{1,2})(?:\s+persone)?", o)
+        mn = menu_settimana(int(n.group(1)) if n else 2, bool(re.search(r"vegetarian|senza\s+carne|veg\b", o, re.I)), bool(re.search(r"veloc|rapid|sbrigativ", o, re.I)))
+        _ricorda_cucina(sid, menu=mn, ultimo="menu")
+        righe = "\n".join(f"- **{g['giorno']}**: {g['emoji']} {g['nome']} ({g['tempo']} min)" for g in mn["giorni"])
+        return {"testo": f"📅 **Il menu della settimana**" + (" vegetariano" if mn["vegetariano"] else "") + (" veloce" if mn["veloce"] else "")
+                         + f" · per {mn['persone']} person{'a' if mn['persone'] == 1 else 'e'}\n{righe}\n\n🛒 La spesa: **{len(mn['spesa']['voci'])}** cose, divise per reparto"
+                         + (f" (e controlla di avere {', '.join(x.lower() for x in mn['spesa']['controlla'])})" if mn["spesa"]["controlla"] else "")
+                         + ". Dimmi «**aggiungi tutto alla lista**» e la metto nella lista della spesa.", "menu": mn}
+    m = _RE_COSA_CUCINO.match(t)
+    if m:
+        casa = [x for x in re.split(r"\s*(?:,|;|\+|\be\b|\bed\b|\bpoi\b)\s*", re.sub(r"\b(?:un\s+po['’]?\s+di|del|della|dello|dei|degli|delle|qualche|mezz[oa]|avanzat[oaie]|e\s+basta|solo)\b", " ",
+                                                                                   m.group("i") or m.group("i2") or "", flags=re.I)) if len(x.strip(" .!?")) >= 3][:15]
+        casa = [x.strip(" .!?") for x in casa]
+        if not casa:
+            L = [k for k, r in RICETTE_DI_SERIE.items() if "dolce" not in r["tag"]]
+            random.shuffle(L)
+            pr = [{"id": k, "nome": RICETTE_DI_SERIE[k]["nome"], "emoji": RICETTE_DI_SERIE[k]["emoji"], "tempo": RICETTE_DI_SERIE[k]["tempo"]} for k in L[:3]]
+            return {"testo": "👨‍🍳 Tre idee per te:\n" + "\n".join(f"- {p['emoji']} **{p['nome']}** ({p['tempo']} min)" for p in pr)
+                             + "\n\nScegline una, oppure dimmi cosa hai in frigo: «cosa cucino con uova, zucchine e parmigiano?»", "cucina": {"proposte": pr}}
+        avv({"lavoro": {"tipo": "cucina", "icona": "👨‍🍳", "testo": "Penso a cosa puoi cucinare con " + ", ".join(casa[:4]) + "…"}})
+        alt = proposte_con(casa)
+        r = ricetta_dal_modello("", 2, motore.cervello, casa=casa)
+        if r:
+            _ricorda_cucina(sid, ricetta=r, ultimo="ricetta")
+            return {"testo": testo_ricetta(r, f"👨‍🍳 Con {', '.join(casa)} ti propongo questa" + (f": {r['perche']}" if r.get("perche") else "") + "\n\n"), "ricetta": r,
+                    "cucina": {"proposte": alt[:3]} if alt else None}
+        if alt and alt[0]["punti"] >= 0.25:
+            b = alt[0]
+            r = prepara_ricetta(RICETTE_DI_SERIE[b["id"]], 2, b["id"])
+            _ricorda_cucina(sid, ricetta=r, ultimo="ricetta")
+            return {"testo": testo_ricetta(r, f"👨‍🍳 Con quello che hai ({', '.join(b['hai']).lower()}) puoi fare questa" + (f" (ti manca: {', '.join(b['manca']).lower()})" if b["manca"] else "") + ".\n\n"),
+                    "ricetta": r, "cucina": {"proposte": alt[1:4]} if len(alt) > 1 else None}
+        return {"testo": f"👨‍🍳 Con {', '.join(casa)} non ho una ricetta delle mie, e per inventarne una mi serve il modello (Ollama è acceso?). Le mie: "
+                         + ", ".join(f"{r['emoji']} {r['nome']}" for r in RICETTE_DI_SERIE.values()) + "."}
+    m = _RE_CUCINIAMO.match(t)
+    if m:
+        p = (m.group("p") or "").strip()
+        r = trova_ricetta(p, rec["ricetta"]["persone"] if rec.get("ricetta") else None) if p else None
+        if not r and p and _RE_CIBO.search(p):
+            avv({"lavoro": {"tipo": "cucina", "icona": "👨‍🍳", "testo": f"Scrivo la ricetta: {p}…"}})
+            r = ricetta_dal_modello(p, 4, motore.cervello)
+        r = r or rec.get("ricetta")
+        if not r:
+            return {"testo": "👨‍🍳 Cosa cuciniamo? Dimmi per esempio «ricetta della carbonara» o «cosa cucino con quello che ho in frigo», poi «cuciniamo!»."}
+        _ricorda_cucina(sid, ricetta=r, ultimo="ricetta")
+        return {"testo": f"👨‍🍳 Si cucina! **{r['emoji']} {r['nome']}** per {r['persone']}: {len(r['passi'])} passi. Ti leggo un passo alla volta, tu dimmi «avanti» (o tocca ▶). "
+                         "Dove c'è da aspettare, avvio io il timer ⏱️", "ricetta": r, "cucina": {"apri": True}}
+    m = _RE_RICETTA.match(t) or _RE_COME_SI_FA.match(t)
+    if m:
+        piatto = re.sub(r"^(?:la|il|lo|i|gli|le|l['’]|un|una|uno)\s+", "", m.group("p").strip(" «»\"'"), flags=re.I)
+        esplicita = bool(_RE_RICETTA.match(t))
+        if not piatto or (not esplicita and (re.match(r"^a\s", piatto) or not (ricetta_di_serie(piatto) or RICETTARIO.trova(piatto) or _RE_CIBO.search(piatto)))):
+            return None                                    # «come si fa a cambiare la password?» non è una ricetta
+        persone = int(m.group("n")) if m.group("n") else None
+        r = trova_ricetta(piatto, persone)
+        if not r:
+            avv({"lavoro": {"tipo": "cucina", "icona": "👨‍🍳", "testo": f"Scrivo la ricetta: {piatto}…"}})
+            r = ricetta_dal_modello(piatto, persone or 4, motore.cervello)
+        if not r:
+            return {"testo": f"👨‍🍳 La ricetta di «{piatto}» non la conosco a memoria, e per scriverla mi serve il modello (Ollama è acceso?). Le mie: "
+                             + ", ".join(f"{x['emoji']} {x['nome']}" for x in RICETTE_DI_SERIE.values()) + "."}
+        _ricorda_cucina(sid, ricetta=r, ultimo="ricetta")
+        return {"testo": testo_ricetta(r), "ricetta": r}
+    return None
+
+
+# ── 🗣️ IL TUTOR DI CONVERSAZIONE: parli nella lingua, Zep risponde, ti corregge e le correzioni diventano carte ──
+LINGUE_TUTOR = {"en": ("🇬🇧", "inglese", "English"), "es": ("🇪🇸", "spagnolo", "Spanish"), "fr": ("🇫🇷", "francese", "French"),
+                "de": ("🇩🇪", "tedesco", "German"), "pt": ("🇵🇹", "portoghese", "Portuguese")}
+_RE_LINGUA_TUTOR = [("en", r"ingles|english"), ("es", r"spagnol|espa[nñ]ol|castellano"), ("fr", r"frances|fran[cç]ais"), ("de", r"tedesc|deutsch"), ("pt", r"portoghes|portugu[eê]s")]
+SCENARI_TUTOR = {"libera": ("💬", "chiacchierata libera", "a friendly free chat about the person's day and interests", ""),
+                 "ristorante": ("🍝", "al ristorante", "a role play at a restaurant: you are the waiter, the person is the customer", r"ristorant|\bbar\b|caff[eè]|pizzeri|cena\s+fuori|ordinare"),
+                 "aeroporto": ("✈️", "in aeroporto", "a role play at the airport check-in desk: you are the airline employee", r"aeroport|\bvol[oi]\b|check"),
+                 "albergo": ("🏨", "in albergo", "a role play at a hotel reception: you are the receptionist", r"albergo|hotel|camera"),
+                 "colloquio": ("💼", "al colloquio di lavoro", "a role play of a job interview: you are the interviewer", r"colloquio|lavoro|intervista|job"),
+                 "negozio": ("🛍️", "in negozio", "a role play in a clothes shop: you are the shop assistant", r"negozi|shopping|comprar|vestit|mercato"),
+                 "strada": ("🗺️", "chiedere la strada", "a role play in the street: the person is a tourist asking for directions, you are a local", r"strada|indicazion|pers[oa]\b|turist")}
+APERTURE_TUTOR = {
+    "en": {"libera": "Hi! I'm Zep, and today we speak English. So, tell me: how was your day?",
+           "ristorante": "Good evening, and welcome to Zep's Bistro! Here's the menu. Can I get you something to drink?",
+           "aeroporto": "Good morning! Can I see your passport and ticket, please? Where are you flying today?",
+           "albergo": "Hello, and welcome to the Grand Zep Hotel! Do you have a reservation?",
+           "colloquio": "Hello, thank you for coming in today. Please, have a seat. Could you tell me a little about yourself?",
+           "negozio": "Hi there! Are you looking for anything in particular today?",
+           "strada": "Hi! You look a little lost. Can I help you find something?"},
+    "es": {"libera": "¡Hola! Soy Zep y hoy hablamos en español. Cuéntame, ¿qué tal tu día?",
+           "ristorante": "¡Buenas noches y bienvenido al Bistró de Zep! Aquí tiene la carta. ¿Qué le pongo de beber?",
+           "aeroporto": "¡Buenos días! ¿Me enseña su pasaporte y su billete, por favor? ¿Adónde viaja hoy?",
+           "albergo": "¡Hola y bienvenido al Gran Hotel Zep! ¿Tiene una reserva?",
+           "colloquio": "Hola, gracias por venir. Siéntese, por favor. ¿Puede hablarme un poco de usted?",
+           "negozio": "¡Hola! ¿Busca algo en particular?",
+           "strada": "¡Hola! Parece un poco perdido. ¿Le puedo ayudar?"},
+    "fr": {"libera": "Salut ! Je suis Zep et aujourd'hui, on parle français. Alors, comment s'est passée ta journée ?",
+           "ristorante": "Bonsoir et bienvenue au Bistrot de Zep ! Voici la carte. Qu'est-ce que je vous sers à boire ?",
+           "aeroporto": "Bonjour ! Votre passeport et votre billet, s'il vous plaît. Où allez-vous aujourd'hui ?",
+           "albergo": "Bonjour et bienvenue au Grand Hôtel Zep ! Vous avez une réservation ?",
+           "colloquio": "Bonjour, merci d'être venu. Asseyez-vous, je vous en prie. Pouvez-vous me parler un peu de vous ?",
+           "negozio": "Bonjour ! Vous cherchez quelque chose en particulier ?",
+           "strada": "Bonjour ! Vous avez l'air un peu perdu. Je peux vous aider ?"},
+    "de": {"libera": "Hallo! Ich bin Zep, und heute sprechen wir Deutsch. Also, wie war dein Tag?",
+           "ristorante": "Guten Abend und willkommen im Bistro Zep! Hier ist die Speisekarte. Was möchten Sie trinken?",
+           "aeroporto": "Guten Morgen! Ihren Reisepass und Ihr Ticket, bitte. Wohin fliegen Sie heute?",
+           "albergo": "Hallo und willkommen im Grand Hotel Zep! Haben Sie eine Reservierung?",
+           "colloquio": "Guten Tag, danke, dass Sie gekommen sind. Bitte setzen Sie sich. Können Sie mir ein bisschen über sich erzählen?",
+           "negozio": "Hallo! Suchen Sie etwas Bestimmtes?",
+           "strada": "Hallo! Sie sehen ein bisschen verloren aus. Kann ich Ihnen helfen?"},
+    "pt": {"libera": "Olá! Eu sou o Zep e hoje falamos português. Então, como foi o seu dia?",
+           "ristorante": "Boa noite e bem-vindo ao Bistrô do Zep! Aqui está o menu. O que vai beber?",
+           "aeroporto": "Bom dia! O seu passaporte e o bilhete, por favor. Para onde vai voar hoje?",
+           "albergo": "Olá, bem-vindo ao Grande Hotel Zep! Tem uma reserva?",
+           "colloquio": "Olá, obrigado por ter vindo. Sente-se, por favor. Pode falar-me um pouco sobre si?",
+           "negozio": "Olá! Procura alguma coisa em especial?",
+           "strada": "Olá! Parece um pouco perdido. Posso ajudar?"},
+}
+TRADUZIONI_APERTURE = {"libera": "Ciao! Sono Zep e oggi parliamo in {lingua}. Allora, dimmi: com'è andata la tua giornata?",
+                       "ristorante": "Buonasera e benvenuto al Bistrot di Zep! Ecco il menù. Cosa le porto da bere?",
+                       "aeroporto": "Buongiorno! Il passaporto e il biglietto, per favore. Dove vola oggi?",
+                       "albergo": "Salve e benvenuto al Grand Hotel Zep! Ha una prenotazione?",
+                       "colloquio": "Salve, grazie di essere venuto. Prego, si sieda. Può parlarmi un po' di lei?",
+                       "negozio": "Ciao! Cerca qualcosa in particolare?",
+                       "strada": "Ciao! Sembri un po' perso. Posso aiutarti a trovare qualcosa?"}
+LIVELLI_TUTOR = {"principiante": ("A2", "very simple sentences and common words"), "intermedio": ("B1", "simple but natural sentences"), "avanzato": ("C1", "natural, rich language, like a native speaker")}
+_RE_TUTOR_INIZIA = re.compile(_P + r"(?:(?:dai|ok|allora|senti)[,!]?\s+)?(?:parliamo|parlami|chiacchieriamo|conversiamo|fammi\s+(?:fare\s+)?(?:pratica|conversazione)"
+                              r"|facciamo\s+(?:(?:una|un\s+po['’]?\s+di|un|due)\s+)?(?:conversazione|pratica|chiacchiere|role\s*-?\s*play|una\s+simulazione)"
+                              r"|voglio\s+(?:fare\s+)?(?:pratica|conversazione|parlare|esercitarmi(?:\s+a\s+parlare)?)|esercitiamoci(?:\s+a\s+parlare)?|alleniamoci\s+a\s+parlare"
+                              r"|let['’]?s\s+(?:talk|speak|chat)|hablemos|parlons|lass\s+uns\s+sprechen)\s+"
+                              r"(?:(?:di|con\s+l['’]|in|a|nel(?:l['’])?|un\s+po['’]?\s+di)\s*)?(?P<l>inglese|english|spagnolo|espa[nñ]ol|castellano|francese|fran[cç]ais|tedesco|deutsch|portoghese|portugu[eê]s)\b(?P<resto>.*)$", re.I)
+_RE_TUTOR_FINE = re.compile(r"^(?:(?:ok|va\s+bene|grazie)[,!]?\s+)?(?:basta(?:\s+così)?|fine(?:\s+(?:della\s+)?conversazione)?|stop|esci|finiamo(?:\s+qui)?|chiudiamo(?:\s+qui)?|termin(?:a|iamo)(?:\s+qui)?"
+                            r"|torniamo\s+(?:a\s+parlare\s+)?in\s+italiano|parliamo\s+in\s+italiano|that['’]?s\s+(?:all|enough)(?:\s+for\s+today)?|(?:let['’]?s\s+)?stop(?:\s+here)?"
+                            r"|i\s+(?:want\s+to\s+|have\s+to\s+)?(?:stop|go)(?:\s+now)?|(?:good)?bye(?:\s+bye)?|adi[oó]s|au\s+revoir|tsch[uü]ss|tchau)(?:\s+(?:zep|maik))?[.!]*$", re.I)
+_RE_TUTOR_STATO = re.compile(_P + r"(?:come\s+va\s+(?:il\s+)?mio\s+(?P<l>inglese|spagnolo|francese|tedesco|portoghese)|(?:le\s+)?mie\s+conversazioni(?:\s+in\s+\w+)?)$", re.I)
+TUTOR_ATTIVI = {}                                          # chat → la conversazione in corso (in memoria: dopo 45 minuti di silenzio finisce da sola)
+
+
+class TutorStat:
+    """Le conversazioni fatte (quante, quanti errori): per «come va il mio inglese?»."""
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "tutor.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict) and isinstance(d.get("sessioni"), list):
+                return d
+        except Exception:
+            pass
+        return {"sessioni": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def registra(self, st, minuti):
+        d = self._carica()
+        d["sessioni"] = (d["sessioni"] + [{"data": datetime.date.today().isoformat(), "lingua": st["lingua"], "scenario": st["scenario"], "turni": st["turni"],
+                                           "giuste": st["giuste"], "errori": len(st["errori"]), "minuti": minuti}])[-300:]
+        self._salva(d)
+
+    def riassunto(self, lingua=None):
+        S = [s for s in self._carica()["sessioni"] if not lingua or s["lingua"] == lingua]
+        turni = sum(s["turni"] for s in S)
+        return {"sessioni": len(S), "turni": turni, "giuste": sum(s["giuste"] for s in S), "minuti": sum(s["minuti"] for s in S),
+                "percento": round(100 * sum(s["giuste"] for s in S) / turni) if turni else None,
+                "ultime": [round(100 * s["giuste"] / s["turni"]) for s in S[-8:] if s["turni"]]}
+
+
+TUTOR_STAT = TutorStat()
+
+
+def _norm_frase(s):
+    return re.sub(r"[^a-z0-9 ]+", " ", _senza_accenti(str(s or "").lower())).split()
+
+
+def _turno_tutor(st, testo, cervello):
+    band, nome_it, nome_en = LINGUE_TUTOR[st["lingua"]]
+    scen = SCENARI_TUTOR[st["scenario"]]
+    liv, liv_d = LIVELLI_TUTOR[st["livello"]]
+    system = (f"Sei Zep, un insegnante di {nome_it} simpatico e paziente; la persona è italiana e ha un livello {liv}. Situazione: {scen[2]}. "
+              f"Stai facendo una conversazione: rispondi SEMPRE in {nome_en} ({liv_d}), da 1 a 3 frasi brevi, e chiudi con una domanda per andare avanti. Resta nella situazione. "
+              "Se la persona sbaglia (grammatica, parole, ortografia), metti in «correzioni» gli errori più importanti (al massimo 3), con la spiegazione IN ITALIANO, breve e gentile. "
+              "Se la frase è giusta, «correzioni» è vuoto (non correggere le cose giuste e non inventare errori). Se la persona scrive in italiano o chiede come si dice qualcosa, "
+              f"in «aiuto» spiegaglielo in italiano e dalle la frase in {nome_en}. Rispondi SOLO in JSON: "
+              '{"risposta": "…", "traduzione": "la traduzione italiana della tua risposta", "correzioni": [{"sbagliato": "…", "giusto": "…", "spiegazione": "…"}], '
+              '"frase_corretta": "la frase della persona tutta corretta, vuoto se era giusta", "aiuto": "", "parole_nuove": [{"parola": "…", "significato": "…"}]}')
+    storia = "\n".join(f"{'Zep' if r == 'zep' else 'Persona'}: {x}" for r, x in st["storia"][-12:])
+    j = pensa_breve_http(system, f"CONVERSAZIONE FINORA:\n{storia}\n\nULTIMO MESSAGGIO DELLA PERSONA: «{testo}»", num_predict=650, temperatura=0.6, json_out=True, timeout=150)
+    if not isinstance(j, dict) or not str(j.get("risposta") or "").strip():
+        return None
+    pul = lambda s, n=300: re.sub(r"\s+", " ", str(s or "")).strip()[:n]
+    parole_utente = set(_norm_frase(testo))
+    corr = []
+    for c in (j.get("correzioni") if isinstance(j.get("correzioni"), list) else [])[:3]:
+        if not isinstance(c, dict):
+            continue
+        sb, gi = pul(c.get("sbagliato"), 160), pul(c.get("giusto"), 160)
+        ws = _norm_frase(sb)
+        if not sb or not gi or ws == _norm_frase(gi) or not ws or sum(w in parole_utente for w in ws) < max(1, len(ws) // 2):
+            continue                                       # una «correzione» di cose che non hai scritto (o uguale): la scarto
+        corr.append({"sbagliato": sb, "giusto": gi, "spiegazione": pul(c.get("spiegazione"), 220)})
+    parole = [{"parola": pul(p.get("parola"), 60), "significato": pul(p.get("significato"), 80)} for p in (j.get("parole_nuove") if isinstance(j.get("parole_nuove"), list) else [])[:3]
+              if isinstance(p, dict) and pul(p.get("parola")) and pul(p.get("significato"))]
+    return {"risposta": pul(j["risposta"], 600), "traduzione": pul(j.get("traduzione"), 600), "correzioni": corr,
+            "frase_corretta": pul(j.get("frase_corretta"), 300) if corr else "", "aiuto": pul(j.get("aiuto"), 400), "parole_nuove": parole}
+
+
+def _meta_tutor(st, **k):
+    band, nome_it, _ = LINGUE_TUTOR[st["lingua"]]
+    e, nome_s, _, _ = SCENARI_TUTOR[st["scenario"]]
+    return dict({"lingua": st["lingua"], "bandiera": band, "nome_lingua": nome_it, "scenario": {"id": st["scenario"], "emoji": e, "nome": nome_s},
+                 "livello": st["livello"], "turno": st["turni"], "giuste": st["giuste"], "errori": len(st["errori"]), "carte": st["carte"]}, **k)
+
+
+def _mazzo_tutor(st):
+    return f"{LINGUE_TUTOR[st['lingua']][1].capitalize()}: dalle conversazioni"
+
+
+def _fine_tutor(sid, st):
+    TUTOR_ATTIVI.pop(sid, None)
+    band, nome_it, _ = LINGUE_TUTOR[st["lingua"]]
+    minuti = max(1, round((time.time() - st["inizio"]) / 60))
+    if not st["turni"]:
+        return "👋 Ok, chiudiamo qui! Quando vuoi riprendiamo: «parliamo in " + nome_it + "».", _meta_tutor(st, stato="fine", riepilogo=None)
+    TUTOR_STAT.registra(st, minuti)
+    err = st["errori"][-6:]
+    testo = (f"🏁 **Fine della conversazione in {nome_it}** {band} ({SCENARI_TUTOR[st['scenario']][1]}) · {st['turni']} messagg{'io' if st['turni'] == 1 else 'i'} · {minuti} min\n"
+             f"✅ Frasi giuste: **{st['giuste']} su {st['turni']}**" + (" — perfetto! 🎉" if st["giuste"] == st["turni"] else "")
+             + ("\n\n✏️ **Da ricordare:**\n" + "\n".join(f"- ❌ {c['sbagliato']} → ✅ **{c['giusto']}**" + (f" — {c['spiegazione']}" if c["spiegazione"] else "") for c in err) if err else "")
+             + (f"\n\n🃏 Ho messo **{st['carte']}** cart{'a' if st['carte'] == 1 else 'e'} nel mazzo «{_mazzo_tutor(st)}»: «ripassiamo» quando vuoi." if st["carte"] else ""))
+    return testo, _meta_tutor(st, stato="fine", riepilogo={"turni": st["turni"], "giuste": st["giuste"], "minuti": minuti, "errori": err})
+
+
+def tutor_intercetta(motore, testo, on_token, allegato=None, sessione=None, rigenera=False, on_evento=None):
+    """Prima di tutto il resto: se stai facendo conversazione con il tutor, il messaggio è per lui (finché non dici «basta»)."""
+    if allegato or getattr(_CTX, "automazione", False) or not testo:
+        return None
+    sid = motore.memoria.sessione_valida(sessione)
+    t = re.sub(r"\s+", " ", testo.strip())
+    st = TUTOR_ATTIVI.get(sid)
+    if st and time.time() - st["ultimo"] > 2700:
+        TUTOR_ATTIVI.pop(sid, None)
+        st = None
+    avvisa = on_evento or (lambda e: None)
+    if not st:
+        m = _RE_TUTOR_STATO.match(t.rstrip(" ?!."))
+        if m:
+            cod = next((c for c, rx in _RE_LINGUA_TUTOR if m.group("l") and re.search(rx, m.group("l"), re.I)), None)
+            r = TUTOR_STAT.riassunto(cod)
+            nome = LINGUE_TUTOR[cod][1] if cod else ""
+            if not r["sessioni"]:
+                out = f"🗣️ Non abbiamo ancora fatto conversazione{' in ' + nome if nome else ''}. Prova: «**parliamo in {nome or 'inglese'}**» (anche «al ristorante», «al colloquio di lavoro»)."
+            else:
+                out = (f"🗣️ **Le tue conversazioni{' in ' + nome if nome else ''}**: {r['sessioni']} · {r['turni']} messaggi · {r['minuti']} minuti · frasi giuste: **{r['percento']}%**"
+                       + (f"\nLe ultime volte: {' → '.join(str(x) + '%' for x in r['ultime'])}" if len(r["ultime"]) > 1 else ""))
+            on_token(out)
+            motore.memoria.salva_scambio(testo, out, sid)
+            return motore._meta(done=True, ok=True, azione=True, sessione=sid, tutor=dict(stato="statistiche", **r))
+        m = _RE_TUTOR_INIZIA.match(t.rstrip(" ?!."))
+        if not m:
+            return None
+        cod = next(c for c, rx in _RE_LINGUA_TUTOR if re.search(rx, m.group("l"), re.I))
+        resto = m.group("resto") or ""
+        if re.search(r"\b(?:come|perch[eé]|quanto|consigl\w*|cors[oi]|app|libr[oi]|meglio|migliorare|scuola|insegnante|lezion[ei])\b", resto, re.I):
+            return None                                    # vuoi un consiglio, non una conversazione
+        scen = next((k for k, v in SCENARI_TUTOR.items() if v[3] and re.search(v[3], resto, re.I)), "libera")
+        liv = ("principiante" if re.search(r"principiant|base|facile|inizio|a1|a2", resto, re.I) else "avanzato" if re.search(r"avanzat|difficil|esperto|c1|c2", resto, re.I) else "intermedio")
+        st = {"lingua": cod, "scenario": scen, "livello": liv, "storia": [], "turni": 0, "giuste": 0, "errori": [], "carte": 0, "inizio": time.time(), "ultimo": time.time()}
+        TUTOR_ATTIVI[sid] = st
+        ap = APERTURE_TUTOR[cod][scen]
+        st["storia"].append(("zep", ap))
+        band, nome_it, _ = LINGUE_TUTOR[cod]
+        avvisa({"tutor_on": {"lingua": cod}})
+        on_token(ap)
+        motore.memoria.salva_scambio(testo, ap, sid)
+        return motore._meta(done=True, ok=True, azione=True, sessione=sid, tutor=_meta_tutor(st, stato="inizio", risposta=ap, traduzione=TRADUZIONI_APERTURE[scen].format(lingua=nome_it),
+                                                                                              correzioni=[], aiuto=""))
+    st["ultimo"] = time.time()
+    if _RE_TUTOR_FINE.match(t.rstrip(" ?!.")):
+        out, meta = _fine_tutor(sid, st)
+        on_token(out)
+        motore.memoria.salva_scambio(testo, out, sid)
+        return motore._meta(done=True, ok=True, azione=True, sessione=sid, tutor=meta, **({"studio": STUDIO.panoramica()} if st["carte"] else {}))
+    if rigenera and len(st["storia"]) >= 2 and st["storia"][-2][0] == "persona":
+        st["storia"] = st["storia"][:-2]
+        motore.memoria.rimuovi_ultimo_scambio(testo, sid)
+    avvisa({"tutor_on": {"lingua": st["lingua"]}})
+    x = _turno_tutor(st, t, motore.cervello)
+    if not x:
+        out = "🔌 Non riesco a parlare con il modello (Ollama è acceso?): la conversazione resta aperta, riprova tra poco. Per chiudere dimmi «basta»."
+        on_token(out)
+        return motore._meta(done=True, ok=True, azione=True, sessione=sid, tutor=_meta_tutor(st, stato="errore"))
+    st["storia"] += [("persona", t), ("zep", x["risposta"])]
+    st["turni"] += 1
+    if x["correzioni"]:
+        st["errori"] += x["correzioni"]
+    else:
+        st["giuste"] += 1
+    carte = [{"fronte": f"Correggi: «{c['sbagliato']}»", "retro": c["giusto"], "esempio": c["spiegazione"]} for c in x["correzioni"]]
+    carte += [{"fronte": p["significato"], "retro": p["parola"]} for p in x["parole_nuove"]]
+    nuove = []
+    if carte:
+        try:
+            _, nuove = STUDIO.nuovo_mazzo(_mazzo_tutor(st), "🗣️", st["lingua"], carte, argomento=f"conversazione in {LINGUE_TUTOR[st['lingua']][1]}", fonte="tutor")
+        except Exception:
+            nuove = []
+        st["carte"] += len(nuove)
+    on_token(x["risposta"])
+    motore.memoria.salva_scambio(testo, x["risposta"], sid)
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid, tutor=_meta_tutor(st, stato="turno", carte_nuove=len(nuove), **x))
+
+
+# ── 🫧 IL RESPIRO GUIDATO (il cerchio e i tempi li fa il browser; qui scelgo la tecnica e tengo il conto) ──
+TECNICHE_RESPIRO = {"quadrata": ("🟦", "Respirazione quadrata", [["inspira", 4], ["trattieni", 4], ["espira", 4], ["trattieni", 4]], "4-4-4-4: calma e concentrazione"),
+                    "478": ("🌙", "Respirazione 4-7-8", [["inspira", 4], ["trattieni", 7], ["espira", 8]], "per rilassarti e prendere sonno"),
+                    "coerenza": ("💚", "Coerenza cardiaca", [["inspira", 5], ["espira", 5]], "6 respiri al minuto: il cuore e il respiro vanno d'accordo"),
+                    "calma": ("🫧", "Respiro calmante", [["inspira", 4], ["espira", 6]], "l'espirazione più lunga rallenta il cuore")}
+_RESTO_RESPIRO = (r"(?:[\s,]+(?:per|di|da|con|col|coi|il|la|lo|le|i|del|della|dei|e|a|me|insieme|guidat[oa]|un|po['’]?|breve|veloce|lent[oa]|profond[oa]|calmante|quadrata|box"
+                  r"|4-7-8|4\s7\s8|478|5-5|coerenza|cardiaca|\d{1,2}|minut[oi]|mare|pioggia|bosco|natura|camino|fuoco|onde|suon[oi]|sottofondo|rumore|dormire|sonno|rilassarmi"
+                  r"|calmarmi|concentrarmi|ansia|l['’]ansia|contro|stress|lo\s+stress|stasera|adesso|ora|subito|tecnica|respirazione|breathing))*")
+_RE_RESPIRO = re.compile(r"^" + _P + r"(?:(?:facciamo|fammi\s+fare|guidami\s+(?:in|nella|con)|iniziamo|voglio\s+fare|proviamo|mi\s+fai\s+fare|fai(?:mi)?)\s+)?"
+                         r"(?:(?:un|una|l['’]|la|il|degli|dei|qualche|due|tre|\d{1,2})\s+)?(?:(?:esercizi[oi]|minut[oi]|tecnica)\s+(?:di\s+|della\s+|del\s+)?)?"
+                         r"(?:respirazione|respiriamo|coerenza\s+cardiaca|box\s+breathing|respiro\s+guidato)(?P<r>" + _RESTO_RESPIRO + r")$"
+                         r"|^" + _P + r"(?:respira\s+con\s+me|aiutami\s+a\s+(?:calmarmi|rilassarmi|respirare)|ho\s+bisogno\s+di\s+calmarmi|calmami)(?P<r2>" + _RESTO_RESPIRO + r")$"
+                         r"|^" + _P + r"(?:facciamo|fammi\s+fare|facciamo\s+insieme)\s+(?:un|due|tre|qualche|dei)\s+(?:bei\s+|bel\s+)?respir[oi](?:\s+profond[oi])?(?P<r3>" + _RESTO_RESPIRO + r")$", re.I)
+
+
+class RespiroStat:
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "respiro.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict) and isinstance(d.get("sessioni"), list):
+                return d
+        except Exception:
+            pass
+        return {"sessioni": []}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def registra(self, tecnica, secondi):
+        d = self._carica()
+        d["sessioni"] = (d["sessioni"] + [{"data": datetime.date.today().isoformat(), "tecnica": tecnica if tecnica in TECNICHE_RESPIRO else "calma",
+                                           "secondi": max(0, min(7200, int(secondi)))}])[-500:]
+        self._salva(d)
+        return self.riassunto()
+
+    def riassunto(self, oggi=None):
+        oggi = oggi or datetime.date.today()
+        S = self._carica()["sessioni"]
+        giorni = {s["data"] for s in S if s["secondi"] >= 30}
+        serie, g = 0, oggi if oggi.isoformat() in giorni else oggi - datetime.timedelta(days=1)
+        while g.isoformat() in giorni:
+            serie, g = serie + 1, g - datetime.timedelta(days=1)
+        set7 = (oggi - datetime.timedelta(days=6)).isoformat()
+        return {"sessioni": len(S), "minuti": round(sum(s["secondi"] for s in S) / 60), "settimana": round(sum(s["secondi"] for s in S if s["data"] >= set7) / 60),
+                "oggi": round(sum(s["secondi"] for s in S if s["data"] == oggi.isoformat()) / 60), "serie": serie}
+
+
+RESPIRO = RespiroStat()
+
+
+def respiro_router(testo):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    m = _RE_RESPIRO.match(t)
+    if not m:
+        return None
+    r = (m.group("r") or m.group("r2") or m.group("r3") or "") + " " + t
+    k = ("478" if re.search(r"4\s*-?\s*7\s*-?\s*8|dorm|sonno|addorment", r, re.I) else "quadrata" if re.search(r"quadrat|box|4\s*-\s*4|concentr|focus", r, re.I)
+         else "coerenza" if re.search(r"coerenza|5\s*-\s*5|equilibri|cuore", r, re.I) else "calma")
+    mm = re.search(r"(\d{1,2})\s+minut", t, re.I)
+    minuti = max(1, min(30, int(mm.group(1)))) if mm else (5 if k == "coerenza" else 3)
+    suono = next((s for s, rx in (("mare", r"mare|onde"), ("pioggia", r"pioggia"), ("bosco", r"bosco|natura|uccellini"), ("camino", r"camino|fuoco")) if re.search(rx, t, re.I)), None)
+    e, nome, fasi, descr = TECNICHE_RESPIRO[k]
+    schema = " · ".join(f"{f} {s}" for f, s in fasi)
+    return {"testo": f"{e} **{nome}** · {minuti} minut{'o' if minuti == 1 else 'i'} ({schema}): {descr}. Mettiti comodo, spalle giù. Segui il cerchio: quando si allarga inspira, "
+                     "quando si stringe espira. Io conto con te 🫧", "respiro": {"tecnica": k, "emoji": e, "nome": nome, "fasi": fasi, "minuti": minuti, "suoni": suono}}
+
+
+def v26_router(testo, motore, avvisa=None, sid=None):
+    return respiro_router(testo) or cucina_router(testo, motore, avvisa, sid)
+
+
+def _aggancia_giornale_v26():
+    for cls in (Ricettario, TutorStat, RespiroStat):
+        if getattr(cls, "_v26", False):
+            continue
+        orig = cls._salva
+
+        def _salva_c(self, *a, _orig=orig, **k):
+            metti_da_parte_se_rotto(self._file())
+            GIORNALE.prima(self._file())
+            return _orig(self, *a, **k)
+        cls._salva, cls._v26 = _salva_c, True
+
+
+_aggancia_giornale_v26()
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -11951,7 +12818,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -11962,7 +12829,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -12002,6 +12869,9 @@ Oggi è {oggi}.{extra}
 
     def rispondi_stream(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None, accurato=False):
         """v23: prima capisco i refusi e «pensaci bene: …», poi rispondo (e mi segno cosa cambio, per «annulla»)."""
+        tu = tutor_intercetta(self, testo, on_token, allegato, sessione, rigenera, on_evento)   # v26: 🗣️ in conversazione con il tutor
+        if tu is not None:
+            return tu
         return rispondi_v23(self, self._rispondi_stream_v22, testo, on_token, allegato, rigenera, sessione, on_evento, accurato)
 
     def _rispondi_stream_v22(self, testo, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None):
@@ -12034,39 +12904,46 @@ Oggi è {oggi}.{extra}
             if v23:
                 on_token(v23["testo"])
                 self.memoria.salva_scambio(testo, v23["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v23.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v23.get(k)})
             v24 = v24_router(testo, self, avvisa)                    # v24: 📻 radio maik · 🎞️ storie · 🧠 mappa della mente
             if v24:
                 on_token(v24["testo"])
                 self.memoria.salva_scambio(testo, v24["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v24.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v24.get(k)})
+            v26 = v26_router(testo, self, avvisa, sid)               # v26: 🍳 chef zep · 🫧 respiro
+            if v26:
+                if v26.get("ricetta") or v26.get("menu"):
+                    avvisa({"zitto": True})                         # la GUI non legge tutta la ricetta: dice solo una frase
+                on_token(v26["testo"])
+                self.memoria.salva_scambio(testo, v26["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v26[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v26.get(k)})
             v25 = v25_router(testo, self, avvisa)                    # v25: 🧠 carte · 🎮 quiz · 🎧 suoni
             if v25:
                 on_token(v25["testo"])
                 self.memoria.salva_scambio(testo, v25["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v25.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v25.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -12087,7 +12964,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -12101,7 +12978,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -12726,6 +13603,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/cucina":                                   # v26: 🍳 il ricettario e le ricette di serie
+                self._json({"ok": True, "ricettario": RICETTARIO.elenco(),
+                            "di_serie": [{"id": k, "nome": r["nome"], "emoji": r["emoji"], "tempo": r["tempo"], "tag": r["tag"]} for k, r in RICETTE_DI_SERIE.items()]})
+            elif base == "/cucina/ricetta":                           # v26: una ricetta (?id=&persone=)
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                rid = q.get("id", [""])[0][:80]
+                try:
+                    pers = max(1, min(20, int(q.get("persone", ["0"])[0]))) or None
+                except ValueError:
+                    pers = None
+                r = prepara_ricetta(RICETTE_DI_SERIE[rid], pers, rid) if rid in RICETTE_DI_SERIE else trova_ricetta(rid, pers)
+                self._json({"ok": bool(r), "ricetta": r} if r else {"ok": False, "errore": "ricetta non trovata"}, 200 if r else 404)
+            elif base == "/tutor":                                    # v26: 🗣️ le conversazioni fatte
+                self._json(dict(TUTOR_STAT.riassunto(), ok=True))
+            elif base == "/respiro":                                  # v26: 🫧 i minuti di respiro
+                self._json(dict(RESPIRO.riassunto(), ok=True))
             elif base == "/studio":                                   # v25: 🧠 i mazzi, le carte da ripassare oggi, la serie
                 self._json(dict(STUDIO.panoramica(), ok=True))
             elif base == "/studio/ripasso":                           # v25: le carte da ripassare (?mazzo=&libero=1)
@@ -13232,8 +14125,41 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     sec = 0
                 self._json(dict(PRESENZA.aggiungi(sec), ok=True))
-            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica", "/studio/voto", "/studio/elimina", "/quiz/fine") and not stessa_origine(self):
+            elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica", "/studio/voto", "/studio/elimina", "/quiz/fine",
+                          "/cucina/salva", "/cucina/elimina", "/cucina/spesa", "/cucina/cucinata", "/respiro/fine") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/cucina/salva":                             # v26: ⭐ {ricetta} nel ricettario (si può annullare)
+                c = self._read_json_body()
+                r0 = c.get("ricetta") if isinstance(c.get("ricetta"), dict) else None
+                if not r0 or not isinstance(r0.get("ingredienti"), list) or not isinstance(r0.get("passi"), list):
+                    self._json({"ok": False, "errore": "ricetta non valida"}, 400)
+                else:
+                    GIORNALE.inizia("salva una ricetta")
+                    r = RICETTARIO.salva(r0)
+                    if getattr(_CTX, "giornale", None):
+                        _CTX.giornale["testo"] = f"salva la ricetta «{r['nome']}»"
+                    self._json({"ok": True, "ricetta": r, "annullabile": GIORNALE.chiudi()})
+            elif base == "/cucina/elimina":                           # v26: {id} (si può annullare)
+                GIORNALE.inizia("elimina una ricetta")
+                r = RICETTARIO.elimina(str(self._read_json_body().get("id", ""))[:40])
+                if r and getattr(_CTX, "giornale", None):
+                    _CTX.giornale["testo"] = f"elimina la ricetta «{r['nome']}»"
+                mod = GIORNALE.chiudi()
+                self._json({"ok": bool(r), "annullabile": mod}, 200 if r else 404)
+            elif base == "/cucina/spesa":                             # v26: 🛒 {voci} nella lista della spesa (si può annullare)
+                c = self._read_json_body()
+                voci = [re.sub(r"\s+", " ", str(v)).strip()[:80] for v in (c.get("voci") if isinstance(c.get("voci"), list) else [])[:80] if str(v).strip()]
+                GIORNALE.inizia("aggiungi gli ingredienti alla lista della spesa")
+                agg = MOTORE.memoria.lista_aggiungi(voci) if voci else []
+                self._json({"ok": True, "aggiunte": agg, "gia": len(voci) - len(agg), "annullabile": GIORNALE.chiudi()})
+            elif base == "/cucina/cucinata":                          # v26: 👨‍🍳 {id}: l'hai cucinata (per il ricettario)
+                self._json(dict(RICETTARIO.cucinata(str(self._read_json_body().get("id", "")) or "?"), ok=True))
+            elif base == "/respiro/fine":                             # v26: 🫧 {tecnica, secondi}
+                c = self._read_json_body()
+                try:
+                    self._json(dict(RESPIRO.registra(str(c.get("tecnica", "calma")), int(c.get("secondi", 0))), ok=True))
+                except (TypeError, ValueError):
+                    self._json({"ok": False, "errore": "dati non validi"}, 400)
             elif base == "/studio/voto":                              # v25: {id, voto: 0-5} → la carta con la prossima data
                 c = self._read_json_body()
                 try:
@@ -13436,7 +14362,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V25</title>
+<title>MAIK PRIME // Zep V26</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -14094,10 +15020,63 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #suoni.on{display:flex}#sutempo{font:12px 'Share Tech Mono',monospace;color:var(--dim)}#suvol{width:84px;accent-color:var(--accent)}#suoni button{background:transparent;border:0;color:var(--dim);cursor:pointer}
   @media (max-width:640px){#stuvoti{grid-template-columns:repeat(2,minmax(0,1fr))}#qzris{grid-template-columns:1fr}#stufr,#sturt{font-size:24px}}
   @media (prefers-reduced-motion:reduce){#stuflip{transition:none}}
+
+  /* ===== V26 · cucina, tutor, respiro ===== */
+  #cucmodal{justify-content:flex-end;background:rgba(2,6,14,.18);backdrop-filter:none;pointer-events:none}#cucmodal .mod{pointer-events:auto}   /* mentre cucini puoi ancora scrivere e usare il microfono */
+  #cucmodal .mod{max-width:min(640px,96vw);width:640px;max-height:94vh;display:flex;flex-direction:column}#cucmodal .modb{flex:1;overflow:auto}
+  .cucpers{display:inline-flex;align-items:center;gap:6px;margin-left:auto;margin-right:8px;font-size:13px}.cucpers .ib{margin:0}
+  #cucvoce{margin-left:0;margin-right:6px}
+  .cucgrid{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:16px}
+  #cucing h4{margin:0 0 8px;font:600 13px system-ui,sans-serif;color:var(--dim)}
+  .ci26{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(var(--accent-rgb),.1);cursor:pointer;font-size:14px}.ci26 span{flex:1}.ci26 b{font-weight:600;color:var(--accent);white-space:nowrap}
+  .ci26 input{accent-color:var(--accent)}.ci26.fatto span,.ci26.fatto b{text-decoration:line-through;opacity:.5}
+  .cuccons{margin-top:10px;font-size:13px;color:var(--dim);line-height:1.4}
+  #cucpos{font:12px 'Share Tech Mono',monospace;color:var(--dim);letter-spacing:1px}
+  #cuctesto{font:600 22px/1.4 system-ui,sans-serif;margin:10px 0 14px;min-height:120px}
+  #cuctimerbtn{display:block;width:100%;margin-bottom:12px;padding:10px;border-radius:12px;border:1px dashed var(--accent);background:rgba(var(--accent-rgb),.1);color:var(--text);font:inherit;cursor:pointer}
+  #cuctimerbtn[hidden]{display:none}
+  .cucnav{display:grid;grid-template-columns:1fr auto 1.4fr;gap:8px}
+  .cucnav button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:9px 10px;cursor:pointer;font:inherit;font-size:14px}
+  .cucnav button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}.cucnav button:disabled{opacity:.35;cursor:default}
+  #cucav{background:rgba(var(--accent-rgb),.18);border-color:var(--accent);font-weight:700}
+  #cucti{display:flex;flex-direction:column;gap:6px;margin:12px 0 6px}
+  .ct26{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.28);border:1px solid rgba(var(--accent-rgb),.35);font-size:13px}
+  .ct26 b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ct26 i{font:12px 'Share Tech Mono',monospace;font-style:normal;color:var(--dim)}
+  .ct26 button{background:transparent;border:0;color:var(--dim);cursor:pointer;padding:0 2px}.ct26.pronto{border-color:#fbbf24;background:rgba(251,191,36,.18);animation:ct26 1s ease-in-out infinite}
+  .ct26.pronto i{color:#fbbf24}.ct26.pausa{opacity:.65}
+  @keyframes ct26{50%{box-shadow:0 0 0 4px rgba(251,191,36,.25)}}
+  #cuctimer{position:absolute;left:16px;bottom:96px;display:none;flex-direction:column;gap:6px;z-index:6;max-width:min(320px,70%)}#cuctimer.on{display:flex}
+  #cuctimer .ct26{background:rgba(8,12,28,.84);backdrop-filter:blur(8px)}.cucina-aperta #cuctimer{display:none!important}   /* con la cucina aperta i timer sono nel pannello */
+  .mn26{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px;margin:6px 0;width:100%}
+  .mn26g{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;padding:8px 9px;border-radius:12px;border:1px solid rgba(var(--accent-rgb),.3);background:rgba(0,0,0,.22);color:var(--text);cursor:pointer;font:inherit}
+  .mn26g:hover{border-color:var(--accent)}.mn26g small{font:10px 'Share Tech Mono',monospace;letter-spacing:1px;color:var(--dim);text-transform:uppercase}.mn26g span{font-size:22px}
+  .mn26g b{font-size:12.5px;line-height:1.25}.mn26g i{font-size:11px;color:var(--dim);font-style:normal}
+  .sp26{width:100%;margin:4px 0 6px;font-size:13px}.sp26 summary{cursor:pointer;padding:4px 0;color:var(--accent)}.sp26 ul{margin:3px 0 8px;padding-left:18px}.sp26 li span{color:var(--dim)}.sp26 p{color:var(--dim)}
+  #tutorbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 12px;margin:0 10px 6px;border-radius:12px;background:linear-gradient(90deg,rgba(var(--accent-rgb),.2),rgba(0,0,0,.2));border:1px solid rgba(var(--accent-rgb),.4);font-size:13px}
+  #tutorbar[hidden]{display:none}.tb26l{flex:1;min-width:0}.tb26s{font:12px 'Share Tech Mono',monospace;color:var(--dim)}
+  #tutorbar button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:999px;padding:4px 10px;cursor:pointer;font:inherit;font-size:12px}#tutorbar button:hover{border-color:var(--accent);color:var(--accent)}
+  .tu26corr{margin:2px 0 8px;padding:8px 11px;border-radius:10px;background:rgba(251,191,36,.1);border:1px solid rgba(251,191,36,.4);font-size:13.5px;line-height:1.45}
+  .tu26corr>b{display:block;color:#fbbf24;font-size:12px;letter-spacing:.5px;margin-bottom:2px}.tu26corr s{color:#fca5a5}.tu26corr small{display:block;color:var(--dim);font-size:12.5px}
+  .tu26meglio{margin-top:5px;color:#86efac}.tu26bravo{margin:2px 0 6px;font-size:12.5px;color:#86efac}
+  .tu26trad,.tu26aiuto{margin-top:8px;padding:6px 10px;border-left:3px solid var(--accent);background:rgba(0,0,0,.2);border-radius:6px;font-size:13.5px;color:var(--dim)}
+  .tu26trad[hidden]{display:none}.tu26aiuto{border-color:#fbbf24;color:var(--text)}
+  .tu26par{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tu26par span{font-size:12.5px;padding:3px 9px;border-radius:999px;background:rgba(var(--accent-rgb),.12)}
+  .tu26c{cursor:default;border-style:dashed}
+  #respmodal{background:radial-gradient(circle at 50% 45%,rgba(20,40,70,.88),rgba(2,6,14,.94))}
+  #respmodal .mod{max-width:520px;background:transparent;border:0;box-shadow:none}#respmodal .modh{background:transparent;border:0}
+  .respscena{position:relative;height:min(52vh,340px);display:flex;align-items:center;justify-content:center}
+  #respcerchio{width:min(60vw,280px);height:min(60vw,280px);border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:scale(.45);
+    background:radial-gradient(circle at 40% 35%,rgba(167,243,208,.95),rgba(56,189,248,.55) 55%,rgba(var(--accent-rgb),.25));box-shadow:0 0 60px rgba(56,189,248,.45),inset 0 0 40px rgba(255,255,255,.25)}
+  #respcerchio.trattieni{box-shadow:0 0 90px rgba(167,243,208,.6),inset 0 0 40px rgba(255,255,255,.35)}#respcerchio.fine{background:radial-gradient(circle,rgba(253,230,138,.9),rgba(251,191,36,.35))}
+  #respfase{font:700 30px system-ui,sans-serif;color:#06202c;text-shadow:0 1px 0 rgba(255,255,255,.4)}#respconta{font:600 22px 'Share Tech Mono',monospace;color:#06202c;opacity:.75}
+  #respinfo{text-align:center;color:var(--dim);font-size:13px;margin-top:6px}#resprest{display:block;text-align:center;font:12px 'Share Tech Mono',monospace;color:var(--dim);margin-top:4px}
+  #respfine{text-align:center;padding:8px}#respfine b{font-size:17px}
+  @media (max-width:640px){.cucgrid{grid-template-columns:1fr}#cuctesto{font-size:19px;min-height:0}#cuctimer{bottom:140px}}
+  @media (prefers-reduced-motion:reduce){#respcerchio{transition:none!important}.ct26.pronto{animation:none}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V25</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V26</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -14153,6 +15132,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="qs('cosa cucino stasera?')" title="Chef Zep: cosa cucino?">🍳 Cucina</button><button class="tbtn" type="button" onclick="qs('parliamo in inglese')" title="Conversazione in inglese con il tutor">🗣️ Parliamo</button><button class="tbtn" type="button" onclick="qs('facciamo un esercizio di respirazione')" title="Respiro guidato">🫧 Respira</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="apriStudio()" title="Le tue carte per studiare">🃏 Carte</button><button class="tbtn" type="button" onclick="qs('facciamo un quiz')" title="Il Quizzone di Zep">🎮 Quiz</button><button class="tbtn" type="button" onclick="SUONI25.on?fermaSuoni():avviaSuoni('pioggia')" title="Suoni per concentrarti">🎧 Suoni</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('accendi radio maik')" title="Radio Maik">📻 Radio</button><button class="tbtn" type="button" onclick="qs('il mio mese in storie')" title="Il tuo mese in storie">🎞️ Storie</button><button class="tbtn" type="button" onclick="apriMente()" title="La mappa della mente">🧠 Mente</button></div>
     <button class="tbtn solid" id="instbtn" style="width:100%;margin-top:8px" onclick="installa()">📲 Installa MAIK come app</button>
@@ -14165,6 +15145,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
+      <div id="cuctimer" role="region" aria-label="Timer della cucina" aria-live="polite"></div>
       <div id="suoni" role="region" aria-label="Suoni d'ambiente"><b id="sutit">🌧️ Pioggia</b><span id="sutempo">∞</span><input type="range" id="suvol" min="0" max="100" value="50" aria-label="Volume dei suoni" oninput="volumeSuoni(+this.value)"><button type="button" onclick="fermaSuoni()" aria-label="Spegni i suoni" title="Spegni">✕</button></div>
       <div id="radio" role="region" aria-label="Radio Maik">
         <div class="rdh"><span class="onair">● ON AIR</span><b id="rdtit">Radio Maik</b><button type="button" onclick="fermaRadio()" aria-label="Spegni la radio" title="Spegni la radio">✕</button></div>
@@ -14231,7 +15212,11 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="chatcol">
     <div id="offbar" role="status" aria-live="polite"></div>
     <div id="msgs"></div>
+    <div id="tutorbar" role="status" hidden></div>
     <div class="quick">
+      <button onclick="qs('cosa cucino stasera?')">🍳 cosa cucino stasera?</button>
+      <button onclick="qs('parliamo in inglese')">🗣️ parliamo in inglese</button>
+      <button onclick="qs('facciamo un esercizio di respirazione')">🫧 respiriamo</button>
       <button onclick="qs('ripassiamo')">🃏 ripassiamo</button>
       <button onclick="qs('facciamo un quiz')">🎮 facciamo un quiz</button>
       <button onclick="qs('metti la pioggia')">🎧 metti la pioggia</button>
@@ -14342,6 +15327,38 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
 </div>
 
 <div id="vztip" role="tooltip"></div>
+
+<div class="ov" id="cucmodal">
+  <div class="mod" role="dialog" aria-label="Modalità cucina">
+    <div class="modh"><div class="modt" id="cuctit">👨‍🍳 SI CUCINA</div><span class="cucpers"><button type="button" class="ib" data-cuc="meno" aria-label="Meno persone">−</button><b id="cucpn">4</b>👥<button type="button" class="ib" data-cuc="piu" aria-label="Più persone">+</button></span><button type="button" class="ib" id="cucvoce" data-cuc="voce" aria-label="Voce">🔊</button><button type="button" class="ib" data-cuc="chiudi" aria-label="Chiudi">✕</button></div>
+    <div class="stuprog"><b id="cucprog"></b></div>
+    <div class="modb">
+      <div class="cucgrid">
+        <aside id="cucing"></aside>
+        <section>
+          <div id="cucpos"></div>
+          <div id="cuctesto" aria-live="polite"></div>
+          <button type="button" id="cuctimerbtn" data-cuc="timer" hidden></button>
+          <div class="cucnav"><button type="button" id="cucind" data-cuc="indietro">◀ Indietro</button><button type="button" data-cuc="ripeti" aria-label="Ripeti">🔊</button><button type="button" id="cucav" data-cuc="avanti">Avanti ▶</button></div>
+          <div id="cucti"></div>
+          <div class="note">Mani in pasta? Dimmi «avanti», «indietro», «ripeti», «timer» (anche col microfono) · tasti ← → · T = timer</div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="respmodal">
+  <div class="mod" role="dialog" aria-label="Respiro guidato">
+    <div class="modh"><div class="modt" id="resptit">🫧 RESPIRA CON ME</div><button type="button" class="ib" data-resp="tono" aria-label="Suono del respiro">🔔</button><button type="button" class="ib" data-resp="chiudi" aria-label="Chiudi" style="margin-left:6px">✕</button></div>
+    <div class="modb">
+      <div class="respscena"><div id="respcerchio"><b id="respfase">Pronto?</b><span id="respconta"></span></div></div>
+      <div id="respinfo"></div><span id="resprest"></span>
+      <div class="stubtn" id="respbtn"><button type="button" id="resppausa" data-resp="pausa">⏸ Pausa</button><button type="button" data-resp="chiudi">✓ Basta così</button></div>
+      <div id="respfine" hidden></div>
+    </div>
+  </div>
+</div>
 
 <div class="ov" id="stumodal">
   <div class="mod">
@@ -15015,7 +16032,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V24 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V26 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -15033,6 +16050,8 @@ const MaikKit = (() => {
    V21: apre un portale verde sul multiverso (il consiglio, le invenzioni, gli aiutanti, la TV) e lo indica.
    V22: più leggero — la risoluzione si adatta a quanto ce la fa il PC, 30 fotogrammi al secondo quando è tranquillo, modalità leggera.
    V24: fa la radio («dj»): cuffie in testa, la testa che va a tempo, l'antenna che lampeggia «in onda».
+   V26: cucina con te («chef»: cappello da cuoco e mestolo che gira nella pentola) e respira con te («respira»: il petto e le spalle
+        salgono e scendono al ritmo della tecnica, gli occhi chiusi).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -15250,6 +16269,7 @@ window.ZepKit = (() => {
   // ey ruota l'avambraccio verso dentro (−) o fuori (+), ez lo alza di lato, wr gira il palmo. Il destro è lo specchio.
   // ============================================================
   const REST = { sx: -0.05, sy: 0, sz: 0.28, ex: -0.3, ey: 0, ez: 0, wr: 0 };
+  const MESCOLA_POSE = [{ sx: -0.95, sy: 0, sz: -0.05, ex: -0.75, ey: -1.35, ez: 0, wr: 0.3 }, { sx: -0.75, sy: 0, sz: 0.05, ex: -1.1, ey: -1.2, ez: 0, wr: 0.2 }];   // v26: robot, umanoide
   // v14: la lente davanti agli occhi (che si sposta piano) · il blocco note davanti al petto e la penna che scrive [robot, umanoide]
   const CERCA_POSE = [sw => ({ sz: 0.11 * sw, sx: -2.1 + 0.06 * sw, sy: 0, ex: -0.5, ey: -1.7, ez: 0, wr: 0.2 }), sw => ({ sz: 0.06 * sw, sx: -1.0, sy: 0, ex: -1.8, ey: -1.5, ez: 0, wr: 0.2 })];
   const SCRIVE_POSE = [[{ sz: -0.1, sx: -1.6, sy: 0, ex: -0.9, ey: -1.9, ez: 0, wr: 1.3 }, { sz: -0.1, sx: -1.35, sy: 0, ex: -0.9, ey: -1.6, ez: 0, wr: 0.1 }],
@@ -15351,6 +16371,17 @@ window.ZepKit = (() => {
     dj: { dur: 10, lungo: 1, f(a, w, P) { const bt = a.t * Math.PI * 2 * 1.6, b = Math.max(0, Math.sin(bt)), sw = Math.sin(bt / 2);
       P.head.x += 0.06 * b * w; P.head.z += 0.045 * sw * w; P.root.py += 0.012 * b * w; P.spine.z += 0.025 * sw * w;
       P.face.smile += 0.45 * w; P.face.mode.happy += 0.25 * w; P.props.cuffiette = Math.max(P.props.cuffiette, w); P.antenna += (0.15 + 0.2 * b) * w; } },
+    // v26: 👨‍🍳 cucina — il cappello da cuoco, il mestolo che fa i giri nella pentola, lo sguardo giù (ogni tanto alza gli occhi verso di te)
+    chef: { dur: 8, lungo: 1, arms: 'R', f(a, w, P) { const g = a.t * Math.PI * 2 * 0.65, su = Math.pow(Math.max(0, Math.sin(a.t * 0.45 + 1)), 14), q = MESCOLA_POSE[P.robot ? 0 : 1];
+      armTo(P.armR, Object.assign({}, q, { sx: q.sx + 0.07 * Math.sin(g), sz: q.sz + 0.08 * Math.cos(g), ey: q.ey + 0.05 * Math.sin(g) }), w); P.hand.R = ['fist', w];
+      P.look = [-0.12, -0.4 + 0.55 * su, w]; P.head.x += 0.07 * (1 - su) * w; P.spine.z += 0.02 * Math.sin(g) * w;
+      P.face.smile += (0.4 + 0.3 * su) * w; P.face.mode.happy += 0.25 * w; P.props.cappelloChef = Math.max(P.props.cappelloChef, w); P.props.mestolo = Math.max(P.props.mestolo, w); } },
+    // v26: 🫧 respira con te — a.shape = le fasi della tecnica [['inspira', 4], ['trattieni', 4], ['espira', 4], …]
+    respira: { dur: 60, lungo: 1, f(a, w, P) { const F = Array.isArray(a.shape) && a.shape.length ? a.shape : [['inspira', 4], ['espira', 6]], tot = F.reduce((s, x) => s + (+x[1] || 1), 0);
+      let x = a.t % tot, k = 0, pieno = 0;
+      for (const [f, d0] of F) { const d = +d0 || 1; if (x < d) { const p = x / d; k = f === 'inspira' ? smooth(p) : f === 'espira' ? 1 - smooth(p) : pieno; break; } x -= d; pieno = f === 'inspira' ? 1 : f === 'espira' ? 0 : pieno; }
+      P.spine.x -= 0.06 * k * w; P.root.py += 0.012 * k * w; P.shoulders += 0.5 * k * w; P.head.x -= 0.05 * k * w;
+      P.face.closed += 0.8 * w; P.face.smile += 0.25 * w; P.breath = k; } },
     scrive: { dur: 4, lungo: 1, arms: 'B', f(a, w, P) { const su = Math.pow(Math.max(0, Math.sin(a.t * 0.8 - 1.2)), 8), sc = Math.sin(a.t * 9) * (1 - su), [pl, pr] = SCRIVE_POSE[P.robot ? 0 : 1]; armTo(P.armL, pl, w); armTo(P.armR, Object.assign({}, pr, { ey: pr.ey + 0.07 * sc, sx: pr.sx + 0.035 * Math.sin(a.t * 3.1) * (1 - su) }), w); P.hand.L = ['open', w]; P.hand.R = ['pinch', w]; P.look = [0.05 + 0.06 * sc, -0.75 + 0.85 * su, w]; P.head.x += 0.16 * (1 - su) * w; P.head.z += 0.05 * w; P.face.squint += 0.25 * w * (1 - su); P.face.brow += 0.3 * su * w; P.props.blocco = Math.max(P.props.blocco, w); P.props.penna = Math.max(P.props.penna, w); } },
   };
   const GESTURE_ALIAS = { saluta: 'wave', festeggia: 'celebrate', annuisci: 'nod', pensa: 'think' };
@@ -15941,7 +16972,7 @@ window.ZepKit = (() => {
       const def = ACT[k]; if (!def) return false;
       const arms = armsOf(k, o.side);
       for (const a of S.acts) if (a.k === k || (arms.length && a.arms.some(x => arms.includes(x)) && ACT[a.k].arms)) a.out = a.out ?? 0.25;   // il gesto vecchio sfuma
-      S.acts.push({ k, t: 0, p: 0, dur: o.dur || def.dur, amp: o.amp || 1, n: o.n, side: o.side, shape: o.shape, arm: 'arm' + (arms[0] || 'R'), arms });
+      S.acts.push({ k, t: 0, p: 0, dur: o.dur || def.dur, amp: o.amp || 1, n: o.n, side: o.side, shape: o.shape || o.fasi, arm: 'arm' + (arms[0] || 'R'), arms });
       if (S.acts.length > 12) S.acts.splice(0, S.acts.length - 12);
       if (k !== 'beat') S.alive.next = Math.max(S.alive.next, performance.now() + 6000);
       return true;
@@ -16088,7 +17119,7 @@ window.ZepKit = (() => {
         spine: { x: 0.015 * breath, y: 0.02 * Math.sin(t * 0.5), z: 0 }, hips: { x: 0, y: 0, z: 0.012 * Math.sin(t * 0.7) },
         root: { x: W.x, py: 0, yaw: W.yaw }, h: height, robot: kind === 'robot',
         armL: Object.assign({}, REST, { sz: REST.sz + 0.03 * Math.sin(t * 1.1) }), armR: Object.assign({}, REST, { sz: REST.sz - 0.03 * Math.sin(t * 1.1) + 0.06 }),
-        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0 }, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0, trofeo: 0, portale: 0,
+        hand: { L: ['relax', 1], R: ['relax', 1] }, look: null, talk: S.talk, shoulders: 0, notes: 0, hearts: 0, antenna: 0, props: { lente: 0, blocco: 0, penna: 0, tablet: 0, scorri: 0, calcolatrice: 0, portatile: 0, cuffiette: 0, digita: 0, cappelloChef: 0, mestolo: 0 }, breath: 0, lampadina: 0, lampAccesa: 0, prime: 0, primeK: 0, trofeo: 0, portale: 0,
         face: { brow: 0, browIn: 0, browL: 0, angry: 0, squint: 0, wide: 0, closed: 0, smile: 0, frown: 0, press: 0, mouthOpen: 0, mouthRound: 0, mode: { happy: 0, sleep: 0, dizzy: 0, heart: 0, wink: 0 } },
         legs: { l: 0, r: 0, lk: 0, rk: 0 },
       };
@@ -16373,6 +17404,8 @@ window.ZepKit = (() => {
       calcolatrice: [-0.021, -0.12, 0.075, 0.288, 1.019, 0.667], // v16: anche la calcolatrice
       portatile: [0, 0.165, 0.35, 0, 0, 0],     // v17: davanti alla pancia (nel sistema del corpo), sotto le mani
       cuffiette: [0, 0, 0, 0, 0, 0],     // v17: sulla testa
+      cappelloChef: [0, 0, 0, 0, 0, -0.08],   // v26: sulla testa, un po' sulle ventitré
+      mestolo: [0, 0, 0, 0.6, 0.664, 0.694],  // v26: nel pugno, con la paletta giù verso la pentola
     };
     function propsRobot(B) {
       if (B.props) return B.props;
@@ -16457,6 +17490,19 @@ window.ZepKit = (() => {
       add(new THREE.TorusGeometry(0.36, 0.024, 12, 48, Math.PI), nero2, 0, 0.02, 0, Cf).scale.set(1.04, 0.86, 1);
       for (const sx of [-1, 1]) { add(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 32), nero2, sx * 0.375, -0.01, 0, Cf).rotation.z = Math.PI / 2; add(new THREE.TorusGeometry(0.085, 0.012, 8, 32), B.glow2, sx * 0.413, -0.01, 0, Cf).rotation.y = Math.PI / 2; }
       B.head.add(Cf); pr.cuffiette = Cf;
+      // 👨‍🍳 v26: il cappello da cuoco (la fascia e la «nuvola» in cima) e il mestolo di legno
+      const Ch = new THREE.Group(); Ch.name = 'prop-cappelloChef';
+      const bianco = mat(0xfbfbf8, { roughness: 0.75, metalness: 0, clearcoat: 0.1 });
+      add(new THREE.CylinderGeometry(0.205, 0.2, 0.13, 40), bianco, 0, 0.315, 0, Ch);
+      add(new THREE.SphereGeometry(0.15, 28, 18), bianco, 0, 0.47, 0, Ch).scale.set(1, 0.72, 1);
+      for (let i = 0; i < 7; i++) { const an = i / 7 * Math.PI * 2; add(new THREE.SphereGeometry(0.1, 20, 14), bianco, Math.cos(an) * 0.12, 0.425 + 0.015 * (i % 2), Math.sin(an) * 0.12, Ch); }
+      add(new THREE.TorusGeometry(0.203, 0.008, 8, 40), B.glow2, 0, 0.255, 0, Ch).rotation.x = Math.PI / 2;
+      B.head.add(Ch); pr.cappelloChef = Ch;
+      const Ms = new THREE.Group(); Ms.name = 'prop-mestolo';
+      const legno = mat(0xb07a45, { roughness: 0.7, metalness: 0, clearcoat: 0.15 });
+      add(new THREE.CylinderGeometry(0.015, 0.012, 0.34, 12), legno, 0, -0.07, 0, Ms);
+      add(new THREE.SphereGeometry(0.045, 18, 12), legno, 0, -0.265, 0, Ms).scale.set(1, 1.45, 0.42);
+      B.Rr.hand.add(Ms); pr.mestolo = Ms;
       disegnaDisplay(C, S.calcTesto);
       for (const k in pr) pr[k].visible = false;
       return (B.props = pr);
@@ -16470,11 +17516,12 @@ window.ZepKit = (() => {
       tex.needsUpdate = true;
     }
     function aggiornaProps(B, props) {
-      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02 || props.calcolatrice > 0.02 || props.portatile > 0.02 || props.cuffiette > 0.02)) return;   // v24: anche solo le cuffie (la radio)
+      if (!B.props && !(props.lente > 0.02 || props.blocco > 0.02 || props.penna > 0.02 || props.tablet > 0.02 || props.calcolatrice > 0.02 || props.portatile > 0.02 || props.cuffiette > 0.02 || props.cappelloChef > 0.02 || props.mestolo > 0.02)) return;   // v24-26: anche solo le cuffie, il cappello da cuoco
       const pr = propsRobot(B);
       for (const k in pr) {
         const w = clamp(props[k] || 0, 0, 1), o = pr[k], q = PROP_POS[k];
         o.visible = w > 0.03;
+        if (k === 'cappelloChef') for (const n of ['cilindro', 'berretto', 'cappellino']) { const ac = B.acc && B.acc[n]; if (ac) ac.visible = LOOK.accessori.includes(n) && !o.visible; }   // v26: il cappello da cuoco al posto del suo
         if (!o.visible) continue;
         o.position.set(q[0], q[1], q[2]); o.rotation.set(q[3], q[4], q[5]);
         o.scale.setScalar(0.2 + 0.8 * smooth(w));
@@ -16960,6 +18007,7 @@ async function invia(opt){
   opt=opt||{};const regen=!!opt.regen;
   const t=(opt.text!=null?opt.text:$('#inp').value).trim();
   if(!regen&&!att&&t&&!busy){                                                                   // v15: comandi della lettura e interprete
+    if(comandoCucina26(t)||comandoRespiro26(t)){if(opt.text==null)$('#inp').value='';return;}                                        // v26: «avanti», «timer» mentre cucini; «basta» mentre respiri
     if(comandoLettura(t)){if(opt.text==null)$('#inp').value='';return;}
     {const fo=comandoFocus(t);if(fo){if(opt.text==null)$('#inp').value='';add('me',t);const d=add('ai',fo);finalize(d,fo,null,null);return;}}   // v17: «concentrazione 25 minuti su …»
     if(INTERPRETE.on&&RE_INT_CHIUDI.test(t)){if(opt.text==null)$('#inp').value='';add('me',t);chiudiInterprete();return;}
@@ -17013,7 +18061,7 @@ async function invia(opt){
         if(obj.accurato&&!obj.done&&!full)faseAccurata(bubble,obj.accurato);                                     // v23: 📝 bozza → 🔍 controllo
         if(obj.passo)passoAgente(bubble,obj.passo);
         if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);if(obj.multiverso&&!obj.done)faseMultiverso(bubble,obj.multiverso);if(obj.laboratorio&&!obj.done)faseLab(bubble,obj.laboratorio);   // v21: 🌀 i portali · 🔬 il codice                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
-        if(obj.lavoro)lavoroInCorso(obj.lavoro);                                                    // v14: 🌍 sto leggendo internet
+        if(obj.lavoro)lavoroInCorso(obj.lavoro);if(obj.tutor_on&&!obj.done)attivaTutor(obj.tutor_on);if(obj.zitto&&!obj.done)ZITTO26=true;                                    // v26: 🗣️ la risposta arriva nella lingua del tutor                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){fermaDisegno();
           if(obj.comando){mc(bubble).textContent='['+obj.comando.tipo+'] '+JSON.stringify(obj.comando).slice(0,500);}
@@ -17022,7 +18070,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -17298,6 +18346,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🍳','Cosa cucino? (Chef Zep)',()=>qs('cosa cucino stasera?'),'cucina','ricetta ricette chef menu settimana spesa timer'),c('📖','Le mie ricette',()=>qs('le mie ricette'),'ricettario','cucina preferiti salvate'),
+    c('🗣️','Parliamo in inglese (tutor)',()=>qs('parliamo in inglese'),'tutor','conversazione lingua inglese spagnolo francese tedesco pratica'),c('🫧','Respiro guidato',()=>qs('facciamo un esercizio di respirazione'),'respiro','respirazione calma ansia rilassati meditazione'),
     c('🃏','Le mie carte (ripasso)',()=>apriStudio(),'carte','studio flashcard ripassa impara mazzo'),c('🎮','Il Quizzone di Zep',()=>qs('facciamo un quiz'),'quiz','gioco domande sfida'),
     c('🎧','Suoni per concentrarti',()=>SUONI25.on?fermaSuoni():avviaSuoni('pioggia'),'suoni','pioggia mare bosco camino rumore concentrazione'),
     c('📻','Radio Maik',()=>qs('accendi radio maik'),'radio','show notiziario musica nova zep'),c('🎞️','Il mio mese in storie',()=>qs('il mio mese in storie'),'storie','wrapped riassunto mese anno settimana'),
@@ -17329,7 +18379,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V25',key:'maik_boot_v25',checks:[
+  return MaikKit.boot({version:'PRIME · V26',key:'maik_boot_v26',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -17339,6 +18389,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Cucina',run:async()=>{try{const s=await (await fetch('/cucina')).json();return{ok:true,text:'🍳 '+s.di_serie.length+' ricette'+(s.ricettario.length?' + '+s.ricettario.length+' tue':'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Studio',run:async()=>{try{const s=await (await fetch('/studio')).json();return{ok:true,text:s.carte?'🃏 '+s.da_ripassare+' da ripassare':'🃏 nessun mazzo'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Mente',run:async()=>{try{const m=await (await fetch('/mente')).json();return{ok:true,text:'🧠 '+(m.n||0)+' cose che so di te'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Diagnosi',run:async()=>{try{const d=await (await fetch('/diagnosi?veloce=1')).json();return{ok:!d.errori,text:d.errori?'❌ '+d.errori+' da sistemare':d.avvisi?'⚠️ '+d.avvisi+' da guardare':'✅ tutto a posto'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -17357,7 +18408,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 25 🎓 Adesso ti aiuto anche a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 26 👨‍🍳 Adesso **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -17482,7 +18533,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 // stato del personaggio = stato di MAIK (pensa, parla, ascolta, sveglia)
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
-  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
+  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal):not(#cucmodal):not(#respmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
   const umore = AV && window.FOCUS && FOCUS.on ? (FOCUS.fase === 'lavoro' ? (FOCUS.ferma ? 'concentrazione in pausa ⏸' : 'si concentra 🍅') : FOCUS.fase === 'pausa' ? 'in pausa ☕' : 'pronto 🍅') : AV && window.LETTURA && LETTURA.on ? (LETTURA.pausa ? 'lettura in pausa ⏸' : 'legge 📖') : AV && window.INTERPRETE && INTERPRETE.on ? (INTERPRETE.rec ? 'ascolta 🎤' : 'interprete 🗣️') : AV && RIU.on ? (RIU.pausa ? 'riunione in pausa ⏸' : 'prende appunti 📝') : AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
   const txt = umore || AV_STATE_TXT[s] || s;
   if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
@@ -18251,7 +19302,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V25'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V26'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -19711,7 +20762,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
-  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
+  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true); addV26(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -21302,8 +22353,357 @@ async function promemoriaStudio() {                             // una volta al 
   if (p && p.da_ripassare > 0) { LS.set('maik_studio_avviso', oggi); toast('🃏 Hai ' + p.da_ripassare + ' carte da ripassare oggi: dimmi «ripassiamo»', 'ok'); }
 }
 
+// V26 — MAIK PRIME Chef & Coach: 👨‍🍳 la modalità cucina (passo passo, a voce, le porzioni, i timer), le ricette e il menu in chat,
+// 🗣️ il tutor di conversazione (le correzioni, la traduzione, la voce e il microfono nella lingua), 🫧 il respiro guidato
+
+// ---------- 🍳 le quantità (le stesse regole del server) ----------
+function numCucina(v) {
+  if (v == null) return '';
+  if (Math.abs(v - Math.round(v)) < 1e-9) return String(Math.round(v));
+  if (Math.abs(v * 2 - Math.round(v * 2)) < 1e-9 && v < 10) return (v < 1 ? '' : Math.floor(v) + ' ') + '½';
+  return v.toFixed(1).replace(/\.?0+$/, '').replace('.', ',');
+}
+const qtCucina = (q, u) => q == null ? 'q.b.' : (numCucina(q) + (u ? ' ' + u : '')).trim();
+function arrotondaCucina(q, u, nome) {
+  if (u === 'g' || u === 'ml') return q >= 100 ? Math.max(5, Math.round(q / 10) * 10) : Math.max(5, Math.round(q / 5) * 5);
+  if (u === 'l' || u === 'kg') return Math.max(0.1, Math.round(q * 10) / 10);
+  if (/uov|tuorl/i.test(nome)) return Math.max(1, Math.floor(q + 0.5));
+  return Math.max(0.5, Math.round(q * 2) / 2);
+}
+function scalaRicetta(r, persone) {
+  const p = Math.max(1, Math.min(20, persone)), k = p / (r.persone_base || 4);
+  return Object.assign({}, r, { persone: p, ingredienti: r.ingredienti.map(x => { const q = x.base == null ? null : k === 1 ? x.base : arrotondaCucina(x.base * k, x.unita, x.nome); return Object.assign({}, x, { quantita: q, qt: qtCucina(q, x.unita) }); }) });
+}
+const _BASE26 = /^(?:sale(?:\s+(?:grosso|fino))?|pepe(?:\s+nero)?|sale\s+e\s+pepe|olio(?:\s+extravergine)?(?:\s+d['’]oliva)?|acqua)$/i;
+const vociSpesa = r => r.ingredienti.filter(x => !_BASE26.test(x.nome)).map(x => x.nome + (x.quantita == null ? '' : ' (' + x.qt + ')'));
+function parlaCucina(t) { if (!voceDisponibile()) return; const w = ttsOn; ttsOn = true; stopSpeech(); say(t); ttsOn = w; }
+
+// ---------- ⏱️ i timer della cucina (anche più di uno, anche a finestra chiusa) ----------
+const TIMER26 = { L: [], int: 0, firma: '' };
+const mmss26 = ms => { const s = Math.ceil(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const restoTimer26 = t => t.pausa ? t.resto : Math.max(0, t.fine - Date.now());
+function avviaTimer26(nome, minuti) {
+  const t = { id: Math.random().toString(36).slice(2, 8), nome: String(nome || 'Timer').slice(0, 40), fine: Date.now() + minuti * 60000, resto: 0, pausa: false, suonato: false };
+  TIMER26.L.push(t);
+  if (!TIMER26.int) TIMER26.int = setInterval(tickTimer26, 500);
+  tickTimer26(); toast('⏱️ ' + t.nome + ': ' + minuti + ' min', 'ok');
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
+  return t;
+}
+function tickTimer26() {
+  for (const t of TIMER26.L) if (!t.pausa && !t.suonato && t.fine <= Date.now()) { t.suonato = true; suonaTimer26(t); }
+  rendiTimer26();
+  if (!TIMER26.L.length) { clearInterval(TIMER26.int); TIMER26.int = 0; }
+}
+function rendiTimer26() {
+  const firma = TIMER26.L.map(t => t.id + (t.suonato ? 's' : t.pausa ? 'p' : 'v')).join(',');
+  if (firma !== TIMER26.firma) {                                 // cambia la struttura solo quando serve (così i bottoni non spariscono sotto il dito)
+    TIMER26.firma = firma;
+    const h = TIMER26.L.map(t => '<span class="ct26' + (t.suonato ? ' pronto' : t.pausa ? ' pausa' : '') + '" data-tid="' + t.id + '"><b>' + esc(t.nome) + '</b><i></i>'
+      + (t.suonato ? '' : '<button type="button" data-t26="pausa" data-id="' + t.id + '" aria-label="' + (t.pausa ? 'Riprendi' : 'Pausa') + '">' + (t.pausa ? '▶' : '⏸') + '</button>')
+      + '<button type="button" data-t26="via" data-id="' + t.id + '" aria-label="Togli il timer">✕</button></span>').join('');
+    $('#cuctimer').innerHTML = h; $('#cucti').innerHTML = h;
+    $('#cuctimer').classList.toggle('on', TIMER26.L.length > 0);
+  }
+  for (const t of TIMER26.L) document.querySelectorAll('.ct26[data-tid="' + t.id + '"] i').forEach(i => { i.textContent = t.suonato ? '⏰ pronto!' : '⏱️ ' + mmss26(restoTimer26(t)); });
+}
+function suonaTimer26(t) {
+  for (let k = 0; k < 3; k++) [0, 0.16, 0.32].forEach(d => nota25(1175, 0.12, 'square', 0.08, k * 0.85 + d));
+  toast('⏰ ' + t.nome + ': tempo scaduto!', 'ok'); caption('⏰ ' + t.nome + ': tempo scaduto!'); captionOff(5000);
+  if (AV) AV.gesture('wave');
+  try { if (document.hidden && 'Notification' in window && Notification.permission === 'granted') new Notification('⏰ MAIK PRIME', { body: t.nome + ': tempo scaduto!' }); } catch (e) {}
+  if (ttsOn || CUC.voce) setTimeout(() => parlaCucina('Il timer è finito: ' + t.nome + '!'), 2600);
+  setTimeout(() => togliTimer26(t.id), 90000);                  // dopo un minuto e mezzo sparisce da solo
+}
+function togliTimer26(id) { TIMER26.L = TIMER26.L.filter(t => t.id !== id); tickTimer26(); }
+function pausaTimer26(id) { const t = TIMER26.L.find(x => x.id === id); if (!t || t.suonato) return; if (t.pausa) { t.fine = Date.now() + t.resto; t.pausa = false; } else { t.resto = restoTimer26(t); t.pausa = true; } tickTimer26(); }
+
+// ---------- 👨‍🍳 LA MODALITÀ CUCINA ----------
+const CUC = { r: null, i: 0, voce: true, spunte: new Set(), vivo: 0 };
+function apriCucina(r) {
+  if (!r || !r.passi || !r.passi.length) return;
+  Object.assign(CUC, { r, i: 0, spunte: new Set() });
+  stopSpeech(); $('#cucmodal').classList.add('open');
+  $('#cuctit').textContent = (r.emoji || '👨‍🍳') + ' ' + r.nome.toUpperCase();
+  rendiIngredienti(); mostraPasso(); rendiTimer26(); document.body.classList.add('cucina-aperta');
+  if (AV) AV.act('chef', { dur: 7200 });
+  clearInterval(CUC.vivo); CUC.vivo = setInterval(() => { if (AV && !AV.acting('chef') && !AV.acting('celebrate')) AV.act('chef', { dur: 7200 }); }, 1500);   // dopo un gesto si rimette il cappello
+}
+function chiudiCucina() { if (!$('#cucmodal').classList.contains('open')) return; clearInterval(CUC.vivo); $('#cucmodal').classList.remove('open'); document.body.classList.remove('cucina-aperta'); stopSpeech(); if (AV) AV.endAct('chef'); }
+function rendiIngredienti() {
+  const r = CUC.r; $('#cucpn').textContent = r.persone;
+  $('#cucing').innerHTML = '<h4>🧺 Ingredienti · per ' + r.persone + '</h4>' + r.ingredienti.map((x, i) => '<label class="ci26' + (CUC.spunte.has(i) ? ' fatto' : '') + '"><input type="checkbox" data-ci="' + i + '"' + (CUC.spunte.has(i) ? ' checked' : '') + '><span>' + esc(x.nome) + '</span><b>' + esc(x.qt) + '</b></label>').join('')
+    + (r.consiglio ? '<p class="cuccons">💡 ' + esc(r.consiglio) + '</p>' : '');
+}
+function mostraPasso(leggi = true) {
+  const r = CUC.r, n = r.passi.length, p = r.passi[CUC.i];
+  $('#cucpos').textContent = 'Passo ' + (CUC.i + 1) + ' di ' + n + (p.minuti ? ' · ⏱️ ' + p.minuti + ' min' : '');
+  $('#cuctesto').textContent = p.testo; $('#cucprog').style.width = (100 * (CUC.i + 1) / n) + '%';
+  const tb = $('#cuctimerbtn'); tb.hidden = !p.minuti; tb.textContent = '⏱️ Avvia il timer: ' + p.minuti + ' min';
+  $('#cucav').textContent = CUC.i === n - 1 ? '✅ Fatto! Buon appetito' : 'Avanti ▶';
+  $('#cucind').disabled = CUC.i === 0;
+  if (leggi && CUC.voce) parlaCucina('Passo ' + (CUC.i + 1) + '. ' + p.testo + (p.minuti ? ' Ci vogliono ' + p.minuti + ' minuti: se vuoi avvio il timer.' : ''));
+}
+function passoCucina(d) {
+  const n = CUC.r.passi.length;
+  if (d > 0 && CUC.i === n - 1) { fineCucina(); return; }
+  CUC.i = Math.max(0, Math.min(n - 1, CUC.i + d)); mostraPasso();
+  if (AV && d > 0) AV.gesture('nod');
+}
+function timerPasso() {
+  const p = CUC.r.passi[CUC.i]; if (!p || !p.minuti) return false;
+  const corto = p.testo.replace(/[.,:;].*$/, ''), nome = corto.length > 32 ? corto.slice(0, 31).replace(/\s+\S*$/, '') + '…' : corto;
+  avviaTimer26('Passo ' + (CUC.i + 1) + ': ' + nome, p.minuti);
+  if (CUC.voce) parlaCucina('Timer avviato: ' + p.minuti + ' minuti.');
+  return true;
+}
+function personeCucina(d) { CUC.r = scalaRicetta(CUC.r, CUC.r.persone + d); rendiIngredienti(); }
+function fineCucina() {
+  postJ('/cucina/cucinata', { id: CUC.r.id }).catch(() => {});
+  $('#cuctesto').textContent = '🎉 Fatto! ' + CUC.r.nome + ' è pronto. Buon appetito!'; $('#cucpos').textContent = 'Finito'; $('#cuctimerbtn').hidden = true;
+  clearInterval(CUC.vivo); if (AV) { AV.endAct('chef'); AV.gesture('celebrate'); }
+  suonoGiusto(); if (CUC.voce) parlaCucina('Fatto! Buon appetito!');
+  setTimeout(chiudiCucina, 4000);
+}
+function comandoCucina26(t) {                                  // «avanti», «indietro», «ripeti», «timer» (anche a voce) mentre cucini
+  if (!$('#cucmodal').classList.contains('open')) return false;
+  const s = t.toLowerCase().replace(/[.!?,]+/g, ' ').trim();
+  if (/^(?:ok\s+)?(?:avanti|prossimo(?:\s+passo)?|vai(?:\s+avanti)?|next|fatto|dopo|e\s+poi)$/.test(s)) { passoCucina(1); return true; }
+  if (/^(?:torna\s+)?(?:indietro|prima|precedente)$/.test(s)) { passoCucina(-1); return true; }
+  if (/^(?:ripeti|ripetimi|ripetilo|cosa\s+devo\s+fare|come)$/.test(s)) { mostraPasso(); return true; }
+  if (/^(?:(?:avvia|metti|fai\s+partire)\s+(?:il\s+)?)?timer$/.test(s)) { if (!timerPasso()) toast('⏱️ In questo passo non c\'è niente da aspettare', 'err'); return true; }
+  if (/^(?:basta|chiudi|esci|smetti)(?:\s+di\s+cucinare)?$/.test(s)) { chiudiCucina(); return true; }
+  return false;
+}
+
+// ---------- 🍳 in chat: la ricetta, il menu, le proposte ----------
+function addCucina26(d, obj, daAutomazione) {
+  const ag = () => agEl(d);
+  if (obj.ricetta) {
+    const r = obj.ricetta; d._ricetta = r;
+    ag().insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-c26="cucina">👨‍🍳 Cuciniamo!</button><button type="button" class="agc calb" data-c26="salva">⭐ Salva</button>'
+      + '<button type="button" class="agc calb" data-c26="spesa">🛒 Ingredienti nella lista</button>');
+    if (obj.cucina && obj.cucina.apri && !daAutomazione) setTimeout(() => apriCucina(r), 500);
+    else if (!daAutomazione && ttsOn) { stopSpeech(); say('Ecco: ' + r.nome + ', per ' + r.persone + ' persone, in ' + r.tempo + ' minuti. Quando vuoi, cuciniamo insieme!'); }
+    if (AV && !(obj.cucina && obj.cucina.apri)) AV.gesture('thumbsup');
+  }
+  if (obj.menu) {
+    const mn = obj.menu; d._menu = mn;
+    ag().insertAdjacentHTML('beforeend', '<div class="mn26">' + mn.giorni.map(g => '<button type="button" class="mn26g" data-c26="ricetta" data-nome="' + escA(g.nome) + '"><small>' + esc(g.giorno) + '</small><span>' + esc(g.emoji) + '</span><b>' + esc(g.nome) + '</b><i>' + g.tempo + ' min</i></button>').join('') + '</div>'
+      + '<details class="sp26"><summary>🛒 La spesa della settimana · ' + mn.spesa.voci.length + ' cose</summary>' + mn.spesa.reparti.map(x => '<div><b>' + esc(x.reparto) + '</b><ul>' + x.voci.map(v => '<li>' + esc(v.nome) + ' <span>' + esc(v.qt) + '</span></li>').join('') + '</ul></div>').join('')
+      + (mn.spesa.controlla.length ? '<p>Controlla di avere: ' + esc(mn.spesa.controlla.join(', ').toLowerCase()) + '</p>' : '') + '</details>'
+      + '<button type="button" class="agc calb" data-c26="spesamenu">🛒 Aggiungi tutto alla lista</button><button type="button" class="agc calb" data-c26="altromenu">🔀 Un altro menu</button>');
+    if (!daAutomazione && ttsOn) { stopSpeech(); say('Ecco il menu della settimana: si comincia lunedì con ' + mn.giorni[0].nome + '. La spesa è divisa per reparto.'); }
+  }
+  const c = obj.cucina || {};
+  if (c.proposte && c.proposte.length) ag().insertAdjacentHTML('beforeend', c.proposte.map(p => '<button type="button" class="agc calb" data-c26="ricetta" data-nome="' + escA(p.nome) + '">' + esc(p.emoji) + ' ' + esc(p.nome) + ' · ' + p.tempo + ' min</button>').join(''));
+  if (c.ricettario && c.ricettario.length) ag().insertAdjacentHTML('beforeend', c.ricettario.slice(-12).map(p => '<button type="button" class="agc calb" data-c26="ricetta" data-nome="' + escA(p.nome) + '">' + esc(p.emoji) + ' ' + esc(p.nome) + '</button>').join(''));
+}
+
+// ---------- 🗣️ IL TUTOR DI CONVERSAZIONE ----------
+const TUTOR26 = { on: false, lingua: null, cod: null, sessione: null, trad: false, ph: null, ultimo: null };
+const COD_TUTOR = { en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', pt: 'pt-PT' };
+const NOMI_TUTOR = { en: 'inglese', es: 'spagnolo', fr: 'francese', de: 'tedesco', pt: 'portoghese' };
+function attivaTutor(x) {
+  if (!x || !COD_TUTOR[x.lingua]) return;
+  const nuova = !TUTOR26.on;
+  Object.assign(TUTOR26, { on: true, lingua: x.lingua, cod: COD_TUTOR[x.lingua], sessione: CUR });
+  if (typeof reco !== 'undefined' && reco) reco.lang = TUTOR26.cod;          // il microfono ti capisce nella lingua
+  if (nuova) { TUTOR26.ph = $('#inp').placeholder; }
+  $('#inp').placeholder = '🗣️ Scrivi (o parla) in ' + NOMI_TUTOR[x.lingua] + '… «basta» per finire';
+  barraTutor(x);
+}
+function spegniTutor() {
+  if (!TUTOR26.on) return;
+  TUTOR26.on = false;
+  if (typeof reco !== 'undefined' && reco) reco.lang = 'it-IT';
+  if (TUTOR26.ph != null) $('#inp').placeholder = TUTOR26.ph;
+  $('#tutorbar').hidden = true;
+}
+function barraTutor(T) {
+  const b = $('#tutorbar'); b.hidden = false;
+  b.innerHTML = '<span class="tb26l">' + esc(T.bandiera || '🗣️') + ' <b>' + esc(T.nome_lingua || NOMI_TUTOR[TUTOR26.lingua] || '') + '</b>' + (T.scenario ? ' · ' + esc(T.scenario.emoji + ' ' + T.scenario.nome) : '') + '</span>'
+    + (T.turno ? '<span class="tb26s">✅ ' + (T.giuste || 0) + '/' + T.turno + (T.carte ? ' · 🃏 ' + T.carte : '') + '</span>' : '')
+    + '<button type="button" data-tu26="trad" aria-pressed="' + TUTOR26.trad + '">🇮🇹 Traduzioni: ' + (TUTOR26.trad ? 'sì' : 'no') + '</button><button type="button" data-tu26="fine">⏹ Fine</button>';
+}
+let ZITTO26 = false;                                           // una ricetta o un menu: non li leggo tutti, dico solo una frase
+const _feedSpeech25 = feedSpeech;
+feedSpeech = function (full, done) { if (ZITTO26 || (TUTOR26.on && TUTOR26.sessione === CUR)) return; return _feedSpeech25(full, done); };   // le risposte del tutor le dice la voce della lingua
+setInterval(() => { if (TUTOR26.on) $('#tutorbar').hidden = TUTOR26.sessione !== CUR; }, 1000);
+function addTutor26(d, T, daAutomazione) {
+  if (T.stato === 'inizio' || T.stato === 'turno') {
+    attivaTutor(T); TUTOR26.ultimo = T; d.classList.add('tu26');
+    if (T.correzioni && T.correzioni.length) {
+      const c = document.createElement('div'); c.className = 'tu26corr';
+      c.innerHTML = '<b>✏️ Correzione</b>' + T.correzioni.map(x => '<div><s>' + esc(x.sbagliato) + '</s> → <b>' + esc(x.giusto) + '</b>' + (x.spiegazione ? '<small>' + esc(x.spiegazione) + '</small>' : '') + '</div>').join('')
+        + (T.frase_corretta ? '<div class="tu26meglio">✅ Meglio così: «' + esc(T.frase_corretta) + '»</div>' : '');
+      d.insertBefore(c, mc(d));
+    } else if (T.stato === 'turno' && !T.aiuto) {
+      const c = document.createElement('div'); c.className = 'tu26bravo'; c.textContent = '✅ Frase perfetta!'; d.insertBefore(c, mc(d));
+    }
+    mc(d).insertAdjacentHTML('beforeend', (T.aiuto ? '<div class="tu26aiuto">💡 ' + esc(T.aiuto) + '</div>' : '')
+      + (T.traduzione ? '<div class="tu26trad"' + (TUTOR26.trad ? '' : ' hidden') + '>🇮🇹 ' + esc(T.traduzione) + '</div>' : '')
+      + (T.parole_nuove && T.parole_nuove.length ? '<div class="tu26par">' + T.parole_nuove.map(p => '<span>📘 <b>' + esc(p.parola) + '</b> = ' + esc(p.significato) + '</span>').join('') + '</div>' : ''));
+    d._tutor = T;
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-tu26="ascolta">🔊 Riascolta</button>' + (T.traduzione ? '<button type="button" class="agc calb" data-tu26="mostra">🇮🇹 Traduzione</button>' : '')
+      + (T.carte_nuove ? '<span class="agc tu26c">🃏 +' + T.carte_nuove + ' cart' + (T.carte_nuove === 1 ? 'a' : 'e') + ' da ripassare</span>' : ''));
+    if (!daAutomazione && ttsOn && T.risposta) { stopSpeech(); parlaLingua(T.risposta, TUTOR26.cod); }
+    if (AV) AV.gesture(T.correzioni && T.correzioni.length ? 'think' : T.stato === 'turno' ? 'nod' : 'wave');
+  } else if (T.stato === 'fine') {
+    spegniTutor();
+    const r = T.riepilogo;
+    if (r && ttsOn) { stopSpeech(); say('Fine della conversazione! ' + r.giuste + ' frasi giuste su ' + r.turni + '. Ottimo lavoro!'); }
+    if (AV) AV.gesture(r && r.giuste >= r.turni * 0.7 ? 'celebrate' : 'thumbsup');
+  }
+}
+
+// ---------- 🫧 IL RESPIRO GUIDATO ----------
+const RESP = { on: false, x: null, k: 0, fine: 0, t0: 0, pausa: false, timer: 0, conto: 0, resto: 0, tono: true, suoniMiei: false, giri: 0, fatto: 0 };
+const PAROLE_RESP = { inspira: 'Inspira', trattieni: 'Trattieni', espira: 'Espira' };
+function apriRespiro(x) {
+  if (!x || !x.fasi) return;
+  chiudiRespiro(false);
+  Object.assign(RESP, { on: true, x, k: -1, t0: Date.now(), fine: Date.now() + x.minuti * 60000, pausa: false, giri: 0, fatto: 0, suoniMiei: false });
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();   // così Spazio mette in pausa (non scrive nella chat)
+  $('#respmodal').classList.add('open'); $('#respfine').hidden = true; $('#respbtn').hidden = false; $('#resppausa').textContent = '⏸ Pausa';
+  $('#resptit').textContent = (x.emoji || '🫧') + ' ' + (x.nome || 'Respira con me').toUpperCase();
+  $('#respinfo').textContent = x.fasi.map(f => PAROLE_RESP[f[0]] + ' ' + f[1]).join(' · ') + ' · ' + x.minuti + ' min';
+  const c = $('#respcerchio'); c.style.transition = 'none'; c.style.transform = 'scale(.45)'; c.className = '';
+  if (x.suoni && !SUONI25.on) { avviaSuoni(x.suoni); RESP.suoniMiei = true; }
+  stopSpeech();
+  if (AV) AV.act('respira', { dur: x.minuti * 60 + 30, fasi: x.fasi });
+  RESP.timer = setTimeout(faseRespiro, 900);
+  clearInterval(RESP.conto); RESP.conto = setInterval(contaRespiro, 250);
+}
+function faseRespiro() {
+  if (!RESP.on || RESP.pausa) return;
+  const F = RESP.x.fasi; RESP.k = (RESP.k + 1) % F.length;
+  if (RESP.k === 0) { RESP.giri++; if (Date.now() >= RESP.fine && RESP.giri > 1) { fineRespiro(); return; } }
+  const [f, d] = F[RESP.k], c = $('#respcerchio');
+  c.style.transition = f === 'trattieni' ? 'none' : 'transform ' + d + 's cubic-bezier(.45,0,.55,1)';
+  if (f !== 'trattieni') c.style.transform = 'scale(' + (f === 'inspira' ? 1 : 0.45) + ')';
+  c.className = f; $('#respfase').textContent = PAROLE_RESP[f];
+  RESP.faseFine = Date.now() + d * 1000;
+  if (RESP.tono) tonoRespiro(f, d);
+  if (RESP.giri <= 1 && ttsOn && voceDisponibile()) { stopSpeech(); say(PAROLE_RESP[f]); }    // il primo giro te lo dico a voce, poi solo il suono
+  RESP.timer = setTimeout(faseRespiro, d * 1000);
+}
+function contaRespiro() {
+  if (!RESP.on) return;
+  if (!RESP.pausa && RESP.faseFine) $('#respconta').textContent = Math.max(1, Math.ceil((RESP.faseFine - Date.now()) / 1000));
+  const r = Math.max(0, (RESP.pausa ? RESP.resto : RESP.fine - Date.now()));
+  $('#resprest').textContent = r > 0 ? 'ancora ' + mmss26(r) : 'ultimo respiro…';
+}
+function tonoRespiro(f, d) {
+  if (f === 'trattieni') return;
+  try {
+    const ac = AC25 = AC25 || new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume();
+    const o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime, su = f === 'inspira';
+    o.type = 'sine'; o.frequency.setValueAtTime(su ? 196 : 262, t); o.frequency.linearRampToValueAtTime(su ? 262 : 196, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.05, t + Math.min(1.2, d / 3)); g.gain.setValueAtTime(0.05, t + d * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + d + 0.05);
+  } catch (e) {}
+}
+function pausaRespiro() {
+  if (!RESP.on) return;
+  if (!RESP.pausa) { RESP.pausa = true; RESP.resto = RESP.fine - Date.now(); clearTimeout(RESP.timer); $('#respfase').textContent = 'In pausa'; $('#resppausa').textContent = '▶ Riprendi'; const c = $('#respcerchio'); c.style.transition = 'transform 1.5s'; c.style.transform = 'scale(.6)'; }
+  else { RESP.pausa = false; RESP.fine = Date.now() + RESP.resto; RESP.k = -1; $('#resppausa').textContent = '⏸ Pausa'; faseRespiro(); }
+}
+async function fineRespiro() {
+  const sec = Math.round((Date.now() - RESP.t0) / 1000), x = RESP.x;
+  RESP.on = false; clearTimeout(RESP.timer); clearInterval(RESP.conto);
+  const c = $('#respcerchio'); c.style.transition = 'transform 2s'; c.style.transform = 'scale(.7)'; c.className = 'fine'; $('#respfase').textContent = '✨'; $('#respconta').textContent = '';
+  $('#respbtn').hidden = true; $('#resprest').textContent = '';
+  let s = null; try { s = await postJ('/respiro/fine', { tecnica: x.tecnica, secondi: sec }); } catch (e) {}
+  $('#respfine').hidden = false;
+  const min = Math.max(1, Math.round(sec / 60));
+  $('#respfine').innerHTML = '<b>Fatto: ' + min + ' minut' + (min === 1 ? 'o' : 'i') + ' di respiro 🫧</b><p>' + (s && s.ok ? 'Oggi: ' + s.oggi + ' min · questa settimana: ' + s.settimana + ' min' + (s.serie > 1 ? ' · 🔥 ' + s.serie + ' giorni di fila' : '') : '') + '</p>'
+    + '<div class="stubtn"><button type="button" data-resp="ancora">🔁 Ancora</button><button type="button" data-resp="chiudi">✓ Chiudi</button></div>';
+  if (AV) { AV.endAct('respira'); AV.gesture('nod'); }
+  if (ttsOn) say('Fatto. Come ti senti adesso?');
+  if (RESP.suoniMiei) { fermaSuoni(); RESP.suoniMiei = false; }
+}
+function chiudiRespiro(salva = true) {
+  if (!$('#respmodal').classList.contains('open')) return;
+  if (RESP.on && salva) { const sec = Math.round((Date.now() - RESP.t0) / 1000); if (sec >= 20) postJ('/respiro/fine', { tecnica: RESP.x.tecnica, secondi: sec }).catch(() => {}); }
+  RESP.on = false; clearTimeout(RESP.timer); clearInterval(RESP.conto);
+  $('#respmodal').classList.remove('open'); stopSpeech();
+  if (AV) AV.endAct('respira');
+  if (RESP.suoniMiei) { fermaSuoni(); RESP.suoniMiei = false; }
+}
+function comandoRespiro26(t) {
+  if (!$('#respmodal').classList.contains('open')) return false;
+  const s = t.toLowerCase().replace(/[.!?,]+/g, ' ').trim();
+  if (/^(?:basta|stop|chiudi|fine|smetti)$/.test(s)) { chiudiRespiro(); return true; }
+  if (/^(?:pausa|aspetta|riprendi|continua)$/.test(s)) { pausaRespiro(); return true; }
+  return false;
+}
+
+// ---------- in chat, i bottoni, la tastiera ----------
+function addV26(d, obj, daAutomazione) {
+  ZITTO26 = false;
+  if (obj.tutor) addTutor26(d, obj.tutor, daAutomazione);
+  else if (TUTOR26.on && TUTOR26.sessione === CUR && !daAutomazione) spegniTutor();     // il server non è più in conversazione (es. 45 minuti di silenzio)
+  if (obj.ricetta || obj.menu || obj.cucina) addCucina26(d, obj, daAutomazione);
+  if (obj.respiro) {
+    d._respiro = obj.respiro;
+    agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-resp="via">🫧 Respira</button>');
+    if (!daAutomazione) setTimeout(() => apriRespiro(obj.respiro), 500);
+  }
+}
+document.addEventListener('click', async e => {                 // v26: cucina, timer, tutor, respiro
+  const ci = e.target.closest('input[data-ci]');
+  if (ci) { const i = +ci.dataset.ci; ci.checked ? CUC.spunte.add(i) : CUC.spunte.delete(i); ci.closest('label').classList.toggle('fatto', ci.checked); return; }
+  const b = e.target.closest('button[data-c26],button[data-cuc],button[data-t26],button[data-tu26],button[data-resp]'); if (!b) return;
+  const ds = b.dataset, m = b.closest('.m');
+  if (ds.t26 === 'via') { togliTimer26(ds.id); return; }
+  if (ds.t26 === 'pausa') { pausaTimer26(ds.id); return; }
+  if (ds.cuc === 'avanti') { passoCucina(1); return; }
+  if (ds.cuc === 'indietro') { passoCucina(-1); return; }
+  if (ds.cuc === 'ripeti') { mostraPasso(); return; }
+  if (ds.cuc === 'timer') { timerPasso(); return; }
+  if (ds.cuc === 'piu' || ds.cuc === 'meno') { personeCucina(ds.cuc === 'piu' ? 1 : -1); return; }
+  if (ds.cuc === 'voce') { CUC.voce = !CUC.voce; b.textContent = CUC.voce ? '🔊' : '🔇'; if (!CUC.voce) stopSpeech(); return; }
+  if (ds.cuc === 'chiudi') { chiudiCucina(); return; }
+  if (ds.c26 === 'cucina') { apriCucina(m && m._ricetta); return; }
+  if (ds.c26 === 'ricetta') { qs('ricetta di ' + ds.nome); return; }
+  if (ds.c26 === 'altromenu') { const mn = m && m._menu; qs('fammi il menu della settimana' + (mn && mn.vegetariano ? ' vegetariano' : '') + (mn && mn.veloce ? ' veloce' : '') + (mn ? ' per ' + mn.persone + ' persone' : '')); return; }
+  if (ds.c26 === 'salva') {
+    const r = await postJ('/cucina/salva', { ricetta: m && m._ricetta }).catch(() => ({ ok: false }));
+    if (r.ok) { b.textContent = '⭐ Salvata'; b.disabled = true; toast('⭐ Nel ricettario: ' + r.ricetta.nome, 'ok'); } else toast('⭐ Non sono riuscito a salvarla', 'err');
+    return;
+  }
+  if (ds.c26 === 'spesa' || ds.c26 === 'spesamenu') {
+    const voci = ds.c26 === 'spesa' ? vociSpesa(m._ricetta) : m._menu.spesa.voci;
+    const r = await postJ('/cucina/spesa', { voci }).catch(() => ({ ok: false }));
+    if (r.ok) { b.textContent = '🛒 Nella lista ✓'; b.disabled = true; toast('🛒 ' + (r.aggiunte.length ? r.aggiunte.length + ' cose nella lista della spesa' : 'Era già tutto nella lista'), 'ok'); loadPr && loadPr(); }
+    return;
+  }
+  if (ds.tu26 === 'fine') { qs('basta'); return; }
+  if (ds.tu26 === 'trad') { TUTOR26.trad = !TUTOR26.trad; document.querySelectorAll('.tu26trad').forEach(x => { x.hidden = !TUTOR26.trad; }); if (TUTOR26.ultimo) barraTutor(TUTOR26.ultimo); return; }
+  if (ds.tu26 === 'mostra') { const x = m && m.querySelector('.tu26trad'); if (x) x.hidden = !x.hidden; return; }
+  if (ds.tu26 === 'ascolta') { const T = m && m._tutor; if (T) { stopSpeech(); parlaLingua(T.risposta, COD_TUTOR[T.lingua]); } return; }
+  if (ds.resp === 'via') { apriRespiro(m && m._respiro); return; }
+  if (ds.resp === 'pausa') { pausaRespiro(); return; }
+  if (ds.resp === 'chiudi') { chiudiRespiro(); return; }
+  if (ds.resp === 'ancora') { apriRespiro(RESP.x); return; }
+  if (ds.resp === 'tono') { RESP.tono = !RESP.tono; b.textContent = RESP.tono ? '🔔' : '🔕'; return; }
+});
+document.addEventListener('keydown', e => {
+  if (e.target && /^(?:INPUT|TEXTAREA)$/.test(e.target.tagName) && e.target.type !== 'checkbox') return;
+  if ($('#cucmodal').classList.contains('open')) {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); passoCucina(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); passoCucina(-1); }
+    else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); mostraPasso(); }
+    else if (e.key === 't' || e.key === 'T') { e.preventDefault(); timerPasso(); }
+    return;
+  }
+  if ($('#respmodal').classList.contains('open') && e.key === ' ') { e.preventDefault(); pausaRespiro(); }
+});
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();}});
+$('#cucmodal').addEventListener('click',e=>{if(e.target.id==='cucmodal')chiudiCucina();});$('#respmodal').addEventListener('click',e=>{if(e.target.id==='respmodal')chiudiRespiro();});
 $('#stumodal').addEventListener('click',e=>{if(e.target.id==='stumodal')chiudiStudio();});$('#qzmodal').addEventListener('click',e=>{if(e.target.id==='qzmodal')chiudiQuiz();});
 $('#mmmodal').addEventListener('click',e=>{if(e.target.id==='mmmodal')chiudiMente();});$('#stmodal').addEventListener('click',e=>{if(e.target.id==='stmodal')chiudiStorie();});
 $('#dgmodal').addEventListener('click',e=>{if(e.target.id==='dgmodal')closeDiagnosi();});
@@ -21521,8 +22921,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 25.0 — Server avviato         ║
-║ accademia · quiz · suoni · show · affidabile     ║
+║        MAIK PRIME 26.0 — Server avviato         ║
+║ chef · tutor · respiro · accademia · show        ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -21581,7 +22981,8 @@ def main():
     print(f"    GET  /prestazioni · /presenza · POST /presenza   [v22]")
     print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [v23]")
     print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [v24]")
-    print(f"    GET  /studio · /studio/ripasso · /quiz · POST /studio/voto /studio/elimina /quiz/fine   [NUOVO v25]")
+    print(f"    GET  /studio · /studio/ripasso · /quiz · POST /studio/voto /studio/elimina /quiz/fine   [v25]")
+    print(f"    GET  /cucina · /cucina/ricetta · /tutor · /respiro · POST /cucina/salva /cucina/elimina /cucina/spesa /respiro/fine   [NUOVO v26]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

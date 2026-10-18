@@ -20682,6 +20682,7 @@ function contaSu(el, fino, valuta, percento) {
   const passo = now => { const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(fino * e); if (k < 1 && el.isConnected) requestAnimationFrame(passo); };
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(fino); return; }
   requestAnimationFrame(passo);
+  setTimeout(() => { if (el.isConnected) el.textContent = fmt(fino); }, dur + 120);
 }
 function sparkline(serie) {
   if (!serie || serie.length < 2) return '';

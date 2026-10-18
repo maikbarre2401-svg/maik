@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v21.0                   ║
+║              MAIK PRIME — Server v22.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,15 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v22.0 — MAIK PRIME PIÙ VELOCE:
+  • ⚡ Il modello resta in memoria (MAIK_KEEP_ALIVE, 30 minuti), la memoria di lavoro è fissa (MAIK_NUM_CTX, 6144:
+    niente più ricaricamenti), le istruzioni hanno la parte fissa davanti (Ollama la riusa invece di rileggerla a ogni
+    messaggio), all'avvio il modello si scalda da solo, e l'apprendimento in sottofondo aspetta che tu sia in pausa.
+    Se il modello scelto non è installato uso il migliore tra quelli che hai. «quanto vai veloce?» → le misure e i consigli.
+  • ⏱️ «da quanto sono al pc?»: con la webcam accesa conto i minuti (solo il tempo, niente foto).
+  • 📷 «leggi quello che ti mostro», «cosa ho in mano?», «come mi vedi?»: la webcam guarda e legge.
+  • Nuovi endpoint: GET /prestazioni · GET /presenza · POST /presenza {secondi}
 
 NOVITÀ v21.0 — MAIK PRIME MULTIVERSO:
   • 🌀 Il Consiglio del multiverso: «chiedi al multiverso: devo cambiare lavoro?» → 4 Maik da altre dimensioni
@@ -281,6 +290,10 @@ CONFIG = {
     "nome_ai":  _env("MAIK_NOME", "Maik"),
     "modello":  _env("MAIK_MODELLO", "llama3.1"),
     "modello_visione": _env("MAIK_MODELLO_VISIONE", "llava"),  # multimodale per la webcam (llava: massima compatibilità)
+    "keep_alive": _env("MAIK_KEEP_ALIVE", "30m"),              # v22: quanto resta in memoria il modello dopo l'ultima domanda
+    "keep_alive_visione": _env("MAIK_KEEP_ALIVE_VISIONE", "10m"),
+    "riscalda": _env("MAIK_RISCALDA", "1") != "0",
+    "num_ctx": int(_env("MAIK_NUM_CTX", "6144")) if str(_env("MAIK_NUM_CTX", "6144")).isdigit() else 6144,   # v22: sempre uguale = niente ricaricamenti
     "ollama_base": _OLLAMA_BASE,
     "ollama_url":  _OLLAMA_BASE + "/api/chat",
     "ollama_tags": _OLLAMA_BASE + "/api/tags",
@@ -364,7 +377,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": "https://api.open-meteo.com/v1/forecast",
 }
 
-VERSIONE  = "21.0"
+VERSIONE  = "22.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -1430,18 +1443,15 @@ class Cervello:
     def contesto_per(caratteri):
         """v14: Ollama taglia i prompt lunghi (perdendo l'inizio): con fonti web o trascrizioni chiedi più contesto."""
         stima = caratteri / 3.2 + 900                   # token del prompt + spazio per la risposta
-        if stima <= 3800:
-            return None
-        n = 4096
+        n = CONFIG["num_ctx"]                           # v22: sempre lo stesso (cambiarlo fa ricaricare il modello a Ollama)
         while n < stima * 1.15 and n < 16384:
             n *= 2
-        return n
+        return min(n, 16384) if n > CONFIG["num_ctx"] else n
 
     def _payload(self, system_prompt, messaggi, stream):
         d = {"model": CONFIG["modello"], "messages": [{"role": "system", "content": system_prompt}] + messaggi, "stream": stream}
-        ctx = self.contesto_per(len(system_prompt) + sum(len(m.get("content", "")) for m in messaggi))
-        if ctx:
-            d["options"] = {"num_ctx": ctx}
+        d["options"] = {"num_ctx": self.contesto_per(len(system_prompt) + sum(len(m.get("content", "")) for m in messaggi))}
+        d["keep_alive"] = CONFIG["keep_alive"]          # v22: il modello resta pronto
         return json.dumps(d).encode("utf-8")
 
     def pensa(self, system_prompt, messaggi):
@@ -1466,7 +1476,8 @@ class Cervello:
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": dict({"temperature": 0, "num_predict": num_predict}, **({"num_ctx": self.contesto_per(len(prompt))} if self.contesto_per(len(prompt)) else {})),
+                "keep_alive": CONFIG["keep_alive"],
+                "options": {"temperature": 0, "num_predict": num_predict, "num_ctx": self.contesto_per(len(prompt))},
             }).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -1515,6 +1526,7 @@ class Cervello:
                             tps = n / (ns / 1e9) if n and ns else (n / max(1e-3, totale - ttft) if n else 0)
                             stat.update(tps=round(tps, 1), ttft_ms=round((ttft or totale) * 1000),
                                         totale_ms=round(totale * 1000), token=n)
+                            registra_velocita(stat)                 # v22: le misure per «quanto vai veloce?»
                         break
             return "".join(full).strip()
         except Exception as e:
@@ -1537,6 +1549,7 @@ class Cervello:
                 "model": mdl,
                 "messages": [{"role": "user", "content": istr, "images": [img_b64]}],
                 "stream": False,
+                "keep_alive": CONFIG["keep_alive_visione"],
             }).encode("utf-8")
             req = urllib.request.Request(CONFIG["ollama_url"], data=payload,
                                          headers={"Content-Type": "application/json"})
@@ -6307,7 +6320,7 @@ class Vettori:
         """→ vettori normalizzati (lunghezza 1). Prova /api/embed (Ollama nuovo) e poi /api/embeddings (vecchio)."""
         base = CONFIG["ollama_base"]
         try:
-            req = urllib.request.Request(base + "/api/embed", data=json.dumps({"model": CONFIG["modello_embed"], "input": testi}).encode("utf-8"),
+            req = urllib.request.Request(base + "/api/embed", data=json.dumps({"model": CONFIG["modello_embed"], "input": testi, "keep_alive": CONFIG["keep_alive"]}).encode("utf-8"),
                                          headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 vv = json.loads(r.read().decode("utf-8")).get("embeddings") or []
@@ -6316,7 +6329,7 @@ class Vettori:
                 raise
             vv = []
             for t in testi:
-                req = urllib.request.Request(base + "/api/embeddings", data=json.dumps({"model": CONFIG["modello_embed"], "prompt": t}).encode("utf-8"),
+                req = urllib.request.Request(base + "/api/embeddings", data=json.dumps({"model": CONFIG["modello_embed"], "prompt": t, "keep_alive": CONFIG["keep_alive"]}).encode("utf-8"),
                                              headers={"Content-Type": "application/json"})
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     vv.append(json.loads(r.read().decode("utf-8")).get("embedding") or [])
@@ -7989,7 +8002,7 @@ class Automazioni:
 
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
-                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni")
+                     "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza")
 AUTOMAZIONI = Automazioni()
 
 
@@ -8676,7 +8689,7 @@ PROMPT_AGENTE_V20 = """OBIETTIVI (quando la persona vuole raggiungere qualcosa d
 def pensa_breve_http(system, testo, num_predict=220, temperatura=0.8, json_out=False, timeout=None):
     """Una risposta corta, non in streaming, con un po' di fantasia (temperature) e un tetto ai token."""
     corpo = {"model": CONFIG["modello"], "messages": [{"role": "system", "content": system}, {"role": "user", "content": testo}], "stream": False,
-             "options": {"temperature": temperatura, "num_predict": num_predict}}
+             "options": {"temperature": temperatura, "num_predict": num_predict, "num_ctx": Cervello.contesto_per(len(system) + len(testo))}, "keep_alive": CONFIG["keep_alive"]}
     if json_out:
         corpo["format"] = "json"
     req = urllib.request.Request(CONFIG["ollama_url"], data=json.dumps(corpo).encode("utf-8"), headers={"Content-Type": "application/json"})
@@ -9327,6 +9340,217 @@ AIUTANTI = Aiutanti()
 
 
 # ════════════════════════════════════════════════════════════
+# V22 — MAIK PRIME più veloce: il modello resta pronto e riusa le istruzioni già lette,
+# le misure di velocità, il tempo davanti al PC, la webcam che legge e guarda quello che le mostri
+# ════════════════════════════════════════════════════════════
+REGISTRO_VELOCITA = collections.deque(maxlen=30)          # le ultime risposte: token/s, prima parola, durata
+RISCALDAMENTO = {"stato": "non ancora", "secondi": None, "modello": "", "errore": ""}
+_PREFERENZE_MODELLO = ("qwen2.5:7b", "llama3.1:8b", "llama3.1", "gemma2:9b", "qwen2.5", "mistral-nemo", "mistral", "gemma2", "llama3",
+                       "qwen2.5:3b", "llama3.2:3b", "llama3.2", "gemma2:2b", "phi3", "qwen2.5:1.5b")
+_NON_CHAT = re.compile(r"embed|llava|moondream|bakllava|vision|-vl\b|vl:|minicpm-v|clip|bge|e5-", re.I)
+
+
+def _nome_modello(n):
+    return n[:-7] if str(n).endswith(":latest") else str(n)
+
+
+def scegli_modello(installati, voluto):
+    """Il modello che hai scelto, se è installato; altrimenti il migliore tra quelli che sanno chiacchierare. → (nome, cambiato)"""
+    nomi = [_nome_modello(m) for m in installati]
+    if not nomi or _nome_modello(voluto) in nomi:
+        return voluto, False
+    chat = [m for m in nomi if not _NON_CHAT.search(m)]
+    if not chat:
+        return voluto, False
+    for p in _PREFERENZE_MODELLO:
+        if p in chat:
+            return p, True
+        if ":" not in p:
+            simili = [m for m in chat if m.split(":")[0] == p]
+            if simili:
+                return simili[0], True
+    return chat[0], True
+
+
+def riscalda_modello(motore=None):
+    """All'avvio (e quando cambi personalità): carica il modello e gli fa leggere la parte fissa delle istruzioni.
+    Ollama la tiene in memoria (keep_alive) e la riusa: la prima risposta arriva subito invece di dopo decine di secondi."""
+    motore = motore or MOTORE
+    t0 = time.time()
+    RISCALDAMENTO.update(stato="in corso", errore="")
+    try:
+        if not motore.cervello.disponibile():
+            RISCALDAMENTO.update(stato="ollama spento")
+            return False
+        nome, cambiato = scegli_modello(motore.cervello.modelli(), CONFIG["modello"])
+        if cambiato:
+            print(f"  ℹ  il modello «{CONFIG['modello']}» non è installato: uso «{nome}» (scegline un altro con MAIK_MODELLO)")
+            RISCALDAMENTO["modello_auto"] = {"voluto": CONFIG["modello"], "usato": nome}
+            CONFIG["modello"] = nome
+        sistema = motore._system_prompt("")
+        corpo = {"model": CONFIG["modello"], "messages": [{"role": "system", "content": sistema}, {"role": "user", "content": "ciao"}],
+                 "stream": False, "keep_alive": CONFIG["keep_alive"],
+                 "options": {"num_ctx": Cervello.contesto_per(len(sistema) + 10), "num_predict": 1}}
+        req = urllib.request.Request(CONFIG["ollama_url"], data=json.dumps(corpo).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=600) as r:
+            r.read()
+        RISCALDAMENTO.update(stato="pronto", secondi=round(time.time() - t0, 1), modello=CONFIG["modello"])
+        print(f"  🔥 Modello {CONFIG['modello']} pronto in {RISCALDAMENTO['secondi']:g} s (resta in memoria per {CONFIG['keep_alive']})")
+        return True
+    except Exception as e:
+        RISCALDAMENTO.update(stato="errore", errore=str(e)[:160])
+        return False
+
+
+def registra_velocita(stat):
+    if stat and stat.get("totale_ms"):
+        REGISTRO_VELOCITA.append(dict({k: stat.get(k) for k in ("tps", "ttft_ms", "totale_ms", "token")},
+                                      quando=datetime.datetime.now().isoformat(timespec="seconds"), modello=CONFIG["modello"]))
+
+
+def prestazioni():
+    L = list(REGISTRO_VELOCITA)
+
+    def media(k):
+        v = [x[k] for x in L if x.get(k)]
+        return round(sum(v) / len(v), 1) if v else None
+    tps, ttft = media("tps"), media("ttft_ms")
+    consigli = []
+    if tps is not None and tps < 5:
+        consigli.append(f"Il modello {CONFIG['modello']} va piano su questo PC ({str(tps).replace('.', ',')} token al secondo): prova un modello più piccolo, "
+                        "es. «ollama pull llama3.2:3b» e poi avvia MAIK con MAIK_MODELLO=llama3.2:3b.")
+    if ttft is not None and ttft > 8000:
+        consigli.append(f"La prima parola arriva dopo {round(ttft / 1000)} secondi: se succede solo alla prima domanda è il modello che si carica "
+                        f"(ora resta pronto per {CONFIG['keep_alive']}); se succede sempre, prova un modello più piccolo o MAIK_NUM_CTX=4096.")
+    if CONFIG.get("embed") and tps is not None and tps < 5:
+        consigli.append("Su un PC lento puoi spegnere la ricerca per significato con MAIK_EMBED=0 (un modello in meno da tenere in memoria).")
+    return {"ok": True, "modello": CONFIG["modello"], "num_ctx": CONFIG["num_ctx"], "keep_alive": CONFIG["keep_alive"],
+            "riscaldamento": dict(RISCALDAMENTO), "ultime": L[-10:], "risposte": len(L), "media_tps": tps, "media_prima_parola_ms": ttft, "consigli": consigli}
+
+
+_RE_PRESTAZIONI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:le\s+)?(?:tue\s+)?prestazioni|quanto\s+(?:sei|vai)\s+veloce|perch[eé]\s+(?:sei|vai)\s+(?:così\s+)?lent[oa]|"
+                             r"(?:sei|vai)\s+(?:un\s+po['’]?\s+)?lent[oa]|come\s+(?:vai|sei)\s+(?:a|di)\s+velocit[aà])$", re.I)
+
+
+def prestazioni_router(testo):
+    if not _RE_PRESTAZIONI.match((testo or "").strip().rstrip(" ?!.")):
+        return None
+    p = prestazioni()
+    if not p["risposte"]:
+        t = f"⚡ Uso **{p['modello']}**. Non ho ancora misurato niente: fammi qualche domanda e ti dico quanto vado veloce."
+    else:
+        prima = f"{p['media_prima_parola_ms'] / 1000:.1f}".replace(".", ",") if p["media_prima_parola_ms"] else "?"
+        t = (f"⚡ **Le mie prestazioni** · modello **{p['modello']}** · {str(p['media_tps'] or '?').replace('.', ',')} token al secondo · "
+             f"la prima parola arriva in {prima} s (media delle ultime {p['risposte']} risposte) · resto pronto per {p['keep_alive']}.")
+    if p["consigli"]:
+        t += "\n" + "\n".join("💡 " + c for c in p["consigli"])
+    elif p["risposte"]:
+        t += "\n👍 Va tutto bene: niente da cambiare."
+    return {"testo": t, "prestazioni": p}
+
+
+# ── ⏱️ IL TEMPO DAVANTI AL PC: lo conto solo con la webcam accesa (la GUI manda i secondi, niente immagini) ──
+_RE_PRESENZA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:da\s+quanto(?:\s+tempo)?\s+sono\s+(?:davanti\s+al|al|sul)\s+(?:pc|computer)|"
+                          r"quanto\s+tempo\s+(?:sono\s+stat[oa]|ho\s+passato|passo)\s+(?:davanti\s+al|al|sul)\s+(?:pc|computer)(?:\s+oggi)?|"
+                          r"quanto\s+sono\s+stat[oa]\s+(?:davanti\s+)?al\s+(?:pc|computer)(?:\s+oggi)?)$", re.I)
+
+
+def durata_it(secondi):
+    m = int(secondi // 60)
+    return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
+class Presenza:
+    MAX_PAUSA = 180                                         # più di 3 minuti senza vederti: una «seduta» nuova
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "presenza.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                d.setdefault("giorni", {})
+                return d
+        except Exception:
+            pass
+        return {"giorni": {}, "ultima": 0, "inizio": 0}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f)
+        os.replace(tmp, self._file())
+
+    def aggiungi(self, secondi, ora=None):
+        ora = ora or time.time()
+        secondi = max(0, min(120, int(secondi or 0)))
+        with self._lock:
+            d = self._carica()
+            if ora - d.get("ultima", 0) > self.MAX_PAUSA + secondi:
+                d["inizio"] = ora - secondi
+            oggi = datetime.date.fromtimestamp(ora).isoformat()
+            d["giorni"][oggi] = d["giorni"].get(oggi, 0) + secondi
+            d["giorni"] = dict(sorted(d["giorni"].items())[-60:])
+            d["ultima"] = ora
+            self._salva(d)
+            return self.stato(ora, d)
+
+    def stato(self, ora=None, d=None):
+        ora = ora or time.time()
+        d = d or self._carica()
+        g = datetime.date.fromtimestamp(ora)
+        settimana = sum(v for k, v in d["giorni"].items() if (g - datetime.date.fromisoformat(k)).days < 7)
+        di_fila = ora - d.get("inizio", ora) if ora - d.get("ultima", 0) <= self.MAX_PAUSA else 0
+        return {"oggi": d["giorni"].get(g.isoformat(), 0), "settimana": settimana, "di_fila": max(0, int(di_fila))}
+
+    def router(self, testo):
+        if not _RE_PRESENZA.match((testo or "").strip().rstrip(" ?!.")):
+            return None
+        s = self.stato()
+        if not s["oggi"]:
+            return {"testo": "⏱️ Oggi non ti ho ancora visto: accendi la webcam (👀, tasto **C**) e tengo il conto io. Conto solo i minuti, niente foto.", "presenza": s}
+        t = f"⏱️ Oggi ti ho visto davanti al PC per **{durata_it(s['oggi'])}**"
+        if s["di_fila"] >= 60:
+            t += f", di cui **{durata_it(s['di_fila'])}** di fila adesso"
+        t += f" (questa settimana {durata_it(s['settimana'])})."
+        if s["di_fila"] >= 50 * 60:
+            t += " Che ne dici di alzarti e sgranchirti un paio di minuti? 🙆"
+        return {"testo": t, "presenza": s}
+
+
+PRESENZA = Presenza()
+
+
+# ── 📷 LA WEBCAM CHE LEGGE E GUARDA QUELLO CHE LE MOSTRI (la foto la scatta la GUI, il resto lo fa il modello di visione) ──
+_RE_WEB_LEGGI = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:leggi(?:mi)?|puoi\s+leggere)\s+(?:(?:quello|ci[oò]|cosa)\s+che\s+ti\s+(?:mostro|faccio\s+vedere|faccio\s+leggere|metto\s+davanti)"
+                           r"|(?:questo|questa|il|la|lo)\s+(?:foglio|biglietto|bigliettino|lettera|etichetta|cartello|libro|ricetta|post-it|scontrino|volantino)"
+                           r"(?:\s+che\s+ti\s+(?:mostro|faccio\s+vedere))?(?:\s+(?:con|nella|alla)\s+(?:la\s+)?webcam)?)$", re.I)
+_RE_WEB_GUARDA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:cosa\s+(?:ho|tengo)\s+in\s+mano|cos['’]\s*[eè]\s+(?:questo|questa\s+cosa)\s+che\s+(?:ho\s+in\s+mano|ti\s+(?:mostro|faccio\s+vedere))|"
+                            r"cosa\s+ti\s+sto\s+(?:mostrando|facendo\s+vedere)|indovina\s+cosa\s+ho\s+in\s+mano|guarda\s+(?:cosa|questo|quello\s+che)\s+(?:ti\s+mostro|ho\s+in\s+mano))$", re.I)
+_RE_WEB_ESPR = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:come\s+mi\s+vedi(?:\s+oggi)?|che\s+faccia\s+ho(?:\s+oggi)?|ti\s+sembro\s+(?:stanc[oa]|felice|triste|content[oa]|arrabbiat[oa]|di\s+buon\s+umore))$", re.I)
+PROMPT_GUARDA = ("La persona sta mostrando qualcosa alla webcam. Dimmi in italiano, in 2-3 frasi, cos'è l'oggetto che tiene in mano o che mostra, "
+                 "e un dettaglio utile o curioso. Se non si vede bene, dillo e chiedi di avvicinarlo alla luce.")
+
+
+def webcam_router(testo):
+    t = (testo or "").strip().rstrip(" ?!.")
+    if _RE_WEB_LEGGI.match(t):
+        return {"testo": "📷 Mettilo davanti alla webcam, fermo e con un po' di luce: lo leggo tra 3 secondi…", "webcam": {"azione": "leggi", "tra": 3}}
+    if _RE_WEB_GUARDA.match(t):
+        return {"testo": "📷 Fammi vedere: tienilo davanti alla webcam…", "webcam": {"azione": "guarda", "tra": 2, "domanda": PROMPT_GUARDA}}
+    if _RE_WEB_ESPR.match(t):
+        return {"testo": "👀 Fammi guardare…", "webcam": {"azione": "espressione"}}
+    return None
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -9731,9 +9955,11 @@ class MotoreAI:
             imposta_personalita(p)
 
     def _system_prompt(self, query="", fonti=None):
+        """v22: prima la parte FISSA (carattere e strumenti), poi quella che cambia (ora, memoria, documenti):
+        Ollama riusa la parte fissa che ha già letto e la risposta comincia molto prima."""
         ora = datetime.datetime.now()
         oggi = f"{data_it(ora)}, ore {ora.strftime('%H:%M')}"
-        documenti = ""
+        documenti, extra = "", ""
         if fonti:
             blocchi = "\n\n".join(f"[{f['nome']} · parte {f['pezzo']}]\n{f['testo']}" for f in fonti)
             documenti = (f"\n\n--- DAI DOCUMENTI DELLA PERSONA (usali solo se c'entrano con la domanda; quando li usi "
@@ -9742,8 +9968,9 @@ class MotoreAI:
             nomi = [d.get("nome", "") for d in self.memoria.documenti[-12:]]
             routine = [r["nome"] for r in ROUTINE.elenco()][:12] if CONFIG["pc"] else []
             strumenti = (PROMPT_AGENTE + ("\n" + PROMPT_AGENTE_WEB if CONFIG["web"] else "") + "\n" + PROMPT_AGENTE_V15 + "\n" + PROMPT_AGENTE_V16 + "\n" + PROMPT_AGENTE_V18 + "\n" + PROMPT_AGENTE_V19 + "\n" + PROMPT_AGENTE_V20 + ("\n" + PROMPT_AGENTE_PC if CONFIG["pc"] else "")
-                         + (f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
-                         + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
+)
+            extra = ((f"\nDocumenti caricati dalla persona: {', '.join(nomi)}." if nomi else "")
+                     + (f"\nRoutine salvate dalla persona: {', '.join(routine)}." if routine else ""))
         else:
             strumenti = ("Le azioni pratiche (timer, promemoria, lista, calcoli, ora nel mondo, briefing) le fai quando "
                          "te le chiedono con frasi come «metti un timer di 10 minuti» o «ricordami alle 18 di…»: "
@@ -9751,17 +9978,18 @@ class MotoreAI:
                          "Non dire mai di aver impostato qualcosa se non è successo davvero.")
         return f"""{CONFIG['carattere']}
 
-Oggi è {oggi}.
-
---- LA TUA MEMORIA DI QUESTA PERSONA ---
-{self.memoria.costruisci_contesto(query)}
---- FINE MEMORIA ---{documenti}
-
-Usa questa memoria con naturalezza, senza elencarla meccanicamente.
+Usa la memoria che trovi più sotto con naturalezza, senza elencarla meccanicamente.
 Se noti che la persona è di umore negativo, sii empatico e presente.
 Se ha obiettivi o sogni, tienili a mente e incoraggiala.
 
-{strumenti}"""
+{strumenti}
+
+--- ADESSO ---
+Oggi è {oggi}.{extra}
+
+--- LA TUA MEMORIA DI QUESTA PERSONA ---
+{self.memoria.costruisci_contesto(query)}
+--- FINE MEMORIA ---{documenti}"""
 
     def _impara_con_ia(self, testo):
         """Estrazione di fatti con il modello (JSON). Gira in background dopo la risposta."""
@@ -9824,6 +10052,10 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         return out
 
     def _dopo_risposta(self, testo):
+        for _ in range(240):                                 # v22: aspetto che tu sia in pausa (al massimo 2 minuti)
+            if getattr(self, "chat_attive", 0) <= 0 and time.time() - getattr(self, "ultima_chat", 0) > CONFIG.get("pausa_apprendimento", 6):
+                break
+            time.sleep(0.5)
         self._forse_riassumi()
         self._impara_con_ia(testo)
 
@@ -9899,7 +10131,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -9910,7 +10142,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -9973,18 +10205,23 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v20.get(k)})
+            v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
+            if v22:
+                on_token(v22["testo"])
+                self.memoria.salva_scambio(testo, v22["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -10005,7 +10242,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -10019,7 +10256,7 @@ Se ha obiettivi o sogni, tienili a mente e incoraggiala.
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -10643,6 +10880,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/prestazioni":                              # v22: ⚡ quanto vado veloce (e i consigli)
+                self._json(prestazioni())
+            elif base == "/presenza":                                 # v22: ⏱️ il tempo davanti al PC
+                self._json(dict(PRESENZA.stato(), ok=True))
             elif base == "/laboratorio":                              # v21: 🔬 le invenzioni
                 self._json({"ok": True, "invenzioni": LABORATORIO.elenco()})
             elif base == "/laboratorio/app":                          # l'invenzione in una gabbia: CSP sandbox (origine opaca), niente rete, niente dati di MAIK
@@ -10912,6 +11153,8 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/personalita":
                 k = self._read_json_body().get("chiave", "").strip()
                 ok = imposta_personalita(k, MOTORE.memoria)
+                if ok and CONFIG.get("riscalda", True):
+                    threading.Thread(target=riscalda_modello, daemon=True).start()            # v22: le istruzioni nuove già lette
                 self._json({"ok": ok, "personalita": CONFIG["personalita"],
                             "nome": PERSONALITA[k][1] if ok else "", "emoji": PERSONALITA[k][0] if ok else ""})
 
@@ -11110,6 +11353,13 @@ class Handler(BaseHTTPRequestHandler):
                 n = MOTORE.memoria.chiudi_promemoria(self._read_json_body().get("id", ""))
                 self._json({"ok": bool(n)})
 
+            elif base == "/presenza":                                 # v22: {secondi} visti dalla webcam (solo il tempo)
+                c = self._read_json_body()
+                try:
+                    sec = int(c.get("secondi", 0))
+                except (TypeError, ValueError):
+                    sec = 0
+                self._json(dict(PRESENZA.aggiungi(sec), ok=True))
             elif base in ("/laboratorio/crea", "/laboratorio/migliora", "/laboratorio/indietro", "/laboratorio/elimina", "/aiutanti/chiama") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v21: solo dalla GUI di MAIK
             elif base == "/laboratorio/crea":                         # v21: {testo} (risponde quando il modello ha finito)
@@ -11254,12 +11504,17 @@ class Handler(BaseHTTPRequestHandler):
         if not testo and not allegato:
             invia({"done": True, "ok": False, "risposta": "..."})
             return
+        MOTORE.chat_attive = getattr(MOTORE, "chat_attive", 0) + 1              # v22: c'è una risposta in corso
+        MOTORE.ultima_chat = time.time()
         try:
             meta = MOTORE.rispondi_stream(testo, lambda chunk: invia({"t": chunk}), allegato=allegato,
                                           rigenera=rigenera, sessione=sessione, on_evento=invia)
             invia(meta)
         except (BrokenPipeError, ConnectionResetError):
             pass  # il client ha chiuso, niente da fare
+        finally:
+            MOTORE.chat_attive -= 1
+            MOTORE.ultima_chat = time.time()
 
 
 # ════════════════════════════════════════════════════════════
@@ -17872,8 +18127,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 21.0 — Server avviato         ║
-║ multiverso · laboratorio · aiutanti · obiettivi  ║
+║        MAIK PRIME 22.0 — Server avviato         ║
+║ più veloce · webcam · multiverso · laboratorio   ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -17928,7 +18183,8 @@ def main():
     print(f"    GET  /proattivo · /proattivo/stato · /ricordi?q= · /ricordi/giorno?q=ieri                   [v18]")
     print(f"    GET  /automazioni · /automazioni/avvisi · /prime/oggi · POST /automazioni/crea /esegui     [v19]")
     print(f"    GET  /obiettivi · /prime/settimana · /prime/tendenze · POST /obiettivi/crea /tappa          [v20]")
-    print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [NUOVO v21]")
+    print(f"    GET  /laboratorio · /laboratorio/app?id= · /aiutanti · /tv · POST /laboratorio/crea /aiutanti/chiama   [v21]")
+    print(f"    GET  /prestazioni · /presenza · POST /presenza   [NUOVO v22]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")
@@ -17940,6 +18196,8 @@ def main():
 
     threading.Thread(target=lambda: [icona_png(n) for n in (192, 512)], daemon=True).start()   # icone pronte
     threading.Thread(target=_ciclo_sfondo, daemon=True).start()                                  # v13: routine e avvisi
+    if CONFIG.get("riscalda", True):
+        threading.Thread(target=riscalda_modello, daemon=True).start()                           # v22: 🔥 il modello pronto subito
     VETTORI.programma(MOTORE.memoria)                                                            # v16: significato dei documenti
     RICORDI.programma(MOTORE.memoria)                                                            # v18: significato delle chiacchierate
     threading.Timer(1.2, lambda: print(f"  Aperto come {apri_finestra(url)}  (--no-app per la scheda normale)")).start()

@@ -22094,7 +22094,7 @@ async function votaCarta(v) {
   const c = STU.carte[STU.i]; if (!c || !STU.girata) return;
   document.querySelectorAll('#stuvoti button').forEach(b => b.classList.remove('consiglio'));
   STU.conti[v] = (STU.conti[v] || 0) + 1;
-  if (!STU.libero) postJ('/studio/voto', { id: c.id, voto: v }).catch(() => {});
+  if (!STU.libero) STU.voto = postJ('/studio/voto', { id: c.id, voto: v }).catch(() => {});
   if (v < 3 && !STU.ripetute.has(c.id)) { STU.ripetute.add(c.id); STU.carte.push(c); }              // la rivedi alla fine del giro
   if (AV) AV.gesture(v >= 4 ? 'thumbsup' : v === 3 ? 'nod' : 'shrug');
   if (v >= 4) suonoGiusto();
@@ -22103,10 +22103,10 @@ async function votaCarta(v) {
 async function fineRipasso() {
   $('#stucarta').hidden = true; $('#stufine').hidden = false; $('#stuprog').style.width = '100%';
   const k = STU.conti, tot = k[1] + k[3] + k[4] + k[5];
-  let p = null; try { p = await (await fetch('/studio')).json(); } catch (e) {}
+  let p = null; try { await STU.voto; p = await (await fetch('/studio')).json(); } catch (e) {}
   const domani = p ? p.mazzi.reduce((a, m) => a + m.oggi, 0) : 0;
   $('#stufine').innerHTML = '<div class="stueb">🎉</div><b>Ripasso finito: ' + tot + ' carte</b><div class="stuconti"><span>🤩 ' + k[5] + '</span><span>🙂 ' + k[4] + '</span><span>😐 ' + k[3] + '</span><span>❌ ' + k[1] + '</span></div>'
-    + '<p>' + (STU.libero ? 'Era un giro libero: i tempi del ripasso non cambiano.' : (domani ? 'Ti restano ' + domani + ' carte da ripassare oggi.' : 'Per oggi hai finito: le prossime te le chiedo al momento giusto.')) + (p && p.serie ? ' 🔥 ' + p.serie + ' giorn' + (p.serie === 1 ? 'o' : 'i') + ' di fila!' : '') + '</p>'
+    + '<p>' + (STU.libero ? 'Era un giro libero: i tempi del ripasso non cambiano.' : (domani ? (domani === 1 ? 'Ti resta 1 carta' : 'Ti restano ' + domani + ' carte') + ' da ripassare oggi.' : 'Per oggi hai finito: le prossime te le chiedo al momento giusto.')) + (p && p.serie ? ' 🔥 ' + p.serie + ' giorn' + (p.serie === 1 ? 'o' : 'i') + ' di fila!' : '') + '</p>'
     + '<div class="stubtn"><button type="button" data-stu="libero">🔁 Un giro libero</button><button type="button" data-stu="mazzi">🃏 I miei mazzi</button><button type="button" data-stu="chiudi">✓ Chiudi</button></div>';
   if (AV) { AV.endAct('legge'); AV.gesture(k[1] <= tot / 4 ? 'celebrate' : 'thumbsup'); }
   if (STU.voce && ttsOn) say('Ripasso finito! ' + (k[4] + k[5]) + ' carte su ' + tot + ' le sapevi bene.');

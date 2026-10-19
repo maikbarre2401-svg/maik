@@ -47,6 +47,20 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 👨‍🍳 Novità V26 — MAIK PRIME Chef & Coach: Chef Zep, il tutor di conversazione, il respiro guidato (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🍳 **Chef Zep: le ricette** | «**ricetta della carbonara**», «come si fanno le polpette?», «ricetta del tiramisù **per 8**», e dopo una ricetta «**per 6 persone**»: le quantità si ricalcolano, arrotondate come in cucina (le uova intere, i grammi a 5 o 10, il brodo in litri, «q.b.» per sale e pepe). 10 ricette di serie anche senza il modello (carbonara, pomodoro e basilico, aglio olio e peperoncino, risotto alla milanese, frittata di zucchine, pollo al limone, minestrone, polpette al sugo, tiramisù, pasta e ceci); le altre le scrive il modello, e io controllo che abbiano ingredienti, quantità e passi. «come si fa il backup?» non è una ricetta: lì rispondo normalmente. Zep non ti legge tutta la ricetta ad alta voce: ti dice solo cos'è, e i passi te li legge quando cucinate. |
+| 🧺 **Cosa cucino?** | «**cosa cucino con uova, zucchine e parmigiano?**» (anche «ho in frigo …, cosa preparo?»): il modello inventa una ricetta con quello che hai, e io ti propongo anche le mie che ci si avvicinano; senza modello ti do la mia più adatta e ti dico **cosa ti manca**. «cosa cucino stasera?» → tre idee da toccare. |
+| 📅 **Il menu della settimana** | «**fammi il menu della settimana**» (anche «vegetariano», «veloce», «per 4 persone»): 7 cene senza ripetere lo stesso piatto due sere di fila, da toccare per aprire la ricetta, e **la spesa di tutta la settimana** sommata e divisa per reparto (frutta e verdura, carne e pesce, latticini, pasta e pane, dispensa…; sale, pepe e olio a parte, «controlla di averli»). «**aggiungi tutto alla lista**» (o il bottone 🛒) e finisce nella lista della spesa — si può annullare. Anche come automazione: «ogni domenica alle 10 fammi il menu della settimana». |
+| 👨‍🍳 **La modalità cucina** | «**cuciniamo!**» (o il bottone): un pannello accanto a Zep — che si mette **il cappello da cuoco** e gira il mestolo — con gli ingredienti da spuntare, le persone da cambiare al volo (− +) e **un passo alla volta**, letto ad alta voce. Dove c'è da aspettare c'è il bottone **⏱️ Avvia il timer**: i timer sono anche più di uno, con il nome del passo, la pausa, la sveglia, il messaggio, e restano sul palco anche a pannello chiuso. Con le mani in pasta: «**avanti**», «indietro», «ripeti», «timer», anche a voce (o i tasti ← → e T). Alla fine Zep festeggia e la ricetta risulta cucinata. ⭐ «**salva la ricetta**» e «**le mie ricette**» per il tuo ricettario. |
+| 🗣️ **Il tutor di conversazione** | «**parliamo in inglese**» (o spagnolo, francese, tedesco, portoghese), anche in una situazione: «… **al ristorante**», «in aeroporto», «in albergo», «**al colloquio di lavoro**», «in negozio», «chiedere la strada», e il livello («principiante», «avanzato»). Zep ti risponde **nella lingua** (con la voce di quella lingua, e il microfono ti ascolta in quella lingua), ti fa una domanda per andare avanti e ti **corregge in italiano**: ❌ quello che hai scritto → ✅ come si dice, perché, e la frase giusta intera. Le correzioni che il modello si inventa (cose che non hai scritto) le scarto. 🇮🇹 la traduzione quando vuoi, 💡 «come si dice …?» in italiano, 📘 le parole nuove. **Le correzioni e le parole nuove diventano carte** da ripassare (il mazzo «Inglese: dalle conversazioni»). «**basta**» → il riepilogo: frasi giuste, errori da ricordare, carte. «come va il mio inglese?» → le tue conversazioni. Mentre parlate, tutti i messaggi vanno al tutor (anche «metti la pioggia»); dopo 45 minuti di silenzio la conversazione si chiude da sola. Serve il modello: se Ollama è spento te lo dico e la conversazione resta aperta. |
+| 🫧 **Il respiro guidato** | «**facciamo un esercizio di respirazione**», «respirazione 4-7-8 per dormire», «5 minuti di **coerenza cardiaca** con il mare», «respirazione quadrata», «aiutami a calmarmi»: un cerchio che si allarga quando inspiri e si stringe quando espiri, il conto alla rovescia, un suono morbido che sale e scende, la voce per il primo giro, Zep che respira con te a occhi chiusi. Pausa (Spazio), «basta», e alla fine i minuti di oggi e della settimana. «respiro male da giorni» invece non fa partire niente: è una domanda per il modello. |
+
+- Nuovi endpoint: `GET /cucina` · `GET /cucina/ricetta?id=&persone=` · `POST /cucina/salva {ricetta}` · `POST /cucina/elimina {id}` · `POST /cucina/spesa {voci}` · `POST /cucina/cucinata {id}` · `GET /tutor` · `GET /respiro` · `POST /respiro/fine {tecnica, secondi}` (quelli che cambiano qualcosa solo dalla GUI di MAIK). `/chat/stream` restituisce anche `"ricetta"`, `"menu"`, `"cucina"`, `"tutor"`, `"respiro"`.
+- I dati: `dati_maik/ricette.json` (il ricettario, si può annullare), `tutor.json` (le conversazioni), `respiro.json` (i minuti di respiro); sono nelle copie di sicurezza. Nessun nuovo comando del PC.
+
 ## 🎓 Novità V25 — MAIK PRIME Accademia: le carte per studiare, il Quizzone di Zep, i suoni per concentrarti (versione server)
 
 | | Cosa fa |
@@ -498,7 +512,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V25 — `maikprime.py`
+## MAIK PRIME — Server V26 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

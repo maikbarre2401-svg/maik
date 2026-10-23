@@ -47,6 +47,17 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🛰️ Novità V27 — MAIK PRIME HUD: l'interfaccia olografica, l'analisi della situazione, il piano d'azione (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🛰️ **L'interfaccia olografica (HUD)** | «**modalità HUD**» (o «attiva l'interfaccia olografica», il bottone 🛰️ HUD, il tasto **H**): parte la sequenza di accensione riga per riga (nucleo, modello, memoria, agenda, allerte… «SISTEMI ONLINE») e intorno a Zep compaiono i pannelli in vetro azzurro, **dal vivo**: l'orologio, la data, il meteo; i **SISTEMI** (il modello e se è online, la velocità in token al secondo, quanto ci mette la prima parola, quante cose ho imparato, da quanti giorni stiamo insieme, l'ultima copia di sicurezza); l'**AGENDA** e le **COSE DA FARE**; le **ALLERTE** (le urgenti lampeggiano in rosso, e hanno il bottone per sistemarle); gli indicatori (abitudini di oggi, budget, carte da ripassare, minuti di respiro, tempo al PC) e le notizie che scorrono in basso. Al centro gli anelli del «reattore» che girano, e **Zep diventa un ologramma**: azzurro, trasparente, con l'anello di luce che lo scansiona e la piattaforma del proiettore. Si aggiorna da solo ogni 30 secondi: se arriva una cosa urgente nuova (un impegno tra pochi minuti, un promemoria) **te la dice lui**, una volta sola. «spegni l'HUD», H o Esc per chiuderla. |
+| 🧠 **L'analisi della situazione** | «**come siamo messi?**», «rapporto», «aggiornami», «fammi il punto della situazione», «cosa devo sapere?», «status»: le cose che contano adesso, **in ordine di priorità**: 🔴 urgenti (un impegno o un promemoria entro un'ora, il modello che non risponde, il budget sforato), 🟡 da tenere d'occhio (impegni nelle prossime ore, cose da fare in ritardo, la serie di un'abitudine a rischio la sera, il budget oltre l'80%, un obiettivo che resta indietro, la pioggia, il caldo, troppo tempo di fila al PC), 🔵 per oggi (le cose da fare, le carte da ripassare, la cena di stasera, una copia di sicurezza che manca da giorni, l'ora tarda). Ognuna ha **la cosa da fare a un tocco** («🗓️ Ripianifica», «🃏 Ripassiamo», «🫧 Respira», «💶 Le spese»…), e Zep ti dice solo il riassunto. Anche come automazione: «ogni mattina alle 8 rapporto». |
+| ⚡ **Il piano d'azione** | «**organizzami domani: dentista alle 10 in via Roma, finire la relazione entro le 18, comprare latte e pane, ricordami di chiamare Luca alle 17**» (anche «organizzami venerdì: …», «piano d'azione: …»): il modello trasforma la frase in **azioni di MAIK** — 📅 eventi in calendario, ⏰ promemoria, 📋 cose da fare, 🛒 la lista della spesa, 📝 note — e ti mostra **la carta del piano**: spunti quello che vuoi, poi **▶ Esegui** (o «**esegui il piano**», anche a voce). Tutto insieme, e **un solo «annulla»** lo toglie tutto. Io controllo ogni azione: solo quei cinque tipi, date e ore vere, niente cose già passate, niente doppioni, e **mai comandi del PC** (anche se il modello ne inventasse uno). Senza il modello lo preparo io, a regole (virgole, orari, «comprare…», «ricordami…», «entro le…»). |
+
+- Nuovi endpoint: `GET /hud` (tutto quello che mostra l'interfaccia, veloce: meteo e notizie restano in memoria per un po') · `GET /situazione` (le allerte) · `POST /piano/esegui {id, scelte}` (solo dalla GUI di MAIK; il piano deve essere uno di quelli preparati da me, e si annulla tutto insieme). `/chat/stream` restituisce anche `"situazione"`, `"hud"`, `"piano_azione"`, `"piano_fatto"`.
+- Il tasto **H** ora apre l'HUD (l'aiuto delle scorciatoie resta su **?**). Nessun nuovo comando del PC, niente riconoscimento delle persone.
+
 ## 👨‍🍳 Novità V26 — MAIK PRIME Chef & Coach: Chef Zep, il tutor di conversazione, il respiro guidato (versione server)
 
 | | Cosa fa |
@@ -512,7 +523,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V26 — `maikprime.py`
+## MAIK PRIME — Server V27 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

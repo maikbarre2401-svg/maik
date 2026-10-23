@@ -5349,7 +5349,7 @@ class Calendario:
                 if c >= a:
                     fermo = True
                     break
-                if c + dur > da and c not in esclusi:
+                if c + dur > da and not any(abs((c - x).total_seconds()) <= 7200 for x in esclusi):   # v27: anche se tra le due date cambia l'ora legale
                     out.append(c)
             if fermo:
                 break

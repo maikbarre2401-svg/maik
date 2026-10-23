@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v26.0                   ║
+║              MAIK PRIME — Server v27.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,15 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v27.0 — MAIK PRIME HUD:
+  • 🛰️ L'interfaccia olografica: «modalità HUD» (o il tasto H): intorno a Zep i pannelli dal vivo — ora, meteo, sistemi (modello,
+    velocità, copie di sicurezza), agenda, cose da fare, obiettivi, abitudini, budget, carte, notizie — e le allerte. Zep diventa un ologramma.
+  • 🧠 L'analisi della situazione: «come siamo messi?», «rapporto», «aggiornami»: le cose che contano adesso, in ordine di priorità
+    (🔴 entro un'ora, 🟡 da tenere d'occhio, 🔵 per oggi), ognuna con la cosa da fare (un tocco).
+  • ⚡ Il piano d'azione: «organizzami domani: dentista alle 10, finire la relazione entro le 18, comprare il latte» → eventi, promemoria,
+    cose da fare, spesa e note in una volta, con UNA conferma («▶ Esegui» o «esegui il piano») e un solo «annulla». Niente comandi del PC.
+  • Nuovi endpoint: GET /hud · GET /situazione · POST /piano/esegui {id, scelte}
 
 NOVITÀ v26.0 — MAIK PRIME CHEF & COACH:
   • 🍳 Chef Zep: «ricetta della carbonara» (anche «per 6 persone»: le quantità si ricalcolano), «come si fanno le polpette?»,
@@ -427,7 +436,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "26.0"
+VERSIONE  = "27.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -7735,7 +7744,7 @@ _CTX = threading.local()          # cosa sta facendo questo thread (in un'automa
 # ── ⚙️ AUTOMAZIONI: «ogni lunedì alle 9 dimmi quanto ho speso», e MAIK lo fa da solo ──
 _VERBI_AUTO = (r"dimmi|dammi|fammi|mandami|leggimi|mostrami|ricordami|ricorda(?:mi)?|fai|prepara(?:mi)?|controlla|cerca|riassumi(?:mi)?|esegui|calcola|"
                r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami|"
-               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz|menu|ricetta|respiriamo")   # v24-26: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo», «ogni domenica alle 10 fammi il menu della settimana»
+               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz|menu|ricetta|respiriamo|rapporto|aggiornami|situazione|status")   # v24-26: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo», «ogni domenica alle 10 fammi il menu della settimana»
 _RE_AUTO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:crea|nuova|aggiungi|imposta)\s+(?:un['’]\s*|una\s+)?automazione\s*[:,]?\s*|automazione\s*[:,]\s*)?"
                            r"(?P<quando>(?:ogni|tutti\s+i|tutte\s+le)\s+[^,]+?|nei\s+giorni\s+feriali|nel\s+(?:weekend|fine\s+settimana)|dal\s+luned[iì]\s+al\s+venerd[iì])"
                            r"(?:\s+(?:alle|all['’]|verso\s+le)\s*(?P<ora>\d{1,2}(?:[:.]\d{2})?))?\s*[,:]?\s+(?P<cosa>(?:" + _VERBI_AUTO + r")\b.*)$", re.I)
@@ -8062,7 +8071,7 @@ class Automazioni:
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
                      "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
-                     "diagnosi", "backup", "radio", "storie", "studio", "quiz", "ricetta", "menu", "respiro")
+                     "diagnosi", "backup", "radio", "storie", "studio", "quiz", "ricetta", "menu", "respiro", "situazione")
 AUTOMAZIONI = Automazioni()
 
 
@@ -12238,6 +12247,496 @@ _aggancia_giornale_v26()
 
 
 # ════════════════════════════════════════════════════════════
+# V27 — MAIK PRIME HUD: 🛰️ l'interfaccia olografica (i dati dal vivo), 🧠 l'analisi della situazione (le allerte in ordine
+# di priorità, ognuna con la cosa da fare), ⚡ il piano d'azione (una frase → più azioni, una sola conferma, un solo «annulla»)
+# ════════════════════════════════════════════════════════════
+
+_CACHE_HUD = {}                                            # chiave → (quando, valore): meteo, notizie e lo stato del modello non si chiedono a ogni giro
+
+
+def _in_cache_hud(k, secondi, fn):
+    x = _CACHE_HUD.get(k)
+    if x and time.time() - x[0] < secondi:
+        return x[1]
+    try:
+        v = fn()
+    except Exception:
+        v = None
+    _CACHE_HUD[k] = (time.time(), v)
+    return v
+
+
+def _ollama_ok_hud():
+    return bool(_in_cache_hud("ollama", 30, lambda: MOTORE.cervello.disponibile()))
+
+
+def _meteo_hud(memoria):
+    citta = memoria.get_valore_profilo("citta") or "Roma"
+    m = _in_cache_hud("meteo:" + citta, 900, lambda: ottieni_meteo(citta, timeout=3))
+    return None if not m or m.get("errore") else {k: m.get(k) for k in ("citta", "temp", "percepita", "emoji", "descrizione", "pioggia", "vento")}
+
+
+def _notizie_hud():
+    if not CONFIG.get("web"):
+        return []
+    nz = _in_cache_hud("notizie", 1200, lambda: NOTIZIE.prendi("principali", 6, timeout=3))
+    return [n["titolo"] for n in (nz or {}).get("notizie", [])[:6]] if nz and nz.get("ok") else []
+
+
+def _giorno_breve(d, oggi=None):
+    oggi = oggi or datetime.date.today()
+    return "oggi" if d == oggi else "domani" if d == oggi + datetime.timedelta(days=1) else f"{GIORNI_LUNGHI[d.weekday()]} {d.day}"
+
+
+def _tra(minuti):
+    return "adesso" if minuti <= 0 else f"tra {minuti} min" if minuti < 60 else f"tra {minuti // 60} h" + (f" {minuti % 60} min" if minuti % 60 else "")
+
+
+def _prossimi_eventi(ora, giorni=2):
+    out = []
+    for g in CAL.agenda(ora, giorni)["giorni"]:
+        d = datetime.date.fromisoformat(g["data"])
+        for e in g["eventi"]:
+            if e["ora"] == "tutto il giorno":
+                inizio = datetime.datetime.combine(d, datetime.time(0, 0))
+            else:
+                h, mi = map(int, e["ora"].split(":"))
+                inizio = datetime.datetime.combine(d, datetime.time(h, mi))
+                if inizio < ora - datetime.timedelta(minutes=5):
+                    continue
+            out.append(dict(e, inizio=inizio, giorno=d))
+    out.sort(key=lambda e: e["inizio"])
+    return out
+
+
+def analizza_situazione(memoria, ora=None, ollama=None, meteo=None, presenza=None):
+    """Le cose che contano adesso, in ordine: 🔴 alta (entro un'ora, o qualcosa che non va), 🟡 media, 🔵 bassa.
+    Ognuna ha (se serve) la frase da dire per sistemarla: le allerte si leggono, ma si possono anche toccare."""
+    ora = ora or datetime.datetime.now()
+    oggi = ora.date()
+    A = []
+
+    def al(livello, icona, testo, chiave, comando=None, etichetta=None):
+        A.append({"livello": livello, "icona": icona, "testo": testo, "id": chiave, "comando": comando, "etichetta": etichetta})
+
+    if ollama is False:
+        al("alta", "🔌", "Il modello (Ollama) non risponde: per ora uso solo le mie funzioni di base.", "ollama", "funziona tutto?", "🩺 Diagnosi")
+    try:
+        ev = _prossimi_eventi(ora)
+        vicini = [e for e in ev if e["giorno"] == oggi and e["ora"] != "tutto il giorno" and (e["inizio"] - ora).total_seconds() <= 3 * 3600]
+        for e in vicini[:3]:
+            mn = max(0, int((e["inizio"] - ora).total_seconds() // 60))
+            al("alta" if mn <= 60 else "media", "📅", f"{e['titolo']} {_tra(mn)} (alle {e['ora']}{', ' + e['luogo'] if e.get('luogo') else ''})", "evento:" + str(e.get("id")))
+        dopo = [e for e in ev if e not in vicini]
+        if dopo:
+            e = dopo[0]
+            al("bassa", "📅", f"{_giorno_breve(e['giorno'], oggi).capitalize()} {'tutto il giorno' if e['ora'] == 'tutto il giorno' else 'alle ' + e['ora']}: {e['titolo']}", "evento:" + str(e.get("id")), "cosa ho in agenda?", "📅 Agenda")
+    except Exception:
+        pass
+    try:
+        for p in memoria.promemoria:
+            if p.get("fatto") or not p.get("quando"):
+                continue
+            q = datetime.datetime.fromisoformat(p["quando"])
+            mn = int((q - ora).total_seconds() // 60)
+            if 0 <= mn <= 120:
+                al("alta" if mn <= 15 else "media", "⏰", f"{_tra(mn).capitalize()}: {p['testo']}", "promemoria:" + str(p.get("id")))
+    except Exception:
+        pass
+    try:
+        da_fare = ATTIVITA.vista("oggi", oggi)
+        rit = [a for a in da_fare if a["scadenza"] and a["scadenza"] < oggi.isoformat()]
+        og = [a for a in da_fare if a not in rit]
+        if rit:
+            al("media", "⚠️", f"{len(rit)} cos{'a' if len(rit) == 1 else 'e'} da fare in ritardo: " + ", ".join(a["testo"] for a in rit[:3]) + ("…" if len(rit) > 3 else ""),
+               "ritardo:" + oggi.isoformat(), "pianificami la giornata", "🗓️ Ripianifica")
+        if og:
+            al("bassa", "📋", f"Da fare oggi: " + ", ".join(a["testo"] for a in og[:3]) + ("…" if len(og) > 3 else ""), "oggi:" + oggi.isoformat(), "cosa devo fare oggi?", "📋 Cose da fare")
+    except Exception:
+        pass
+    try:
+        if ora.hour >= 17:
+            for a in ABITUDINI.tutte_stato():
+                if a.get("previsto_oggi") and not a.get("fatta_oggi") and a.get("serie", 0) >= 2:
+                    al("media", "🔥", f"La serie di {a['nome']} ({a['serie']} giorni) è a rischio: oggi non l'hai ancora fatta.", "abitudine:" + a["id"] + ":" + oggi.isoformat(),
+                       "come vanno le mie abitudini?", "✅ Abitudini")
+    except Exception:
+        pass
+    try:
+        rs = SPESE.riepilogo(oggi.replace(day=1), oggi)
+        b = rs.get("budget")
+        if b and b.get("perc", 0) >= 80:
+            fine_mese = (oggi.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+            al("alta" if b["perc"] >= 100 else "media", "💶", f"Budget del mese al {b['perc']}% ({euro(b['usato'])} su {euro(b['totale'])}), e mancano {(fine_mese - oggi).days} giorni.",
+               "budget:" + oggi.strftime("%Y-%m") + ":" + ("100" if b["perc"] >= 100 else "80"), "quanto ho speso questo mese?", "💶 Le spese")
+    except Exception:
+        pass
+    try:
+        for o in OBIETTIVI.elenco(oggi=oggi):
+            if o.get("in_ritardo") or o.get("ritmo") == "indietro":
+                al("media", o.get("emoji") or "🎯", f"{o['titolo']}: sei un po' indietro ({o['perc']}% fatto, a quest'ora sarebbe il {o['atteso']}%).", "obiettivo:" + o["id"], "i miei obiettivi", "🎯 Obiettivi")
+    except Exception:
+        pass
+    if meteo:
+        if (meteo.get("pioggia") or 0) > 0:
+            al("media", "☔", f"Sta piovendo a {meteo['citta']} ({meteo['pioggia']} mm): se esci, l'ombrello!", "pioggia:" + oggi.isoformat())
+        if meteo.get("temp") is not None and meteo["temp"] >= 33:
+            al("media", "🥵", f"Fa molto caldo ({meteo['temp']}°): bevi un po' d'acqua.", "caldo:" + oggi.isoformat())
+        elif meteo.get("temp") is not None and meteo["temp"] <= 0:
+            al("bassa", "🥶", f"Si gela ({meteo['temp']}°): copriti bene.", "freddo:" + oggi.isoformat())
+    if presenza and presenza.get("di_fila", 0) >= 50 * 60:
+        al("media", "🧘", f"Sei al PC da {durata_it(presenza['di_fila'])} di fila: due minuti di pausa?", "pausa:" + ora.strftime("%Y-%m-%dT%H"), "facciamo un esercizio di respirazione", "🫧 Respira")
+    if 0 <= ora.hour < 4:
+        al("bassa", "🌙", f"Sono le {ora.strftime('%H:%M')}: il sonno è il miglior aggiornamento.", "notte:" + oggi.isoformat())
+    try:
+        n = STUDIO.panoramica(oggi)["da_ripassare"]
+        if n:
+            al("bassa", "🃏", f"{n} cart{'a' if n == 1 else 'e'} da ripassare (circa {max(1, round(n * 10 / 60))} min).", "carte:" + oggi.isoformat(), "ripassiamo", "🃏 Ripassiamo")
+    except Exception:
+        pass
+    try:
+        if CONFIG.get("backup"):
+            el = BACKUP.elenco()
+            ult = datetime.date.fromisoformat(el[0]["quando"][:10]) if el else None
+            if not ult or (oggi - ult).days >= 3:
+                al("bassa", "💾", "Nessuna copia di sicurezza dei tuoi dati" + (f" da {(oggi - ult).days} giorni." if ult else " finora."), "backup:" + oggi.isoformat(), "fai una copia di sicurezza", "💾 Copia ora")
+    except Exception:
+        pass
+    ordine = {"alta": 0, "media": 1, "bassa": 2}
+    return sorted(A, key=lambda x: ordine[x["livello"]])
+
+
+def stato_hud(memoria, ora=None):
+    """Tutto quello che l'interfaccia olografica mostra, in una volta sola (veloce: meteo e notizie stanno in memoria per un po')."""
+    ora = ora or datetime.datetime.now()
+    oggi = ora.date()
+    ok = _ollama_ok_hud()
+    met = _meteo_hud(memoria)
+    try:
+        pres = PRESENZA.stato()
+    except Exception:
+        pres = None
+    out = {"ora": ora.isoformat(timespec="seconds"), "data": data_it(oggi), "nome": memoria.get_valore_profilo("nome") or "", "versione": VERSIONE,
+           "saluto": "Buongiorno" if 5 <= ora.hour < 12 else "Buon pomeriggio" if 12 <= ora.hour < 18 else "Buonasera" if 18 <= ora.hour < 23 else "Buonanotte",
+           "meteo": met, "notizie": _notizie_hud(), "presenza": pres}
+    try:
+        p = prestazioni()
+    except Exception:
+        p = {}
+    try:
+        el = BACKUP.elenco()
+    except Exception:
+        el = []
+    out["sistemi"] = {"modello": CONFIG["modello"], "ollama": ok, "tps": p.get("media_tps"), "prima_parola_ms": p.get("media_prima_parola_ms"),
+                      "backup": el[0]["quando"] if el else None, "ricordi": len(memoria.imparato), "documenti": len(getattr(memoria, "documenti", []) or []),
+                      "giorni_insieme": (memoria.ricordi or {}).get("giorni_insieme", 0)}
+    try:
+        out["agenda"] = [{"quando": _giorno_breve(e["giorno"], oggi).capitalize() + ("" if e["ora"] == "tutto il giorno" else " " + e["ora"]), "titolo": e["titolo"], "luogo": e.get("luogo", "")}
+                         for e in _prossimi_eventi(ora)[:5]]
+    except Exception:
+        out["agenda"] = []
+    try:
+        out["attivita"] = [{"testo": a["testo"], "ritardo": bool(a["scadenza"] and a["scadenza"] < oggi.isoformat()), "alta": a["priorita"] == "alta"} for a in ATTIVITA.vista("oggi", oggi)[:5]]
+    except Exception:
+        out["attivita"] = []
+    try:
+        out["obiettivi"] = [{"emoji": o.get("emoji") or "🎯", "titolo": o["titolo"], "perc": o["perc"], "ritmo": o["ritmo"]} for o in OBIETTIVI.elenco(oggi=oggi)[:3]]
+    except Exception:
+        out["obiettivi"] = []
+    try:
+        ab = [a for a in ABITUDINI.tutte_stato() if a.get("previsto_oggi")]
+        out["abitudini"] = {"previste": len(ab), "fatte": sum(1 for a in ab if a.get("fatta_oggi"))}
+    except Exception:
+        out["abitudini"] = {"previste": 0, "fatte": 0}
+    try:
+        rs = SPESE.riepilogo(oggi.replace(day=1), oggi)
+        out["spese"] = {"totale": rs.get("totale", 0), "budget": rs.get("budget")}
+    except Exception:
+        out["spese"] = None
+    try:
+        out["studio"] = STUDIO.panoramica(oggi)["da_ripassare"]
+    except Exception:
+        out["studio"] = 0
+    try:
+        out["respiro"] = RESPIRO.riassunto(oggi)["oggi"]
+    except Exception:
+        out["respiro"] = 0
+    out["allerte"] = analizza_situazione(memoria, ora, ollama=ok, meteo=met, presenza=pres)
+    return out
+
+
+_RE_SITUAZIONE = re.compile(_P + r"(?:rapporto(?:\s+completo|\s+della\s+situazione|\s+di\s+situazione)?|(?:fammi|dammi)\s+(?:il|un)\s+(?:punto|rapporto|quadro)(?:\s+della\s+situazione|\s+completo)?"
+                            r"|(?:facciamo|fai|fare)\s+il\s+punto(?:\s+della\s+situazione)?|com['’]?\s*[eè]\s+la\s+situazione|come\s+siamo\s+messi|analisi\s+della\s+situazione|analizza\s+la\s+(?:mia\s+)?situazione"
+                            r"|aggiornami|status|stato\s+(?:dei|del)\s+sistem[ai]|cosa\s+devo\s+sapere|ci\s+sono\s+(?:novit[aà]|allerte|urgenze)|(?:le\s+)?allerte|situazione)$", re.I)
+_RE_HUD_APRI = re.compile(_P + r"(?:(?:attiva|accendi|apri|mostra(?:mi)?|avvia|metti)\s+(?:la\s+|l['’]\s*)?(?:modalit[aà]\s+)?(?:hud|interfaccia(?:\s+olografica)?|ologramm[ai]|olografica|iron\s*-?\s*man)"
+                          r"|modalit[aà]\s+(?:hud|iron\s*-?\s*man|olografica)|hud)$", re.I)
+_RE_HUD_CHIUDI = re.compile(_P + r"(?:spegni|chiudi|disattiva|togli|esci\s+dall?['’]?\s*)\s*(?:la\s+|l['’]\s*)?(?:modalit[aà]\s+)?(?:hud|interfaccia(?:\s+olografica)?|olografica|iron\s*-?\s*man)$", re.I)
+
+
+def situazione_router(testo, motore):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    if _RE_HUD_CHIUDI.match(t):
+        return {"testo": "🛰️ Interfaccia olografica spenta.", "hud": {"chiudi": True}}
+    apri = bool(_RE_HUD_APRI.match(t))
+    if not apri and not _RE_SITUAZIONE.match(t):
+        return None
+    st = stato_hud(motore.memoria)
+    A = st["allerte"]
+    if apri:
+        return {"testo": "🛰️ Interfaccia olografica attiva. Sistemi online" + (f": {len([a for a in A if a['livello'] != 'bassa'])} cose da tenere d'occhio." if any(a["livello"] != "bassa" for a in A) else ", tutto sotto controllo."),
+                "hud": dict(st, apri=True)}
+    ora = datetime.datetime.fromisoformat(st["ora"])
+    pallino = {"alta": "🔴", "media": "🟡", "bassa": "🔵"}
+    righe = [f"{pallino[a['livello']]} {a['icona']} {a['testo']}" for a in A[:9]]
+    s = st["sistemi"]
+    sist = (f"🛰️ Sistemi: modello {s['modello']} {'online' if s['ollama'] else '**offline**'}" + (f" · {s['tps']} token/s" if s.get("tps") else "")
+            + f" · {s['ricordi']} cose imparate" + (" · ultima copia " + s["backup"][:10] if s.get("backup") else ""))
+    urg = [a for a in A if a["livello"] == "alta"]
+    testa = (f"🛰️ **Situazione** · {st['data']}, ore {ora.strftime('%H:%M')}" + (f" · {st['meteo']['emoji']} {st['meteo']['temp']}° a {st['meteo']['citta']}" if st.get("meteo") else "") + "\n")
+    corpo = ("\n".join(f"- {r}" for r in righe) if righe else "- ✅ Tutto sotto controllo: niente di urgente.")
+    return {"testo": testa + (f"**{len(urg)} cos{'a' if len(urg) == 1 else 'e'} urgent{'e' if len(urg) == 1 else 'i'}.**\n" if urg else "") + corpo + "\n\n" + sist,
+            "situazione": {"allerte": A, "sistemi": s, "meteo": st.get("meteo")}}
+
+
+# ── ⚡ IL PIANO D'AZIONE: «organizzami domani: dentista alle 10, finire la relazione entro le 18, comprare il latte» ──
+TIPI_PIANO = {"evento": "📅", "promemoria": "⏰", "attivita": "📋", "spesa": "🛒", "nota": "📝"}
+PIANI = {}                                                 # id → {"azioni", "giorno", "quando", "sid"} (aspettano la conferma)
+_GIORNI_RX = {"luned": 0, "marted": 1, "mercoled": 2, "gioved": 3, "venerd": 4, "sabato": 5, "domenica": 6}
+_RE_PIANO_AZIONE = re.compile(_P + r"(?:(?:organizzami|organizza|sistemami|pianificami|preparami|programmami)\s+(?P<q>(?:la\s+giornata\s+di\s+)?(?:oggi|domani|dopodomani|"
+                       r"(?:luned[iì]|marted[iì]|mercoled[iì]|gioved[iì]|venerd[iì]|sabato|domenica)(?:\s+prossim[oa])?)|la\s+giornata|la\s+settimana|tutto)\s*[:,]\s*(?P<c>.+)"
+                       r"|(?:piano\s+d['’]\s*azione|fai\s+(?:tutto\s+)?(?:questo|cos[iì])|metti\s+in\s+agenda)\s*(?P<q2>oggi|domani|dopodomani)?\s*[:,]\s*(?P<c2>.+))$", re.I)
+_RE_PIANO_ESEGUI = re.compile(_P + r"(?:s[iì]\s*,?\s*)?(?:esegui|conferma|confermo|vai\s+con|fai)\s+(?:pure\s+)?(?:il|questo|tutto\s+il)\s+piano(?:\s+d['’]\s*azione)?$", re.I)
+_PAROLE_EVENTO = re.compile(r"dentist|medic|dottor|riunion|appuntament|visit|colloqui|cena|pranzo|aperitiv|incontr|lezion|\bcall\b|meeting|palestra|partita|\bvolo\b|treno|esame|parrucchier|"
+                            r"estetist|veterinari|commercialist|avvocat|banca|posta\b|concerto|cinema|teatro|festa|compleanno|matrimonio|corso\b|allenament|calcetto|yoga|piscina", re.I)
+
+
+def _giorno_piano(q, oggi):
+    q = _senza_accenti((q or "").lower())
+    if "dopodomani" in q:
+        return oggi + datetime.timedelta(days=2)
+    if "domani" in q:
+        return oggi + datetime.timedelta(days=1)
+    for k, wd in _GIORNI_RX.items():
+        if k in q:
+            return oggi + datetime.timedelta(days=(wd - oggi.weekday()) % 7 or 7)
+    return oggi
+
+
+def _ora_da(t):
+    m = re.search(r"\b(?:alle|all['’]\s*|ore|per\s+le|verso\s+le|dalle)\s*(\d{1,2})(?:[:.](\d{2}))?\b|\b(\d{1,2})[:.](\d{2})\b", t, re.I)
+    if not m:
+        return None, t
+    h, mi = int(m.group(1) or m.group(3)), int(m.group(2) or m.group(4) or 0)
+    if not (0 <= h <= 23 and 0 <= mi <= 59):
+        return None, t
+    resto = (t[:m.start()] + " " + t[m.end():]).strip()
+    return f"{h:02d}:{mi:02d}", re.sub(r"\s+", " ", resto)
+
+
+def _pulisci_titolo(t):
+    t = re.sub(r"^(?:e\s+|poi\s+|ho\s+(?:il|la|lo|l['’]|un|una|uno)?\s*|c['’]\s*[eè]\s+(?:il|la|lo|un|una)?\s*|devo\s+(?:andare\s+)?(?:a|al|alla|dal|dalla|in)?\s*|vado\s+(?:a|al|alla|dal|dalla|in)\s*|andare\s+(?:a|al|alla|dal|dalla|in)\s*)", "", t.strip(" .,;"), flags=re.I)
+    t = re.sub(r"^(?:il|lo|la|l['’]|i|gli|le)\s+", "", t, flags=re.I).strip(" .,;")
+    return (t[:1].upper() + t[1:])[:120] if t else ""
+
+
+def piano_a_regole(testo, giorno):
+    """Senza modello: divido la frase nei pezzi (virgole, «poi») e capisco cosa sono dalle parole e dagli orari."""
+    azioni = []
+    for pezzo in re.split(r"\s*(?:;|,|\be\s+poi\b|\bpoi\b|\binoltre\b|\bdopo\b)\s*", testo):
+        p = pezzo.strip(" .")
+        if len(p) < 3:
+            continue
+        m = re.match(r"^(?:e\s+)?(?:compra(?:re)?|prend(?:ere|i)|fare\s+la\s+spesa\s*:?|la\s+spesa\s*:?)\s+(?:il|lo|la|l['’]|i|gli|le|del|della|dei|delle|un|una)?\s*(.+)$", p, re.I)
+        if m:
+            azioni.append({"tipo": "spesa", "voci": [re.sub(r"^(?:il|lo|la|l['’]|i|gli|le|del|della|dello|dei|degli|delle|un|una|uno)\s+", "", v.strip(), flags=re.I)
+                                                     for v in re.split(r"\s*(?:,|\be\b)\s*", m.group(1)) if v.strip()]})
+            continue
+        m = re.match(r"^(?:nota|annota(?:ti)?|appunto)\s*:?\s*(.+)$", p, re.I)
+        if m:
+            azioni.append({"tipo": "nota", "testo": m.group(1)})
+            continue
+        entro = re.search(r"\bentro\s+(?:le\s+)?(\d{1,2})(?:[:.](\d{2}))?\b", p, re.I)
+        ora, resto = (None, p) if entro else _ora_da(p)
+        m = re.match(r"^(?:e\s+)?ricordami\s+(?:di\s+)?(.+)$", resto, re.I)
+        if m:
+            azioni.append({"tipo": "promemoria", "testo": m.group(1), "data": giorno.isoformat(), "ora": ora or "09:00"})
+            continue
+        if ora and _PAROLE_EVENTO.search(resto):
+            lm = re.search(r"\s+(?:in|presso)\s+(via\s+.+|piazza\s+.+|[A-Za-zÀ-ÿ'][\wÀ-ÿ' ]{2,40})$", resto, re.I)
+            azioni.append({"tipo": "evento", "titolo": _pulisci_titolo(resto[:lm.start()] if lm else resto), "data": giorno.isoformat(), "ora": ora, "durata_min": 60, "luogo": lm.group(1) if lm else ""})
+        elif ora:
+            azioni.append({"tipo": "promemoria", "testo": _pulisci_titolo(resto).lower() if resto else p, "data": giorno.isoformat(), "ora": ora})
+        else:
+            azioni.append({"tipo": "attivita", "testo": _pulisci_titolo(p), "scadenza": giorno.isoformat(),
+                           "priorita": "alta" if re.search(r"urgent|important|assolutamente|senza\s+fallo|\bentro\b", p, re.I) else "normale"})
+    return azioni
+
+
+def valida_azione(a, oggi=None, ora=None):
+    """Tengo solo le azioni di MAIK che conosco, con date e ore vere (niente comandi del PC, niente cose passate)."""
+    oggi = oggi or datetime.date.today()
+    ora = ora or datetime.datetime.now()
+    if not isinstance(a, dict) or a.get("tipo") not in TIPI_PIANO:
+        return None
+    pul = lambda s, n: re.sub(r"\s+", " ", str(s or "")).strip(" .,;")[:n]
+
+    def data(s, obbligatoria=True):
+        try:
+            d = datetime.date.fromisoformat(str(s)[:10])
+        except (TypeError, ValueError):
+            return None if obbligatoria else ""
+        return d if oggi <= d <= oggi + datetime.timedelta(days=366) else None
+
+    def orario(s):
+        m = re.match(r"^(\d{1,2})[:.](\d{2})$", str(s or "").strip())
+        return f"{int(m.group(1)):02d}:{m.group(2)}" if m and int(m.group(1)) < 24 and int(m.group(2)) < 60 else None
+    t = a["tipo"]
+    if t == "evento":
+        tit, d, o = pul(a.get("titolo"), 120), data(a.get("data")), orario(a.get("ora"))
+        if len(tit) < 2 or not d or not o or datetime.datetime.combine(d, datetime.time(*map(int, o.split(":")))) < ora - datetime.timedelta(minutes=1):
+            return None
+        try:
+            dur = max(5, min(600, int(a.get("durata_min") or 60)))
+        except (TypeError, ValueError):
+            dur = 60
+        return {"tipo": t, "titolo": tit[:1].upper() + tit[1:], "data": d.isoformat(), "ora": o, "durata_min": dur, "luogo": pul(a.get("luogo"), 80)}
+    if t == "promemoria":
+        tx, d, o = pul(a.get("testo"), 140), data(a.get("data")), orario(a.get("ora"))
+        if len(tx) < 2 or not d or not o or datetime.datetime.combine(d, datetime.time(*map(int, o.split(":")))) <= ora:
+            return None
+        return {"tipo": t, "testo": tx, "data": d.isoformat(), "ora": o}
+    if t == "attivita":
+        tx = pul(a.get("testo"), 140)
+        if len(tx) < 2:
+            return None
+        sc = data(a.get("scadenza"), False) if a.get("scadenza") else ""
+        pr = str(a.get("priorita") or "normale").lower()
+        return {"tipo": t, "testo": tx[:1].upper() + tx[1:], "scadenza": sc.isoformat() if sc else "", "priorita": "alta" if pr in ("alta", "urgente") else "bassa" if pr == "bassa" else "normale"}
+    if t == "spesa":
+        voci = a.get("voci") if isinstance(a.get("voci"), list) else [a.get("voce") or a.get("testo")]
+        voci = [pul(v, 60) for v in voci if pul(v, 60)][:20]
+        return {"tipo": t, "voci": voci} if voci else None
+    tx = pul(a.get("testo"), 300)
+    return {"tipo": "nota", "testo": tx} if len(tx) >= 3 else None
+
+
+def descrivi_azione(a, oggi=None):
+    oggi = oggi or datetime.date.today()
+    if a["tipo"] == "evento":
+        return f"{a['titolo']} — {_giorno_breve(datetime.date.fromisoformat(a['data']), oggi)} alle {a['ora']} ({a['durata_min']} min)" + (f", {a['luogo']}" if a["luogo"] else "")
+    if a["tipo"] == "promemoria":
+        return f"Ricordami: {a['testo']} — {_giorno_breve(datetime.date.fromisoformat(a['data']), oggi)} alle {a['ora']}"
+    if a["tipo"] == "attivita":
+        return a["testo"] + (f" — entro {_giorno_breve(datetime.date.fromisoformat(a['scadenza']), oggi)}" if a["scadenza"] else "") + (" ❗" if a["priorita"] == "alta" else "")
+    if a["tipo"] == "spesa":
+        return "Lista della spesa: " + ", ".join(a["voci"])
+    return "Nota: " + a["testo"]
+
+
+def prepara_piano(testo, q, cervello, sid=None, oggi=None):
+    oggi = oggi or datetime.date.today()
+    giorno = _giorno_piano(q, oggi)
+    prompt = (f"Sei il pianificatore di MAIK. Trasforma la richiesta della persona in una lista di azioni per la sua agenda. Oggi è {data_it(oggi)} ({oggi.isoformat()}); "
+              f"il giorno di cui parla è {data_it(giorno)} ({giorno.isoformat()}), se non dice altro. Azioni possibili, SOLO queste: "
+              "evento (un appuntamento a un orario: titolo, data, ora, durata_min, luogo), promemoria (una cosa da ricordare a un'ora: testo, data, ora), "
+              "attivita (una cosa da fare: testo, scadenza, priorita alta|normale|bassa), spesa (cose da comprare: voci), nota (un appunto: testo). "
+              "Non inventare niente che la persona non abbia detto, e niente comandi del computer. Date AAAA-MM-GG, ore HH:MM.\n"
+              f"RICHIESTA: «{testo}»\nRispondi SOLO in JSON: "
+              '{"azioni": [{"tipo": "evento", "titolo": "…", "data": "…", "ora": "…", "durata_min": 60, "luogo": ""}], "riassunto": "una frase"}')
+    fonte, azioni = "modello", []
+    try:
+        j = cervello.pensa_json(prompt, timeout=120, num_predict=900)
+    except Exception:
+        j = None
+    if isinstance(j, dict) and isinstance(j.get("azioni"), list):
+        azioni = [x for x in (valida_azione(a, oggi) for a in j["azioni"][:14]) if x]
+    if not azioni:
+        fonte = "regole"
+        azioni = [x for x in (valida_azione(a, oggi) for a in piano_a_regole(testo, giorno)) if x]
+    visti, uniche = set(), []
+    for a in azioni:                                       # niente doppioni
+        k = json.dumps(a, sort_keys=True, ensure_ascii=False).lower()
+        if k not in visti:
+            visti.add(k)
+            uniche.append(a)
+    azioni = uniche[:12]
+    if not azioni:
+        return None
+    pid = uuid.uuid4().hex[:10]
+    for k in [k for k, v in PIANI.items() if time.time() - v["quando"] > 1800] + list(PIANI)[:-50]:
+        PIANI.pop(k, None)
+    PIANI[pid] = {"azioni": azioni, "giorno": giorno.isoformat(), "quando": time.time(), "sid": sid or "-"}
+    et = ("oggi" if giorno == oggi else "domani" if giorno == oggi + datetime.timedelta(days=1) else "") + (", " if giorno <= oggi + datetime.timedelta(days=1) else "") + data_it(giorno)
+    return {"id": pid, "giorno": giorno.isoformat(), "etichetta": et, "fonte": fonte,
+            "azioni": [dict(a, icona=TIPI_PIANO[a["tipo"]], descrizione=descrivi_azione(a, oggi)) for a in azioni]}
+
+
+def esegui_piano_azione(motore, pid, scelte=None):
+    """Faccio le azioni scelte (tutte, se non dici quali). Chi chiama decide il «giornale» (così un solo «annulla» le toglie tutte)."""
+    p = PIANI.get(pid)
+    if not p:
+        return None
+    idx = [i for i in (scelte if scelte is not None else range(len(p["azioni"]))) if isinstance(i, int) and 0 <= i < len(p["azioni"])]
+    fatte, errori = [], []
+    for i in sorted(set(idx)):
+        a = p["azioni"][i]
+        try:
+            if a["tipo"] == "evento":
+                h, mi = map(int, a["ora"].split(":"))
+                e, err = CAL.aggiungi(a["titolo"], datetime.datetime.combine(datetime.date.fromisoformat(a["data"]), datetime.time(h, mi)), a["durata_min"], a["luogo"])
+                if err:
+                    raise ValueError(err)
+            elif a["tipo"] == "promemoria":
+                h, mi = map(int, a["ora"].split(":"))
+                motore.memoria.aggiungi_promemoria(a["testo"], datetime.datetime.combine(datetime.date.fromisoformat(a["data"]), datetime.time(h, mi)))
+            elif a["tipo"] == "attivita":
+                x, err = ATTIVITA.aggiungi(a["testo"], priorita=a["priorita"], scadenza=a["scadenza"], fonte="piano")
+                if err:
+                    raise ValueError(err)
+            elif a["tipo"] == "spesa":
+                motore.memoria.lista_aggiungi(a["voci"])
+            else:
+                motore.memoria.impara_cosa(a["testo"], "nota")
+            fatte.append(dict(a, icona=TIPI_PIANO[a["tipo"]], descrizione=descrivi_azione(a)))
+        except Exception as e:
+            errori.append(f"{descrivi_azione(a)}: {e}")
+    PIANI.pop(pid, None)
+    return {"fatte": fatte, "errori": errori, "n": len(fatte)}
+
+
+def testo_piano_fatto(r):
+    return (f"✅ Fatto: **{r['n']}** azion{'e' if r['n'] == 1 else 'i'}.\n" + "\n".join(f"- {a['icona']} {a['descrizione']}" for a in r["fatte"])
+            + ("\n⚠️ Non riuscite: " + "; ".join(r["errori"]) if r["errori"] else "") + "\n\nSe qualcosa non va: «annulla» e tolgo tutto insieme.")
+
+
+def piano_router(testo, motore, avvisa=None, sid=None):
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" !.")
+    if _RE_PIANO_ESEGUI.match(t):
+        cand = sorted(((k, v) for k, v in PIANI.items() if v["sid"] == (sid or "-") and time.time() - v["quando"] < 1800), key=lambda kv: kv[1]["quando"])
+        if not cand:
+            return {"testo": "⚡ Non c'è nessun piano in attesa. Dimmi per esempio: «organizzami domani: dentista alle 10, finire la relazione, comprare il latte»."}
+        r = esegui_piano_azione(motore, cand[-1][0])
+        return {"testo": testo_piano_fatto(r), "piano_fatto": dict(r, id=cand[-1][0])}
+    m = _RE_PIANO_AZIONE.match(t)
+    if not m:
+        return None
+    cose = (m.group("c") or m.group("c2") or "").strip()
+    if len(cose) < 4:
+        return None
+    (avvisa or (lambda e: None))({"lavoro": {"tipo": "piano", "icona": "⚡", "testo": "Preparo il piano d'azione…"}})
+    p = prepara_piano(cose, m.group("q") or m.group("q2") or "", motore.cervello, sid)
+    if not p:
+        return {"testo": "⚡ Non ho capito cosa mettere in agenda. Prova così: «organizzami domani: dentista alle 10, finire la relazione entro le 18, comprare il latte»."}
+    righe = "\n".join(f"{i}. {a['icona']} {a['descrizione']}" for i, a in enumerate(p["azioni"], 1))
+    return {"testo": f"⚡ **Piano d'azione** per {p['etichetta']}: {len(p['azioni'])} azion{'e' if len(p['azioni']) == 1 else 'i'}\n{righe}\n\n"
+                     "Tocca **▶ Esegui** (o dimmi «esegui il piano») e lo metto in agenda; se poi cambi idea, «annulla» toglie tutto insieme.", "piano_azione": p}
+
+
+def v27_router(testo, motore, avvisa=None, sid=None):
+    return situazione_router(testo, motore) or piano_router(testo, motore, avvisa, sid)
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -12818,7 +13317,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -12829,7 +13328,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -12904,46 +13403,53 @@ Oggi è {oggi}.{extra}
             if v23:
                 on_token(v23["testo"])
                 self.memoria.salva_scambio(testo, v23["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v23.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v23.get(k)})
             v24 = v24_router(testo, self, avvisa)                    # v24: 📻 radio maik · 🎞️ storie · 🧠 mappa della mente
             if v24:
                 on_token(v24["testo"])
                 self.memoria.salva_scambio(testo, v24["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v24.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v24.get(k)})
+            v27 = v27_router(testo, self, avvisa, sid)               # v27: 🛰️ hud · 🧠 situazione · ⚡ piano d'azione
+            if v27:
+                if v27.get("situazione") or v27.get("piano_azione"):
+                    avvisa({"zitto": True})                         # la GUI dice solo il riassunto, non tutto l'elenco
+                on_token(v27["testo"])
+                self.memoria.salva_scambio(testo, v27["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v27[k] for k in ("situazione", "hud", "piano_azione", "piano_fatto") if v27.get(k)})
             v26 = v26_router(testo, self, avvisa, sid)               # v26: 🍳 chef zep · 🫧 respiro
             if v26:
                 if v26.get("ricetta") or v26.get("menu"):
                     avvisa({"zitto": True})                         # la GUI non legge tutta la ricetta: dice solo una frase
                 on_token(v26["testo"])
                 self.memoria.salva_scambio(testo, v26["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v26[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v26.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v26[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v26.get(k)})
             v25 = v25_router(testo, self, avvisa)                    # v25: 🧠 carte · 🎮 quiz · 🎧 suoni
             if v25:
                 on_token(v25["testo"])
                 self.memoria.salva_scambio(testo, v25["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v25.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v25.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -12964,7 +13470,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -12978,7 +13484,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -13603,6 +14109,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/hud":                                      # v27: 🛰️ tutto quello che mostra l'interfaccia olografica
+                self._json(dict(stato_hud(MOTORE.memoria), ok=True))
+            elif base == "/situazione":                               # v27: 🧠 le allerte in ordine di priorità
+                self._json({"ok": True, "allerte": analizza_situazione(MOTORE.memoria, ollama=_ollama_ok_hud(), meteo=_meteo_hud(MOTORE.memoria), presenza=PRESENZA.stato())})
             elif base == "/cucina":                                   # v26: 🍳 il ricettario e le ricette di serie
                 self._json({"ok": True, "ricettario": RICETTARIO.elenco(),
                             "di_serie": [{"id": k, "nome": r["nome"], "emoji": r["emoji"], "tempo": r["tempo"], "tag": r["tag"]} for k, r in RICETTE_DI_SERIE.items()]})
@@ -14126,8 +14636,18 @@ class Handler(BaseHTTPRequestHandler):
                     sec = 0
                 self._json(dict(PRESENZA.aggiungi(sec), ok=True))
             elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica", "/studio/voto", "/studio/elimina", "/quiz/fine",
-                          "/cucina/salva", "/cucina/elimina", "/cucina/spesa", "/cucina/cucinata", "/respiro/fine") and not stessa_origine(self):
+                          "/cucina/salva", "/cucina/elimina", "/cucina/spesa", "/cucina/cucinata", "/respiro/fine", "/piano/esegui") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/piano/esegui":                             # v27: ⚡ {id, scelte: [indici]} → le azioni del piano, tutte insieme (un solo «annulla»)
+                c = self._read_json_body()
+                sc = c.get("scelte")
+                sc = [int(x) for x in sc if isinstance(x, (int, float)) or str(x).isdigit()] if isinstance(sc, list) else None
+                GIORNALE.inizia("piano d'azione")
+                r = esegui_piano_azione(MOTORE, str(c.get("id", ""))[:20], sc)
+                if r and getattr(_CTX, "giornale", None):
+                    _CTX.giornale["testo"] = f"piano d'azione ({r['n']} azion{'e' if r['n'] == 1 else 'i'})"
+                mod = GIORNALE.chiudi()
+                self._json(dict(r, ok=True, testo=testo_piano_fatto(r), annullabile=mod) if r else {"ok": False, "errore": "piano non trovato (scaduto?)"}, 200 if r else 404)
             elif base == "/cucina/salva":                             # v26: ⭐ {ricetta} nel ricettario (si può annullare)
                 c = self._read_json_body()
                 r0 = c.get("ricetta") if isinstance(c.get("ricetta"), dict) else None
@@ -14362,7 +14882,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V26</title>
+<title>MAIK PRIME // Zep V27</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -15073,10 +15593,62 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #respfine{text-align:center;padding:8px}#respfine b{font-size:17px}
   @media (max-width:640px){.cucgrid{grid-template-columns:1fr}#cuctesto{font-size:19px;min-height:0}#cuctimer{bottom:140px}}
   @media (prefers-reduced-motion:reduce){#respcerchio{transition:none!important}.ct26.pronto{animation:none}}
+
+  /* ===== V27 · HUD olografico, situazione, piano d'azione ===== */
+  #hud{position:absolute;inset:0;z-index:5;pointer-events:none;color:#cffafe;font:12px 'Share Tech Mono',monospace;transition:opacity .4s}
+  #hud[hidden]{display:none}#hud.spegni{opacity:0}
+  #hud::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(103,232,249,.045) 0 1px,transparent 1px 3px);mix-blend-mode:screen}
+  #hudreattore{position:absolute;left:50%;top:50%;width:min(78%,560px);aspect-ratio:1;transform:translate(-50%,-47%);opacity:.5;pointer-events:none}
+  #hudreattore circle,#hudreattore line{fill:none;stroke:#67e8f9}
+  #hudreattore .hr1{stroke-width:1.2;stroke-dasharray:3 9;transform-origin:200px 200px;animation:hudgira 38s linear infinite}
+  #hudreattore .hr2{stroke-width:2;stroke-dasharray:60 18 6 18;opacity:.7;transform-origin:200px 200px;animation:hudgira 24s linear infinite reverse}
+  #hudreattore .hr3{stroke-width:.8;opacity:.45}#hudreattore .hrtick{opacity:.55;transform-origin:200px 200px;animation:hudgira 90s linear infinite}
+  @keyframes hudgira{to{transform:rotate(360deg)}}
+  .hudp{position:absolute;width:220px;padding:10px 12px 11px;background:linear-gradient(160deg,rgba(8,47,73,.62),rgba(2,6,23,.6));border:1px solid rgba(103,232,249,.5);
+        box-shadow:0 0 18px rgba(34,211,238,.18),inset 0 0 22px rgba(34,211,238,.08);backdrop-filter:blur(3px);pointer-events:auto;
+        clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));opacity:0;transform:translateY(10px);transition:opacity .5s,transform .5s}
+  #hud.pronto .hudp{opacity:1;transform:none}#hud.pronto #hudtr{transition-delay:.08s}#hud.pronto #hudbl{transition-delay:.16s}#hud.pronto #hudbr{transition-delay:.24s}
+  .hudp h6{margin:0 0 6px;font:600 10.5px 'Orbitron','Share Tech Mono',monospace;letter-spacing:2px;color:#67e8f9;display:flex;align-items:center;gap:6px}
+  .hudp h6+div{margin-bottom:6px}.hudp h6 button{margin-left:auto;background:transparent;border:1px solid rgba(103,232,249,.5);color:#67e8f9;cursor:pointer;font:inherit;padding:0 6px}
+  #hudtl{left:14px;top:128px}#hudtr{right:14px;top:128px}#hudbl{left:14px;bottom:118px}#hudbr{right:14px;bottom:118px;width:250px}
+  #hudora{font:700 30px/1.05 'Orbitron','Share Tech Mono',monospace;color:#ecfeff;text-shadow:0 0 12px rgba(34,211,238,.7);letter-spacing:1px}
+  #huddata{color:#a5f3fc;text-transform:capitalize}#hudsaluto{margin-top:4px;color:#ecfeff}#hudmeteo{margin-top:4px;color:#a5f3fc}
+  .hr{display:flex;gap:6px;align-items:baseline;padding:2px 0;border-bottom:1px dashed rgba(103,232,249,.15)}.hr span{color:#67e8f9;font-size:10px;letter-spacing:1px;width:84px;flex:0 0 auto}
+  .hr b{font-weight:400;color:#ecfeff;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hr i{font-style:normal;font-size:10px}.hr i.on{color:#34d399}.hr i.off{color:#f87171;animation:hudlampo 1s steps(2) infinite}
+  .hbar{height:4px;background:rgba(103,232,249,.15);margin:2px 0 3px}.hbar i{display:block;height:100%;background:linear-gradient(90deg,#22d3ee,#a5f3fc);box-shadow:0 0 8px #22d3ee}
+  .hl{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#ecfeff}.hl b{color:#67e8f9;font-weight:400}.hl.rit{color:#fca5a5}.hl.vuoto{color:#67e8f9;opacity:.6}
+  .ha{display:flex;gap:7px;align-items:flex-start;padding:4px 0;border-bottom:1px dashed rgba(103,232,249,.15)}.ha>i{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:3px}
+  .ha span{flex:1;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#ecfeff;line-height:1.3}
+  .ha.a>i{background:#ef4444;box-shadow:0 0 8px #ef4444;animation:hudlampo 1s steps(2) infinite}.ha.m>i{background:#fbbf24;box-shadow:0 0 6px #fbbf24}.ha.b>i{background:#38bdf8}.ha.ok>i{background:#34d399}
+  .ha button{flex:0 0 auto;background:rgba(34,211,238,.12);border:1px solid rgba(103,232,249,.55);color:#a5f3fc;cursor:pointer;font:inherit;font-size:13px;padding:0 6px;line-height:20px}
+  .ha button:hover{background:rgba(34,211,238,.3);color:#fff}
+  @keyframes hudlampo{50%{opacity:.35}}
+  #hudbr.lampo{animation:hudallarme .6s ease-in-out 4}@keyframes hudallarme{50%{box-shadow:0 0 30px rgba(239,68,68,.7),inset 0 0 22px rgba(239,68,68,.3);border-color:#ef4444}}
+  #hudgauge{position:absolute;left:50%;bottom:36px;transform:translateX(-50%);display:flex;gap:10px;pointer-events:none;opacity:0;transition:opacity .6s .3s}#hud.pronto #hudgauge{opacity:1}
+  .hg{width:62px;text-align:center}.hg svg{width:46px;height:46px;display:block;margin:0 auto;transform:rotate(-90deg)}.hg circle{fill:none;stroke-width:4}.hgb{stroke:rgba(103,232,249,.18)}
+  .hgv{stroke:#22d3ee;filter:drop-shadow(0 0 3px #22d3ee);transition:stroke-dasharray .8s}.hg b{display:block;margin-top:-31px;height:16px;font-size:11px;color:#ecfeff}
+  .hg small{display:block;margin-top:16px;font-size:9px;letter-spacing:1px;color:#67e8f9;text-transform:uppercase}
+  #hudtick{position:absolute;left:14px;right:14px;bottom:8px;height:22px;overflow:hidden;border-top:1px solid rgba(103,232,249,.35);border-bottom:1px solid rgba(103,232,249,.35);background:rgba(2,6,23,.45)}
+  #hudnews{display:inline-block;white-space:nowrap;padding-left:100%;line-height:22px;color:#a5f3fc;animation:hudnews 30s linear infinite}@keyframes hudnews{to{transform:translateX(-100%)}}
+  #hudboot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);min-width:min(420px,90%);padding:14px 18px;background:rgba(2,6,23,.82);border:1px solid rgba(103,232,249,.6);
+           box-shadow:0 0 30px rgba(34,211,238,.35);font-size:12.5px;color:#a5f3fc;line-height:1.6;pointer-events:none}
+  #hudboot[hidden]{display:none}#hudboot div{animation:hudriga .25s ease-out}#hudboot .ok{color:#34d399;font-weight:700;letter-spacing:3px;text-shadow:0 0 10px #34d399;margin-top:4px}
+  @keyframes hudriga{from{opacity:0;transform:translateX(-6px)}}
+  .pa27{width:100%;margin:6px 0 4px;padding:10px 12px;border:1px solid rgba(var(--accent-rgb),.45);border-radius:12px;background:linear-gradient(160deg,rgba(var(--accent-rgb),.12),rgba(0,0,0,.25))}
+  .pa27h{font:600 11px 'Share Tech Mono',monospace;letter-spacing:1.5px;color:var(--accent);margin-bottom:6px}.pa27h small{color:var(--dim);letter-spacing:0}
+  .pa27a{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid rgba(var(--accent-rgb),.12);cursor:pointer;font-size:14px}.pa27a input{accent-color:var(--accent)}
+  .pa27a.no span{opacity:.45;text-decoration:line-through}.pa27i{font-size:17px}
+  .pa27b{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}.pa27b button{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:10px;padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}
+  .pa27b .pa27go{background:rgba(var(--accent-rgb),.2);border-color:var(--accent);font-weight:700}.pa27b button:disabled{opacity:.55;cursor:default}
+  .pa27.fatto{border-color:#34d399}.pa27.annullato{opacity:.6}
+  body.hud-on #caption{bottom:112px;font-size:18px}   /* con l'HUD acceso i sottotitoli stanno sopra gli indicatori */
+  @media (max-width:1100px){.hudp{width:180px;font-size:11px}#hudbr{width:200px}#hudora{font-size:24px}}
+  @media (max-width:760px){#hudbl,#hudgauge,#hudtr{display:none}#hudtl{top:70px}#hudbr{bottom:40px}}
+  @media (prefers-reduced-motion:reduce){#hudreattore *,#hudnews,.ha.a>i,.hr i.off{animation:none!important}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V26</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V27</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -15132,6 +15704,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="toggleHUD()" title="Interfaccia olografica (H)">🛰️ HUD</button><button class="tbtn" type="button" onclick="qs('come siamo messi?')" title="Il punto della situazione">🧠 Situazione</button><button class="tbtn" type="button" onclick="$('#inp').value='organizzami domani: ';$('#inp').focus()" title="Piano d'azione: una frase, più cose in agenda">⚡ Piano</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('cosa cucino stasera?')" title="Chef Zep: cosa cucino?">🍳 Cucina</button><button class="tbtn" type="button" onclick="qs('parliamo in inglese')" title="Conversazione in inglese con il tutor">🗣️ Parliamo</button><button class="tbtn" type="button" onclick="qs('facciamo un esercizio di respirazione')" title="Respiro guidato">🫧 Respira</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="apriStudio()" title="Le tue carte per studiare">🃏 Carte</button><button class="tbtn" type="button" onclick="qs('facciamo un quiz')" title="Il Quizzone di Zep">🎮 Quiz</button><button class="tbtn" type="button" onclick="SUONI25.on?fermaSuoni():avviaSuoni('pioggia')" title="Suoni per concentrarti">🎧 Suoni</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('accendi radio maik')" title="Radio Maik">📻 Radio</button><button class="tbtn" type="button" onclick="qs('il mio mese in storie')" title="Il tuo mese in storie">🎞️ Storie</button><button class="tbtn" type="button" onclick="apriMente()" title="La mappa della mente">🧠 Mente</button></div>
@@ -15145,6 +15718,16 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="sphere-wrap"><canvas id="sph" width="200" height="200"></canvas></div>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
+      <div id="hud" role="region" aria-label="Interfaccia olografica" hidden>
+        <svg id="hudreattore" viewBox="0 0 400 400" aria-hidden="true"><circle class="hr1" cx="200" cy="200" r="192"/><circle class="hr2" cx="200" cy="200" r="160"/><circle class="hr3" cx="200" cy="200" r="132"/><g class="hrtick"></g></svg>
+        <div class="hudp" id="hudtl"><h6>◉ PRIME · HUD<button type="button" data-hud="chiudi" aria-label="Chiudi l'interfaccia olografica">✕</button></h6><div id="hudora">--:--:--</div><div id="huddata"></div><div id="hudsaluto"></div><div id="hudmeteo"></div></div>
+        <div class="hudp" id="hudtr"><h6>◈ SISTEMI</h6><div id="hudsis"></div></div>
+        <div class="hudp" id="hudbl"><h6>◈ AGENDA</h6><div id="hudag"></div><h6>◈ DA FARE</h6><div id="hudfare"></div></div>
+        <div class="hudp" id="hudbr" aria-live="polite"><h6>◈ ALLERTE</h6><div id="hudal"></div></div>
+        <div id="hudgauge"></div>
+        <div id="hudtick"><span id="hudnews"></span></div>
+        <div id="hudboot" hidden></div>
+      </div>
       <div id="cuctimer" role="region" aria-label="Timer della cucina" aria-live="polite"></div>
       <div id="suoni" role="region" aria-label="Suoni d'ambiente"><b id="sutit">🌧️ Pioggia</b><span id="sutempo">∞</span><input type="range" id="suvol" min="0" max="100" value="50" aria-label="Volume dei suoni" oninput="volumeSuoni(+this.value)"><button type="button" onclick="fermaSuoni()" aria-label="Spegni i suoni" title="Spegni">✕</button></div>
       <div id="radio" role="region" aria-label="Radio Maik">
@@ -15214,6 +15797,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="msgs"></div>
     <div id="tutorbar" role="status" hidden></div>
     <div class="quick">
+      <button onclick="qs('modalità HUD')">🛰️ modalità HUD</button>
+      <button onclick="qs('come siamo messi?')">🧠 come siamo messi?</button>
+      <button onclick="$('#inp').value='organizzami domani: ';$('#inp').focus()">⚡ organizzami domani: …</button>
       <button onclick="qs('cosa cucino stasera?')">🍳 cosa cucino stasera?</button>
       <button onclick="qs('parliamo in inglese')">🗣️ parliamo in inglese</button>
       <button onclick="qs('facciamo un esercizio di respirazione')">🫧 respiriamo</button>
@@ -15581,6 +16167,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div><kbd>L</kbd> laboratorio delle invenzioni (mentre leggo: pausa / riprendi)</div>
       <div><kbd>D</kbd> le tue spese · <kbd>O</kbd> le tue abitudini · <kbd>W</kbd> com'è andata la settimana</div>
       <div><kbd>K</kbd> le cose da fare · <kbd>Q</kbd> modalità concentrazione (pomodoro)</div>
+      <div><kbd>H</kbd> interfaccia olografica (HUD) · <kbd>?</kbd> questo aiuto</div>
       <div><kbd>Y</kbd> centro di controllo · <kbd>X</kbd> automazioni</div>
       <div><kbd>U</kbd> idee e ricordi (le idee che ti propongo, le nostre chiacchierate)</div>
       <div>🖱️ <b>clic</b> su Zep: reagisce · <b>trascina</b>: lo giri · <b>rotellina</b>: zoom</div>
@@ -16032,7 +16619,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V26 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V27 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -16052,6 +16639,7 @@ const MaikKit = (() => {
    V24: fa la radio («dj»): cuffie in testa, la testa che va a tempo, l'antenna che lampeggia «in onda».
    V26: cucina con te («chef»: cappello da cuoco e mestolo che gira nella pentola) e respira con te («respira»: il petto e le spalle
         salgono e scendono al ritmo della tecnica, gli occhi chiusi).
+   V27: Zep ologramma (ologramma(true)): corpo azzurro traslucido che tremola appena, l'anello di scansione, la piattaforma del proiettore.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -16871,6 +17459,7 @@ window.ZepKit = (() => {
       S.luci = LOOK.luci ? new THREE.Color().setRGB(LOOK.luci[0] / 255, LOOK.luci[1] / 255, LOOK.luci[2] / 255, THREE.SRGBColorSpace) : null;
       const B = rig && rig.robot; if (!B) return { ok: false, errore: 'colori e accessori sono per Zep (il robot)' };
       B.white.color.set(LOOK.corpo || 0xeef3ff);
+      if (OLO.salvati) OLO.salvati.white.color.copy(B.white.color);   // v27: con l'ologramma acceso il colore nuovo torna quando si spegne
       for (const k of ACCESSORI) {
         const on = LOOK.accessori.includes(k);
         if (on && !B.acc[k]) B.acc[k] = costruisciAccessorio(B, k);
@@ -17207,6 +17796,7 @@ window.ZepKit = (() => {
       aggiornaAnello(P, dt, now);                                         // v19: ⚡ PRIME
       aggiornaTrofeo(P, dt, now);                                         // v20: 🏆
       aggiornaPortale(P, dt, now);                                        // v21: 🌀
+      aggiornaOlo(dt, now);                                               // v27: 🛰️
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -17342,6 +17932,54 @@ window.ZepKit = (() => {
       if (U.s > 0.8 && now - coppaStella > 160) { coppaStella = now; const q = p.clone(); q.y += height * 0.12; spawn(pick(['★', '✦']), q, { size: 0.04, vx: rnd(-0.12, 0.12), vy: 0.1, life: 1.3 }); }
     }
     // ---------- v21: 🌀 il portale (un vortice verde accanto a Zep, dal lato della mano sinistra, sempre rivolto alla camera) ----------
+    // ---------- v27: 🛰️ Zep ologramma (per l'interfaccia olografica) ----------
+    const OLO = { on: false, w: 0, salvati: null, g: null }, CIANO = new THREE.Color(0x22d3ee), CIANO_SCURO = new THREE.Color(0x0c4a6e), BAGLIORE = new THREE.Color(0x0e7490);
+    function creaOlo() {
+      const g = new THREE.Group(); g.name = 'olo';
+      const mb = o => new THREE.MeshBasicMaterial(Object.assign({ transparent: true, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false }, o));
+      const anello = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.006, 8, 96), mb({ color: 0x67e8f9, opacity: 0.9 })); anello.rotation.x = Math.PI / 2; g.add(anello);
+      const alone = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.014, 8, 96), mb({ color: 0x22d3ee, opacity: 0.25 })); alone.rotation.x = Math.PI / 2; g.add(alone);
+      const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
+      const gr = x.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(103,232,249,.85)'); gr.addColorStop(0.55, 'rgba(34,211,238,.3)'); gr.addColorStop(1, 'rgba(34,211,238,0)');
+      x.fillStyle = gr; x.fillRect(0, 0, 128, 128); x.strokeStyle = 'rgba(165,243,252,.9)'; x.lineWidth = 2;
+      for (const r of [28, 44, 58]) { x.beginPath(); x.arc(64, 64, r, 0, Math.PI * 2); x.stroke(); }
+      for (let i = 0; i < 24; i++) { const a = i / 24 * Math.PI * 2; x.beginPath(); x.moveTo(64 + Math.cos(a) * 52, 64 + Math.sin(a) * 52); x.lineTo(64 + Math.cos(a) * 60, 64 + Math.sin(a) * 60); x.stroke(); }
+      const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace;
+      const base = new THREE.Mesh(new THREE.CircleGeometry(0.6, 48), mb({ map: tx })); base.rotation.x = -Math.PI / 2; base.position.y = 0.012; g.add(base);
+      g.userData = { anello, alone, base }; g.visible = false; charRoot.add(g);
+      return g;
+    }
+    const salvaMat = m => ({ color: m.color.clone(), emissive: m.emissive ? m.emissive.clone() : null, opacity: m.opacity, transparent: m.transparent });
+    function ripristinaOlo(B) {
+      for (const [m, s] of [[B.white, OLO.salvati.white], [B.dark, OLO.salvati.dark]]) { m.color.copy(s.color); if (s.emissive) m.emissive.copy(s.emissive); m.opacity = s.opacity; m.transparent = s.transparent; m.needsUpdate = true; }
+      OLO.salvati = null;
+    }
+    function setOlogramma(on) {
+      if (!(rig && rig.robot)) return { ok: false, errore: "l'ologramma è per Zep (il robot)" };
+      OLO.on = !!on; return { ok: true, on: OLO.on };
+    }
+    function aggiornaOlo(dt, now) {
+      const B = rig && rig.robot;
+      OLO.w += ((OLO.on && B ? 1 : 0) - OLO.w) * Math.min(1, dt * 3);
+      if (!B || (!OLO.on && OLO.w < 0.01)) {
+        OLO.w = OLO.on ? OLO.w : 0;
+        if (OLO.salvati && B) ripristinaOlo(B);
+        if (OLO.g) OLO.g.visible = false;
+        return;
+      }
+      if (!OLO.salvati) {
+        OLO.salvati = { white: salvaMat(B.white), dark: salvaMat(B.dark) };
+        B.white.transparent = B.dark.transparent = true; B.white.needsUpdate = B.dark.needsUpdate = true;
+      }
+      const w = OLO.w, s = now / 1000, fl = 0.9 + 0.1 * Math.sin(s * 23) * Math.sin(s * 7.3);
+      B.white.color.copy(OLO.salvati.white.color).lerp(CIANO, w); B.white.opacity = 1 - 0.42 * w * fl;
+      if (B.white.emissive) B.white.emissive.copy(OLO.salvati.white.emissive || new THREE.Color(0)).lerp(BAGLIORE, w);
+      B.dark.color.copy(OLO.salvati.dark.color).lerp(CIANO_SCURO, w); B.dark.opacity = 1 - 0.25 * w;
+      const g = OLO.g = OLO.g || creaOlo(); g.visible = true;
+      const H = Math.max(0.8, (topY || 1.4) - (baseY || 0)), u = g.userData, y = ((s * 0.42) % 1);
+      u.anello.position.y = u.alone.position.y = 0.04 + y * H * 0.75;   // fino agli occhi: l'anello resta sempre ben dentro l'inquadratura u.anello.material.opacity = 0.9 * w * (1 - Math.pow(y, 6)); u.alone.material.opacity = 0.3 * w * (1 - y);
+      u.base.material.opacity = (0.75 + 0.25 * Math.sin(s * 2.1)) * w; u.base.rotation.z = s * 0.25;
+    }
     let portale = null, portaleScintilla = 0;
     function creaPortale() {
       const mat = new THREE.ShaderMaterial({
@@ -17758,6 +18396,9 @@ window.ZepKit = (() => {
       // v13: aspetto di Zep — corpo (colore), luci (colore o null = tema), accessori
       setLook(o = {}) { return setLook(o); },
       get look() { return Object.assign({}, LOOK); },
+      // v27: 🛰️ Zep ologramma (per l'interfaccia olografica)
+      ologramma(on) { return setOlogramma(on); },
+      get olo() { return { on: OLO.on, w: +OLO.w.toFixed(2), visibile: !!(OLO.g && OLO.g.visible) }; },
       // v13: le tue animazioni .vrma (solo personaggi VRM)
       async playVrma(url, o = {}) {
         if (!vrm) return { ok: false, errore: 'le animazioni .vrma funzionano con i personaggi .vrm' };
@@ -18070,7 +18711,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -18346,6 +18987,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🛰️','Interfaccia olografica (HUD)',()=>toggleHUD(),'H','hud olografica iron man pannelli sistemi allerte'),c('🧠','Come siamo messi? (situazione)',()=>qs('come siamo messi?'),'situazione','rapporto allerte priorità aggiornami status'),
+    c('⚡','Piano d\'azione…',()=>{$('#inp').value='organizzami domani: ';$('#inp').focus();},'piano','organizza agenda azioni domani'),
     c('🍳','Cosa cucino? (Chef Zep)',()=>qs('cosa cucino stasera?'),'cucina','ricetta ricette chef menu settimana spesa timer'),c('📖','Le mie ricette',()=>qs('le mie ricette'),'ricettario','cucina preferiti salvate'),
     c('🗣️','Parliamo in inglese (tutor)',()=>qs('parliamo in inglese'),'tutor','conversazione lingua inglese spagnolo francese tedesco pratica'),c('🫧','Respiro guidato',()=>qs('facciamo un esercizio di respirazione'),'respiro','respirazione calma ansia rilassati meditazione'),
     c('🃏','Le mie carte (ripasso)',()=>apriStudio(),'carte','studio flashcard ripassa impara mazzo'),c('🎮','Il Quizzone di Zep',()=>qs('facciamo un quiz'),'quiz','gioco domande sfida'),
@@ -18379,7 +19022,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V26',key:'maik_boot_v26',checks:[
+  return MaikKit.boot({version:'PRIME · V27',key:'maik_boot_v27',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -18389,6 +19032,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'HUD',run:async()=>{try{const s=await (await fetch('/situazione')).json();return{ok:true,text:'🛰️ '+s.allerte.length+' allerte'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Cucina',run:async()=>{try{const s=await (await fetch('/cucina')).json();return{ok:true,text:'🍳 '+s.di_serie.length+' ricette'+(s.ricettario.length?' + '+s.ricettario.length+' tue':'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Studio',run:async()=>{try{const s=await (await fetch('/studio')).json();return{ok:true,text:s.carte?'🃏 '+s.da_ripassare+' da ripassare':'🃏 nessun mazzo'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Mente',run:async()=>{try{const m=await (await fetch('/mente')).json();return{ok:true,text:'🧠 '+(m.n||0)+' cose che so di te'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -18408,7 +19052,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 26 👨‍🍳 Adesso **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 27 🛰️ Adesso ho un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -18767,7 +19411,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pttDown(); return; }
   if (GIOCO.on && /^[123]$/.test(e.key)) { e.preventDefault(); giocoTesto(['sasso', 'carta', 'forbici'][+e.key - 1]); return; }
   if (GIOCO.on && e.key === 'Enter') { e.preventDefault(); giocaRound(); return; }
-  const azioni = { y: openPrime, x: openAuto, u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => (window.LETTURA && LETTURA.on ? pausaLettura() : openLab()), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: openKeys };
+  const azioni = { y: openPrime, x: openAuto, u: openIdee, k: () => openTodo(), q: toggleFocus17, d: openSpese, o: openAbitudini, w: () => qs('com\'è andata la settimana?'), e: openCal, t: toggleInterprete, l: () => (window.LETTURA && LETTURA.on ? pausaLettura() : openLab()), n: toggleRiunione, m: toggleConv, f: () => toggleFocus(), p: miniWindow, c: toggleEyes, z: toggleFraming, v: toggleTTS, s: lookScreen, b: toggleMusic, g: toggleGesti, i: () => toggleSpecchio(), j: () => toggleGioco(), a: openLook, r: openRoutine, '?': openKeys, h: () => toggleHUD() };
   const fn = azioni[e.key.toLowerCase()]; if (fn) { e.preventDefault(); fn(); }
 });
 document.addEventListener('keyup', e => { if (e.code === 'Space' && ptt) { e.preventDefault(); pttUp(); } });
@@ -19302,7 +19946,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V26'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V27'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -20762,7 +21406,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
-  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true); addV26(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
+  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true); addV26(d, m, true); addV27(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -22701,8 +23345,189 @@ document.addEventListener('keydown', e => {
   if ($('#respmodal').classList.contains('open') && e.key === ' ') { e.preventDefault(); pausaRespiro(); }
 });
 
+// V27 — MAIK PRIME HUD: 🛰️ l'interfaccia olografica (i pannelli dal vivo intorno a Zep, l'accensione, le allerte che arrivano da sole),
+// 🧠 la situazione in chat (le allerte da toccare), ⚡ la carta del piano d'azione (scegli le azioni, ▶ Esegui, un solo «annulla»)
+
+// ---------- 🛰️ L'INTERFACCIA OLOGRAFICA ----------
+const HUD = { on: false, d: null, t: 0, orologio: 0, visti: new Set(), avviato: false };
+const bipHUD = (f, q) => nota25(f || 1320, 0.07, 'sine', 0.045, q || 0);
+function vistiHUD() {                                           // le allerte già dette oggi (così non le ripeto a ogni giro)
+  const oggi = new Date().toISOString().slice(0, 10), v = LS.get('maik_hud_visti', null);
+  return v && v.data === oggi ? v.ids : [];
+}
+function segnaVistiHUD(ids) { const oggi = new Date().toISOString().slice(0, 10); HUD.visti = new Set([...HUD.visti, ...ids]); LS.set('maik_hud_visti', { data: oggi, ids: [...HUD.visti].slice(-200) }); }
+async function apriHUD(d) {
+  if (HUD.on) { if (d) rendiHUD(d); return; }
+  HUD.on = true; HUD.avviato = false; HUD.visti = new Set(vistiHUD());
+  const el = $('#hud'); el.hidden = false; el.classList.remove('pronto'); document.body.classList.add('hud-on');
+  if (AV && AV.ologramma) AV.ologramma(true);
+  accensioneHUD(d ? Promise.resolve(d) : fetch('/hud').then(r => r.json()).catch(() => null));   // l'accensione parte subito, i dati arrivano mentre scorre
+  clearInterval(HUD.orologio); HUD.orologio = setInterval(orologioHUD, 1000); orologioHUD();
+  clearInterval(HUD.t); HUD.t = setInterval(aggiornaHUD, 30000);
+}
+function chiudiHUD() {
+  if (!HUD.on) return;
+  HUD.on = false; clearInterval(HUD.t); clearInterval(HUD.orologio);
+  const el = $('#hud'); el.classList.add('spegni'); document.body.classList.remove('hud-on');
+  setTimeout(() => { if (!HUD.on) { el.hidden = true; el.classList.remove('spegni', 'pronto'); } }, 450);
+  if (AV && AV.ologramma) AV.ologramma(false);
+  bipHUD(660);
+}
+const toggleHUD = () => HUD.on ? chiudiHUD() : apriHUD();
+async function accensioneHUD(dati) {                          // la sequenza di accensione, riga per riga
+  const b = $('#hudboot'), pausa = ms => new Promise(r => setTimeout(r, ms));
+  let n = 0;
+  const riga = (t, ok) => { if (!HUD.on) return; const x = document.createElement('div'); x.textContent = t; if (ok) x.className = 'ok'; b.appendChild(x); bipHUD(880 + n++ * 90); };
+  b.innerHTML = ''; b.hidden = false;
+  await pausa(120); riga('INIZIALIZZAZIONE · PRIME HUD');
+  await pausa(230); riga('› nucleo neurale ............ OK');
+  await pausa(230); riga('› collegamento ai sistemi ............');
+  const d = await dati;
+  if (!HUD.on) return;
+  const s = (d && d.sistemi) || {}, A = (d && d.allerte) || [];
+  for (const r of ['› versione ' + ((d && d.versione) || '?') + ' ............ OK', '› modello ' + (s.modello || '?') + ' ............ ' + (s.ollama ? 'ONLINE' : 'OFFLINE'),
+    '› memoria: ' + (s.ricordi || 0) + ' cose imparate ............ OK', '› agenda: ' + ((d && d.agenda) || []).length + ' impegni in arrivo ............ OK',
+    '› allerte: ' + A.length + ' ............ ' + (A.some(a => a.livello === 'alta') ? 'ATTENZIONE' : 'OK')]) { await pausa(200); riga(r); }
+  await pausa(230); riga('SISTEMI ONLINE', true);
+  await pausa(380);
+  if (!HUD.on) return;
+  b.hidden = true; $('#hud').classList.add('pronto'); HUD.avviato = true;
+  if (d) { rendiHUD(d); segnaVistiHUD(A.map(a => a.id)); }
+  const al = A.filter(a => a.livello === 'alta');
+  const frase = (d && d.saluto ? d.saluto + (d.nome ? ' ' + d.nome : '') + '. ' : '') + 'Sistemi online. ' + (al.length ? 'Attenzione: ' + al[0].testo : A.some(a => a.livello === 'media') ? 'Ci sono ' + A.filter(a => a.livello === 'media').length + ' cose da tenere d\'occhio.' : 'Tutto sotto controllo.');
+  if (ttsOn) { stopSpeech(); say(frase); }
+  if (AV) AV.gesture(al.length ? 'lookup' : 'wave');
+}
+function orologioHUD() {
+  const n = new Date();
+  $('#hudora').textContent = n.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+async function aggiornaHUD() {
+  if (!HUD.on) return;
+  let d = null; try { d = await (await fetch('/hud')).json(); } catch (e) { return; }
+  if (!HUD.on || !d) return;
+  rendiHUD(d);
+  const nuove = (d.allerte || []).filter(a => a.livello === 'alta' && !HUD.visti.has(a.id));   // 🔴 una cosa urgente nuova: te la dico subito
+  if (nuove.length && HUD.avviato) {
+    const a = nuove[0];
+    bipHUD(1568); bipHUD(1568, 0.18); toast('🔴 ' + a.icona + ' ' + a.testo, 'ok');
+    if (ttsOn) { stopSpeech(); say('Attenzione: ' + a.testo); }
+    if (AV) AV.gesture('lookup');
+    document.querySelector('#hudbr') && document.querySelector('#hudbr').classList.add('lampo'); setTimeout(() => document.querySelector('#hudbr') && document.querySelector('#hudbr').classList.remove('lampo'), 2400);
+  }
+  segnaVistiHUD((d.allerte || []).map(a => a.id));
+}
+function gaugeHUD(etichetta, frazione, testo) {
+  const f = Math.max(0, Math.min(1, frazione || 0)), c = 2 * Math.PI * 22;
+  return '<div class="hg"><svg viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="22" class="hgb"/><circle cx="28" cy="28" r="22" class="hgv" style="stroke-dasharray:' + (c * f).toFixed(1) + ' ' + c.toFixed(1) + '"/></svg>'
+    + '<b>' + esc(testo) + '</b><small>' + esc(etichetta) + '</small></div>';
+}
+function rendiHUD(d) {
+  HUD.d = d;
+  const m = d.meteo, s = d.sistemi || {}, pall = { alta: 'a', media: 'm', bassa: 'b' };
+  $('#huddata').textContent = (d.data || '') ;
+  $('#hudsaluto').textContent = (d.saluto || 'Ciao') + (d.nome ? ', ' + d.nome : '');
+  $('#hudmeteo').textContent = m ? m.emoji + ' ' + m.temp + '° ' + m.citta + ' · ' + String(m.descrizione || '').toLowerCase() : '🌐 meteo non disponibile';
+  const tps = s.tps || 0;
+  $('#hudsis').innerHTML = '<div class="hr"><span>MODELLO</span><b>' + esc(s.modello || '?') + '</b><i class="' + (s.ollama ? 'on' : 'off') + '">' + (s.ollama ? '● ONLINE' : '● OFFLINE') + '</i></div>'
+    + '<div class="hr"><span>VELOCITÀ</span><b>' + (tps ? String(tps).replace('.', ',') + ' t/s' : '—') + '</b></div><div class="hbar"><i style="width:' + Math.min(100, tps / 30 * 100) + '%"></i></div>'
+    + '<div class="hr"><span>PRIMA PAROLA</span><b>' + (s.prima_parola_ms ? (s.prima_parola_ms / 1000).toFixed(1).replace('.', ',') + ' s' : '—') + '</b></div>'
+    + '<div class="hr"><span>MEMORIA</span><b>' + (s.ricordi || 0) + ' cose · ' + (s.documenti || 0) + ' doc</b></div>'
+    + '<div class="hr"><span>INSIEME DA</span><b>' + (s.giorni_insieme || 1) + ' giorn' + ((s.giorni_insieme || 1) === 1 ? 'o' : 'i') + '</b></div>'
+    + '<div class="hr"><span>COPIA DATI</span><b>' + (s.backup ? s.backup.slice(8, 10) + '/' + s.backup.slice(5, 7) + ' ' + s.backup.slice(11, 16) : '—') + '</b></div>'
+    + '<div class="hr"><span>VERSIONE</span><b>' + esc(d.versione || '') + '</b></div>';
+  $('#hudag').innerHTML = (d.agenda || []).length ? d.agenda.map(e => '<div class="hl"><b>' + esc(e.quando) + '</b> ' + esc(e.titolo) + '</div>').join('') : '<div class="hl vuoto">nessun impegno in arrivo</div>';
+  $('#hudfare').innerHTML = (d.attivita || []).length ? d.attivita.map(a => '<div class="hl' + (a.ritardo ? ' rit' : '') + '">' + (a.ritardo ? '⚠️ ' : a.alta ? '❗ ' : '▸ ') + esc(a.testo) + '</div>').join('') : '<div class="hl vuoto">niente in scadenza</div>';
+  const A = d.allerte || [];
+  $('#hudal').innerHTML = A.length ? A.slice(0, 6).map(a => '<div class="ha ' + pall[a.livello] + '"><i></i><span>' + esc(a.icona) + ' ' + esc(a.testo) + '</span>'
+    + (a.comando ? '<button type="button" data-s27="' + escA(a.comando) + '" title="' + escA(a.etichetta || a.comando) + '">' + esc((a.etichetta || '▶').split(' ')[0]) + '</button>' : '') + '</div>').join('')
+    : '<div class="ha ok"><i></i><span>✅ Tutto sotto controllo</span></div>';
+  const ab = d.abitudini || {}, b = d.spese && d.spese.budget;
+  $('#hudgauge').innerHTML = gaugeHUD('abitudini', ab.previste ? ab.fatte / ab.previste : 0, (ab.fatte || 0) + '/' + (ab.previste || 0))
+    + gaugeHUD(b ? 'budget' : 'spese', b ? b.perc / 100 : 0, b ? b.perc + '%' : euroIt(d.spese ? d.spese.totale : 0))
+    + gaugeHUD('carte', Math.min(1, (d.studio || 0) / 20), String(d.studio || 0)) + gaugeHUD('respiro', Math.min(1, (d.respiro || 0) / 10), (d.respiro || 0) + "'")
+    + gaugeHUD('al PC oggi', Math.min(1, ((d.presenza && d.presenza.oggi) || 0) / 28800), durataBreve((d.presenza && d.presenza.oggi) || 0));
+  const notizie = (d.notizie || []).length ? d.notizie : ['PRIME ONLINE', (d.saluto || 'Ciao') + (d.nome ? ' ' + d.nome : ''), 'dimmi «come siamo messi?» per il punto della situazione'];
+  const nw = $('#hudnews'), testo = notizie.join('   ◆   ');
+  if (nw.dataset.t !== testo) { nw.dataset.t = testo; nw.textContent = testo; nw.style.animationDuration = Math.max(18, testo.length / 7) + 's'; }
+}
+const durataBreve = s => s < 60 ? '0\'' : s < 3600 ? Math.round(s / 60) + '\'' : Math.floor(s / 3600) + 'h' + String(Math.round(s % 3600 / 60)).padStart(2, '0');
+function costruisciReattore() {                                // il «reattore» al centro: tre anelli che girano e le tacche
+  const g = document.querySelector('#hudreattore .hrtick'); if (!g || g.childElementCount) return;
+  let h = '';
+  for (let i = 0; i < 72; i++) { const a = i / 72 * Math.PI * 2, r1 = i % 6 ? 178 : 170, x1 = 200 + Math.cos(a) * r1, y1 = 200 + Math.sin(a) * r1, x2 = 200 + Math.cos(a) * 186, y2 = 200 + Math.sin(a) * 186; h += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '"/>'; }
+  g.innerHTML = h;
+}
+
+// ---------- 🧠 la situazione in chat ----------
+function addSituazione27(d, S, daAutomazione) {
+  const A = S.allerte || [], fatti = new Set();
+  const bott = A.filter(a => a.comando && !fatti.has(a.comando) && fatti.add(a.comando)).slice(0, 5).map(a => '<button type="button" class="agc calb" data-s27="' + escA(a.comando) + '">' + esc(a.etichetta || a.comando) + '</button>').join('');
+  agEl(d).insertAdjacentHTML('beforeend', bott + '<button type="button" class="agc calb" data-hud="apri">🛰️ Apri l\'HUD</button>');
+  if (!daAutomazione && ttsOn) {
+    const imp = A.filter(a => a.livello !== 'bassa');
+    stopSpeech(); say(imp.length ? 'Situazione: ' + imp.length + (imp.length === 1 ? ' cosa da tenere d\'occhio. ' : ' cose da tenere d\'occhio. Prima di tutto: ') + imp[0].testo : 'Situazione: tutto sotto controllo.');
+  }
+  if (AV) AV.gesture(A.some(a => a.livello === 'alta') ? 'lookup' : 'nod');
+}
+
+// ---------- ⚡ la carta del piano d'azione ----------
+function addPiano27(d, P, daAutomazione) {
+  d._piano = P;
+  agEl(d).insertAdjacentHTML('beforeend', '<div class="pa27" data-pid="' + escA(P.id) + '"><div class="pa27h">⚡ PIANO D\'AZIONE · ' + esc(P.etichetta).toUpperCase() + (P.fonte === 'regole' ? ' <small>(fatto da me, senza modello)</small>' : '') + '</div>'
+    + P.azioni.map((a, i) => '<label class="pa27a"><input type="checkbox" checked data-pa="' + i + '"><span class="pa27i">' + esc(a.icona) + '</span><span>' + esc(a.descrizione) + '</span></label>').join('')
+    + '<div class="pa27b"><button type="button" class="pa27go" data-p27="esegui">▶ Esegui (' + P.azioni.length + ')</button><button type="button" data-p27="no">✕ Lascia stare</button></div></div>');
+  if (!daAutomazione && ttsOn) { stopSpeech(); say('Ecco il piano: ' + P.azioni.length + (P.azioni.length === 1 ? ' azione' : ' azioni') + '. Tocca Esegui, oppure dimmi: esegui il piano.'); }
+  if (AV) AV.gesture('think');
+}
+function chiudiCartaPiano(card, testo, cls) {
+  if (!card) return;
+  card.classList.add(cls || 'fatto'); card.querySelectorAll('input,button').forEach(x => { x.disabled = true; });
+  const go = card.querySelector('.pa27go'); if (go) go.textContent = testo;
+}
+async function eseguiPiano27(card) {
+  const scelte = [...card.querySelectorAll('input[data-pa]')].filter(x => x.checked).map(x => +x.dataset.pa);
+  if (!scelte.length) return;
+  card.querySelectorAll('button').forEach(x => { x.disabled = true; });
+  const r = await postJ('/piano/esegui', { id: card.dataset.pid, scelte }).catch(() => ({ ok: false }));
+  if (!r.ok) { chiudiCartaPiano(card, '⚠️ Piano scaduto', 'annullato'); toast('⚡ Il piano è scaduto: chiedimelo di nuovo', 'err'); return; }
+  chiudiCartaPiano(card, '✅ Fatto (' + r.n + ')');
+  const dd = add('ai', r.testo, 'seguito'); finalize(dd, r.testo, null, null); if (r.annullabile) addV23(dd, { annullabile: r.annullabile });
+  suonoGiusto(); if (AV) AV.gesture('celebrate');
+  if (ttsOn) { stopSpeech(); say('Fatto: ' + r.n + (r.n === 1 ? ' azione.' : ' azioni.')); }
+  if (HUD.on) aggiornaHUD();
+  loadPr && loadPr();
+}
+
+// ---------- in chat, i bottoni, la tastiera ----------
+function addV27(d, obj, daAutomazione) {
+  if (obj.hud) { if (obj.hud.chiudi) chiudiHUD(); else if (obj.hud.apri && !daAutomazione) apriHUD(obj.hud); }
+  if (obj.situazione) addSituazione27(d, obj.situazione, daAutomazione);
+  if (obj.piano_azione) addPiano27(d, obj.piano_azione, daAutomazione);
+  if (obj.piano_fatto) {
+    chiudiCartaPiano(document.querySelector('.pa27[data-pid="' + (window.CSS && CSS.escape ? CSS.escape(obj.piano_fatto.id) : obj.piano_fatto.id) + '"]'), '✅ Fatto (' + obj.piano_fatto.n + ')');
+    suonoGiusto(); if (AV) AV.gesture('celebrate'); if (HUD.on) aggiornaHUD();
+  }
+}
+document.addEventListener('click', e => {                      // v27: HUD, allerte, piano
+  const b = e.target.closest('button[data-s27],button[data-hud],button[data-p27]'); if (!b) return;
+  const ds = b.dataset;
+  if (ds.s27) { qs(ds.s27); return; }
+  if (ds.hud === 'apri') { apriHUD(); return; }
+  if (ds.hud === 'chiudi') { chiudiHUD(); return; }
+  const card = b.closest('.pa27');
+  if (ds.p27 === 'esegui' && card) { eseguiPiano27(card); return; }
+  if (ds.p27 === 'no' && card) { chiudiCartaPiano(card, '✕ Lasciato stare', 'annullato'); return; }
+});
+document.addEventListener('change', e => {
+  const x = e.target.closest && e.target.closest('input[data-pa]'); if (!x) return;
+  const card = x.closest('.pa27'), n = card.querySelectorAll('input[data-pa]:checked').length, go = card.querySelector('.pa27go');
+  go.textContent = '▶ Esegui (' + n + ')'; go.disabled = !n; x.closest('label').classList.toggle('no', !x.checked);
+});
+
 // ---------- INIT ----------
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();if(!document.querySelector('.ov.open'))chiudiHUD();}});
+costruisciReattore();
 $('#cucmodal').addEventListener('click',e=>{if(e.target.id==='cucmodal')chiudiCucina();});$('#respmodal').addEventListener('click',e=>{if(e.target.id==='respmodal')chiudiRespiro();});
 $('#stumodal').addEventListener('click',e=>{if(e.target.id==='stumodal')chiudiStudio();});$('#qzmodal').addEventListener('click',e=>{if(e.target.id==='qzmodal')chiudiQuiz();});
 $('#mmmodal').addEventListener('click',e=>{if(e.target.id==='mmmodal')chiudiMente();});$('#stmodal').addEventListener('click',e=>{if(e.target.id==='stmodal')chiudiStorie();});
@@ -22921,8 +23746,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 26.0 — Server avviato         ║
-║ chef · tutor · respiro · accademia · show        ║
+║        MAIK PRIME 27.0 — Server avviato         ║
+║ hud · situazione · piano d'azione · chef · show  ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -22982,7 +23807,8 @@ def main():
     print(f"    GET  /diagnosi · /annulla · /backup · POST /diagnosi/ripara /annulla /backup/crea /backup/ripristina   [v23]")
     print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [v24]")
     print(f"    GET  /studio · /studio/ripasso · /quiz · POST /studio/voto /studio/elimina /quiz/fine   [v25]")
-    print(f"    GET  /cucina · /cucina/ricetta · /tutor · /respiro · POST /cucina/salva /cucina/elimina /cucina/spesa /respiro/fine   [NUOVO v26]")
+    print(f"    GET  /cucina · /cucina/ricetta · /tutor · /respiro · POST /cucina/salva /cucina/elimina /cucina/spesa /respiro/fine   [v26]")
+    print(f"    GET  /hud · /situazione · POST /piano/esegui   [NUOVO v27]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

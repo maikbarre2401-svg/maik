@@ -47,6 +47,22 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🧪 Novità V29 — MAIK PRIME Laboratorio: il Professor Flux, un secondo assistente in 3D accanto a Zep (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🧪 **Chi è** | Il **Professor Flux** è un personaggio **originale**: uno scienziato geniale, sarcastico ma affettuoso, un po' brontolone, con i capelli bianchi a nuvola, i baffoni, gli occhialoni, il camice aperto con le penne nel taschino e un **guanto-analizzatore** con lo schermo. Spiega le cose difficili con paragoni da laboratorio, prende in giro Zep con affetto e finisce spesso con un'idea per un esperimento. Non imita personaggi di film, serie o cartoni (niente tormentoni), non dice parolacce e non beve. |
+| 👋 **Chiamarlo e congedarlo** | «**chiama il professore**» (anche «fai venire il professore», «voglio parlare con il prof», «dov'è il professore?», «professore, vieni qui») e arriva con un raggio di luce, accanto a Zep; la telecamera si allarga per tenerli tutti e due. «**grazie professore, puoi andare**» (anche «ciao professore», «congeda il professore», «torna zep») e se ne torna in laboratorio, ma solo **dopo aver finito di salutare**. Ci sono anche il bottone **🧪 Professore** / **👋 Congeda** nella barra laterale, i suggerimenti rapidi e la tavolozza (Ctrl+K). Dopo 45 minuti di silenzio torna in laboratorio da solo. |
+| 🧠 **Le domande le prende lui** | Finché c'è, le domande (scienza, spiegazioni, curiosità, «e tu chi sei?») le prende lui, con **il suo carattere** e la stessa memoria di MAIK su di te. Le **cose pratiche** restano a Zep: una spesa, l'agenda, i promemoria, le cose da fare, i comandi del computer (sempre con la conferma, come prima). «**professore, perché il cielo è blu?**» (o «chiedi al professore se…») lo chiama e gli fa la domanda in un colpo solo. «**modalità professore**» resta la personalità «Prof» di MAIK di prima: non chiama il Professor Flux. |
+| 🗣️ **La sua voce e la sua bocca** | Quando risponde lui: la **sua voce** (più bassa e un po' più svelta; se il sistema ha un'altra voce italiana, usa quella), si muove **la sua bocca** (il labiale è lo stesso motore di Zep), il fumetto ha l'etichetta **🧪 PROFESSOR FLUX** e i **sottotitoli sono dorati**. Zep intanto ascolta e lo guarda. Quando spiega a lungo, la telecamera fa un **primo piano** su di lui. Ha i suoi gesti: saluta, «eureka!», pensa con la mano sul mento, spiega, indica, si gratta la testa, si sistema gli occhiali, si liscia i baffi, sbuffa, annuisce, e **scansiona** con il guanto. |
+| 📋 **La lavagna** | Le formule e gli schemi li scrive sulla **lavagna**: una lavagna in gesso dentro il fumetto e la **lavagna olografica** sul palco, in basso a sinistra (si chiude con ✕, e da sola dopo un po'). La lavagna non viene letta ad alta voce. E i numeri come «300.000» adesso Zep li dice tutti interi (non si spezzano più in due frasi). |
+| 🤖 **Zep commenta** | Ogni tanto, dopo una spiegazione, Zep fa una battuta («Prendo appunti, Professore!») e il Professore sbuffa o si liscia i baffi. Non sempre, e mai dopo l'arrivo o il saluto. |
+| 🗂️ **Ogni chat ha il suo** | Il Professore è legato alla chat: in una chat nuova non c'è, tornando alla chat di prima ritorna, e dopo un ricaricamento della pagina, se c'era, è ancora lì. |
+
+- Nuovo endpoint: `GET /professore?sessione=…` → `{on, domande, da}`. `/chat/stream` manda l'evento `{"parla": "professore"}` (e `{"professore_entra": true}`) prima della risposta, e alla fine restituisce `"professore": {on, entra?, esce?, voce: "prof"|"zep", lavagna?}`.
+- Dentro le automazioni il Professore non c'entra. Nessun nuovo comando del PC, nessun riconoscimento delle persone.
+- Il Professore è disegnato **in 3D dal codice** (forme geometriche, niente modelli esterni da scaricare): è stilizzato, nello stesso stile di Zep, non fotorealistico.
+
 ## 🔬 Novità V28 — MAIK PRIME Analista: chiedi ai tuoi dati, la previsione, il simulatore, il tuo anno (versione server)
 
 | | Cosa fa |
@@ -538,7 +554,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V28 — `maikprime.py`
+## MAIK PRIME — Server V29 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

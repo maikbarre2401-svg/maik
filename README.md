@@ -47,6 +47,21 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🔬 Novità V28 — MAIK PRIME Analista: chiedi ai tuoi dati, la previsione, il simulatore, il tuo anno (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🔬 **Chiedi ai tuoi dati** | Fai una domanda sulle tue cose: «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**quanto spendo in media al giorno per il caffè?**», «**le mie 3 spese più grandi di questo mese**», «**confronta le spese di questo mese con il mese scorso**», «**come è andato il mio umore questo mese?**», «**analizza le mie spese**». Ti rispondo con una frase, una **scheda con il grafico** e un elenco di cose che si notano. Le cose che si notano sono **calcolate**, non inventate: la tendenza (confronto la prima e la seconda metà del periodo e controllo che vadano nella stessa direzione), il picco e il punto più basso, il weekend contro i giorni feriali, quanto pesano le prime due voci, il confronto con il periodo prima (lo stesso pezzo di mese, non il mese intero). Uso i dati di spese, abitudini, cose fatte, pomodori, umore, tempo al PC, respiro e carte di studio. |
+| 📊 **La scheda** | Il grafico giusto per ogni domanda: colonne per il tempo e i giorni della settimana, una linea per l'umore, barre per le categorie e le spese più grandi, «barra + tacca» per un confronto, un numero grande quando la risposta è un numero. Passandoci sopra con il mouse (o con **Tab** da tastiera) vedi i valori. I periodi si cambiano con un tocco (7, 30, 90 giorni, 6 o 12 mesi, «da sempre») e il grafico si ricalcola. C'è anche la **tabella** con tutti i dati e il bottone **📥 CSV** (per Excel in italiano). Il mese in corso, o un periodo in cui avevi appena iniziato a segnare i dati, compare più chiaro e non conta per la tendenza. Zep dice a voce solo la frase principale. |
+| 🧠 **Le domande più strane** | Le domande più comuni le capisco da solo, senza il modello. Per quelle più insolite («in quale periodo dell'anno sono più felice?») il modello traduce la domanda in una **richiesta** (quali dati, come raggrupparli, quale periodo). La richiesta la controllo io: solo i dati di MAIK, solo letture, valori sicuri. I conti li faccio sempre io, e lo scrivo sulla scheda. Se il modello non risponde, o chiede qualcosa che non esiste, rispondo a regole. |
+| 🔮 **La previsione** | «**quanto spenderò questo mese?**» (anche «sforerò il budget?», «arrivo a fine mese?»). Calcolo: quanto hai speso finora, più il ritmo delle spese di tutti i giorni per i giorni che mancano, più le **spese fisse** che di solito arrivano più avanti (la bolletta che il mese scorso è arrivata il 25; l'affitto già pagato non lo conto due volte). Ti do anche la fascia probabile, il budget (di quanto lo sfori, o di quanto resti sotto) e **quanto puoi spendere al giorno** per restarci. Nel grafico vedi il mese finora, la previsione tratteggiata con la sua fascia, il mese scorso e la linea del budget. Se a questo ritmo sfori il budget, l'allerta 📈 compare anche in «come siamo messi?» e nell'HUD, dove c'è anche l'indicatore «fine mese». |
+| 💰 **Il simulatore** | «**se risparmio 5 € al giorno?**» → 1.825 € in un anno, e quanto in 5 anni. «**quando arrivo a 2000 € con 100 al mese?**» → in 20 mesi, e il mese del traguardo. «**se taglio il mangiare fuori del 30%?**», «**se smetto di prendere il caffè al bar quanto risparmio?**» → il conto si basa sulle **tue** spese degli ultimi 90 giorni. Si può aggiungere l'interesse («… per 3 anni al 2%»). Le colonne mostrano quanto metti da parte mese per mese. |
+| 🗓️ **Il tuo anno** | «**mostrami il mio anno**»: un quadratino per ogni giorno dell'ultimo anno, più è pieno più hai fatto (abitudini, cose fatte, pomodori, respiro, ripasso). Vedi la serie più lunga, quella di adesso, il mese e il giorno della settimana più attivi. Con un tocco passi alle **spese** (e ai giorni senza spese), alle **abitudini** (la percentuale del giorno) o all'**umore**, che usa due colori intorno al neutro, giù e su. Passandoci sopra vedi il giorno; c'è anche la tabella mese per mese. |
+
+- Nuovi endpoint: `POST /analisi {domanda}` oppure `{spec}` (per rifare gli stessi conti con un altro periodo; solo letture) · `GET /previsione` · `GET /anno?metrica=attivita|spese|abitudini|umore`. `/chat/stream` restituisce anche `"analisi"`, `"previsione"`, `"simulazione"`, `"anno"`. In `/hud` c'è anche `"previsione"`.
+- Anche come automazione: «ogni lunedì alle 9 analizza le mie spese». Le frasi che avevano già un loro posto restano come prima: «quanto ho speso questo mese?», «le mie statistiche», «quanti pomodori ho fatto oggi», «il mio anno in storie»… E un racconto («sono più felice di prima») resta un racconto, non diventa un grafico.
+- Nessun nuovo comando del PC, nessun riconoscimento delle persone: l'analista legge solo i dati che MAIK ha già, sul tuo computer.
+
 ## 🛰️ Novità V27 — MAIK PRIME HUD: l'interfaccia olografica, l'analisi della situazione, il piano d'azione (versione server)
 
 | | Cosa fa |
@@ -523,7 +538,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V27 — `maikprime.py`
+## MAIK PRIME — Server V28 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

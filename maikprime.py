@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v27.0                   ║
+║              MAIK PRIME — Server v28.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,17 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v28.0 — MAIK PRIME ANALISTA:
+  • 🔬 Chiedi ai tuoi dati: «in che giorno della settimana spendo di più?», «grafico delle spese degli ultimi 6 mesi», «quante volte
+    sono andato in palestra a settembre?», «confronta settembre e ottobre», «come è andato il mio umore?» → la risposta, il grafico
+    (con i valori al passaggio e la tabella) e quello che si nota (tendenze, picchi, il confronto con prima), calcolato e non inventato.
+    Le domande comuni le capisco da solo; le altre le traduce il modello in una richiesta che controllo io (solo letture).
+  • 🔮 La previsione: «quanto spenderò questo mese?» → fine mese con la fascia, le spese fisse che arrivano dopo, il budget e quanto
+    puoi spendere al giorno per restarci. Se sfori, l'allerta arriva anche nella situazione e nell'HUD.
+  • 💰 Il simulatore: «se risparmio 5 € al giorno?», «quando arrivo a 2000 € con 100 al mese?», «se taglio il mangiare fuori del 30%?».
+  • 🗓️ Il tuo anno: «mostrami il mio anno» → un quadratino per ogni giorno (cose fatte, spese, abitudini, umore), serie e record.
+  • Nuovi endpoint: POST /analisi {domanda | spec} · GET /previsione · GET /anno?metrica=attivita|spese|abitudini|umore
 
 NOVITÀ v27.0 — MAIK PRIME HUD:
   • 🛰️ L'interfaccia olografica: «modalità HUD» (o il tasto H): intorno a Zep i pannelli dal vivo — ora, meteo, sistemi (modello,
@@ -436,7 +447,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "27.0"
+VERSIONE  = "28.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -7744,7 +7755,8 @@ _CTX = threading.local()          # cosa sta facendo questo thread (in un'automa
 # ── ⚙️ AUTOMAZIONI: «ogni lunedì alle 9 dimmi quanto ho speso», e MAIK lo fa da solo ──
 _VERBI_AUTO = (r"dimmi|dammi|fammi|mandami|leggimi|mostrami|ricordami|ricorda(?:mi)?|fai|prepara(?:mi)?|controlla|cerca|riassumi(?:mi)?|esegui|calcola|"
                r"aggiorna(?:mi)?|pianifica(?:mi)?|chiudiamo|cosa|com['’]|quanto|quanti|quali|che|qual|briefing|notizie|meteo|scrivimi|suggeriscimi|consigliami|motivami|"
-               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz|menu|ricetta|respiriamo|rapporto|aggiornami|situazione|status")   # v24-26: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo», «ogni domenica alle 10 fammi il menu della settimana»
+               r"accendi|radio|notiziario|storie|ripassiamo|ripasso|interrogami|quante|facciamo|quiz|menu|ricetta|respiriamo|rapporto|aggiornami|situazione|status|"
+               r"analizza|confronta|grafico|previsione|in\s+che")   # v24-26: «ogni mattina alle 8 accendi radio maik», «ogni sera alle 21 ripassiamo», «ogni domenica alle 10 fammi il menu della settimana»
 _RE_AUTO_CREA = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:(?:crea|nuova|aggiungi|imposta)\s+(?:un['’]\s*|una\s+)?automazione\s*[:,]?\s*|automazione\s*[:,]\s*)?"
                            r"(?P<quando>(?:ogni|tutti\s+i|tutte\s+le)\s+[^,]+?|nei\s+giorni\s+feriali|nel\s+(?:weekend|fine\s+settimana)|dal\s+luned[iì]\s+al\s+venerd[iì])"
                            r"(?:\s+(?:alle|all['’]|verso\s+le)\s*(?P<ora>\d{1,2}(?:[:.]\d{2})?))?\s*[,:]?\s+(?P<cosa>(?:" + _VERBI_AUTO + r")\b.*)$", re.I)
@@ -8071,7 +8083,7 @@ class Automazioni:
 
 _CHIAVI_META_AUTO = ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "agenda", "attivita", "attivita_lista", "piano", "giornata",
                      "focus", "idee", "ricordi", "notizie", "fonti_web", "prime", "obiettivo", "obiettivi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "presenza",
-                     "diagnosi", "backup", "radio", "storie", "studio", "quiz", "ricetta", "menu", "respiro", "situazione")
+                     "diagnosi", "backup", "radio", "storie", "studio", "quiz", "ricetta", "menu", "respiro", "situazione", "analisi", "previsione", "anno")
 AUTOMAZIONI = Automazioni()
 
 
@@ -12737,6 +12749,1421 @@ def v27_router(testo, motore, avvisa=None, sid=None):
 
 
 # ════════════════════════════════════════════════════════════
+# V28 — MAIK PRIME ANALISTA: 🔬 chiedi ai tuoi dati (la domanda diventa una richiesta controllata, il risultato un grafico
+# con quello che si nota), 🔮 la previsione delle spese (fine mese, budget), 💰 il simulatore di risparmio, 🗓️ il tuo anno
+# ════════════════════════════════════════════════════════════
+
+DATI_V28 = {     # chiave → nome, emoji, unità (singolare, plurale), additivo (si somma) o no (si fa la media: l'umore)
+    "spese":     {"nome": "spese", "emoji": "💶", "u": ("spesa", "spese"), "additivo": True},
+    "abitudini": {"nome": "abitudini fatte", "emoji": "✅", "u": ("volta", "volte"), "additivo": True},
+    "attivita":  {"nome": "cose fatte", "emoji": "📋", "u": ("cosa", "cose"), "additivo": True},
+    "pomodori":  {"nome": "pomodori", "emoji": "🍅", "u": ("pomodoro", "pomodori"), "additivo": True},
+    "umore":     {"nome": "umore", "emoji": "💙", "u": ("volta", "volte"), "additivo": False},
+    "pc":        {"nome": "tempo al PC", "emoji": "⏱️", "u": ("giorno", "giorni"), "additivo": True},
+    "respiro":   {"nome": "minuti di respiro", "emoji": "🫧", "u": ("sessione", "sessioni"), "additivo": True},
+    "carte":     {"nome": "carte ripassate", "emoji": "🃏", "u": ("ripasso", "ripassi"), "additivo": True},
+}
+MISURE_V28 = ("somma", "conteggio", "media", "media_voce")
+GRUPPI_V28 = ("nessuno", "giorno", "settimana", "mese", "giorno_settimana", "categoria", "voce")
+_NOMI_GRUPPI_V28 = {"giorno": "giorno per giorno", "settimana": "settimana per settimana", "mese": "mese per mese", "giorno_settimana": "per giorno della settimana",
+                    "categoria": "per categoria", "voce": "le più grandi"}
+_VERBI_V28 = {   # (di più, di meno): «il giorno in cui …»
+    "spese": ("spendi di più", "spendi di meno"), "abitudini": ("fai più abitudini", "fai meno abitudini"), "attivita": ("concludi più cose", "concludi meno cose"),
+    "pomodori": ("ti concentri di più", "ti concentri di meno"), "umore": ("sei più di buon umore", "sei più giù"), "pc": ("stai di più al PC", "stai di meno al PC"),
+    "respiro": ("respiri di più", "respiri di meno"), "carte": ("ripassi di più", "ripassi di meno")}
+_NUMERI_V28 = {"un": 1, "una": 1, "uno": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "dodici": 12}
+_MESI_NA = [_senza_accenti(m) for m in MESI_IT]
+
+
+def _d_it(d, anno=False):
+    return f"{d.day} {MESI_IT[d.month - 1]}" + (f" {d.year}" if anno else "")
+
+
+def _num_v28(v):
+    return (str(int(round(v))) if abs(v - round(v)) < 0.05 else f"{v:.1f}".replace(".", ","))
+
+
+def _minuti_it(m):
+    m = int(round(m))
+    return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
+def fmt_v28(v, ds, misura="somma"):
+    """Un valore come si dice: 12,40 € · 3 h 20 min · 6,8/10 · 4 volte · 2,3 al giorno."""
+    if v is None:
+        return "—"
+    if ds == "spese" and misura != "conteggio":
+        return euro(v)
+    if ds == "umore" and misura != "conteggio":
+        return f"{v:.1f}".replace(".", ",") + "/10"
+    if ds in ("pc", "respiro") and misura != "conteggio":
+        return _minuti_it(v)
+    s, p = DATI_V28[ds]["u"]
+    if ds == "spese":
+        s, p = "spesa", "spese"
+    n = _num_v28(v)
+    return f"{n} {s if n == '1' else p}"
+
+
+# ── i dati, tutti nella stessa forma: {data, v, cat, et} ──
+def righe_v28(ds, memoria):
+    out = []
+    try:
+        if ds == "spese":
+            out = [{"data": s["data"][:10], "v": float(s["importo"]), "cat": s["categoria"], "et": s["descrizione"]} for s in SPESE.tutte()]
+        elif ds == "abitudini":
+            d = ABITUDINI._carica()
+            ab = {a["id"]: a for a in d["abitudini"]}
+            for g, x in d["log"].items():
+                for aid, n in x.items():
+                    a = ab.get(aid)
+                    if a and n >= a.get("obiettivo", 1):
+                        out.append({"data": g, "v": 1.0, "cat": aid, "et": f"{a['emoji']} {a['nome']}"})
+        elif ds == "attivita":
+            out = [{"data": a["fatta"][:10], "v": 1.0, "cat": a.get("progetto") or "", "et": a["testo"]} for a in ATTIVITA.tutte() if a.get("fatta")]
+        elif ds == "pomodori":
+            out = [{"data": s["fine"][:10], "v": 1.0, "cat": "", "et": s.get("testo") or "concentrazione"} for s in ATTIVITA._carica()["sessioni"] if s.get("completa")]
+        elif ds == "umore":
+            out = [{"data": u["data"][:10], "v": valenza_umore(u.get("umore"), u.get("intensita", 5)), "cat": str(u.get("umore") or "").lower(), "et": str(u.get("umore") or "")}
+                   for u in memoria.umore if u.get("data")]
+        elif ds == "pc":
+            out = [{"data": g, "v": round(sec / 60, 1), "cat": "", "et": "al PC"} for g, sec in PRESENZA._carica()["giorni"].items() if sec]
+        elif ds == "respiro":
+            out = [{"data": s["data"], "v": round(s["secondi"] / 60, 1), "cat": s.get("tecnica", ""), "et": TECNICHE_RESPIRO.get(s.get("tecnica"), ("", s.get("tecnica", "")))[1]}
+                   for s in RESPIRO._carica()["sessioni"] if s.get("secondi", 0) >= 30]
+        elif ds == "carte":
+            d = STUDIO._carica()
+            mz = {m["id"]: m for m in d["mazzi"]}
+            for c in d["carte"]:
+                m = mz.get(c["mazzo"])
+                for h in c.get("storia") or []:
+                    out.append({"data": h["data"], "v": 1.0, "cat": c["mazzo"], "et": f"{m['emoji']} {m['nome']}" if m else "🃏 carte"})
+    except Exception:
+        out = []
+    return [r for r in out if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(r.get("data", "")))]
+
+
+def _nome_cat_v28(ds, cat, righe):
+    if ds == "spese":
+        c = CAT_SPESE.get(cat, CAT_SPESE["altro"])
+        return f"{c['emoji']} {c['nome']}"
+    if ds == "attivita":
+        return f"#{cat}" if cat else "senza progetto"
+    if ds == "umore":
+        return (cat or "?").capitalize()
+    return next((r["et"] for r in righe if r["cat"] == cat), cat or "—")
+
+
+def _stem_v28(w):
+    w = _senza_accenti(w.lower())
+    return w[:max(4, len(w) - 1)]
+
+
+def filtra_v28(ds, righe, filtro):
+    """→ (righe filtrate, etichetta del filtro). Spese: una parola nella descrizione o una categoria; abitudini, mazzi, tecniche, umori: il nome."""
+    f = re.sub(r"\s+", " ", str(filtro or "")).strip()[:40]
+    if not f:
+        return righe, ""
+    fn = _senza_accenti(f.lower())
+    if ds == "spese":
+        if f in CAT_SPESE:
+            return [r for r in righe if r["cat"] == f], _nome_cat_v28(ds, f, righe)
+        orig = {_senza_accenti(x): x for x in re.findall(r"\w+", f.lower())}
+        parole = [w for w in re.findall(r"[a-z0-9]+", fn) if len(w) > 2 and w not in _STOP]
+        for w in parole:
+            st = _stem_v28(w)
+            sel = [r for r in righe if st in _senza_accenti(r["et"]).lower()]
+            if sel:
+                return sel, f"«{orig.get(w, w)}»"
+        cat = categoria_spesa(f)
+        return ([r for r in righe if r["cat"] == cat], _nome_cat_v28(ds, cat, righe)) if cat else ([], f"«{f}»")
+    if ds == "abitudini":
+        a = ABITUDINI.trova(f) or next((x for x in ABITUDINI.elenco() if fn in _senza_accenti(x["nome"].lower())), None)
+        return ([r for r in righe if r["cat"] == a["id"]], f"{a['emoji']} {a['nome']}") if a else ([], f"«{f}»")
+    if ds == "carte":
+        m = STUDIO.trova_mazzo(f)
+        return ([r for r in righe if r["cat"] == m["id"]], f"{m['emoji']} {m['nome']}") if m else ([], f"«{f}»")
+    if ds == "attivita":
+        st = _stem_v28(fn.lstrip("#"))
+        return [r for r in righe if st in _senza_accenti(r["cat"] + " " + r["et"]).lower()], f"«{f}»"
+    if ds in ("umore", "respiro"):
+        st = _stem_v28(fn)
+        return [r for r in righe if st in _senza_accenti(r["cat"] + " " + r["et"]).lower()], f"«{f}»"
+    return righe, ""
+
+
+# ── i periodi: «questo mese», «giorni:30», «2026-09», {da, a} … ──
+def _lunedi(d):
+    return d - datetime.timedelta(days=d.weekday())
+
+
+def _fine_mese(d):
+    return (d.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+
+
+def _mesi_indietro(d, n):
+    y, m = d.year, d.month - n
+    while m < 1:
+        y, m = y - 1, m + 12
+    return datetime.date(y, m, 1)
+
+
+def periodo_v28(p, oggi=None):
+    """→ (da, a, etichetta, chiave)."""
+    oggi = oggi or datetime.date.today()
+    m1 = oggi.replace(day=1)
+    if isinstance(p, dict):
+        try:
+            da, a = datetime.date.fromisoformat(str(p.get("da"))[:10]), datetime.date.fromisoformat(str(p.get("a"))[:10])
+        except ValueError:
+            return periodo_v28("giorni:30", oggi)
+        da, a = min(da, a), min(max(da, a), oggi)
+        da = max(da, oggi - datetime.timedelta(days=3660))
+        return da, max(da, a), f"Dal {_d_it(da)} al {_d_it(a)}", "intervallo"
+    p = _senza_accenti(str(p or "").strip().lower()).replace(" ", "_")
+    p = {"ultimi_7": "giorni:7", "ultimi_30": "giorni:30", "ultimi_90": "giorni:90", "ultimi_12_mesi": "mesi:12", "anno": "quest_anno", "mese": "questo_mese",
+         "questa_settimana": "settimana", "sempre": "tutto"}.get(p, p)
+    if p == "oggi":
+        return oggi, oggi, "Oggi", p
+    if p == "ieri":
+        g = oggi - datetime.timedelta(days=1)
+        return g, g, "Ieri", p
+    if p == "settimana":
+        return _lunedi(oggi), oggi, "Questa settimana", p
+    if p == "settimana_scorsa":
+        lun = _lunedi(oggi) - datetime.timedelta(days=7)
+        return lun, lun + datetime.timedelta(days=6), "La settimana scorsa", p
+    if p == "questo_mese":
+        return m1, oggi, f"Questo mese ({MESI_IT[oggi.month - 1]})", p
+    if p == "mese_scorso":
+        f = m1 - datetime.timedelta(days=1)
+        return f.replace(day=1), f, f"A {MESI_IT[f.month - 1]}", p
+    if p == "quest_anno":
+        return oggi.replace(month=1, day=1), oggi, f"Nel {oggi.year}", p
+    if p == "anno_scorso":
+        y = oggi.year - 1
+        return datetime.date(y, 1, 1), datetime.date(y, 12, 31), f"Nel {y}", p
+    if p == "tutto":
+        return oggi - datetime.timedelta(days=3650), oggi, "Da quando segno i dati", p
+    m = re.fullmatch(r"(giorni|settimane|mesi)[:_](\d{1,6})", p)
+    if m:
+        n = int(m.group(2))
+        if m.group(1) == "giorni":
+            n = max(1, min(1100, n))
+            return oggi - datetime.timedelta(days=n - 1), oggi, ("Oggi" if n == 1 else f"Ultimi {n} giorni"), f"giorni:{n}"
+        if m.group(1) == "settimane":
+            n = max(1, min(160, n))
+            return _lunedi(oggi) - datetime.timedelta(days=7 * (n - 1)), oggi, ("Questa settimana" if n == 1 else f"Ultime {n} settimane"), f"settimane:{n}"
+        n = max(1, min(120, n))
+        return _mesi_indietro(m1, n - 1), oggi, (f"Questo mese ({MESI_IT[oggi.month - 1]})" if n == 1 else f"Ultimi {n} mesi"), f"mesi:{n}"
+    m = re.fullmatch(r"(\d{4})-(\d{1,2})", p)
+    if m and 1 <= int(m.group(2)) <= 12 and 2000 <= int(m.group(1)) <= oggi.year:
+        da = datetime.date(int(m.group(1)), int(m.group(2)), 1)
+        if da <= oggi:
+            return da, min(_fine_mese(da), oggi), f"A {MESI_IT[da.month - 1]}" + (f" {da.year}" if da.year != oggi.year else ""), f"{da.year}-{da.month:02d}"
+    m = re.fullmatch(r"(\d{4})", p)
+    if m and 2000 <= int(p) <= oggi.year:
+        y = int(p)
+        return datetime.date(y, 1, 1), min(datetime.date(y, 12, 31), oggi), f"Nel {y}", p
+    return periodo_v28("giorni:30", oggi)
+
+
+_RX_PERIODI_V28 = [
+    (r"\bsettimana\s+scorsa\b|\bscorsa\s+settimana\b|\bsettimana\s+prima\b", "settimana_scorsa"),
+    (r"\bquesta\s+settimana\b", "settimana"),
+    (r"\bmese\s+scorso\b|\bscorso\s+mese\b|\bmese\s+prima\b", "mese_scorso"),
+    (r"\bquesto\s+mese\b|\bdel\s+mese\b|\bnel\s+mese\b(?!\s+di)", "questo_mese"),
+    (r"\banno\s+scorso\b|\bscorso\s+anno\b", "anno_scorso"),
+    (r"\bquest['’ ]?anno\b|\bdell['’ ]?anno\b|\bnell['’ ]?anno\b", "quest_anno"),
+    (r"\bultim[oaie]\s+(?:(\d{1,3}|un|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|dodici)\s+)?(giorn|settiman|mes|ann)\w*", "ultimi"),
+    (r"\b(?:(?:a|ad|di|in|nel(?:\s+mese\s+di)?|del\s+mese\s+di|da|tra|fra)\s+)?(" + "|".join(_MESI_NA) + r")(?:\s+(\d{4}))?\b", "mese_nome"),
+    (r"\bnel\s+(20\d\d)\b", "anno_n"),
+    (r"\boggi\b", "oggi"), (r"(?<!altro\s)\bieri\b", "ieri"),
+    (r"\bda\s+sempre\b|\bdi\s+sempre\b|\bda\s+quando\s+(?:li\s+|le\s+)?(?:segn|registr|uso|usi|ho\s+iniziato)\w*|\bin\s+assoluto\b|\btutto\s+il\s+tempo\b", "tutto"),
+]
+
+
+def periodi_nel_testo_v28(tl, oggi=None):
+    """I periodi nominati nella frase, in ordine (per «confronta settembre e ottobre»). tl: minuscolo e senza accenti."""
+    oggi = oggi or datetime.date.today()
+    trovati = []
+    for rx, k in _RX_PERIODI_V28:
+        for m in re.finditer(rx, tl):
+            if k == "ultimi":
+                n, u = m.group(1), m.group(2)
+                plurale = bool(re.match(r"ultim[ie]\b", m.group(0)))
+                n = int(n) if n and n.isdigit() else _NUMERI_V28.get(n or "", 0) or ({"giorn": 14, "settiman": 4, "mes": 3, "ann": 2}[u] if plurale else 1)
+                v = (f"giorni:{n}" if u == "giorn" else f"settimane:{n}" if u == "settiman" and n > 1 else "giorni:7" if u == "settiman"
+                     else f"mesi:{n}" if u == "mes" and n > 1 else "giorni:30" if u == "mes" else f"mesi:{12 * n}")
+            elif k == "mese_nome":
+                mm = _MESI_NA.index(m.group(1)) + 1
+                y = int(m.group(2)) if m.group(2) else (oggi.year if mm <= oggi.month else oggi.year - 1)
+                v = f"{y}-{mm:02d}"
+            elif k == "anno_n":
+                v = m.group(1)
+            else:
+                v = k
+            trovati.append((m.start(), m.end(), v))
+    trovati.sort(key=lambda x: (x[0], -(x[1] - x[0])))
+    out, fine = [], -1
+    for a, b, v in trovati:                       # un periodo dentro un altro («del mese di ottobre») conta una volta
+        if a < fine:
+            continue
+        fine = b
+        if not out or out[-1] != v:
+            out.append(v)
+    return out
+
+
+# ── la richiesta: controllata prima di fare qualsiasi cosa ──
+def normalizza_spec_v28(j, oggi=None):
+    """Una richiesta (dal modello o dalle regole) → una richiesta sicura, o None. Solo i dati di MAIK, solo letture."""
+    if not isinstance(j, dict):
+        return None
+    oggi = oggi or datetime.date.today()
+    ds = _senza_accenti(str(j.get("dataset") or "").strip().lower())
+    ds = {"spesa": "spese", "abitudine": "abitudini", "attività": "attivita", "cose_fatte": "attivita", "pomodoro": "pomodori", "focus": "pomodori",
+          "presenza": "pc", "computer": "pc", "respirazione": "respiro", "studio": "carte", "flashcard": "carte"}.get(ds, ds)
+    if ds not in DATI_V28:
+        return None
+    misura = str(j.get("misura") or "somma").strip().lower()
+    misura = {"totale": "somma", "numero": "conteggio", "count": "conteggio", "media_giorno": "media", "media_per_volta": "media_voce", "massimo": "somma", "minimo": "somma"}.get(misura, misura)
+    if misura not in MISURE_V28:
+        misura = "somma"
+    if ds == "umore" and misura == "somma":
+        misura = "media"
+    gr = str(j.get("raggruppa") or "nessuno").strip().lower()
+    gr = {"giorni": "giorno", "settimane": "settimana", "mesi": "mese", "giorno_della_settimana": "giorno_settimana", "weekday": "giorno_settimana",
+          "categorie": "categoria", "voci": "voce", "": "nessuno", "niente": "nessuno"}.get(gr, gr)
+    if gr not in GRUPPI_V28:
+        gr = "nessuno"
+    if gr == "voce" and ds in ("pc",):
+        gr = "giorno"
+    per = j.get("periodo") or ""
+    if not per:
+        per = {"giorno": "giorni:30", "settimana": "settimane:12", "mese": "mesi:12", "giorno_settimana": "giorni:90"}.get(gr, "questo_mese")
+    ev = str(j.get("evidenzia") or "").strip().lower()
+    ev = {"massimo": "max", "piu": "max", "minimo": "min", "meno": "min"}.get(ev, ev)
+    if ev not in ("max", "min"):
+        ev = "max" if gr in ("giorno_settimana", "categoria", "mese", "settimana") or str(j.get("misura") or "").lower() == "massimo" else "min" if str(j.get("misura") or "").lower() == "minimo" else ""
+    ordina = str(j.get("ordina") or "").strip().lower()
+    if ordina not in ("desc", "asc", "tempo"):
+        ordina = "desc" if gr in ("categoria", "voce") else "tempo"
+    try:
+        lim = max(0, min(50, int(j.get("limite") or 0)))
+    except (TypeError, ValueError):
+        lim = 0
+    if gr == "voce" and not lim:
+        lim = 10
+    conf = j.get("confronta") or ""
+    if conf and not isinstance(conf, (str, dict)):
+        conf = ""
+    filtro = str(j.get("filtro") or "").strip()[:40]
+    if filtro.lower() in ("tutto", "tutte", "tutti", "nessuno", "none", "null", "-"):
+        filtro = ""
+    return {"dataset": ds, "misura": misura, "raggruppa": gr, "periodo": per if isinstance(per, dict) else str(per)[:24], "filtro": filtro,
+            "evidenzia": ev, "ordina": ordina, "limite": lim, "confronta": conf if isinstance(conf, dict) else str(conf)[:24], "analizza": bool(j.get("analizza"))}
+
+
+def _gruppi_tempo(gr, da, a):
+    """Le «scatole» del tempo tra da e a: (chiave, etichetta, inizio, fine)."""
+    out = []
+    if gr == "giorno":
+        g = da
+        while g <= a:
+            out.append((g.isoformat(), f"{GIORNI_IT[g.weekday()]} {g.day} {MESI_IT[g.month - 1][:3]}", g, g))
+            g += datetime.timedelta(days=1)
+    elif gr == "settimana":
+        g = _lunedi(da)
+        while g <= a:
+            f = g + datetime.timedelta(days=6)
+            out.append((g.isoformat(), f"{g.day}–{f.day} {MESI_IT[f.month - 1][:3]}" if g.month == f.month else f"{g.day} {MESI_IT[g.month - 1][:3]}–{f.day} {MESI_IT[f.month - 1][:3]}", g, f))
+            g += datetime.timedelta(days=7)
+    elif gr == "mese":
+        g = da.replace(day=1)
+        while g <= a:
+            out.append((g.isoformat()[:7], MESI_IT[g.month - 1] + (f" {g.year}" if g.year != a.year or da.year != a.year else ""), g, _fine_mese(g)))
+            g = _fine_mese(g) + datetime.timedelta(days=1)
+    return out
+
+
+def _giorni_eff(g0, g1, inizio, fine):
+    a, b = max(g0, inizio), min(g1, fine)
+    return max(0, (b - a).days + 1)
+
+
+def _valore_v28(sel, misura, additivo, giorni):
+    if not sel:
+        return 0.0 if additivo and misura in ("somma", "conteggio") or (additivo and misura == "media" and giorni) else None
+    if misura == "conteggio":
+        return float(len(sel))
+    tot = sum(r["v"] for r in sel)
+    if misura == "somma":
+        return round(tot, 2) if additivo else round(tot / len(sel), 2)
+    if misura == "media_voce" or not additivo:
+        return round(tot / len(sel), 2)
+    return round(tot / giorni, 2) if giorni else None
+
+
+def _calcola_v28(righe, spec, da, a, inizio, oggi):
+    """→ (punti, gruppo effettivo). inizio = il primo giorno con dei dati (prima non si contano giorni «a zero»)."""
+    ds, misura, gr = spec["dataset"], spec["misura"], spec["raggruppa"]
+    add = DATI_V28[ds]["additivo"]
+    fine_eff = min(a, oggi)
+    giorni_tot = _giorni_eff(da, a, inizio, fine_eff)
+    if gr == "giorno" and (a - da).days > 92:
+        gr = "settimana"
+    if gr == "settimana" and (a - da).days > 7 * 60:
+        gr = "mese"
+    punti = []
+    if gr in ("giorno", "settimana", "mese"):
+        for k, et, g0, g1 in _gruppi_tempo(gr, da, a):
+            g0c, g1c = max(g0, da), min(g1, a)
+            sel = [r for r in righe if g0c.isoformat() <= r["data"] <= g1c.isoformat()]
+            ge = _giorni_eff(g0c, g1c, inizio, fine_eff)
+            v = _valore_v28(sel, misura, add, ge) if ge or sel else None
+            punti.append({"k": k, "et": et, "v": v, "n": len(sel), "parziale": gr != "giorno" and g1 > fine_eff and g0 <= fine_eff, "da": g0c.isoformat(), "a": g1c.isoformat(),
+                          "incompleto": gr != "giorno" and g0c < inizio <= g1c})
+    elif gr == "giorno_settimana":
+        for wd in range(7):
+            sel = [r for r in righe if datetime.date.fromisoformat(r["data"]).weekday() == wd]
+            ge = sum(1 for i in range(giorni_tot) if (max(da, inizio) + datetime.timedelta(days=i)).weekday() == wd)
+            punti.append({"k": str(wd), "et": GIORNI_LUNGHI[wd], "v": _valore_v28(sel, misura, add, ge) if ge or sel else None, "n": len(sel)})
+    elif gr == "categoria":
+        cats = collections.OrderedDict()
+        for r in righe:
+            cats.setdefault(r["cat"], []).append(r)
+        for c, sel in cats.items():
+            punti.append({"k": c, "et": _nome_cat_v28(ds, c, sel), "v": _valore_v28(sel, misura, add, giorni_tot), "n": len(sel)})
+    elif gr == "voce":
+        for i, r in enumerate(righe):
+            punti.append({"k": str(i), "et": r["et"] or "—", "v": round(r["v"], 2), "n": 1, "data": r["data"], "cat": r["cat"]})
+    else:
+        punti.append({"k": "tot", "et": "Totale", "v": _valore_v28(righe, misura, add, giorni_tot), "n": len(righe)})
+    if spec["ordina"] in ("desc", "asc") and gr not in ("giorno", "settimana", "mese", "giorno_settimana"):
+        punti.sort(key=lambda p: (p["v"] is None, -(p["v"] or 0) if spec["ordina"] == "desc" else (p["v"] or 0)))
+    if spec["limite"] and gr in ("categoria", "voce"):
+        punti = punti[:spec["limite"]]
+    return punti, gr
+
+
+def _a_art(et):
+    """«a» + l'articolo: allo stesso periodo, ai 30 giorni prima, alla settimana prima, a settembre."""
+    for art, prep in (("lo ", "allo "), ("la ", "alla "), ("gli ", "agli "), ("i ", "ai "), ("il ", "al "), ("l'", "all'")):
+        if et.startswith(art):
+            return prep + et[len(art):]
+    return "a " + et
+
+
+def _tip_v28(p, ds, misura):
+    extra = ""
+    if misura in ("media", "media_voce") and p.get("n") and DATI_V28[ds]["additivo"]:
+        extra = f" · {p['n']} {DATI_V28[ds]['u'][0] if p['n'] == 1 else DATI_V28[ds]['u'][1]}" if ds != "spese" else f" · {p['n']} spes{'a' if p['n'] == 1 else 'e'}"
+    if p.get("data"):
+        extra += f" · {_d_it(datetime.date.fromisoformat(p['data']))}"
+    v = fmt_v28(p["v"], ds, misura) + (" al giorno" if misura == "media" and DATI_V28[ds]["additivo"] and p.get("v") is not None else "")
+    return f"{p['et']}: {v}{extra}" + (" (in corso)" if p.get("parziale") else " (i dati partono a metà)" if p.get("incompleto") else "")
+
+
+def _trend_v28(punti, ds):
+    """La tendenza vera (non a occhio): media della prima metà contro la seconda, e la pendenza deve andare d'accordo."""
+    vv = [p["v"] for p in punti if p["v"] is not None and not p.get("parziale") and not p.get("incompleto")]
+    if len(vv) < 4:
+        return None
+    h = len(vv) // 2
+    a, b = sum(vv[:h]) / h, sum(vv[-h:]) / h
+    n = len(vv)
+    mx, my = (n - 1) / 2, sum(vv) / n
+    den = sum((i - mx) ** 2 for i in range(n))
+    pend = sum((i - mx) * (y - my) for i, y in enumerate(vv)) / den if den else 0
+    if ds == "umore":
+        if abs(b - a) >= 0.7 and (b - a) * pend > 0:
+            return {"su": b > a, "prima": round(a, 1), "dopo": round(b, 1), "perc": None}
+        return None
+    if a <= 0:
+        return None
+    perc = round(100 * (b - a) / a)
+    if abs(perc) >= 15 and (b - a) * pend > 0:
+        return {"su": b > a, "prima": round(a, 2), "dopo": round(b, 2), "perc": perc}
+    return None
+
+
+def _periodo_prima_v28(da, a, chiave, oggi):
+    """Il periodo da confrontare: lo stesso pezzo del mese (o della settimana) prima, o la stessa lunghezza subito prima."""
+    if chiave == "questo_mese":
+        pf = da - datetime.timedelta(days=1)
+        p0 = pf.replace(day=1)
+        return p0, min(pf, p0 + datetime.timedelta(days=(a - da).days)), f"lo stesso periodo di {MESI_IT[p0.month - 1]}"
+    if chiave == "settimana":
+        return da - datetime.timedelta(days=7), a - datetime.timedelta(days=7), "gli stessi giorni della settimana scorsa"
+    if re.fullmatch(r"\d{4}-\d{2}|mese_scorso", chiave) and a == _fine_mese(da):
+        p0 = (da - datetime.timedelta(days=1)).replace(day=1)
+        return p0, _fine_mese(p0), MESI_IT[p0.month - 1]
+    if chiave == "settimana_scorsa":
+        return da - datetime.timedelta(days=7), a - datetime.timedelta(days=7), "la settimana prima"
+    L = (a - da).days + 1
+    return da - datetime.timedelta(days=L), da - datetime.timedelta(days=1), f"i {L} giorni prima"
+
+
+def esegui_spec_v28(spec, memoria=None, oggi=None):
+    """Esegue una richiesta già controllata. Solo letture: niente viene cambiato."""
+    oggi = oggi or datetime.date.today()
+    memoria = memoria if memoria is not None else MOTORE.memoria
+    ds, misura, gr = spec["dataset"], spec["misura"], spec["raggruppa"]
+    info = DATI_V28[ds]
+    add = info["additivo"]
+    tutte, f_et = filtra_v28(ds, righe_v28(ds, memoria), spec.get("filtro"))
+    tutte_ds = righe_v28(ds, memoria) if spec.get("filtro") else tutte
+    primo = min((r["data"] for r in tutte_ds), default=None)
+    da, a, p_et, p_k = periodo_v28(spec["periodo"], oggi)
+    inizio = datetime.date.fromisoformat(primo) if primo else oggi
+    if p_k == "tutto" and primo:
+        da, p_et = max(da, inizio), f"Da quando segno i dati (dal {_d_it(inizio, inizio.year != oggi.year)})"
+    sel = [r for r in tutte if da.isoformat() <= r["data"] <= a.isoformat()]
+    titolo = info["nome"].capitalize() + (f" · {f_et}" if f_et else "")
+    base = {"dataset": ds, "emoji": info["emoji"], "misura": misura, "periodo": {"da": da.isoformat(), "a": a.isoformat(), "etichetta": p_et, "chiave": p_k},
+            "filtro": f_et, "spec": spec, "additivo": add}
+    # 🆚 il confronto fra due periodi
+    if spec.get("confronta"):
+        d2, a2, e2, k2 = periodo_v28(spec["confronta"], oggi)
+        if (d2, a2) != (da, a):
+            if d2 < da:                                                   # prima il periodo più vecchio
+                (da, a, p_et, p_k), (d2, a2, e2, k2) = (d2, a2, e2, k2), (da, a, p_et, p_k)
+            if a2 == oggi and d2.day == 1 and da.day == 1 and a == _fine_mese(da) and (a2 - d2).days < (a - da).days:   # il mese in corso contro un mese intero: lo stesso pezzo
+                a = min(a, da + datetime.timedelta(days=(a2 - d2).days))
+                p_et += f" (1–{a.day})"
+            s1 = [r for r in tutte if da.isoformat() <= r["data"] <= a.isoformat()]
+            s2 = [r for r in tutte if d2.isoformat() <= r["data"] <= a2.isoformat()]
+            g = "categoria" if gr in ("categoria", "voce") or (gr == "nessuno" and ds in ("spese", "abitudini", "carte")) else "giorno_settimana" if gr == "giorno_settimana" else "nessuno"
+            sp = dict(spec, raggruppa=g, limite=8 if g == "categoria" else 0)
+            p1, _ = _calcola_v28(s1, sp, da, a, inizio, oggi)
+            p2, _ = _calcola_v28(s2, sp, d2, a2, inizio, oggi)
+            m2 = {p["k"]: p for p in p2}
+            chiavi = [p["k"] for p in p1] + [p["k"] for p in p2 if p["k"] not in {x["k"] for x in p1}]
+            et = {p["k"]: p["et"] for p in p1 + p2}
+            m1 = {p["k"]: p for p in p1}
+            punti = [{"k": k, "et": et[k], "v": (m1.get(k) or {}).get("v") or (0.0 if add else None), "v2": (m2.get(k) or {}).get("v") or (0.0 if add else None)} for k in chiavi]
+            if g == "categoria":
+                punti.sort(key=lambda p: -max(p["v"] or 0, p["v2"] or 0))
+                punti = punti[:8]
+            t1 = _valore_v28(s1, misura, add, _giorni_eff(da, a, inizio, min(a, oggi)))
+            t2 = _valore_v28(s2, misura, add, _giorni_eff(d2, a2, inizio, min(a2, oggi)))
+            for p in punti:
+                p["tip"] = f"{p['et']}: {fmt_v28(p['v'], ds, misura)} ({p_et.lower()}) → {fmt_v28(p['v2'], ds, misura)} ({e2.lower()})"
+            r = dict(base, titolo=f"{titolo}: {p_et.lower()} e {e2.lower()}", raggruppa=g, forma="numero2" if g == "nessuno" else "barre2", punti=punti,
+                     serie=[p_et, e2], totale=t1, totale2=t2, n=len(s1), n2=len(s2), periodo2={"da": d2.isoformat(), "a": a2.isoformat(), "etichetta": e2})
+            return _parole_confronto_v28(r)
+    punti, gr = _calcola_v28(sel, spec, da, a, inizio, oggi)
+    for p in punti:
+        p["tip"] = _tip_v28(p, ds, misura)
+    giorni = _giorni_eff(da, a, inizio, min(a, oggi))
+    totale = _valore_v28(sel, "somma" if add and misura != "conteggio" else misura, add, giorni)
+    forma = ("numero" if gr == "nessuno" else "barre" if gr in ("categoria", "voce") else "colonne" if gr == "giorno_settimana"
+             else "linea" if not add or len(punti) > 45 else "colonne")
+    r = dict(base, titolo=titolo + (f" {_NOMI_GRUPPI_V28[gr]}" if gr != "nessuno" else ""), raggruppa=gr, forma=forma, punti=punti, totale=totale, n=len(sel),
+             giorni=giorni, media_giorno=round(totale / giorni, 2) if add and giorni and totale is not None and misura != "conteggio" else None,
+             inizio_dati=primo, vuoto=not sel)
+    if add and misura in ("somma", "conteggio", "media") and primo:
+        p0, p1, et_prima = _periodo_prima_v28(da, a, p_k, oggi)
+        if p0 >= inizio:
+            prima = [x for x in tutte if p0.isoformat() <= x["data"] <= p1.isoformat()]
+            tp = _valore_v28(prima, "conteggio" if misura == "conteggio" else "somma", add, 0)
+            r["prima"] = {"totale": tp, "etichetta": et_prima, "da": p0.isoformat(), "a": p1.isoformat()}
+    return _parole_v28(r)
+
+
+def _parole_confronto_v28(r):
+    ds, misura = r["dataset"], r["misura"]
+    t1, t2 = r["totale"], r["totale2"]
+    s1, s2 = r["serie"]
+    ins = []
+    if t1 is None and t2 is None:
+        r.update(risposta=f"{r['emoji']} Non ho dati di {DATI_V28[ds]['nome']} né per {s1.lower()} né per {s2.lower()}.", insight=[], vuoto=True)
+        return r
+    dl = None
+    if t1 and t2 is not None:
+        dl = round(100 * (t2 - t1) / t1) if DATI_V28[ds]["additivo"] else None
+    frase = f"{r['emoji']} {s2}: **{fmt_v28(t2, ds, misura)}** · {s1.lower()}: {fmt_v28(t1, ds, misura)}"
+    if dl is not None:
+        frase += f" → {'+' if dl > 0 else '−'}{abs(dl)}%" if dl else " → uguale"
+    elif ds == "umore" and t1 is not None and t2 is not None:
+        d = round(t2 - t1, 1)
+        frase += f" → {'+' if d > 0 else ''}{str(d).replace('.', ',')} punti"
+    if r["raggruppa"] == "categoria":
+        var = [(p["v2"] or 0) - (p["v"] or 0) for p in r["punti"]]
+        if var:
+            i = max(range(len(var)), key=lambda i: var[i])
+            j = min(range(len(var)), key=lambda i: var[i])
+            if var[i] > 0:
+                ins.append(f"📈 Cresce di più: {r['punti'][i]['et']} (+{fmt_v28(var[i], ds, misura)}).")
+            if var[j] < 0:
+                ins.append(f"📉 Scende di più: {r['punti'][j]['et']} (−{fmt_v28(-var[j], ds, misura)}).")
+    if ds == "spese" and dl:
+        ins.append("👍 Hai speso meno." if dl < 0 else "💡 Hai speso di più: vuoi vedere dove si può tagliare? Prova «se taglio il mangiare fuori del 30%».")
+    r.update(risposta=frase + ".", insight=ins, delta=dl)
+    return r
+
+
+def _parole_v28(r):
+    """La risposta in una frase e quello che si nota (calcolato, non inventato)."""
+    ds, misura, gr = r["dataset"], r["misura"], r["raggruppa"]
+    info = DATI_V28[ds]
+    P = r["punti"]
+    pe = r["periodo"]["etichetta"]
+    ev = r["spec"].get("evidenzia")
+    ins = []
+    if r["vuoto"]:
+        come = {"spese": "dimmi per esempio «ho speso 12 € di pizza»", "abitudini": "segnale con «ho fatto palestra»", "attivita": "spunta le cose da fare quando le finisci",
+                "pomodori": "usa il timer di concentrazione (🍅)", "umore": "dimmi come ti senti, ogni tanto", "pc": "accendi la webcam (👀): conto solo i minuti",
+                "respiro": "dimmi «facciamo un esercizio di respirazione»", "carte": "ripassa le carte di studio («ripassiamo»)"}[ds]
+        r.update(risposta=f"{info['emoji']} {pe}: nessun dato di {info['nome']}{(' per ' + r['filtro']) if r['filtro'] else ''}. Per averne, {come}.", insight=[])
+        return r
+    tot_txt = fmt_v28(r["totale"], ds, "somma" if misura != "conteggio" else "conteggio")
+    if misura == "conteggio" or not info["additivo"]:
+        tot_txt = fmt_v28(r["totale"], ds, misura)
+    al_g = f"{fmt_v28(r['media_giorno'], ds, 'media')} al giorno" if r.get("media_giorno") is not None else ""
+    vals = [p for p in P if p["v"] is not None and not p.get("parziale") and not p.get("incompleto")] or [p for p in P if p["v"] is not None]
+    pmax = max(vals, key=lambda p: p["v"]) if vals else None
+    pmin = min(vals, key=lambda p: p["v"]) if vals else None
+    verbo = _VERBI_V28[ds]
+    um = " al giorno" if misura == "media" and info["additivo"] else ""
+    if gr == "nessuno":
+        if misura == "media" and info["additivo"]:
+            frase = f"{info['emoji']} {pe}: in media **{fmt_v28(r['totale'] / max(1, r['giorni']) if r['totale'] is not None else None, ds, 'media')} al giorno** ({tot_txt} in {r['giorni']} giorn{'o' if r['giorni'] == 1 else 'i'})"
+        elif misura == "media_voce":
+            frase = f"{info['emoji']} {pe}: in media **{fmt_v28(P[0]['v'], ds, misura)}** ogni volta ({r['n']} in tutto)"
+        elif misura == "conteggio":
+            frase = f"{info['emoji']} {pe}{(' · ' + r['filtro']) if r['filtro'] else ''}: **{fmt_v28(r['totale'], ds, 'conteggio')}**"
+        elif not info["additivo"]:
+            frase = f"{info['emoji']} {pe}: umore medio **{fmt_v28(r['totale'], ds, misura)}** ({r['n']} vol{'ta' if r['n'] == 1 else 'te'} che me l'hai detto)"
+        else:
+            frase = f"{info['emoji']} {pe}{(' · ' + r['filtro']) if r['filtro'] else ''}: **{tot_txt}**" + (f" ({al_g})" if al_g and r["giorni"] > 1 else "")
+    elif gr == "categoria":
+        tot = sum(p["v"] or 0 for p in P)
+        quota = f", {round(100 * pmax['v'] / tot)}%" if ds == "spese" and tot and misura != "media_voce" else ""
+        soggetto = {"spese": "La voce più grande", "abitudini": "L'abitudine che fai di più", "carte": "Il mazzo che ripassi di più", "umore": "L'umore più frequente",
+                    "respiro": "La tecnica che usi di più", "attivita": "Il progetto con più cose fatte"}.get(ds, "Il più alto")
+        frase = (f"{info['emoji']} {pe} · {soggetto[:1].lower() + soggetto[1:]}: **{pmax['et']}** ({fmt_v28(pmax['v'], ds, misura)}{um}{quota})" if pmax
+                 else f"{info['emoji']} {pe}: **{tot_txt}**")
+    elif gr == "voce":
+        p = P[0]
+        frase = (f"{info['emoji']} {pe} · {'la spesa più grande' if ds == 'spese' else 'il più alto'}: **{p['et']}** ({fmt_v28(p['v'], ds, misura)}, "
+                 f"{_d_it(datetime.date.fromisoformat(p['data']))})") if r["spec"]["ordina"] != "asc" else f"{info['emoji']} {pe} · la più piccola: **{p['et']}** ({fmt_v28(p['v'], ds, misura)})"
+    else:
+        soggetto = {"giorno": "il giorno", "settimana": "la settimana", "mese": "il mese", "giorno_settimana": "il giorno della settimana"}[gr]
+        target = pmin if ev == "min" else pmax
+        nominato = bool(target and (ev or gr in ("giorno_settimana", "mese")) and (target["v"] or not info["additivo"]))
+        if nominato:
+            et = target["et"] if gr != "giorno_settimana" else ("il " if target["k"] != "6" else "la ") + target["et"]
+            if gr == "giorno":
+                et = GIORNI_LUNGHI[datetime.date.fromisoformat(target["k"]).weekday()] + " " + _d_it(datetime.date.fromisoformat(target["k"]))
+            frase = f"{info['emoji']} {pe} · {soggetto} in cui {verbo[1] if ev == 'min' else verbo[0]}: **{et}** ({fmt_v28(target['v'], ds, misura)}{um})"
+        else:
+            frase = f"{info['emoji']} {pe}{(' · ' + r['filtro']) if r['filtro'] else ''}: **{tot_txt}**" + (f" ({al_g})" if al_g and r["giorni"] > 1 and misura != "conteggio" else "")
+    # quello che si nota
+    if gr in ("giorno", "settimana", "mese"):
+        tr = _trend_v28(P, ds)
+        if tr:
+            if tr["perc"] is None:
+                ins.append(f"{'📈' if tr['su'] else '📉'} L'umore è {'salito' if tr['su'] else 'sceso'}: da {fmt_v28(tr['prima'], ds, misura)} a {fmt_v28(tr['dopo'], ds, misura)} in media.")
+            else:
+                ins.append(f"{'📈 In aumento' if tr['su'] else '📉 In calo'}: nella seconda metà del periodo {fmt_v28(tr['dopo'], ds, misura)}{um} in media, contro {fmt_v28(tr['prima'], ds, misura)} ({'+' if tr['perc'] > 0 else ''}{tr['perc']}%).")
+        if pmax and pmin and pmax is not pmin:
+            if not nominato:
+                et_max = pmax["et"] if gr != "giorno" else _d_it(datetime.date.fromisoformat(pmax["k"]))
+                ins.append(f"🔝 Il picco: {et_max} ({fmt_v28(pmax['v'], ds, misura)}{um}).")
+            elif ev != "min" and gr != "giorno":
+                ins.append(f"🔻 Il più basso: {pmin['et']} ({fmt_v28(pmin['v'], ds, misura)}{um}).")
+            elif ev == "min" and gr != "giorno":
+                ins.append(f"🔝 Il più alto: {pmax['et']} ({fmt_v28(pmax['v'], ds, misura)}{um}).")
+        if any(p.get("parziale") for p in P):
+            ins.append("⏳ Il mese in corso non è finito: nel grafico è più chiaro e non lo conto per la tendenza." if gr == "mese"
+                       else "⏳ La settimana in corso non è finita: nel grafico è più chiara e non la conto per la tendenza.")
+    if gr == "giorno_settimana" and vals:
+        if info["additivo"]:
+            we = [p["v"] for p in P[5:] if p["v"] is not None]
+            fe = [p["v"] for p in P[:5] if p["v"] is not None]
+            if we and fe:
+                a, b = sum(fe) / len(fe), sum(we) / len(we)
+                if a and (b / a >= 1.3 or b / a <= 0.77):
+                    ins.append(f"🗓️ Nel weekend {fmt_v28(b, ds, misura)}{um}, nei giorni feriali {fmt_v28(a, ds, misura)}{um}.")
+        altro = pmax if ev == "min" else pmin
+        if pmin and pmin is not pmax:
+            ins.append(f"{'🔝' if ev == 'min' else '🔻'} {('Il ' if altro['k'] != '6' else 'La ')}{altro['et']}: {fmt_v28(altro['v'], ds, misura)}{um}"
+                       + (" (il più alto)." if ev == "min" else " (il più basso)."))
+    if gr == "voce" and len(P) > 1:
+        ins.append("🧾 Poi: " + ", ".join(f"{p['et']} ({fmt_v28(p['v'], ds, misura)}, {_d_it(datetime.date.fromisoformat(p['data']))})" for p in P[1:5]) + ("…" if len(P) > 5 else "") + ".")
+    if gr == "categoria" and len(P) >= 3 and info["additivo"] and misura != "media_voce":
+        tot = sum(p["v"] or 0 for p in P)
+        if tot and (P[0]["v"] + P[1]["v"]) / tot >= 0.6:
+            ins.append(f"🎯 Le prime due ({P[0]['et']} e {P[1]['et']}) fanno il {round(100 * (P[0]['v'] + P[1]['v']) / tot)}% del totale.")
+    if r.get("prima") and r["prima"]["totale"]:
+        t = r["totale"] if misura != "conteggio" else r["n"]
+        tp = r["prima"]["totale"]
+        dl = round(100 * (t - tp) / tp) if tp else None
+        if dl is not None and gr in ("nessuno", "categoria", "giorno", "settimana", "mese"):
+            ins.append(f"{'➡️' if dl == 0 else '📉' if dl < 0 else '📈'} Rispetto {_a_art(r['prima']['etichetta'])} ({fmt_v28(tp, ds, 'conteggio' if misura == 'conteggio' else 'somma')}): "
+                       + ("uguale" if dl == 0 else f"{'+' if dl > 0 else '−'}{abs(dl)}%")
+                       + (" 👍" if (dl < 0) == (ds == "spese") and dl != 0 else "") + ".")
+    if gr in ("nessuno", "categoria") and al_g and misura in ("somma",) and r["giorni"] > 1:
+        ins.append(f"📊 In media {al_g}, {r['n']} {info['u'][0] if r['n'] == 1 else info['u'][1]} in {r['giorni']} giorni.")
+    if r.get("inizio_dati") and r["inizio_dati"] > r["periodo"]["da"] and r["periodo"]["chiave"] != "tutto":
+        ins.append(f"ℹ️ I dati partono dal {_d_it(datetime.date.fromisoformat(r['inizio_dati']))} (da quando li segni).")
+    r.update(risposta=frase + ".", insight=ins[:5])
+    return r
+
+
+# ── 🗣️ le domande più comuni le capisco da solo; le altre le traduce il modello (e io controllo) ──
+_RE_ANALISI_V28 = re.compile(
+    r"\bin\s+media\b|\bmedia\b|\bmediamente\b|\bgrafic\w*|\bandament\w*|\btrend\b|\bstatistich\w*|\banalizz\w*|\banalisi\b|\bconfront\w*|\bparagon\w*|\brispetto\s+a(?:l|lla|gli|i)?\b"
+    r"|\bquante\s+volte\b|\bquanti\s+giorni\b|\bin\s+(?:che|quale|quali)\s+(?:giorn|mes|settiman|period|categori|ora)\w*|\b(?:che|quale|qual\s+e|qual['’]\s*e)\s+(?:il\s+|la\s+|l['’]\s*)?(?:giorno|mese|settimana|categoria|voce|abitudine|mazzo)\b"
+    r"|\b(?:il\s+)?giorno\s+in\s+cui\b|\bil\s+mese\s+in\s+cui\b|\bpi[uù]\s+(?:grand|cost|car[aei]\b|alt[aei]\b|pesant)\w*|\bmaggiori\b|\bclassifica\b|\btop\s*\d+\b|\bper\s+(?:categori|mese\b|settimana\b|giorno\b|abitudine|mazzo|progetto)\w*"
+    r"|\bmese\s+per\s+mese\b|\bgiorno\s+per\s+giorno\b|\bsettimana\s+per\s+settimana\b|\bdistribuzion\w*|\bripartizion\w*|\bcome\s+(?:e|è|sta)\s+andat[oa]\b|\bnel\s+tempo\b"
+    r"|\bdi\s+pi[uù]\s+(?:il|la|nel|in|di)\b|\b(?:spendo|faccio|sono|mi\s+sento)\s+(?:di\s+)?(?:pi[uù]|meno)\b|\bquant[aeio]\s+(?:carte|pomodori|cose|minuti|ore|sessioni)\s+(?:ho|abbiamo)\b", re.I)
+_RX_DATASET_V28 = [
+    ("umore", r"\bumor\w*|\bfelic\w*|\btrist\w*|\bstato\s+d['’]\s*animo|\bdi\s+buon\s+umore|\bcome\s+mi\s+(?:sento|sono\s+sentit\w*)\b|\bpi[uù]\s+gi[uù]\b"),
+    ("pomodori", r"\bpomodor\w*|\bconcentrazion\w*|\bsessioni\s+di\s+focus\b"),
+    ("pc", r"\b(?:al|davanti\s+al|sul)\s+(?:pc|computer|schermo)\b|\btempo\s+(?:al|davanti)\b"),
+    ("respiro", r"\brespir\w*"),
+    ("carte", r"\bcarte\b|\bflashcard\w*|\bripass\w*|\bmazz[oi]\b"),
+    ("attivita", r"\bcose\s+(?:fatte|completate|chiuse|che\s+ho\s+fatto)\b|\battivit[aà]\s+(?:fatte|completate|chiuse)\b|\bcompiti\s+(?:fatti|completati)\b|\bproduttiv\w*|\bconcludo\b|\bcose\s+(?:ho\s+)?(?:fatto|completato|chiuso|concluso)\b|\bcose\s+da\s+fare\s+(?:fatte|completate)"),
+    ("abitudini", r"\babitudin\w*"),
+    ("spese", r"\bspes[aeio]\b|\bspeso\b|\bspend\w*|\bsoldi\b|\beuro\b|€|\bpagat\w*|\bcost[aio]\w*|\bbudget\b"),
+]
+_PAROLE_VUOTE_V28 = set("""quanto quanta quanti quante come cosa dove quale quali qual media medio mediamente grafico grafici andamento trend statistiche statistica analizza analisi
+confronta confronto paragona rispetto volte volta giorno giorni settimana settimane mese mesi anno anni ultimo ultima ultimi ultime questo questa scorso scorsa oggi ieri
+spendo speso spese spesa spendere soldi euro pagato costa costano costi categoria categorie voce voci grande grandi costose costosa maggiori classifica sempre totale
+piu meno fatto fatte faccio sono stato stata andato andata mostrami fammi dimmi vedere tempo periodo nel della delle degli dello dalla dagli tra fra
+lunedi martedi mercoledi giovedi venerdi sabato domenica weekend feriali mio mia miei mie ogni distribuzione ripartizione evoluzione assoluto quando sempre
+""".split()) | set(_MESI_NA)
+
+
+def _dataset_v28(tl, testo):
+    """Di quali dati parla la frase (le spese prima di tutto: «quanto ho speso per le carte da gioco» sono soldi). → (dataset, filtro)."""
+    if re.search(r"\blista\s+della\s+spesa\b", tl):
+        return None, ""
+    spese = re.search(dict(_RX_DATASET_V28)["spese"], tl)
+    if spese and not re.search(r"\babitudin\w*", tl):
+        return "spese", ""
+    ds = next((k for k, rx in _RX_DATASET_V28 if k not in ("spese", "abitudini") and re.search(rx, tl)), None)
+    if ds:
+        return ds, ""
+    a = ABITUDINI.trova(testo) if ABITUDINI.elenco() else None
+    if re.search(r"\babitudin\w*", tl):
+        return "abitudini", (a["nome"] if a else "")
+    if a and re.search(r"\bquant[ei]\s+volte\b|\bquanti\s+giorni\b|\bho\s+(?:fatto|\w+ato|\w+uto|\w+ito)\b|\bsono\s+andat|\bgrafic|\bandament|\bin\s+media\b|\bin\s+(?:che|quale)\s+giorn", tl):
+        return "abitudini", a["nome"]
+    return None, ""
+
+
+def _e_domanda_v28(t):
+    """Una domanda o una richiesta, non un racconto («sono più felice di prima» non chiede un grafico)."""
+    tl = _senza_accenti(t.lower()).strip()
+    return tl.endswith("?") or bool(re.match(
+        r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:quant|quand|qual|che\b|in\s+(?:che|quale|quali)\b|come\b|dove\b|perch|mostra|fammi|dammi|dimmi|analizz|confront|paragon|grafic|statistic|"
+        r"andament|trend|le\s+mie\b|i\s+miei\b|il\s+mio\b|la\s+mia\b|l['’]\s*andamento|vorrei\s+vedere|voglio\s+vedere|puoi\b|mi\s+(?:fai|mostri|dici)\b|calcola|spese\b|"
+        r"abitudini\b|umore\b|ripartizion|distribuzion|top\b|classifica|media\b|il\s+giorno\b|il\s+mese\b)", tl))
+
+
+def _filtro_spese_v28(tl):
+    parole = [w for w in re.findall(r"[a-z0-9]+", tl) if len(w) > 3 and w not in _STOP and w not in _PAROLE_VUOTE_V28 and not w.isdigit()]
+    tutte = SPESE.tutte()
+    for w in parole:
+        st = _stem_v28(w)
+        if any(st in _senza_accenti(x["descrizione"]).lower() for x in tutte):
+            return w
+    cat = categoria_spesa(" ".join(parole)) if parole else None
+    return cat or ""
+
+
+def capisci_domanda_v28(testo, oggi=None):
+    """Le domande più comuni → (richiesta, sicuro). sicuro=False: è una domanda sui dati ma non sono certo di come raggrupparla."""
+    oggi = oggi or datetime.date.today()
+    t = re.sub(r"\s+", " ", (testo or "").strip())
+    tl = _senza_accenti(t.lower()).rstrip(" ?!.")
+    ds, filtro = _dataset_v28(tl, t)
+    if not ds:
+        return None, False
+    if ds == "spese":
+        filtro = _filtro_spese_v28(tl)
+    elif ds == "carte":
+        m = re.search(r"\b(?:di|del\s+mazzo|mazzo)\s+([a-z]{3,}(?:\s+[a-z]{3,})?)", tl)
+        filtro = m.group(1) if m and m.group(1).split()[0] not in _PAROLE_VUOTE_V28 and STUDIO.trova_mazzo(m.group(1)) else ""
+    sicuro = True
+    abituale = bool(re.search(r"\b(?:spendo|faccio|mi\s+sento|concludo|ripasso|respiro|lavoro|sto|vado|uso)\b|\bsono\s+(?:pi[uù]|meno|di\s+buon|felice|triste|produttiv)", tl))
+    if re.search(r"\bquante\s+volte\b|\bquanti\s+giorni\b|\bnumero\s+di\b|\bquant[aei]\s+spese\b|\bquant[aeio]\s+(?:carte|pomodori|cose|sessioni)\b", tl):
+        misura = "conteggio"
+    elif re.search(r"\bogni\s+volta\b|\ba\s+volta\b|\bper\s+(?:spesa|volta|scontrino|sessione)\b|\bin\s+media\s+(?:una|ogni|per)\s+(?:spesa|volta|sessione)\b|\bspesa\s+media\b", tl):
+        misura = "media_voce"
+    elif re.search(r"\bin\s+media\b|\bmedi[ao]\b|\bmediamente\b|\bal\s+giorno\b", tl):
+        misura = "media"
+    else:
+        misura = "somma"
+    if ds == "umore" and misura == "somma":
+        misura = "media"
+    if ds == "abitudini" and misura == "somma":
+        misura = "conteggio"
+    periodi = periodi_nel_testo_v28(tl, oggi)
+    confronta = ""
+    if re.search(r"\bconfront\w*|\bparagon\w*|\brispetto\s+a|\bcontro\b|\bvs\b", tl) and len(periodi) >= 2:
+        confronta = periodi[1]
+    periodo = periodi[0] if periodi else ""
+    if re.search(r"\bgiorn\w*\s+della\s+settimana\b|\bweekend\b|\bfine\s+settimana\b|\bgiorni\s+feriali\b", tl) or \
+            (re.search(r"\b(?:in\s+)?(?:che|quale|quali)\s+giorn|\bil\s+giorno\s+in\s+cui\b|\bper\s+giorno\b", tl) and abituale):
+        gr = "giorno_settimana"
+    elif re.search(r"\b(?:in\s+)?(?:che|quale|quali)\s+giorn|\bil\s+giorno\s+in\s+cui\b|\bgiorno\s+per\s+giorno\b|\bper\s+giorno\b", tl):
+        gr = "giorno"
+    elif re.search(r"\b(?:in\s+)?(?:che|quale|quali)\s+mes|\bil\s+mese\s+in\s+cui\b|\bper\s+mese\b|\bmese\s+per\s+mese\b|\bogni\s+mese\b|\bmensil", tl):
+        gr = "mese"
+    elif re.search(r"\b(?:in\s+)?(?:che|quale|quali)\s+settiman|\bla\s+settimana\s+in\s+cui\b|\bper\s+settimana\b|\bsettimana\s+per\s+settimana\b|\bsettimanal", tl):
+        gr = "settimana"
+    elif re.search(r"\bcategori\w*|\bin\s+cosa\b|\bper\s+cosa\b|\bdove\s+(?:spendo|ho\s+speso|vanno|finiscono)\b|\bripartizion\w*|\bdistribuzion\w*|\bvoci\b|\bper\s+abitudine\b|\bquale\s+abitudine\b|\bquali\s+abitudini\b|\bper\s+mazzo\b|\bquale\s+mazzo\b|\bper\s+progetto\b|\bquale\s+tecnica\b", tl):
+        gr = "categoria"
+    elif ds == "spese" and re.search(r"\bpi[uù]\s+(?:grand|cost|car[aei]\b|pesant)\w*|\bmaggiori\b|\bclassifica\b|\btop\s*\d*\b|\bpi[uù]\s+piccol\w*", tl):
+        gr = "voce"
+    elif re.search(r"\bgrafic\w*|\bandament\w*|\btrend\b|\bcome\s+(?:e|sta)\s+andat[oa]\b|\bnel\s+tempo\b|\bevoluzion\w*", tl):
+        da, a, _, _ = periodo_v28(periodo or ("giorni:30" if ds != "spese" else "mesi:6"), oggi)
+        gr = "giorno" if (a - da).days <= 45 else "settimana" if (a - da).days <= 120 else "mese"
+        periodo = periodo or ("giorni:30" if ds != "spese" else "mesi:6")
+    elif re.search(r"\bstatistich\w*|\banalizz\w*|\banalisi\b", tl):
+        gr = "categoria" if ds in ("spese", "abitudini", "carte") and not confronta else "giorno" if not confronta else "nessuno"
+        if gr == "giorno" and not periodo:
+            periodo = "giorni:30"
+    else:
+        gr = "nessuno"
+        sicuro = bool(confronta or re.search(r"\bquant[aeio]\b|\bin\s+media\b|\bmedi[ao]\b|\bmediamente\b|\bal\s+giorno\b", tl))
+    if gr == "giorno_settimana" and misura == "somma" and DATI_V28[ds]["additivo"] and not re.search(r"\bin\s+tutto\b|\btotal\w*", tl):
+        misura = "media"                                         # i giorni della settimana si confrontano con la media (non sono tutti lo stesso numero)
+    if gr == "voce" and re.search(r"\bpi[uù]\s+piccol\w*", tl):
+        ordina = "asc"
+    else:
+        ordina = ""
+    ev = "min" if re.search(r"\bdi\s+meno\b|\bmeno\b|\bminim\w*|\bpeggior\w*|\bpi[uù]\s+bass\w*|\bpi[uù]\s+gi[uù]\b|\bpi[uù]\s+trist\w*", tl) else \
+         "max" if re.search(r"\bdi\s+pi[uù]\b|\bpi[uù]\b|\bmassim\w*|\bmiglior\w*|\brecord\b", tl) else ""
+    lim = 0
+    m = re.search(r"\btop\s*(\d{1,2})\b|\b(\d{1,2}|tre|cinque|dieci)\s+(?:spese\s+)?pi[uù]\s+(?:grand|cost|car|pesant|piccol)", tl)
+    if m:
+        x = m.group(1) or m.group(2)
+        lim = int(x) if x.isdigit() else _NUMERI_V28.get(x, 5)
+    spec = normalizza_spec_v28({"dataset": ds, "misura": misura, "raggruppa": gr, "periodo": periodo, "filtro": filtro, "evidenzia": ev, "ordina": ordina,
+                                "limite": lim, "confronta": confronta, "analizza": bool(re.search(r"\banalizz\w*|\banalisi\b|\bstatistich\w*", tl))}, oggi)
+    return spec, sicuro
+
+
+def spec_dal_modello_v28(testo, cervello, oggi=None):
+    oggi = oggi or datetime.date.today()
+    try:
+        abit = ", ".join(a["nome"] for a in ABITUDINI.elenco()[:12]) or "nessuna"
+    except Exception:
+        abit = "nessuna"
+    prompt = (f"Sei l'analista dei dati di MAIK. Trasforma la domanda della persona in una richiesta sui SUOI dati: non rispondere tu e non inventare numeri. "
+              f"Oggi è {data_it(oggi)} ({oggi.isoformat()}). Dati disponibili, SOLO questi: spese (euro, categorie: {', '.join(CAT_SPESE)}), "
+              f"abitudini (le volte che le ha fatte; le sue abitudini: {abit}), attivita (cose da fare completate), pomodori (sessioni di concentrazione), "
+              "umore (da 0 a 10), pc (minuti davanti al PC), respiro (minuti di esercizi di respiro), carte (carte di studio ripassate).\n"
+              "misura: somma | conteggio | media (al giorno; per l'umore la media) | media_voce (in media ogni volta). "
+              "raggruppa: nessuno | giorno | settimana | mese | giorno_settimana | categoria | voce (le singole spese). "
+              "periodo: oggi | ieri | settimana | settimana_scorsa | questo_mese | mese_scorso | quest_anno | anno_scorso | tutto | giorni:N | settimane:N | mesi:N | AAAA-MM | AAAA. "
+              "filtro: una categoria, un'abitudine o una parola (o vuoto). evidenzia: max | min | vuoto. confronta: un secondo periodo da confrontare (o vuoto).\n"
+              f"DOMANDA: «{testo}»\nRispondi SOLO in JSON: "
+              '{"dataset": "spese", "misura": "somma", "raggruppa": "categoria", "periodo": "questo_mese", "filtro": "", "evidenzia": "max", "confronta": ""}')
+    try:
+        j = cervello.pensa_json(prompt, timeout=90, num_predict=200)
+    except Exception:
+        j = None
+    return normalizza_spec_v28(j, oggi) if isinstance(j, dict) else None
+
+
+def _guardie_v28(t):
+    """Le frasi che hanno già un posto loro (le spese del mese, le tendenze, i pomodori di oggi, le carte da ripassare…)."""
+    tt = t.rstrip(" ?!.")
+    return any(rx.match(tt) for rx in (_RE_TENDENZE, _RE_POMODORI, _RE_PRESENZA, _RE_STUDIO_STATO, _RE_AB_ELENCO, _RE_SITUAZIONE)) or \
+        bool(re.match(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:ogni|tutti\s+i|tutte\s+le|nei\s+giorni|nel\s+weekend|dal\s+luned)", tt, re.I))
+
+
+def analisi_router(testo, motore, oggi=None):
+    t = re.sub(r"\s+", " ", (testo or "").strip())
+    if len(t) > 220 or not _RE_ANALISI_V28.search(_senza_accenti(t.lower())) or not _e_domanda_v28(t) or _guardie_v28(t):
+        return None
+    spec, sicuro = capisci_domanda_v28(t, oggi)
+    if not spec:
+        return None
+    fonte = "regole"
+    if not sicuro and motore is not None and motore.cervello.disponibile():
+        sm = spec_dal_modello_v28(t, motore.cervello, oggi)
+        if sm:
+            spec, fonte = sm, "modello"
+    r = esegui_spec_v28(spec, motore.memoria if motore is not None else MOTORE.memoria, oggi)
+    r["fonte"] = fonte
+    r["domanda"] = t[:200]
+    if spec.get("analizza") and spec["dataset"] == "spese" and not r.get("vuoto") and not spec.get("confronta"):
+        r["insight"] = (r["insight"] + _extra_spese_v28(motore, oggi))[:6]
+    r["voce"] = re.sub(r"\*\*|[_`]", "", r["risposta"])
+    testo_out = r["risposta"] + ("\n" + "\n".join("- " + x for x in r["insight"]) if r["insight"] else "")
+    return {"testo": testo_out, "analisi": r}
+
+
+def _extra_spese_v28(motore, oggi=None):
+    """«analizza le mie spese»: anche il giorno della settimana, la spesa più grande e la previsione."""
+    out = []
+    mem = motore.memoria if motore is not None else MOTORE.memoria
+    try:
+        g = esegui_spec_v28(normalizza_spec_v28({"dataset": "spese", "misura": "media", "raggruppa": "giorno_settimana", "periodo": "giorni:90", "evidenzia": "max"}, oggi), mem, oggi)
+        if not g.get("vuoto"):
+            p = max((x for x in g["punti"] if x["v"] is not None), key=lambda x: x["v"])
+            out.append(f"🗓️ Negli ultimi 90 giorni spendi di più {('il ' if p['k'] != '6' else 'la ')}{p['et']} ({euro(p['v'])} al giorno in media).")
+        v = esegui_spec_v28(normalizza_spec_v28({"dataset": "spese", "raggruppa": "voce", "periodo": "questo_mese", "limite": 1}, oggi), mem, oggi)
+        if not v.get("vuoto"):
+            p = v["punti"][0]
+            out.append(f"🧾 La spesa più grande del mese: {p['et']} ({euro(p['v'])}).")
+        pr = previsione_spese(oggi)
+        if pr and pr["giorni_mancanti"] > 0:
+            out.append(f"🔮 A questo ritmo a fine mese arrivi a circa {euro(round(pr['previsione']))}.")
+    except Exception:
+        pass
+    return out
+
+
+# ── 🔮 LA PREVISIONE: quanto spenderò questo mese (e il budget) ──
+_FISSE_V28 = ("bollette", "casa")
+
+
+def _chiave_fissa(desc):
+    return " ".join(_normalizza(desc).split()[:2])
+
+
+def previsione_spese(oggi=None):
+    """Fine mese = speso finora + il ritmo delle spese di tutti i giorni × i giorni che mancano + le spese fisse che di solito arrivano dopo
+    (bollette, affitto: le conto una volta, non come ritmo). Il ritmo del mese si mescola con quello degli ultimi 60 giorni finché il mese è giovane."""
+    oggi = oggi or datetime.date.today()
+    tutte = SPESE.tutte()
+    if not tutte:
+        return None
+    m0, fine = oggi.replace(day=1), _fine_mese(oggi)
+    resto = (fine - oggi).days
+    primo = datetime.date.fromisoformat(min(s["data"] for s in tutte))
+    mese = [s for s in tutte if m0.isoformat() <= s["data"] <= oggi.isoformat()]
+    speso = round(sum(s["importo"] for s in mese), 2)
+    gg_eff = max(1, (oggi - max(m0, primo)).days + 1)
+    var_mese = sum(s["importo"] for s in mese if s["categoria"] not in _FISSE_V28)
+    rit_mese = var_mese / gg_eff
+    h0 = max(m0 - datetime.timedelta(days=60), primo)
+    gg_storia = (m0 - h0).days
+    rit_storia = (sum(s["importo"] for s in tutte if h0.isoformat() <= s["data"] < m0.isoformat() and s["categoria"] not in _FISSE_V28) / gg_storia) if gg_storia >= 14 else None
+    w = min(1.0, gg_eff / 14) if rit_storia is not None else 1.0
+    ritmo = w * rit_mese + (1 - w) * (rit_storia or 0)
+    pf = m0 - datetime.timedelta(days=1)
+    p0 = pf.replace(day=1)
+    gia = {_chiave_fissa(s["descrizione"]) for s in mese if s["categoria"] in _FISSE_V28}
+    attese = []
+    for s in sorted(tutte, key=lambda s: s["data"]):
+        if p0.isoformat() <= s["data"] <= pf.isoformat() and s["categoria"] in _FISSE_V28 and int(s["data"][8:10]) > oggi.day:
+            k = _chiave_fissa(s["descrizione"])
+            if k not in gia:
+                gia.add(k)
+                attese.append({"descrizione": s["descrizione"], "importo": s["importo"], "giorno": min(int(s["data"][8:10]), fine.day)})
+    fissi = round(sum(x["importo"] for x in attese), 2)
+    # quanto ballano le spese di tutti i giorni (ultimi 30 giorni, anche quelli a zero)
+    g30 = max(primo, oggi - datetime.timedelta(days=29))
+    per_g = collections.defaultdict(float)
+    for s in tutte:
+        if g30.isoformat() <= s["data"] <= oggi.isoformat() and s["categoria"] not in _FISSE_V28:
+            per_g[s["data"]] += s["importo"]
+    vals = [per_g.get((g30 + datetime.timedelta(days=i)).isoformat(), 0.0) for i in range((oggi - g30).days + 1)]
+    mu = sum(vals) / len(vals) if vals else 0
+    sigma = (sum((x - mu) ** 2 for x in vals) / max(1, len(vals) - 1)) ** 0.5 if len(vals) > 1 else ritmo
+    prev = speso + ritmo * resto + fissi
+    marg = sigma * (resto ** 0.5)
+    basso, alto = max(speso + fissi, prev - marg), prev + marg
+    # le curve: questo mese (cumulato), la previsione con la fascia, il mese scorso
+    cum, reale = 0.0, []
+    per_giorno_mese = collections.defaultdict(float)
+    for s in mese:
+        per_giorno_mese[int(s["data"][8:10])] += s["importo"]
+    for d in range(1, oggi.day + 1):
+        cum += per_giorno_mese.get(d, 0)
+        reale.append({"g": d, "v": round(cum, 2)})
+    futuro = []
+    extra = 0.0
+    for k in range(0, resto + 1):
+        d = oggi.day + k
+        extra += sum(x["importo"] for x in attese if x["giorno"] == d) if k else 0
+        base = speso + ritmo * k + extra
+        futuro.append({"g": d, "v": round(base, 2), "basso": round(max(speso + extra, base - sigma * k ** 0.5), 2), "alto": round(base + sigma * k ** 0.5, 2)})
+    prima, cp = [], 0.0
+    pm = collections.defaultdict(float)
+    for s in tutte:
+        if p0.isoformat() <= s["data"] <= pf.isoformat():
+            pm[int(s["data"][8:10])] += s["importo"]
+    if primo <= p0 + datetime.timedelta(days=3) and pm:          # il mese scorso solo se lo segnavi già tutto
+        for d in range(1, pf.day + 1):
+            cp += pm.get(d, 0)
+            prima.append({"g": d, "v": round(cp, 2)})
+    out = {"mese": MESI_IT[oggi.month - 1], "anno": oggi.year, "oggi_giorno": oggi.day, "giorni_mese": fine.day, "giorni_mancanti": resto, "speso": speso,
+           "ritmo": round(ritmo, 2), "fissi_attesi": attese, "previsione": round(prev, 2), "basso": round(basso, 2), "alto": round(alto, 2),
+           "reale": reale, "futuro": futuro, "mese_scorso": prima, "mese_scorso_nome": MESI_IT[p0.month - 1],
+           "mese_scorso_a_oggi": prima[min(oggi.day, len(prima)) - 1]["v"] if prima else None, "mese_scorso_totale": prima[-1]["v"] if prima else None,
+           "incerta": gg_eff < 5 and rit_storia is None}
+    b = SPESE.budget().get("totale")
+    if b:
+        disp = b - speso - fissi
+        out["budget"] = {"totale": b, "margine": round(b - prev, 2), "al_giorno": round(disp / resto, 2) if resto > 0 else None, "sfora": prev > b, "gia_sforato": speso > b}
+    return out
+
+
+def testo_previsione(p):
+    righe = [f"🔮 **Previsione di {p['mese']}**: a questo ritmo arrivi a circa **{euro(round(p['previsione']))}**"
+             + (f" (probabilmente tra {euro(round(p['basso']))} e {euro(round(p['alto']))})" if p["giorni_mancanti"] and p["alto"] - p["basso"] >= 10 else "") + "."]
+    righe.append(f"Finora {euro(p['speso'])} in {p['oggi_giorno']} giorn{'o' if p['oggi_giorno'] == 1 else 'i'}; le spese di tutti i giorni vanno a circa {euro(p['ritmo'])} al giorno"
+                 + (f" e mancano {p['giorni_mancanti']} giorn{'o' if p['giorni_mancanti'] == 1 else 'i'}." if p["giorni_mancanti"] else ": il mese finisce oggi."))
+    if p["fissi_attesi"]:
+        righe.append("📌 Ho contato anche le spese fisse che di solito arrivano più avanti: " + ", ".join(f"{x['descrizione']} ({euro(x['importo'])}, il mese scorso il {x['giorno']})" for x in p["fissi_attesi"][:3]) + ".")
+    b = p.get("budget")
+    if b:
+        if b["gia_sforato"]:
+            righe.append(f"🚨 Il budget di {euro(b['totale'])} è già superato.")
+        elif b["sfora"]:
+            righe.append(f"🎯 Budget {euro(b['totale'])}: a questo ritmo lo sfori di circa **{euro(round(-b['margine']))}**."
+                         + (f" Per restarci dentro: al massimo **{euro(max(0, b['al_giorno']))} al giorno**." if b.get("al_giorno") is not None else ""))
+        else:
+            righe.append(f"🎯 Budget {euro(b['totale'])}: resti sotto di circa {euro(round(b['margine']))} 👍"
+                         + (f" (puoi spendere fino a {euro(b['al_giorno'])} al giorno)." if b.get("al_giorno") is not None else "."))
+    if p.get("mese_scorso_a_oggi") is not None:
+        righe.append(f"📅 A {p['mese_scorso_nome']}, a quest'ora, eri a {euro(p['mese_scorso_a_oggi'])} (e in tutto {euro(p['mese_scorso_totale'])}).")
+    if p.get("incerta"):
+        righe.append("ℹ️ Ho ancora pochi dati: la previsione è indicativa e migliora man mano che segni le spese.")
+    return "\n".join(righe)
+
+
+_RE_PREVISIONE = re.compile(_P + r"(?:(?:fammi\s+|dammi\s+|mostrami\s+)?(?:la\s+|una\s+)?previsione\s+(?:delle\s+)?(?:mie\s+)?spese(?:\s+(?:di\s+questo\s+mese|del\s+mese|di\s+fine\s+mese))?"
+                            r"|(?:fammi\s+|dammi\s+)?(?:la\s+|una\s+)?previsione\s+(?:di\s+)?fine\s+mese"
+                            r"|quanto\s+spender[oò](?:\s+(?:questo\s+mese|in\s+tutto|a\s+fine\s+mese|entro\s+fine\s+mese))?"
+                            r"|(?:a\s+fine\s+mese\s+)?quanto\s+avr[oò]\s+speso(?:\s+a\s+fine\s+mese)?"
+                            r"|(?:sforer[oò]|supero|superer[oò]|rientro\s+(?:ne|nel)|resto\s+nel|ce\s+la\s+faccio\s+col)\s+(?:il\s+)?budget"
+                            r"|arrivo\s+a\s+fine\s+mese(?:\s+con\s+il\s+budget)?|come\s+(?:finir[aà]|chiuder[oò])\s+(?:il\s+|questo\s+)?mese(?:\s+con\s+le\s+spese)?)$", re.I)
+
+
+def previsione_router(testo):
+    if not _RE_PREVISIONE.match(re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")):
+        return None
+    p = previsione_spese()
+    if not p:
+        return {"testo": "🔮 Per fare una previsione mi servono un po' di spese: dimmi per esempio «ho speso 12 € di pizza» e tra qualche giorno ti dico come finisce il mese."}
+    t = testo_previsione(p)
+    p["voce"] = re.sub(r"\*\*", "", t.split("\n")[0])
+    return {"testo": t, "previsione": p}
+
+
+# ── 💰 IL SIMULATORE: «se risparmio 5 € al giorno?», «quando arrivo a 2000 con 100 al mese?», «se taglio il mangiare fuori del 30%?» ──
+_IMP_V28 = r"(?P<imp>€?\s*\d[\d.,]*\s*(?:€|euro)?)"
+_OGNI_V28 = r"(?P<ogni>al\s+giorno|a(?:lla)?\s+settimana|al\s+mese|all['’]\s*anno|ogni\s+(?:giorno|settimana|mese|anno)|al\s+d[iì])"
+_RE_SIM_ACCUMULO = re.compile(_P + r"(?:e\s+)?se\s+(?:io\s+)?(?:risparmi(?:o|assi)|mett(?:o|essi)\s+(?:da\s+parte|via)|accanton(?:o|assi)|mettessi\s+da\s+parte|metto\s+in\s+salvadanaio)\s+"
+                              + _IMP_V28 + r"\s*" + _OGNI_V28 + r"(?P<resto>.*)$", re.I)
+_RE_SIM_OBIETTIVO = re.compile(_P + r"(?:quanto\s+ci\s+metto|in\s+quanto\s+tempo|quando)\s+(?:ad?\s+|ci\s+)?(?:arrivo|arriverei|arrivare|metto\s+da\s+parte|mettere\s+da\s+parte|risparmio|risparmiare|raggiungo|raggiungere)\s+(?:a\s+)?"
+                               r"(?P<ob>€?\s*\d[\d.,]*\s*(?:€|euro|mila)?)(?P<resto>.*)$", re.I)
+_RE_SIM_TAGLIO = re.compile(_P + r"(?:e\s+)?se\s+(?:io\s+)?(?P<verbo>taglio|tagliassi|riduco|riducessi|dimezzo|dimezzassi|smetto\s+di|smettessi\s+di|rinuncio\s+a(?:l|lla|lle|i|gli|llo)?|rinunciassi\s+a(?:l|lla|lle|i|gli)?|elimino|eliminassi|spendo\s+meno\s+(?:in|per|di))\s+(?P<cosa>.+?)\s*$", re.I)
+
+
+def _imp_v28(s):
+    s = (s or "").lower().replace("€", "").replace("euro", "").strip()
+    mila = "mila" in s
+    s = s.replace("mila", "").strip()
+    try:
+        v = _num_it(s)
+    except ValueError:
+        return None
+    return v * 1000 if mila else v
+
+
+def _al_mese(imp, ogni):
+    o = _senza_accenti(ogni.lower())
+    return imp * 365 / 12 if "giorno" in o or re.search(r"\bdi$", o) else imp * 52 / 12 if "settiman" in o else imp / 12 if "anno" in o else imp
+
+
+def _proiezione(al_mese, mesi, tasso=0.0, partenza=0.0):
+    cum, out = partenza, []
+    for i in range(1, mesi + 1):
+        cum = cum * (1 + tasso / 12) + al_mese
+        out.append(round(cum, 2))
+    return out
+
+
+def _etichette_mesi(n, oggi=None):
+    oggi = oggi or datetime.date.today()
+    out, g = [], oggi.replace(day=1)
+    for i in range(n):
+        g = _fine_mese(g) + datetime.timedelta(days=1)
+        out.append(MESI_IT[g.month - 1][:3] + (f" {str(g.year)[2:]}" if g.month == 1 or i == 0 else ""))
+    return out
+
+
+def _orizzonte(resto):
+    r = _senza_accenti((resto or "").lower())
+    m = re.search(r"\b(?:per|in|tra|fra|dopo)\s+(\d{1,2}|un|una|due|tre|quattro|cinque|sei|sette|otto|nove|dieci|dodici)\s+(ann|mes)\w*", r)
+    if not m:
+        return 12
+    n = int(m.group(1)) if m.group(1).isdigit() else _NUMERI_V28.get(m.group(1), 1)
+    return max(1, min(600, n * 12 if m.group(2) == "ann" else n))
+
+
+def _tasso(resto):
+    m = re.search(r"\b(?:al|con\s+(?:un\s+)?(?:interesse|rendimento)\s+(?:del|di))\s+(\d{1,2}(?:[.,]\d{1,2})?)\s*%", (resto or "").lower())
+    return min(0.2, _num_it(m.group(1)) / 100) if m else 0.0
+
+
+def simula_v28(testo, oggi=None):
+    oggi = oggi or datetime.date.today()
+    t = re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!.")
+    m = _RE_SIM_ACCUMULO.match(t)
+    if m:
+        imp = _imp_v28(m.group("imp"))
+        if not imp or imp <= 0 or imp > 1_000_000:
+            return None
+        resto = m.group("resto") or ""
+        al_mese = _al_mese(imp, m.group("ogni"))
+        tasso = _tasso(resto)
+        mo = re.search(r"\b(?:quando|in\s+quanto\s+tempo|quanto\s+ci\s+metto)\b.*?\b(?:arrivo|arriverei|raggiungo|metto\s+da\s+parte)\s+(?:a\s+)?(€?\s*\d[\d.,]*\s*(?:€|euro|mila)?)", resto, re.I)
+        if mo:
+            return _sim_obiettivo(_imp_v28(mo.group(1)), al_mese, tasso, oggi, f"{euro(imp)} {m.group('ogni').lower()}")
+        mesi = _orizzonte(resto)
+        cum = _proiezione(al_mese, mesi, tasso)
+        anno = round(imp * 365, 2) if "giorno" in m.group("ogni").lower() and not tasso else round(_proiezione(al_mese, 12, tasso)[-1], 2)
+        cinque = round(_proiezione(al_mese, 60, tasso)[-1], 2)
+        punti = _punti_sim(cum, oggi)
+        frase = (f"💰 Se metti da parte **{euro(imp)} {m.group('ogni').lower()}**" + (f" (al {_num_v28(tasso * 100)}% l'anno)" if tasso else "")
+                 + f": in {_durata_mesi(mesi)} sono **{euro(round(cum[-1]))}**" + (f" (circa {euro(round(al_mese))} al mese)" if "mese" not in m.group("ogni").lower() else "")
+                 + (f"; in un anno {euro(round(anno))}" if mesi != 12 else "") + (f", in 5 anni {euro(round(cinque))}" if mesi < 60 else "") + ".")
+        return {"tipo": "accumulo", "al_mese": round(al_mese, 2), "mesi": mesi, "totale": round(cum[-1], 2), "tasso": tasso, "punti": punti, "risposta": frase,
+                "insight": _idee_sim(al_mese)}
+    m = _RE_SIM_OBIETTIVO.match(t)
+    if m:
+        ob = _imp_v28(m.group("ob"))
+        resto = m.group("resto") or ""
+        mm = re.search(_IMP_V28 + r"\s*" + _OGNI_V28, resto, re.I)
+        if not ob or not (mm or re.search(r"€|euro|mila", m.group("ob"), re.I) or re.search(r"risparm|da\s+parte|soldi", t, re.I)):
+            return None                                              # «quando arrivo a 10000 passi?» non sono soldi
+        if mm:
+            al_mese = _al_mese(_imp_v28(mm.group("imp")) or 0, mm.group("ogni"))
+            come = f"{euro(_imp_v28(mm.group('imp')) or 0)} {mm.group('ogni').lower()}"
+        else:
+            r = esegui_spec_v28(normalizza_spec_v28({"dataset": "spese", "periodo": "giorni:90"}, oggi), MOTORE.memoria, oggi)
+            return {"tipo": "obiettivo", "risposta": f"🎯 Per arrivare a **{euro(ob)}** dimmi quanto metti da parte: per esempio «quando arrivo a {_num_v28(ob)} € con 100 € al mese?»"
+                    + (f" (negli ultimi 90 giorni hai speso in media {euro(round(r['media_giorno'] * 30.44))} al mese)" if not r.get("vuoto") and r.get("media_giorno") else "") + ".",
+                    "insight": [], "punti": []}
+        return _sim_obiettivo(ob, al_mese, _tasso(resto), oggi, come)
+    m = _RE_SIM_TAGLIO.match(t)
+    if m:
+        return _sim_taglio(m.group("verbo"), m.group("cosa"), oggi, t)
+    return None
+
+
+def _durata_mesi(n):
+    if n % 12 == 0:
+        return "un anno" if n == 12 else f"{n // 12} anni"
+    return f"{n} mes{'e' if n == 1 else 'i'}" if n < 24 else f"{n // 12} anni e {n % 12} mes{'e' if n % 12 == 1 else 'i'}"
+
+
+def _punti_sim(cum, oggi):
+    et = _etichette_mesi(len(cum), oggi)
+    if len(cum) <= 24:
+        return [{"k": str(i + 1), "et": et[i], "v": v, "tip": f"{et[i]}: {euro(round(v))} da parte"} for i, v in enumerate(cum)]
+    return [{"k": str(i // 12 + 1), "et": f"{i // 12 + 1}° anno", "v": cum[i], "tip": f"Dopo {(i + 1) // 12} ann{'o' if i < 12 else 'i'}: {euro(round(cum[i]))}"}
+            for i in range(11, len(cum), 12)]
+
+
+def _sim_obiettivo(ob, al_mese, tasso, oggi, come):
+    if not ob or ob <= 0 or not al_mese or al_mese <= 0:
+        return None
+    cum, mesi = 0.0, 0
+    while cum < ob and mesi < 600:
+        cum = cum * (1 + tasso / 12) + al_mese
+        mesi += 1
+    if cum < ob:
+        return {"tipo": "obiettivo", "obiettivo": ob, "risposta": f"🎯 Con {come} per arrivare a {euro(ob)} servono più di 50 anni: proviamo con una cifra più alta?", "insight": [], "punti": []}
+    g = oggi.replace(day=1)
+    for _ in range(mesi):
+        g = _fine_mese(g) + datetime.timedelta(days=1)
+    punti = _punti_sim(_proiezione(al_mese, mesi, tasso), oggi)
+    return {"tipo": "obiettivo", "obiettivo": ob, "al_mese": round(al_mese, 2), "mesi": mesi, "arrivo": g.isoformat()[:7], "tasso": tasso, "punti": punti,
+            "totale": round(cum, 2), "risposta": f"🎯 Con **{come}** arrivi a **{euro(ob)}** in **{_durata_mesi(mesi)}**: a {MESI_IT[g.month - 1]} {g.year}.",
+            "insight": [f"⚡ Con il doppio ({euro(round(al_mese * 2))} al mese) ci metti {_durata_mesi(max(1, math.ceil(ob / (al_mese * 2))))}."] if mesi > 2 and not tasso else []}
+
+
+def _sim_taglio(verbo, cosa, oggi, frase=""):
+    v = _senza_accenti(verbo.lower())
+    soldi = bool(re.search(r"spes|soldi|euro|€|risparm|budget|\d\s*%", frase, re.I))
+    c = re.sub(r"(?i)\s*,?\s*(?:quanto|quanti)\s+(?:risparm\w*|soldi\b|metto\s+da\s+parte|metterei\s+da\s+parte).*$", "", cosa).strip()
+    c = re.sub(r"(?i)\b(?:le\s+)?(?:mie\s+)?spese\s+(?:per|di|del|della|in)\s+", "", c).strip()
+    perc = 1.0
+    mp = re.search(r"\bdel\s+(\d{1,3})\s*%|\bdi\s+(?:un\s+)?(\d{1,3})\s*%", c)
+    meno = None
+    if mp:
+        perc = max(1, min(100, int(mp.group(1) or mp.group(2)))) / 100
+        c = (c[:mp.start()] + c[mp.end():]).strip()
+    elif v.startswith("dimezz"):
+        perc = 0.5
+    elif v.startswith(("tagli", "riduc", "spendo meno")):
+        mi = re.search(_IMP_V28 + r"\s*(?:al\s+mese|a\s+settimana|al\s+giorno)?", c, re.I)
+        if mi and re.search(r"\d", mi.group("imp")):
+            meno = _imp_v28(mi.group("imp"))
+            seg = mi.group(0).lower()
+            meno = meno * 365 / 12 if "giorno" in seg else meno * 52 / 12 if "settiman" in seg else meno
+            c = (c[:mi.start()] + c[mi.end():]).strip()
+        else:
+            perc = 0.3                                               # «se taglio il caffè» senza dire quanto: un terzo, e lo dico
+    for _ in range(3):
+        c = re.sub(r"(?i)^(?:di|del|della|dei|delle|il|lo|la|i|gli|le|l['’]\s*|a|al|alla|ai|un|una|prendere|comprare|andare\s+a(?:l)?|ordinare)\s*(?<=\s|['’])", "", c).strip(" ,.")
+    c = re.sub(r"(?i)\s+(?:di|del|da|a|al)$", "", c).strip()
+    if not c or len(c) > 60:
+        return None
+    da = oggi - datetime.timedelta(days=89)
+    tutte = SPESE.tutte()
+    primo = min((s["data"] for s in tutte), default=None)
+    if not primo:
+        if not soldi:
+            return None
+        return {"tipo": "taglio", "risposta": f"✂️ Per calcolarlo mi servono le tue spese: segna per qualche giorno quanto spendi (anche per «{c}») e te lo dico.", "insight": [], "punti": []}
+    da = max(da, datetime.date.fromisoformat(primo))
+    giorni = (oggi - da).days + 1
+    sel, et = filtra_v28("spese", [{"data": s["data"], "v": s["importo"], "cat": s["categoria"], "et": s["descrizione"]} for s in tutte if s["data"] >= da.isoformat()], c)
+    if not sel and re.search(r"mangiar\w*\s+fuori|ristorant|cene\s+fuori|uscire\s+a\s+(?:cena|mangiare)", c, re.I):
+        sel, et = filtra_v28("spese", [{"data": s["data"], "v": s["importo"], "cat": s["categoria"], "et": s["descrizione"]} for s in tutte if s["data"] >= da.isoformat()], "mangiare")
+    if not sel:
+        if not soldi:
+            return None                                              # «se taglio i capelli corti?» non parla di soldi
+        return {"tipo": "taglio", "risposta": f"✂️ Negli ultimi {giorni} giorni non trovo spese per «{c}»: quando ne segni qualcuna te lo calcolo.", "insight": [], "punti": []}
+    tot = sum(r["v"] for r in sel)
+    al_mese_base = tot / giorni * 30.44
+    risp = min(al_mese_base, meno) if meno else al_mese_base * perc
+    quanto = (f"Se togli {euro(meno)} al mese alle spese per {et}" if meno else f"Senza le spese per {et}" if perc >= 1
+              else f"Se dimezzi le spese per {et}" if perc == 0.5 else f"Se tagli del {round(perc * 100)}% le spese per {et}")
+    punti = _punti_sim(_proiezione(risp, 12), oggi)
+    ins = [f"📊 Negli ultimi {giorni} giorni: {len(sel)} spes{'a' if len(sel) == 1 else 'e'} per {et}, {euro(round(tot, 2))} in tutto (circa {euro(round(al_mese_base))} al mese)."]
+    if not mp and v.startswith(("tagli", "riduc")) and not meno:
+        ins.append("ℹ️ Non mi hai detto di quanto: ho fatto i conti con un taglio del 30%. Dimmi per esempio «del 50%».")
+    ins.append(f"⏳ In 5 anni: {euro(round(risp * 60))}.")
+    return {"tipo": "taglio", "al_mese": round(risp, 2), "mesi": 12, "totale": round(risp * 12, 2), "base": {"etichetta": et, "al_mese": round(al_mese_base, 2), "n": len(sel), "giorni": giorni},
+            "punti": punti, "risposta": f"✂️ {quanto}: risparmi circa **{euro(round(risp))} al mese**, cioè **{euro(round(risp * 12))} in un anno**.", "insight": ins}
+
+
+def _idee_sim(al_mese):
+    try:
+        r = esegui_spec_v28(normalizza_spec_v28({"dataset": "spese", "raggruppa": "categoria", "periodo": "giorni:90"}), MOTORE.memoria)
+        if r.get("vuoto") or not r["punti"] or not r.get("giorni"):
+            return []
+        p = next((x for x in r["punti"] if x["k"] not in _FISSE_V28), None)             # l'affitto e le bollette non si tagliano così
+        if not p:
+            return []
+        mese = p["v"] / r["giorni"] * 30.44
+        if mese > al_mese * 0.8:
+            return [f"💡 Un'idea: {p['et']} ti costa circa {euro(round(mese))} al mese; tagliarla del {max(10, min(60, round(100 * al_mese / mese / 5) * 5))}% vale quasi questo risparmio."]
+    except Exception:
+        pass
+    return []
+
+
+def simula_router(testo):
+    r = simula_v28(testo)
+    if not r:
+        return None
+    r["voce"] = re.sub(r"\*\*", "", r["risposta"])
+    return {"testo": r["risposta"] + ("\n" + "\n".join("- " + x for x in r.get("insight") or []) if r.get("insight") else ""), "simulazione": r}
+
+
+# ── 🗓️ IL TUO ANNO: tutti i giorni in un colpo d'occhio (cose fatte, spese, abitudini, umore) ──
+METRICHE_ANNO = {"attivita": ("✨", "giorni attivi"), "spese": ("💶", "spese"), "abitudini": ("✅", "abitudini"), "umore": ("💙", "umore")}
+
+
+def anno_v28(memoria, metrica="attivita", oggi=None):
+    oggi = oggi or datetime.date.today()
+    metrica = metrica if metrica in METRICHE_ANNO else "attivita"
+    fine = oggi + datetime.timedelta(days=6 - oggi.weekday())
+    inizio = fine - datetime.timedelta(days=7 * 53 - 1)
+    val, info = {}, collections.defaultdict(dict)
+    if metrica == "attivita":
+        for ds, chiave in (("abitudini", "ab"), ("attivita", "fatte"), ("pomodori", "pom"), ("respiro", "resp"), ("carte", "carte")):
+            for r in righe_v28(ds, memoria):
+                if inizio.isoformat() <= r["data"] <= oggi.isoformat():
+                    info[r["data"]][chiave] = info[r["data"]].get(chiave, 0) + 1
+        for g, x in info.items():
+            val[g] = x.get("ab", 0) + x.get("fatte", 0) + x.get("pom", 0) + x.get("resp", 0) + (1 if x.get("carte") else 0)
+    elif metrica == "spese":
+        for r in righe_v28("spese", memoria):
+            if inizio.isoformat() <= r["data"] <= oggi.isoformat():
+                val[r["data"]] = round(val.get(r["data"], 0) + r["v"], 2)
+                info[r["data"]]["n"] = info[r["data"]].get("n", 0) + 1
+    elif metrica == "abitudini":
+        dab = ABITUDINI._carica()
+        gio = [a for a in dab["abitudini"] if not a.get("settimanale")]
+        g = inizio
+        while g <= oggi:
+            prev = fatte = 0
+            for a in gio:
+                if g < Abitudini._inizio(a, dab, oggi) or not Abitudini._previsto(a, g):
+                    continue
+                prev += 1
+                fatte += Abitudini._fatto(dab, a, g) >= a.get("obiettivo", 1)
+            if prev:
+                val[g.isoformat()] = round(100 * fatte / prev)
+                info[g.isoformat()] = {"fatte": fatte, "previste": prev}
+            g += datetime.timedelta(days=1)
+    else:
+        acc = collections.defaultdict(list)
+        for r in righe_v28("umore", memoria):
+            if inizio.isoformat() <= r["data"] <= oggi.isoformat():
+                acc[r["data"]].append(r["v"])
+        val = {g: round(sum(v) / len(v), 1) for g, v in acc.items()}
+    # i livelli: 0 = niente; poi 4 scalini (i quartili dei giorni con qualcosa); l'umore va da −2 a +2 intorno al 5
+    nz = sorted(v for v in val.values() if v)
+    def livello(v):
+        if v is None:
+            return None
+        if metrica == "umore":
+            return -2 if v < 3.5 else -1 if v < 4.75 else 0 if v <= 5.25 else 1 if v < 6.5 else 2
+        if metrica == "abitudini":
+            return 0 if v <= 0 else 1 if v <= 25 else 2 if v <= 50 else 3 if v < 100 else 4
+        if not v:
+            return 0
+        if metrica == "attivita" and nz[-1] <= 4:
+            return min(4, int(v))                                    # pochi numeri piccoli: 1, 2, 3, 4+ così come sono
+        q = [nz[min(len(nz) - 1, int(len(nz) * f))] for f in (0.25, 0.5, 0.75)]
+        return 1 + sum(1 for x in q if v > x)
+    celle = []
+    g = inizio
+    while g <= oggi:
+        k = g.isoformat()
+        v = val.get(k)
+        if metrica == "attivita":
+            x = info.get(k, {})
+            parti = [f"{x['ab']} abitudin{'e' if x['ab'] == 1 else 'i'}" if x.get("ab") else "", f"{x['fatte']} cos{'a' if x['fatte'] == 1 else 'e'} fatt{'a' if x['fatte'] == 1 else 'e'}" if x.get("fatte") else "",
+                     f"{x['pom']} pomodor{'o' if x['pom'] == 1 else 'i'}" if x.get("pom") else "", "respiro" if x.get("resp") else "", "carte" if x.get("carte") else ""]
+            tip = ", ".join(p for p in parti if p) or "niente"
+            v = v or 0
+        elif metrica == "spese":
+            tip = f"{euro(v)} ({info[k]['n']} spes{'a' if info[k]['n'] == 1 else 'e'})" if v else "nessuna spesa"
+            v = v or 0
+        elif metrica == "abitudini":
+            tip = f"{info[k]['fatte']}/{info[k]['previste']} abitudini ({v}%)" if v is not None else "nessuna abitudine prevista"
+        else:
+            tip = f"umore {str(v).replace('.', ',')}/10" if v is not None else "non me l'hai detto"
+        celle.append({"d": k, "v": v, "l": livello(v), "t": f"{GIORNI_IT[g.weekday()]} {_d_it(g, True)}: {tip}"})
+        g += datetime.timedelta(days=1)
+    mesi = [{"col": i // 7, "nome": MESI_IT[int(c["d"][5:7]) - 1][:3]} for i, c in enumerate(celle) if c["d"][8:] == "01"]
+    if not mesi or mesi[0]["col"] > 2:
+        mesi.insert(0, {"col": 0, "nome": MESI_IT[inizio.month - 1][:3]})
+    primo = min((k for k, v in val.items() if v is not None), default=None)
+    utili = [c for c in celle if primo and c["d"] >= primo]
+    stat, ins = {"giorni": len(utili)}, []
+    if utili:
+        if metrica in ("attivita", "abitudini"):
+            att = [c for c in utili if c["v"]]
+            run = best = 0
+            fine_best = None
+            for c in utili:
+                run = run + 1 if c["v"] else 0
+                if run > best:
+                    best, fine_best = run, c["d"]
+            cur = 0
+            for c in reversed(utili):
+                if c["v"]:
+                    cur += 1
+                elif c["d"] != oggi.isoformat():
+                    break
+            stat.update(attivi=len(att), serie_max=best, serie_ora=cur)
+            ins.append(f"🔥 {'Giorni attivi' if metrica == 'attivita' else 'Giorni con almeno un’abitudine fatta'}: **{len(att)}** su {len(utili)}" + (f" · la serie più lunga: {best} giorni di fila (fino al {_d_it(datetime.date.fromisoformat(fine_best))})" if best > 1 else "")
+                       + (f" · adesso sei a {cur}" if cur > 1 else "") + ".")
+        elif metrica == "spese":
+            zero = [c for c in utili if not c["v"]]
+            run = best = 0
+            for c in utili:
+                run = run + 1 if not c["v"] else 0
+                best = max(best, run)
+            stat.update(senza_spese=len(zero), serie_zero=best, totale=round(sum(c["v"] for c in utili), 2))
+            ins.append(f"💶 In tutto {euro(stat['totale'])} · giorni senza spese: **{len(zero)}**" + (f" (al massimo {best} di fila)" if best > 1 else "") + ".")
+        else:
+            vv = [c["v"] for c in utili if c["v"] is not None]
+            if vv:
+                stat.update(media=round(sum(vv) / len(vv), 1), positivi=sum(1 for x in vv if x >= 6))
+                ins.append(f"💙 Umore medio {str(stat['media']).replace('.', ',')}/10 · giorni sereni: {stat['positivi']} su {len(vv)}.")
+        per_mese = collections.defaultdict(list)
+        per_wd = collections.defaultdict(list)
+        for c in utili:
+            if c["v"] is None:
+                continue
+            per_mese[c["d"][:7]].append(c["v"])
+            per_wd[datetime.date.fromisoformat(c["d"]).weekday()].append(c["v"])
+        if len(per_mese) >= 2:
+            f = (lambda xs: sum(xs)) if metrica in ("attivita", "spese") else (lambda xs: sum(xs) / len(xs))
+            mm = max(per_mese, key=lambda k: f(per_mese[k]))
+            ins.append(f"🏆 Il mese {'con più spese' if metrica == 'spese' else 'più sereno' if metrica == 'umore' else 'più attivo'}: {MESI_IT[int(mm[5:]) - 1]}"
+                       + (f" ({euro(round(f(per_mese[mm]), 2))})" if metrica == "spese" else "") + ".")
+        if per_wd and len(utili) >= 14:
+            wd = max(per_wd, key=lambda k: sum(per_wd[k]) / len(per_wd[k]))
+            ins.append(f"🗓️ Il giorno della settimana {'in cui spendi di più' if metrica == 'spese' else 'più sereno' if metrica == 'umore' else 'più attivo'}: {'il ' if wd != 6 else 'la '}{GIORNI_LUNGHI[wd]}.")
+    em, nome = METRICHE_ANNO[metrica]
+    return {"metrica": metrica, "emoji": em, "nome": nome, "inizio": inizio.isoformat(), "oggi": oggi.isoformat(), "celle": celle, "mesi": mesi, "stat": stat, "insight": ins,
+            "vuoto": not primo, "metriche": [{"chiave": k, "emoji": e, "nome": n} for k, (e, n) in METRICHE_ANNO.items()]}
+
+
+_RE_ANNO = re.compile(_P + r"(?:(?:fammi\s+vedere|mostrami|apri|dammi|fammi)\s+)?(?:(?:il\s+)?(?:mio|tuo)\s+anno(?:\s+(?:in\s+un\s+colpo\s+d['’]\s*occhio|giorno\s+per\s+giorno))?"
+                      r"|(?:la\s+)?(?:mappa|heatmap|griglia|calendario)\s+(?:del(?:l['’]\s*|\s+mio\s+)anno|delle\s+(?:mie\s+)?giornate|dei\s+(?:miei\s+)?giorni)"
+                      r"|com['’]?\s*[eè]\s+andat[oa]\s+(?:il\s+mio\s+|quest['’ ]?)anno"
+                      r"|(?:(?:la\s+)?(?:mappa|heatmap|griglia|calendario)\s+(?:delle|dei|del|dell['’]\s*)\s*(?:mie\s+|miei\s+|mio\s+)?|(?:il\s+)?(?:mio\s+)?anno\s+(?:delle|dei|del|in|di)\s+(?:mie\s+|miei\s+|mio\s+)?)"
+                      r"(?P<m>spese|soldi|abitudini|umore|cose\s+fatte|attivit[aà]|giornate))$", re.I)
+
+
+def anno_router(testo, motore):
+    m = _RE_ANNO.match(re.sub(r"\s+", " ", (testo or "").strip()).rstrip(" ?!."))
+    if not m:
+        return None
+    w = _senza_accenti((m.group("m") or "").lower())
+    metrica = "spese" if w in ("spese", "soldi") else "abitudini" if w == "abitudini" else "umore" if w == "umore" else "attivita"
+    a = anno_v28(motore.memoria, metrica)
+    if a["vuoto"]:
+        return {"testo": f"🗓️ Il tuo anno ({a['nome']}) è ancora vuoto: man mano che segni abitudini, cose fatte, spese e umore, qui si colora un quadratino per ogni giorno.", "anno": a}
+    a["voce"] = re.sub(r"\*\*", "", a["insight"][0]) if a["insight"] else ""
+    return {"testo": f"🗓️ **Il tuo anno** · {a['emoji']} {a['nome']}\n" + "\n".join("- " + x for x in a["insight"]), "anno": a}
+
+
+# ── 📈 le allerte (V27) sanno anche la previsione; l'HUD la mostra ──
+_analizza_situazione_v27 = analizza_situazione
+_stato_hud_v27 = stato_hud
+
+
+def analizza_situazione(memoria, ora=None, ollama=None, meteo=None, presenza=None):
+    A = _analizza_situazione_v27(memoria, ora, ollama=ollama, meteo=meteo, presenza=presenza)
+    try:
+        ora = ora or datetime.datetime.now()
+        p = previsione_spese(ora.date())
+        b = (p or {}).get("budget")
+        if b and p["oggi_giorno"] >= 5 and p["giorni_mancanti"] > 0 and not b["gia_sforato"] and p["previsione"] > b["totale"] * 1.05 \
+                and not any(str(a.get("id", "")).startswith("budget:") for a in A):
+            A.append({"livello": "media", "icona": "📈", "testo": f"A questo ritmo a fine mese arrivi a circa {euro(round(p['previsione']))}, oltre il budget di {euro(b['totale'])}: "
+                      f"per restarci, al massimo {euro(max(0, b['al_giorno']))} al giorno.", "id": "previsione:" + ora.strftime("%Y-%m"),
+                      "comando": "quanto spenderò questo mese?", "etichetta": "🔮 Previsione"})
+            ordine = {"alta": 0, "media": 1, "bassa": 2}
+            A.sort(key=lambda x: ordine[x["livello"]])
+    except Exception:
+        pass
+    return A
+
+
+def stato_hud(memoria, ora=None):
+    out = _stato_hud_v27(memoria, ora)
+    try:
+        p = previsione_spese((ora or datetime.datetime.now()).date())
+        if p:
+            out["previsione"] = {"valore": round(p["previsione"]), "budget": (p.get("budget") or {}).get("totale"), "mese": p["mese"]}
+    except Exception:
+        pass
+    return out
+
+
+def v28_router(testo, motore, avvisa=None, sid=None):
+    t = re.sub(r"\s+", " ", (testo or "").strip())
+    return anno_router(t, motore) or previsione_router(t) or simula_router(t) or analisi_router(t, motore)
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -13317,7 +14744,7 @@ Oggi è {oggi}.{extra}
         att = ATTIVITA.router(testo)
         if att:
             self.memoria.salva_scambio(testo, att["testo"])
-            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if att.get(k)})
+            return self._meta(ok=True, risposta=att["testo"], azione=True, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if att.get(k)})
         cal = CAL.router(testo)
         if cal:
             self.memoria.salva_scambio(testo, cal["testo"])
@@ -13328,7 +14755,7 @@ Oggi è {oggi}.{extra}
             or (AUTOMAZIONI.router(testo, self) if not getattr(_CTX, "automazione", False) else None)
         if v16:
             self.memoria.salva_scambio(testo, v16["testo"])
-            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v16.get(k)})
+            return self._meta(ok=True, risposta=v16["testo"], azione=True, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v16.get(k)})
         nz = NOTIZIE.router(testo)
         if nz:
             self.memoria.salva_scambio(testo, nz["testo"])
@@ -13403,12 +14830,12 @@ Oggi è {oggi}.{extra}
             if v23:
                 on_token(v23["testo"])
                 self.memoria.salva_scambio(testo, v23["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v23.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v23[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v23.get(k)})
             v24 = v24_router(testo, self, avvisa)                    # v24: 📻 radio maik · 🎞️ storie · 🧠 mappa della mente
             if v24:
                 on_token(v24["testo"])
                 self.memoria.salva_scambio(testo, v24["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v24.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v24[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v24.get(k)})
             v27 = v27_router(testo, self, avvisa, sid)               # v27: 🛰️ hud · 🧠 situazione · ⚡ piano d'azione
             if v27:
                 if v27.get("situazione") or v27.get("piano_azione"):
@@ -13416,40 +14843,46 @@ Oggi è {oggi}.{extra}
                 on_token(v27["testo"])
                 self.memoria.salva_scambio(testo, v27["testo"], sid)
                 return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v27[k] for k in ("situazione", "hud", "piano_azione", "piano_fatto") if v27.get(k)})
+            v28 = v28_router(testo, self, avvisa, sid)               # v28: 🔬 chiedi ai tuoi dati · 🔮 previsione · 💰 simulatore · 🗓️ il tuo anno
+            if v28:
+                avvisa({"zitto": True})                             # la GUI dice solo la frase principale, il resto è nel grafico
+                on_token(v28["testo"])
+                self.memoria.salva_scambio(testo, v28["testo"], sid)
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v28[k] for k in ("analisi", "previsione", "simulazione", "anno") if v28.get(k)})
             v26 = v26_router(testo, self, avvisa, sid)               # v26: 🍳 chef zep · 🫧 respiro
             if v26:
                 if v26.get("ricetta") or v26.get("menu"):
                     avvisa({"zitto": True})                         # la GUI non legge tutta la ricetta: dice solo una frase
                 on_token(v26["testo"])
                 self.memoria.salva_scambio(testo, v26["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v26[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v26.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v26[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v26.get(k)})
             v25 = v25_router(testo, self, avvisa)                    # v25: 🧠 carte · 🎮 quiz · 🎧 suoni
             if v25:
                 on_token(v25["testo"])
                 self.memoria.salva_scambio(testo, v25["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v25.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v25[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v25.get(k)})
             if not getattr(_CTX, "automazione", False):              # v19: «ogni lunedì alle 9 dimmi …», «le mie automazioni»
                 au = AUTOMAZIONI.router(testo, self)
                 if au:
                     on_token(au["testo"])
                     self.memoria.salva_scambio(testo, au["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if au.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: au[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if au.get(k)})
             v20 = OBIETTIVI.router(testo, self.cervello, self.memoria) or (pianifica_settimana() if _RE_SETT_PIANO.match(testo.strip().rstrip(" ?!.")) else None)   # v20
             if v20:
                 on_token(v20["testo"])
                 self.memoria.salva_scambio(testo, v20["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v20.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v20[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v20.get(k)})
             v22 = prestazioni_router(testo) or PRESENZA.router(testo) or (None if getattr(_CTX, "automazione", False) else webcam_router(testo))   # v22
             if v22:
                 on_token(v22["testo"])
                 self.memoria.salva_scambio(testo, v22["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v22.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v22[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v22.get(k)})
             v21 = None if getattr(_CTX, "automazione", False) else AIUTANTI.router(testo, self)   # v21: 🧪 aiutanti lampo (non dentro un'automazione o un altro aiutante)
             v21 = v21 or (tv_multiverso(self.cervello) if _RE_TV.match(testo.strip().rstrip(" ?!.")) else None)    # 📺 la TV del multiverso
             if v21:
                 on_token(v21["testo"])
                 self.memoria.salva_scambio(testo, v21["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v21.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v21[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v21.get(k)})
             lab = LABORATORIO.richiesta(testo)                       # v21: 🔬 il laboratorio delle invenzioni
             if lab:
                 r = LABORATORIO.esegui(lab, self.cervello, on_token, avvisa)
@@ -13470,7 +14903,7 @@ Oggi è {oggi}.{extra}
             if att:
                 on_token(att["testo"])
                 self.memoria.salva_scambio(testo, att["testo"], sid)
-                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if att.get(k)})
+                return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: att[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if att.get(k)})
             cal = CAL.router(testo)                            # v15: «cosa ho domani?», «aggiungi al calendario …»
             if cal:
                 on_token(cal["testo"])
@@ -13484,7 +14917,7 @@ Oggi è {oggi}.{extra}
                     OBIETTIVI.sincronizza()                    # v20: «fatto: …» può chiudere una tappa → 🏆 (arriva come avviso)
                     on_token(v16["testo"])
                     self.memoria.salva_scambio(testo, v16["testo"], sid)
-                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto") if v16.get(k)})
+                    return self._meta(done=True, ok=True, azione=True, sessione=sid, **{k: v16[k] for k in ("spesa", "spese", "budget", "abitudine", "abitudini", "settimana", "evento", "attivita", "attivita_lista", "piano", "giornata", "focus", "idee", "ricordi", "automazione", "automazioni", "prime", "agenda", "notizie", "fonti_web", "obiettivo", "obiettivi", "obiettivo_eventi", "piano_settimana", "tendenze", "multiverso", "tv", "invenzione", "invenzioni", "aiutanti", "webcam", "prestazioni", "presenza", "annulla", "annullabili", "diagnosi", "backup", "backup_ripristina", "radio", "storie", "mente", "studio", "quiz", "suoni", "ricetta", "menu", "cucina", "tutor", "respiro", "situazione", "hud", "piano_azione", "piano_fatto", "analisi", "previsione", "simulazione", "anno") if v16.get(k)})
             nz = NOTIZIE.router(testo)                         # v14: «notizie», «ultime notizie di sport»
             if nz:
                 on_token(nz["testo"])
@@ -14109,6 +15542,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "automazioni": AUTOMAZIONI.elenco(), "esiti": AUTOMAZIONI.esiti(int(qs.get("n", "20") or 20))})
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
+            elif base == "/previsione":                               # v28: 🔮 come finisce il mese (spese)
+                p = previsione_spese()
+                self._json(dict(p, ok=True) if p else {"ok": True, "vuoto": True})
+            elif base == "/anno":                                     # v28: 🗓️ il tuo anno, un quadratino per giorno
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                self._json(dict(anno_v28(MOTORE.memoria, (q.get("metrica") or ["attivita"])[0]), ok=True))
             elif base == "/hud":                                      # v27: 🛰️ tutto quello che mostra l'interfaccia olografica
                 self._json(dict(stato_hud(MOTORE.memoria), ok=True))
             elif base == "/situazione":                               # v27: 🧠 le allerte in ordine di priorità
@@ -14638,6 +16077,15 @@ class Handler(BaseHTTPRequestHandler):
             elif base in ("/diagnosi/ripara", "/annulla", "/backup/crea", "/backup/ripristina", "/mente/dimentica", "/studio/voto", "/studio/elimina", "/quiz/fine",
                           "/cucina/salva", "/cucina/elimina", "/cucina/spesa", "/cucina/cucinata", "/respiro/fine", "/piano/esegui") and not stessa_origine(self):
                 self._json({"ok": False, "errore": "richiesta da un altro sito"}, 403)          # v23: solo dalla GUI di MAIK
+            elif base == "/analisi":                                  # v28: 🔬 {domanda} o {spec} (rifare la stessa domanda con un altro periodo) → solo letture
+                c = self._read_json_body()
+                if isinstance(c.get("spec"), dict):
+                    sp = normalizza_spec_v28(c["spec"])
+                    r = esegui_spec_v28(sp, MOTORE.memoria) if sp else None
+                    self._json(dict(r, ok=True) if r else {"ok": False, "errore": "richiesta non valida"}, 200 if r else 400)
+                else:
+                    r = analisi_router(str(c.get("domanda") or "")[:220], MOTORE)
+                    self._json(dict(r["analisi"], ok=True, testo=r["testo"]) if r else {"ok": False, "errore": "non è una domanda sui tuoi dati"}, 200 if r else 400)
             elif base == "/piano/esegui":                             # v27: ⚡ {id, scelte: [indici]} → le azioni del piano, tutte insieme (un solo «annulla»)
                 c = self._read_json_body()
                 sc = c.get("scelte")
@@ -14882,7 +16330,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V27</title>
+<title>MAIK PRIME // Zep V28</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -15645,10 +17093,47 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   @media (max-width:1100px){.hudp{width:180px;font-size:11px}#hudbr{width:200px}#hudora{font-size:24px}}
   @media (max-width:760px){#hudbl,#hudgauge,#hudtr{display:none}#hudtl{top:70px}#hudbr{bottom:40px}}
   @media (prefers-reduced-motion:reduce){#hudreattore *,#hudnews,.ha.a>i,.hr i.off{animation:none!important}}
+
+  /* ===== V28 · analisi dei dati, previsione, simulatore, il tuo anno ===== */
+  .an28wrap{display:flex;flex-direction:column;gap:10px;margin:8px 0 4px;width:100%}
+  .an28{border:1px solid rgba(var(--accent-rgb),.28);border-radius:14px;background:rgba(0,0,0,.22);padding:11px 13px 10px;min-width:0;transition:opacity .2s}
+  .an28.carica{opacity:.55;pointer-events:none}
+  .an28 header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:8px}.an28 header b{color:#fff;font-size:14px;font-weight:600}.an28 header small{color:var(--dim);font-size:11.5px}
+  .an28fil{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+  .an28c{min-width:0;overflow:hidden}.an28c svg.vz{width:100%;height:auto;max-width:100%}
+  .m.ai.con28{width:calc(100% - 40px);max-width:calc(100% - 40px)}
+  .vzbar.parz{opacity:.42}.an28area{fill:rgba(var(--accent-rgb),.1)}
+  .an28banda{fill:rgba(var(--accent-rgb),.1)}.an28tratt{stroke-dasharray:5 4}.an28prec{fill:none;stroke:var(--dim);stroke-width:1.5;stroke-linejoin:round}
+  .an28budget{stroke:var(--text);stroke-width:1;stroke-dasharray:2 3;opacity:.7}.an28budt{fill:var(--text);opacity:.85}
+  .vzdot.an28fine{fill:var(--bg,#050a0f);stroke:var(--accent);stroke-width:2}
+  .an28barre{display:flex;flex-direction:column;gap:2px}.an28barre .vzcat small{color:var(--dim);font-size:10.5px}.an28barre .vzcat span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .an28barre .vzcat:focus-visible,.an28 .vzhit:focus-visible{outline:2px solid var(--accent);outline-offset:1px}.an28barre .vzcat.su i b{filter:brightness(1.25)}
+  .an28eroe{border:1px solid rgba(var(--accent-rgb),.2);border-radius:12px;padding:7px 10px;background:rgba(0,0,0,.18);min-width:0}
+  .an28eroe b{display:block;font-size:19px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.an28eroe small{display:block;color:var(--dim);font-size:11px;margin-top:2px;line-height:1.3}
+  .an28eroe .vzdelta{display:inline-block;margin-top:4px}.an28prima{display:inline!important;margin-left:6px}
+  .an28tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:6px;margin-bottom:10px}
+  .an28due{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.an28due .an28eroe{flex:1 1 150px}.an28freccia{color:var(--dim);font-size:20px}
+  .an28vuoto{color:var(--dim);font-size:13px;padding:14px 4px;text-align:center}
+  .an28b{display:flex;gap:6px;justify-content:flex-end;margin-top:6px}
+  .lgline{display:inline-block;width:18px;height:0;border-top:2px solid var(--accent);vertical-align:middle;margin-right:5px}.lgline.tratt{border-top-style:dashed}
+  .lgline.prec{border-top:2px solid var(--dim)}.lgline.bud{border-top:1px dashed var(--text)}
+  .an28 .vzleg{flex-wrap:wrap;gap:6px 14px}
+  .an28annobox{display:flex;gap:4px}.an28gg{flex:0 0 auto;display:flex;flex-direction:column}.an28gg i{font-style:normal;font-size:10px;line-height:1;color:var(--dim);font-family:'Share Tech Mono',monospace;display:flex;align-items:center}
+  .an28scroll{overflow-x:auto;padding-bottom:4px;min-width:0;flex:1}svg.an28anno{display:block;max-width:none}
+  .an28cell{fill:rgba(255,255,255,.06);background:rgba(255,255,255,.06)}
+  .an28cell.h1{fill:rgba(var(--accent-rgb),.28);background:rgba(var(--accent-rgb),.28)}.an28cell.h2{fill:rgba(var(--accent-rgb),.5);background:rgba(var(--accent-rgb),.5)}
+  .an28cell.h3{fill:rgba(var(--accent-rgb),.74);background:rgba(var(--accent-rgb),.74)}.an28cell.h4{fill:var(--accent);background:var(--accent)}
+  .an28cell.u0{fill:#f97316;background:#f97316}.an28cell.u1{fill:rgba(249,115,22,.55);background:rgba(249,115,22,.55)}.an28cell.u2{fill:rgba(255,255,255,.2);background:rgba(255,255,255,.2)}
+  .an28cell.u3{fill:rgba(var(--accent-rgb),.55);background:rgba(var(--accent-rgb),.55)}.an28cell.u4{fill:var(--accent);background:var(--accent)}
+  rect.an28cell.oggi{stroke:var(--text);stroke-width:1.2}rect.an28cell.su,rect.an28cell:hover{stroke:#fff;stroke-width:1.2}
+  .an28scala{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--dim);margin:6px 0 2px}.an28scala i{display:inline-block;width:11px;height:11px;border-radius:2px}.an28scala span{margin:0 4px}
+  #vztip.lungo{white-space:normal;max-width:320px;line-height:1.4}
+  .m.ai .an28wrap{max-width:680px}
+  @media (max-width:640px){.an28eroe b{font-size:17px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V27</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V28</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -15704,6 +17189,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <label class="opt">✨ Animazione di avvio<input type="checkbox" id="optboot" onchange="setOpt('boot',this.checked)"></label>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="qs('analizza le mie spese')" title="Analisi delle spese con il grafico">🔬 Analisi</button><button class="tbtn" type="button" onclick="qs('quanto spenderò questo mese?')" title="Come finisce il mese">🔮 Previsione</button><button class="tbtn" type="button" onclick="qs('mostrami il mio anno')" title="Un quadratino per ogni giorno">🗓️ Il mio anno</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="toggleHUD()" title="Interfaccia olografica (H)">🛰️ HUD</button><button class="tbtn" type="button" onclick="qs('come siamo messi?')" title="Il punto della situazione">🧠 Situazione</button><button class="tbtn" type="button" onclick="$('#inp').value='organizzami domani: ';$('#inp').focus()" title="Piano d'azione: una frase, più cose in agenda">⚡ Piano</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('cosa cucino stasera?')" title="Chef Zep: cosa cucino?">🍳 Cucina</button><button class="tbtn" type="button" onclick="qs('parliamo in inglese')" title="Conversazione in inglese con il tutor">🗣️ Parliamo</button><button class="tbtn" type="button" onclick="qs('facciamo un esercizio di respirazione')" title="Respiro guidato">🫧 Respira</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="apriStudio()" title="Le tue carte per studiare">🃏 Carte</button><button class="tbtn" type="button" onclick="qs('facciamo un quiz')" title="Il Quizzone di Zep">🎮 Quiz</button><button class="tbtn" type="button" onclick="SUONI25.on?fermaSuoni():avviaSuoni('pioggia')" title="Suoni per concentrarti">🎧 Suoni</button></div>
@@ -15797,6 +17283,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="msgs"></div>
     <div id="tutorbar" role="status" hidden></div>
     <div class="quick">
+      <button onclick="qs('in che giorno della settimana spendo di più?')">🔬 in che giorno spendo di più?</button>
+      <button onclick="qs('quanto spenderò questo mese?')">🔮 quanto spenderò questo mese?</button>
+      <button onclick="qs('mostrami il mio anno')">🗓️ il mio anno</button>
       <button onclick="qs('modalità HUD')">🛰️ modalità HUD</button>
       <button onclick="qs('come siamo messi?')">🧠 come siamo messi?</button>
       <button onclick="$('#inp').value='organizzami domani: ';$('#inp').focus()">⚡ organizzami domani: …</button>
@@ -18711,7 +20200,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);addV28(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -18987,6 +20476,8 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🔬','Analizza le mie spese (grafico)',()=>qs('analizza le mie spese'),'analisi','dati grafico statistiche spese categorie'),c('🔮','Previsione di fine mese',()=>qs('quanto spenderò questo mese?'),'previsione','budget fine mese quanto spenderò'),
+    c('🗓️','Il mio anno (un quadratino per giorno)',()=>qs('mostrami il mio anno'),'anno','heatmap calendario giorni attivi serie'),c('💰','Simulatore di risparmio…',()=>{$('#inp').value='se risparmio 5 euro al giorno?';$('#inp').focus();},'risparmio','simula soldi da parte obiettivo'),
     c('🛰️','Interfaccia olografica (HUD)',()=>toggleHUD(),'H','hud olografica iron man pannelli sistemi allerte'),c('🧠','Come siamo messi? (situazione)',()=>qs('come siamo messi?'),'situazione','rapporto allerte priorità aggiornami status'),
     c('⚡','Piano d\'azione…',()=>{$('#inp').value='organizzami domani: ';$('#inp').focus();},'piano','organizza agenda azioni domani'),
     c('🍳','Cosa cucino? (Chef Zep)',()=>qs('cosa cucino stasera?'),'cucina','ricetta ricette chef menu settimana spesa timer'),c('📖','Le mie ricette',()=>qs('le mie ricette'),'ricettario','cucina preferiti salvate'),
@@ -19022,7 +20513,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V27',key:'maik_boot_v27',checks:[
+  return MaikKit.boot({version:'PRIME · V28',key:'maik_boot_v28',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -19032,6 +20523,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Analisi',run:async()=>{try{const p=await (await fetch('/previsione')).json();return{ok:true,text:p.vuoto?'🔬 pronta':'🔮 fine mese ≈ '+Math.round(p.previsione)+' €'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'HUD',run:async()=>{try{const s=await (await fetch('/situazione')).json();return{ok:true,text:'🛰️ '+s.allerte.length+' allerte'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Cucina',run:async()=>{try{const s=await (await fetch('/cucina')).json();return{ok:true,text:'🍳 '+s.di_serie.length+' ricette'+(s.ricettario.length?' + '+s.ricettario.length+' tue':'')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Studio',run:async()=>{try{const s=await (await fetch('/studio')).json();return{ok:true,text:s.carte?'🃏 '+s.da_ripassare+' da ripassare':'🃏 nessun mazzo'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -19052,7 +20544,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 27 🛰️ Adesso ho un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 28 🔬 Adesso **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -19946,7 +21438,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V27'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V28'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -21406,7 +22898,7 @@ function mostraEsito(es, chiesto) {
   finalize(d, t, null, null);
   const m = es.meta || {};
   addV16(d, m); addV17(d, m); addV18(d, m); if (m.agenda) addAgenda(d, m); if (m.fonti_web) addFontiWeb(d, m.fonti_web); if (m.notizie) addNotizie(d, m.notizie, true);
-  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true); addV26(d, m, true); addV27(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
+  addV20(d, m); addV21(d, m); addV24(d, m, true); addV25(d, m, true); addV26(d, m, true); addV27(d, m, true); addV28(d, m, true);                                                 // v21: anche obiettivi, TV, invenzioni, multiverso · v24: la radio del mattino
   agEl(d).insertAdjacentHTML('beforeend', '<button type="button" class="agc calb" data-au2="apri">⚙️ ' + esc(es.descrizione) + '</button>');
   const piano = t.replace(/\*\*/g, '').replace(/[#>`]/g, '').split('\n').filter(Boolean)[0] || '';
   if (!chiesto) { toast('⚙️ ' + es.comando + ' — fatto', 'ok'); notify('⚙️ MAIK PRIME · ' + es.descrizione, piano.slice(0, 140)); beep(1); }
@@ -23525,6 +25017,334 @@ document.addEventListener('change', e => {
   go.textContent = '▶ Esegui (' + n + ')'; go.disabled = !n; x.closest('label').classList.toggle('no', !x.checked);
 });
 
+// ════════════════════════════════════════════════════════════
+// V28 — MAIK PRIME ANALISTA: 🔬 le risposte sui tuoi dati con il grafico (valori al passaggio, tabella, CSV, periodi a un tocco),
+// 🔮 la previsione di fine mese, 💰 il simulatore di risparmio, 🗓️ il tuo anno (un quadratino per giorno)
+// Regole dei grafici: una serie per grafico (o barra + tacca per il confronto), niente doppi assi, segni sottili,
+// i numeri nel colore del testo, il colore dice la cosa (non la classifica), tutto raggiungibile anche dalla tabella.
+// ════════════════════════════════════════════════════════════
+const AN28 = { schede: 0 };
+const fmt28 = (v, ds, misura) => {
+  if (v == null) return '—';
+  if (ds === 'spese' && misura !== 'conteggio') return euroIt(v);
+  if (ds === 'umore' && misura !== 'conteggio') return (+v).toLocaleString('it-IT', { maximumFractionDigits: 1 }) + '/10';
+  if ((ds === 'pc' || ds === 'respiro') && misura !== 'conteggio') { const m = Math.round(v); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : ''); }
+  return (+v).toLocaleString('it-IT', { maximumFractionDigits: 1 });
+};
+const UNITA28 = { spese: ['spesa', 'spese'], abitudini: ['volta', 'volte'], attivita: ['cosa', 'cose'], pomodori: ['pomodoro', 'pomodori'], umore: ['volta', 'volte'],
+  pc: ['giorno', 'giorni'], respiro: ['sessione', 'sessioni'], carte: ['ripasso', 'ripassi'] };
+const unita28 = (ds, n) => (UNITA28[ds] || ['', ''])[n === 1 ? 0 : 1];
+const breve28 = (v, ds, misura) => ds === 'spese' && misura !== 'conteggio' ? pulito(v) + ' €' : fmt28(v, ds, misura);
+function wrap28(d) {                                              // le schede vanno sotto il testo, sopra i bottoni (e il fumetto si allarga)
+  let c = d.querySelector('.an28wrap');
+  if (!c) { d.classList.add('con28'); c = document.createElement('div'); c.className = 'an28wrap'; d.insertBefore(c, d.querySelector('.ag') || d.querySelector('.acts')); }
+  return c;
+}
+const larg28 = el => Math.max(260, Math.min(640, Math.floor((el.clientWidth || 360) - 28)));   // lo spazio dentro la scheda, in px
+function etAsse28(p, gr) {
+  if (gr === 'giorno') return dataIt(p.k);
+  if (gr === 'giorno_settimana') return String(p.et).slice(0, 3);
+  if (gr === 'mese') return String(p.et).slice(0, 3) + (/\d{4}$/.test(p.et) ? " '" + p.et.slice(-2) : '');
+  return p.et;                                                    // settimane, il simulatore: com'è
+}
+function hit28(x, y, w, h, tip, extra) {
+  return '<rect class="vzhit" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + Math.max(0, w).toFixed(1) + '" height="' + Math.max(0, h).toFixed(1) + '" data-tip="' + escA(tip) + '" tabindex="0" aria-label="' + escA(tip) + '"' + (extra || '') + '></rect>';
+}
+function barraSu28(x, base, h, bw) {                               // la barra parte dalla linea dello zero e ha solo la cima arrotondata (4px)
+  const r = Math.min(4, h, bw / 2);
+  return 'M' + x.toFixed(1) + ',' + base.toFixed(1) + 'V' + (base - h + r).toFixed(1) + 'q0,-' + r.toFixed(1) + ' ' + r.toFixed(1) + ',-' + r.toFixed(1) + 'H' + (x + bw - r).toFixed(1)
+    + 'q' + r.toFixed(1) + ',0 ' + r.toFixed(1) + ',' + r.toFixed(1) + 'V' + base.toFixed(1) + 'Z';
+}
+function colonne28(P, o) {                                        // colonne verticali: il tempo o i giorni della settimana
+  const W = o.W || 560, H = 160, L = 40, B = 22, T = 16, n = P.length, vals = P.map(p => p.v || 0), top = tondo(Math.max(...vals, 0) * 1.08);
+  const passo = (W - L - 4) / n, bw = Math.max(2, Math.min(24, passo - 2)), y = v => T + (H - T - B) * (1 - v / top), base = y(0);
+  const okE = P.map((p, i) => [p, i]).filter(([p]) => p.v != null && !p.parziale && !p.incompleto);
+  let iE = -1;
+  if (okE.length) iE = (o.ev === 'min' ? okE.reduce((a, b) => b[0].v < a[0].v ? b : a) : okE.reduce((a, b) => b[0].v > a[0].v ? b : a))[1];
+  const quante = Math.max(2, Math.floor((W - L) / (o.gr === 'settimana' || o.gr === 'sim' ? 62 : 40))), ogni = n <= quante ? 1 : Math.ceil(n / quante);
+  let s = '<svg class="vz" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + escA(o.titolo) + '">';
+  [0, top / 2, top].forEach(t => { s += '<line class="vzgrid" x1="' + L + '" x2="' + W + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"></line><text class="vzax" x="' + (L - 6) + '" y="' + (y(t) + 3).toFixed(1) + '" text-anchor="end">' + esc(breve28(t, o.ds, o.misura)) + '</text>'; });
+  P.forEach((p, i) => {
+    const x = L + 2 + i * passo + (passo - bw) / 2, h = Math.max(0, base - y(p.v || 0));
+    if (h > 0) s += '<path class="vzbar' + (p.parziale || p.incompleto ? ' parz' : '') + '" d="' + barraSu28(x, base, h, bw) + '"></path>';
+    s += hit28(L + 2 + i * passo, T, passo, H - T - B, p.tip || (p.et + ': ' + fmt28(p.v, o.ds, o.misura)));
+    if ((n - 1 - i) % ogni === 0) s += '<text class="vzax" x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(etAsse28(p, o.gr)) + '</text>';
+  });
+  if (iE >= 0 && P[iE].v) s += '<text class="vzval" x="' + (L + 2 + iE * passo + passo / 2).toFixed(1) + '" y="' + (y(P[iE].v) - 5).toFixed(1) + '" text-anchor="middle">' + esc(breve28(P[iE].v, o.ds, o.misura)) + '</text>';
+  return s + '</svg>';
+}
+function linea28(P, o) {                                          // una linea (l'umore, o tanti punti): 2px, il punto finale con l'anello, il crocino al passaggio
+  const W = o.W || 560, H = 150, L = 40, B = 22, T = 14, n = P.length, top = o.max || tondo(Math.max(...P.map(p => p.v || 0), 0) * 1.08);
+  const passo = (W - L - 12) / Math.max(1, n - 1), X = i => L + 6 + i * passo, y = v => T + (H - T - B) * (1 - v / top);
+  let s = '<svg class="vz" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + escA(o.titolo) + '">';
+  [0, top / 2, top].forEach(t => { s += '<line class="vzgrid" x1="' + L + '" x2="' + W + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"></line><text class="vzax" x="' + (L - 6) + '" y="' + (y(t) + 3).toFixed(1) + '" text-anchor="end">' + esc(breve28(t, o.ds, o.misura)) + '</text>'; });
+  let d = '', aperto = false, ultimo = -1, area = '';
+  P.forEach((p, i) => { if (p.v == null) { aperto = false; return; } d += (aperto ? 'L' : 'M') + X(i).toFixed(1) + ',' + y(p.v).toFixed(1); aperto = true; ultimo = i; });
+  if (d && o.area) { const pv = P.map((p, i) => [p, i]).filter(([p]) => p.v != null); area = 'M' + X(pv[0][1]).toFixed(1) + ',' + y(0).toFixed(1) + pv.map(([p, i]) => 'L' + X(i).toFixed(1) + ',' + y(p.v).toFixed(1)).join('') + 'L' + X(pv[pv.length - 1][1]).toFixed(1) + ',' + y(0).toFixed(1) + 'Z'; }
+  if (area) s += '<path class="an28area" d="' + area + '"></path>';
+  if (d) s += '<path class="vzline" d="' + d + '"></path>';
+  if (ultimo >= 0) s += '<circle class="vzdot" cx="' + X(ultimo).toFixed(1) + '" cy="' + y(P[ultimo].v).toFixed(1) + '" r="4"></circle><text class="vzval" x="' + Math.min(W - 22, X(ultimo)).toFixed(1) + '" y="' + (y(P[ultimo].v) - 9).toFixed(1) + '" text-anchor="middle">' + esc(breve28(P[ultimo].v, o.ds, o.misura)) + '</text>';
+  const quante = Math.max(2, Math.floor((W - L) / (o.gr === 'settimana' ? 62 : 40))), ogni = n <= quante ? 1 : Math.ceil(n / quante);
+  P.forEach((p, i) => {
+    s += hit28(X(i) - passo / 2, T, passo, H - T - B, p.tip || (p.et + ': ' + fmt28(p.v, o.ds, o.misura)), ' data-cx="' + X(i).toFixed(1) + '"');
+    if ((n - 1 - i) % ogni === 0) s += '<text class="vzax" x="' + X(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(etAsse28(p, o.gr)) + '</text>';
+  });
+  return s + '<line class="vzcross" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" style="display:none"></line></svg>';
+}
+function barre28(P, o) {                                          // barre orizzontali: le categorie o le singole spese, dalla più grande
+  const max = Math.max(...P.map(p => p.v || 0), 1e-9);
+  return '<div class="an28barre">' + P.map(p => '<div class="vzcat" tabindex="0" data-tip="' + escA(p.tip || p.et) + '" aria-label="' + escA(p.tip || p.et) + '"><span>' + esc(p.et)
+    + (p.data ? ' <small>' + esc(dataIt(p.data)) + '</small>' : '') + '</span><i><b style="width:' + (100 * (p.v || 0) / max).toFixed(1) + '%"></b></i><em>' + esc(fmt28(p.v, o.ds, o.misura)) + '</em></div>').join('') + '</div>';
+}
+function barre2_28(P, o, serie) {                                 // il confronto: la barra è il periodo più recente, la tacca quello prima
+  const max = Math.max(...P.map(p => Math.max(p.v || 0, p.v2 || 0)), 1e-9);
+  return '<div class="vzleg"><span><i class="lgbar"></i>' + esc(serie[1]) + '</span><span><i class="lgtick"></i>' + esc(serie[0]) + '</span></div><div class="an28barre">'
+    + P.map(p => '<div class="vzcat" tabindex="0" data-tip="' + escA(p.tip) + '" aria-label="' + escA(p.tip) + '"><span>' + esc(p.et) + '</span><i><b style="width:' + (100 * (p.v2 || 0) / max).toFixed(1) + '%"></b><u style="left:' + (100 * (p.v || 0) / max).toFixed(1) + '%"></u></i><em>' + esc(fmt28(p.v2, o.ds, o.misura)) + '</em></div>').join('') + '</div>';
+}
+function eroe28(val, sotto, delta) {
+  return '<div class="an28eroe"><b>' + esc(val) + '</b>' + (sotto ? '<small>' + esc(sotto) + '</small>' : '') + (delta || '') + '</div>';
+}
+function delta28(dl, buonoGiu) {
+  if (dl == null || !isFinite(dl)) return '';
+  if (!dl) return '<span class="vzdelta">= uguale</span>';
+  const buono = buonoGiu ? dl < 0 : dl > 0;
+  return '<span class="vzdelta ' + (buono ? 'giu' : 'su') + '">' + (dl < 0 ? '▼ −' : '▲ +') + Math.abs(dl) + '%</span>';
+}
+function tabella28(intest, righe) {
+  return '<details class="vztab"><summary>📋 Vedi i dati in tabella</summary><table><thead><tr>' + intest.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>'
+    + righe.map(r => '<tr>' + r.map(c => '<td>' + esc(c) + '</td>').join('') + '</tr>').join('') + '</tbody></table></details>';
+}
+function csv28(nome, intest, righe) {                             // per Excel in italiano: «;» e la virgola nei decimali
+  const q = x => { const s = String(x == null ? '' : x); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const testo = '﻿' + [intest].concat(righe).map(r => r.map(q).join(';')).join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([testo], { type: 'text/csv;charset=utf-8' })); a.download = nome.replace(/[^\w\-]+/g, '_').slice(0, 60) + '.csv';
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+const euroTondo = v => Math.round(+v || 0).toLocaleString('it-IT') + ' €';           // nei numeri grandi: senza i centesimi
+const num28 = v => v == null ? '' : String(Math.round(v * 100) / 100).replace('.', ',');
+const PRESET28 = { giorno: [['giorni:7', '7 giorni'], ['giorni:30', '30 giorni'], ['giorni:90', '90 giorni']], settimana: [['giorni:90', '90 giorni'], ['mesi:6', '6 mesi'], ['mesi:12', '12 mesi']],
+  mese: [['mesi:6', '6 mesi'], ['mesi:12', '12 mesi'], ['tutto', 'da sempre']], altro: [['questo_mese', 'questo mese'], ['giorni:30', '30 giorni'], ['giorni:90', '90 giorni'], ['mesi:12', '12 mesi'], ['tutto', 'da sempre']] };
+
+function analisiHTML(A, W) {
+  const o = { ds: A.dataset, misura: A.misura, gr: A.raggruppa, titolo: A.titolo + ' · ' + A.periodo.etichetta, ev: (A.spec || {}).evidenzia, W };
+  const P = A.punti || [];
+  let corpo = '', tab = '', intest = [], righe = [];
+  if (A.vuoto && A.forma !== 'numero2' && A.forma !== 'barre2') corpo = '<div class="an28vuoto">' + esc(String(A.risposta || '').replace(/\*\*/g, '')) + '</div>';
+  else if (A.forma === 'numero') {
+    const med = A.misura === 'media' && A.additivo, p = P[0] || {};
+    const val = A.misura === 'media_voce' ? fmt28(p.v, A.dataset, A.misura) : med ? fmt28(A.media_giorno, A.dataset, 'media') : fmt28(A.totale, A.dataset, A.misura === 'conteggio' ? 'conteggio' : A.misura);
+    const sotto = A.misura === 'media_voce' ? 'in media ogni volta · ' + A.n + ' in tutto' : med ? 'al giorno · ' + fmt28(A.totale, A.dataset, 'somma') + ' in ' + A.giorni + ' giorni'
+      : A.dataset === 'umore' ? 'umore medio · ' + A.n + ' volte' : (A.giorni > 1 && A.media_giorno != null ? fmt28(A.media_giorno, A.dataset, 'media') + ' al giorno' : '');
+    const pr = A.prima && A.prima.totale ? Math.round(100 * (((A.misura === 'conteggio' ? A.n : A.totale) || 0) - A.prima.totale) / A.prima.totale) : null;
+    const conta = !med && A.misura !== 'media_voce' && (A.misura === 'conteggio' || ['abitudini', 'attivita', 'pomodori', 'carte'].includes(A.dataset));
+    corpo = eroe28(val + (conta ? ' ' + unita28(A.dataset, A.totale) : ''), sotto, pr == null ? '' : delta28(pr, A.dataset === 'spese') + '<small class="an28prima">rispetto ' + esc(A.prima.etichetta) + '</small>');
+    intest = ['Periodo', 'Valore']; righe = [[A.periodo.etichetta, num28(A.misura === 'media_voce' ? p.v : med ? A.media_giorno : A.totale)]];
+  } else if (A.forma === 'numero2') {
+    const dl = A.totale && A.totale2 != null && A.additivo ? Math.round(100 * (A.totale2 - A.totale) / A.totale) : null;
+    corpo = '<div class="an28due">' + eroe28(fmt28(A.totale, A.dataset, A.misura), A.serie[0]) + '<span class="an28freccia">→</span>' + eroe28(fmt28(A.totale2, A.dataset, A.misura), A.serie[1], delta28(dl, A.dataset === 'spese')) + '</div>';
+    intest = ['Periodo', 'Valore']; righe = [[A.serie[0], num28(A.totale)], [A.serie[1], num28(A.totale2)]];
+  } else if (A.forma === 'barre2') {
+    corpo = barre2_28(P, o, A.serie);
+    intest = ['Voce', A.serie[0], A.serie[1]]; righe = P.map(p => [p.et, num28(p.v), num28(p.v2)]);
+  } else if (A.forma === 'barre') {
+    corpo = barre28(P, o);
+    intest = A.raggruppa === 'voce' ? ['Voce', 'Data', 'Valore'] : ['Voce', 'Valore', 'Quante'];
+    righe = P.map(p => A.raggruppa === 'voce' ? [p.et, p.data || '', num28(p.v)] : [p.et, num28(p.v), p.n]);
+  } else {
+    corpo = A.forma === 'linea' ? linea28(P, Object.assign(o, { max: A.dataset === 'umore' ? 10 : 0, area: A.dataset !== 'umore' })) : colonne28(P, o);
+    intest = [A.raggruppa === 'giorno_settimana' ? 'Giorno' : 'Periodo', 'Valore', 'Quante'];
+    righe = P.map(p => [p.et + (p.parziale ? ' (in corso)' : p.incompleto ? ' (dati da metà)' : ''), num28(p.v), p.n]);
+  }
+  if (righe.length) tab = tabella28(intest, righe);
+  const gruppo = PRESET28[A.raggruppa] || PRESET28.altro, attuale = A.periodo.chiave;
+  const filtri = A.forma === 'numero2' || A.forma === 'barre2' ? '' : '<div class="an28fil" role="group" aria-label="Periodo">' + gruppo.map(([k, n]) => '<button type="button" class="pchip' + (k === attuale ? ' on' : '') + '" aria-pressed="' + (k === attuale) + '" data-an28p="' + escA(k) + '">' + esc(n) + '</button>').join('') + '</div>';
+  const fonte = A.fonte === 'modello' ? '🧠 domanda tradotta dal modello, conti fatti da me' : '';
+  return '<header><b>' + esc(A.emoji + ' ' + A.titolo) + '</b><small>' + esc(A.periodo.etichetta) + (fonte ? ' · ' + fonte : '') + '</small></header>' + filtri
+    + '<div class="an28c">' + corpo + '</div>' + tab + (righe.length ? '<div class="an28b"><button type="button" class="pchip" data-an28csv="1">📥 CSV</button></div>' : '');
+}
+function addAnalisi28(d, A, daAutomazione) {
+  const w = wrap28(d), sec = document.createElement('section'); sec.className = 'an28 an28a'; sec._dati = A; sec.dataset.forma = A.forma;
+  w.appendChild(sec); sec.innerHTML = analisiHTML(A, larg28(w)); AN28.schede++;
+  if (!daAutomazione && ttsOn && A.voce) { stopSpeech(); say(A.voce); }
+  if (AV && !A.vuoto) AV.act('conta', { dur: 2.2 });
+}
+async function cambiaPeriodo28(sec, periodo) {                    // gli stessi conti con un altro periodo (il grafico resta, più chiaro, finché arrivano)
+  const A = sec._dati; if (!A || !A.spec) return;
+  sec.classList.add('carica');
+  const r = await postJ('/analisi', { spec: Object.assign({}, A.spec, { periodo, confronta: '' }) }).catch(() => ({ ok: false }));
+  sec.classList.remove('carica');
+  if (!r.ok) { toast('🔬 Non riesco a rifare i conti adesso', 'err'); return; }
+  r.fonte = A.fonte; sec._dati = r; sec.dataset.forma = r.forma; sec.innerHTML = analisiHTML(r, larg28(sec.parentNode));
+}
+function csvAnalisi28(sec) {
+  const A = sec._dati; if (!A) return;
+  if (A.forma === 'barre2') return csv28(A.titolo, ['Voce', A.serie[0], A.serie[1]], A.punti.map(p => [p.et, num28(p.v), num28(p.v2)]));
+  if (A.forma === 'numero2') return csv28(A.titolo, ['Periodo', 'Valore'], [[A.serie[0], num28(A.totale)], [A.serie[1], num28(A.totale2)]]);
+  csv28(A.titolo + ' ' + A.periodo.etichetta, ['Voce', 'Data/periodo', 'Valore', 'Quante'], A.punti.map(p => [p.et, p.data || p.k || '', num28(p.v), p.n == null ? '' : p.n]));
+}
+
+// ---------- 🔮 la previsione: il mese finora, la previsione con la fascia, il mese scorso, il budget ----------
+function previsioneSVG(P, W) {
+  W = W || 560; const H = 190, L = 44, B = 22, T = 16, N = P.giorni_mese, b = P.budget && P.budget.totale;
+  const ms = P.mese_scorso || [], top = tondo(Math.max(P.alto || 0, b || 0, ...ms.map(x => x.v), ...P.reale.map(x => x.v), 1) * 1.06);
+  const X = g => L + 6 + (g - 1) * (W - L - 16) / Math.max(1, N - 1), y = v => T + (H - T - B) * (1 - v / top);
+  const linea = arr => arr.map((p, i) => (i ? 'L' : 'M') + X(p.g).toFixed(1) + ',' + y(p.v).toFixed(1)).join('');
+  let s = '<svg class="vz" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + escA('Spese di ' + P.mese + ': finora, previsione e mese scorso') + '">';
+  [0, top / 2, top].forEach(t => { s += '<line class="vzgrid" x1="' + L + '" x2="' + W + '" y1="' + y(t).toFixed(1) + '" y2="' + y(t).toFixed(1) + '"></line><text class="vzax" x="' + (L - 6) + '" y="' + (y(t) + 3).toFixed(1) + '" text-anchor="end">' + pulito(t) + ' €</text>'; });
+  const F = P.futuro || [];
+  if (F.length > 1) s += '<path class="an28banda" d="M' + F.map(p => X(p.g).toFixed(1) + ',' + y(p.alto).toFixed(1)).join('L') + 'L' + F.slice().reverse().map(p => X(p.g).toFixed(1) + ',' + y(p.basso).toFixed(1)).join('L') + 'Z"></path>';
+  if (ms.length > 1) s += '<path class="an28prec" d="' + linea(ms) + '"></path>';
+  if (b) s += '<line class="an28budget" x1="' + L + '" x2="' + W + '" y1="' + y(b).toFixed(1) + '" y2="' + y(b).toFixed(1) + '"></line><text class="vzax an28budt" x="' + (L + 4) + '" y="' + (y(b) - 4).toFixed(1) + '">budget ' + esc(pulito(b)) + ' €</text>';
+  if (P.reale.length > 1) s += '<path class="vzline" d="' + linea(P.reale) + '"></path>';
+  if (F.length > 1) s += '<path class="vzline an28tratt" d="' + linea(F) + '"></path>';
+  const oggiP = P.reale[P.reale.length - 1];
+  if (oggiP) s += '<circle class="vzdot" cx="' + X(oggiP.g).toFixed(1) + '" cy="' + y(oggiP.v).toFixed(1) + '" r="4"></circle>';
+  const fin = F[F.length - 1];
+  if (fin && F.length > 1) s += '<circle class="vzdot an28fine" cx="' + X(fin.g).toFixed(1) + '" cy="' + y(fin.v).toFixed(1) + '" r="4"></circle><text class="vzval" x="' + (X(fin.g) - 6).toFixed(1) + '" y="' + (y(fin.v) - 9).toFixed(1) + '" text-anchor="end">≈ ' + esc(pulito(fin.v)) + ' €</text>';
+  if (oggiP) s += '<text class="vzval" x="' + X(oggiP.g).toFixed(1) + '" y="' + (y(oggiP.v) + 16).toFixed(1) + '" text-anchor="middle">' + esc(pulito(oggiP.v)) + ' €</text>';
+  const passo = (W - L - 16) / Math.max(1, N - 1), mr = {}, mf = {}, mm = {};
+  P.reale.forEach(p => { mr[p.g] = p; }); F.forEach(p => { mf[p.g] = p; }); ms.forEach(p => { mm[p.g] = p; });
+  for (let g = 1; g <= N; g++) {
+    const parti = [g + ' ' + P.mese.slice(0, 3)];
+    if (mr[g]) parti.push('speso finora ' + euroIt(mr[g].v));
+    if (mf[g] && g > (oggiP ? oggiP.g : 0)) parti.push('previsione ≈ ' + euroIt(mf[g].v) + ' (tra ' + euroIt(mf[g].basso) + ' e ' + euroIt(mf[g].alto) + ')');
+    if (mm[g]) parti.push(P.mese_scorso_nome + ': ' + euroIt(mm[g].v));
+    s += hit28(X(g) - passo / 2, T, passo, H - T - B, parti.join(' · '), ' data-cx="' + X(g).toFixed(1) + '"');
+    if (g === 1 || g % (W < 420 ? 10 : 5) === 0 && N - g >= 3 || g === N) s += '<text class="vzax" x="' + X(g).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + g + '</text>';
+  }
+  return s + '<line class="vzcross" x1="0" x2="0" y1="' + T + '" y2="' + (H - B) + '" style="display:none"></line></svg>';
+}
+function addPrevisione28(d, P, daAutomazione) {
+  const b = P.budget, stato = !b ? '' : b.gia_sforato ? '<span class="vzdelta su">🚨 budget già superato</span>' : b.sfora ? '<span class="vzdelta su">▲ sfori di ' + esc(euroIt(-b.margine)) + '</span>'
+    : '<span class="vzdelta giu">✓ resti sotto di ' + esc(euroIt(b.margine)) + '</span>';
+  const tiles = '<div class="an28tiles">' + eroe28('≈ ' + euroTondo(P.previsione), 'a fine ' + P.mese + (P.giorni_mancanti ? ' · tra ' + euroTondo(P.basso) + ' e ' + euroTondo(P.alto) : ''), stato)
+    + eroe28(euroTondo(P.speso), 'finora, in ' + P.oggi_giorno + ' giorni') + (b && !b.gia_sforato && b.al_giorno != null && P.giorni_mancanti ? eroe28(euroIt(Math.max(0, b.al_giorno)), 'al giorno per restare nel budget') : eroe28(euroIt(P.ritmo), 'al giorno, il ritmo di tutti i giorni')) + '</div>';
+  const leg = '<div class="vzleg"><span><i class="lgline"></i>questo mese</span><span><i class="lgline tratt"></i>previsione (con la fascia)</span>' + (P.mese_scorso.length ? '<span><i class="lgline prec"></i>' + esc(P.mese_scorso_nome) + '</span>' : '') + (b ? '<span><i class="lgline bud"></i>budget</span>' : '') + '</div>';
+  const righe = [];
+  for (let g = 1; g <= P.giorni_mese; g++) {
+    const r = P.reale.find(x => x.g === g), f = P.futuro.find(x => x.g === g && x.g > P.oggi_giorno), m = (P.mese_scorso || []).find(x => x.g === g);
+    righe.push([g, r ? num28(r.v) : '', f ? num28(f.v) : '', m ? num28(m.v) : '']);
+  }
+  const w = wrap28(d), sec = document.createElement('section'); sec.className = 'an28 an28p'; sec._dati = P; w.appendChild(sec);
+  sec.innerHTML = '<header><b>🔮 Previsione di ' + esc(P.mese) + '</b><small>' + (P.incerta ? 'pochi dati: indicativa' : 'spese di tutti i giorni + spese fisse attese') + '</small></header>' + tiles + leg
+    + '<div class="an28c">' + previsioneSVG(P, larg28(w)) + '</div>' + tabella28(['Giorno', 'Speso (cumulato)', 'Previsione', P.mese_scorso_nome], righe)
+    + '<div class="an28b"><button type="button" class="pchip" data-an28csvp="1">📥 CSV</button></div>';
+  if (!daAutomazione && ttsOn && P.voce) { stopSpeech(); say(P.voce); }
+  if (AV) AV.gesture(b && b.sfora ? 'think' : 'nod');
+}
+
+// ---------- 💰 il simulatore ----------
+function addSimula28(d, S, daAutomazione) {
+  const P = S.punti || [];
+  const w = wrap28(d), sec = document.createElement('section'); sec.className = 'an28 an28s'; sec._dati = S; w.appendChild(sec);
+  let corpo = '';
+  const W = larg28(w);
+  if (P.length) {
+    const o = { ds: 'spese', misura: 'somma', gr: 'sim', titolo: 'Risparmio accumulato', ev: 'max', W };
+    corpo = colonne28(P.map(p => ({ k: p.k, et: p.et, v: p.v, tip: p.tip })), o);
+    if (S.obiettivo) {
+      const top = tondo(Math.max(...P.map(p => p.v), 0) * 1.08), yy = 16 + (160 - 16 - 22) * (1 - S.obiettivo / top);
+      corpo = corpo.replace('</svg>', '<line class="an28budget" x1="40" x2="' + W + '" y1="' + yy.toFixed(1) + '" y2="' + yy.toFixed(1) + '"></line><text class="vzax an28budt" x="44" y="' + (yy - 4).toFixed(1) + '">obiettivo ' + esc(pulito(S.obiettivo)) + ' €</text></svg>');
+    }
+  }
+  const tit = S.tipo === 'obiettivo' ? '🎯 Quando ci arrivi' : S.tipo === 'taglio' ? '✂️ Quanto risparmi' : '💰 Quanto metti da parte';
+  const eroi = S.al_mese ? '<div class="an28tiles">' + eroe28(euroTondo(S.totale), S.tipo === 'obiettivo' ? 'in ' + S.mesi + (S.mesi === 1 ? ' mese' : ' mesi') : S.tipo === 'taglio' ? 'in un anno' : 'dopo ' + S.mesi + (S.mesi === 1 ? ' mese' : ' mesi'))
+    + eroe28(euroIt(S.al_mese), 'al mese') + (S.arrivo ? eroe28(MESI_BREVI[+S.arrivo.slice(5, 7) - 1] + ' ' + S.arrivo.slice(0, 4), 'il traguardo') : S.tasso ? eroe28((S.tasso * 100).toLocaleString('it-IT') + '%', 'interesse annuo') : '') + '</div>' : '';
+  sec.innerHTML = '<header><b>' + tit + '</b><small>una simulazione: i conti, non una promessa</small></header>' + eroi + (corpo ? '<div class="an28c">' + corpo + '</div>' + tabella28(['Quando', 'Messo da parte'], P.map(p => [p.et, num28(p.v)])) : '');
+  if (!daAutomazione && ttsOn && S.voce) { stopSpeech(); say(S.voce); }
+  if (AV) AV.gesture('thumbsup');
+}
+
+// ---------- 🗓️ il tuo anno ----------
+function passoAnno28(Y, larg) { return Math.max(10, Math.min(15, Math.floor(((larg || 700) - 30) / Math.ceil(Y.celle.length / 7)))); }
+function annoSVG(Y, larg) {
+  const Lg = 2, Tp = 16, celle = Y.celle, cols = Math.ceil(celle.length / 7), S = passoAnno28(Y, larg), G = 2, C = S - G, W = Lg + cols * S, H = Tp + 7 * S;
+  const umore = Y.metrica === 'umore';
+  let s = '<svg class="an28anno" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + escA('Il tuo anno: ' + Y.nome + ', un quadratino per giorno') + '">';
+  (Y.mesi || []).forEach(m => { s += '<text class="vzax" x="' + (Lg + m.col * S) + '" y="10">' + esc(m.nome) + '</text>'; });
+  celle.forEach((c, i) => {
+    const x = Lg + Math.floor(i / 7) * S, yy = Tp + (i % 7) * S;
+    const cls = c.l == null ? 'h0 nd' : umore ? 'u' + (c.l + 2) : 'h' + c.l;
+    s += '<rect class="an28cell ' + cls + (c.d === Y.oggi ? ' oggi' : '') + '" x="' + x + '" y="' + yy + '" width="' + C + '" height="' + C + '" rx="2" data-tip="' + escA(c.t) + '"></rect>';
+  });
+  return s + '</svg>';
+}
+function annoHTML(Y, larg) {
+  const st = Y.stat || {}, umore = Y.metrica === 'umore';
+  let tiles = '';
+  if (Y.metrica === 'spese') tiles = eroe28(euroIt(st.totale || 0), 'in tutto') + eroe28(String(st.senza_spese || 0), 'giorni senza spese') + eroe28(String(st.serie_zero || 0), 'di fila, al massimo');
+  else if (umore) tiles = eroe28(st.media != null ? String(st.media).replace('.', ',') + '/10' : '—', 'umore medio') + eroe28(String(st.positivi || 0), 'giorni sereni');
+  else tiles = eroe28(String(st.attivi || 0), Y.metrica === 'abitudini' ? 'giorni con un\'abitudine' : 'giorni attivi') + eroe28(String(st.serie_max || 0), 'la serie più lunga') + eroe28(String(st.serie_ora || 0), 'la serie di adesso');
+  const scala = umore ? '<span>giù</span>' + [0, 1, 2, 3, 4].map(i => '<i class="an28cell u' + i + '"></i>').join('') + '<span>su</span><i class="an28cell h0 nd"></i><span>non detto</span>'
+    : '<span>meno</span>' + [0, 1, 2, 3, 4].map(i => '<i class="an28cell h' + i + '"></i>').join('') + '<span>più</span>';
+  const mesi = {};
+  Y.celle.forEach(c => { if (c.v == null) return; const k = c.d.slice(0, 7); (mesi[k] = mesi[k] || []).push(c.v); });
+  const somma = Y.metrica === 'attivita' || Y.metrica === 'spese';
+  const righe = Object.keys(mesi).sort().reverse().map(k => { const xs = mesi[k], t = xs.reduce((a, b) => a + b, 0);
+    return [MESI_BREVI[+k.slice(5, 7) - 1] + ' ' + k.slice(0, 4), num28(somma ? t : t / xs.length), xs.filter(v => v).length]; });
+  return '<header><b>🗓️ Il tuo anno · ' + esc(Y.emoji + ' ' + Y.nome) + '</b><small>un quadratino per giorno, fino a oggi</small></header>'
+    + '<div class="an28fil" role="group" aria-label="Cosa mostrare">' + Y.metriche.map(m => '<button type="button" class="pchip' + (m.chiave === Y.metrica ? ' on' : '') + '" aria-pressed="' + (m.chiave === Y.metrica) + '" data-an28m="' + escA(m.chiave) + '">' + esc(m.emoji + ' ' + m.nome) + '</button>').join('') + '</div>'
+    + (Y.vuoto ? '<div class="an28vuoto">Ancora niente da colorare qui: man mano che segni, ogni giorno prende il suo colore.</div>'
+      : '<div class="an28tiles">' + tiles + '</div><div class="an28annobox"><div class="an28gg" aria-hidden="true" style="padding-top:16px">' + ['lun', '', 'mer', '', 'ven', '', ''].map(n => '<i style="height:' + passoAnno28(Y, larg) + 'px">' + n + '</i>').join('') + '</div><div class="an28scroll">' + annoSVG(Y, larg) + '</div></div><div class="an28scala">' + scala + '</div>'
+        + tabella28(['Mese', somma ? (Y.metrica === 'spese' ? 'Totale (€)' : 'Cose fatte') : (umore ? 'Umore medio' : 'Abitudini (%)'), 'Giorni con qualcosa'], righe));
+}
+function addAnno28(d, Y, daAutomazione) {
+  const w = wrap28(d), sec = document.createElement('section'); sec.className = 'an28 an28y'; sec._dati = Y; w.appendChild(sec); sec.innerHTML = annoHTML(Y, larg28(w));
+  const sc = sec.querySelector('.an28scroll'); if (sc) sc.scrollLeft = sc.scrollWidth;      // su schermi stretti: si parte da oggi
+  if (!daAutomazione && ttsOn && Y.voce) { stopSpeech(); say(Y.voce); }
+  if (AV && !Y.vuoto) AV.gesture('idea');
+}
+async function cambiaMetrica28(sec, m) {
+  sec.classList.add('carica');
+  const r = await fetch('/anno?metrica=' + encodeURIComponent(m)).then(x => x.json()).catch(() => ({ ok: false }));
+  sec.classList.remove('carica');
+  if (!r.ok) { toast('🗓️ Non riesco a caricare il tuo anno', 'err'); return; }
+  sec._dati = r; sec.innerHTML = annoHTML(r, larg28(sec.parentNode));
+  const sc = sec.querySelector('.an28scroll'); if (sc) sc.scrollLeft = sc.scrollWidth;
+}
+
+// ---------- il passaggio del mouse (e la tastiera) sulle schede ----------
+function tip28(e, el) {
+  const tip = $('#vztip'), sec = el && el.closest('.an28');
+  document.querySelectorAll('.an28 .vzcross').forEach(c => c.style.display = 'none');
+  document.querySelectorAll('.an28 .su').forEach(x => x.classList.remove('su'));
+  if (!el || !sec) { tip.style.display = 'none'; tip.classList.remove('lungo'); return; }
+  tip.textContent = el.dataset.tip; tip.classList.toggle('lungo', el.dataset.tip.length > 60); tip.style.display = 'block';
+  let x, y;
+  if (e && e.clientX != null && e.type !== 'focusin') { x = e.clientX; y = e.clientY; } else { const r = el.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top; }
+  tip.style.left = Math.max(8, Math.min(innerWidth - tip.offsetWidth - 8, x + 14)) + 'px'; tip.style.top = Math.max(8, y - tip.offsetHeight - 10) + 'px';
+  if (el.dataset.cx) { const c = el.closest('svg').querySelector('.vzcross'); if (c) { c.setAttribute('x1', el.dataset.cx); c.setAttribute('x2', el.dataset.cx); c.style.display = ''; } }
+  else el.classList.add('su');
+}
+$('#msgs').addEventListener('pointermove', e => { const el = e.target.closest && e.target.closest('.an28 [data-tip]'); if (el || $('#vztip').style.display === 'block') tip28(e, el); });
+$('#msgs').addEventListener('pointerleave', () => tip28(null, null));
+$('#msgs').addEventListener('focusin', e => { const el = e.target.closest && e.target.closest('.an28 [data-tip]'); if (el) tip28(e, el); });
+$('#msgs').addEventListener('focusout', e => { if (e.target.closest && e.target.closest('.an28 [data-tip]')) tip28(null, null); });
+$('#msgs').addEventListener('scroll', () => tip28(null, null), { passive: true });
+document.addEventListener('click', e => {                        // v28: periodi, metriche, CSV
+  const b = e.target.closest('button[data-an28p],button[data-an28m],button[data-an28csv],button[data-an28csvp]'); if (!b) return;
+  const sec = b.closest('.an28'); if (!sec) return;
+  if (b.dataset.an28p) cambiaPeriodo28(sec, b.dataset.an28p);
+  else if (b.dataset.an28m) cambiaMetrica28(sec, b.dataset.an28m);
+  else if (b.dataset.an28csv) csvAnalisi28(sec);
+  else if (b.dataset.an28csvp) { const P = sec._dati; csv28('previsione_' + P.mese, ['Giorno', 'Speso (cumulato)', 'Previsione', 'Mese scorso'], [...Array(P.giorni_mese)].map((_, i) => { const g = i + 1, r = P.reale.find(x => x.g === g), f = P.futuro.find(x => x.g === g && g > P.oggi_giorno), m = (P.mese_scorso || []).find(x => x.g === g); return [g, r ? num28(r.v) : '', f ? num28(f.v) : '', m ? num28(m.v) : '']; })); }
+});
+
+// ---------- l'HUD sa anche come finisce il mese ----------
+const _rendiHUD27 = rendiHUD;
+rendiHUD = function (d) {
+  _rendiHUD27(d);
+  const p = d && d.previsione;
+  if (p && p.valore != null) $('#hudgauge').insertAdjacentHTML('beforeend', gaugeHUD('fine mese', p.budget ? p.valore / p.budget : 0, '≈' + (p.valore >= 1000 ? (p.valore / 1000).toLocaleString('it-IT', { maximumFractionDigits: 1 }) + 'k' : p.valore) + '€'));
+};
+
+function addV28(d, obj, daAutomazione) {
+  if (obj.analisi) addAnalisi28(d, obj.analisi, daAutomazione);
+  if (obj.previsione) addPrevisione28(d, obj.previsione, daAutomazione);
+  if (obj.simulazione) addSimula28(d, obj.simulazione, daAutomazione);
+  if (obj.anno) addAnno28(d, obj.anno, daAutomazione);
+}
+
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();if(!document.querySelector('.ov.open'))chiudiHUD();}});
 costruisciReattore();
@@ -23746,8 +25566,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 27.0 — Server avviato         ║
-║ hud · situazione · piano d'azione · chef · show  ║
+║        MAIK PRIME 28.0 — Server avviato         ║
+║ analisi · previsioni · il tuo anno · hud · chef  ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -23808,7 +25628,8 @@ def main():
     print(f"    GET  /radio · /storie · /mente · POST /mente/dimentica   [v24]")
     print(f"    GET  /studio · /studio/ripasso · /quiz · POST /studio/voto /studio/elimina /quiz/fine   [v25]")
     print(f"    GET  /cucina · /cucina/ricetta · /tutor · /respiro · POST /cucina/salva /cucina/elimina /cucina/spesa /respiro/fine   [v26]")
-    print(f"    GET  /hud · /situazione · POST /piano/esegui   [NUOVO v27]")
+    print(f"    GET  /hud · /situazione · POST /piano/esegui   [v27]")
+    print(f"    POST /analisi · GET /previsione · /anno   [NUOVO v28]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

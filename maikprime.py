@@ -20981,8 +20981,9 @@ window.ZepKit = (() => {
       if (PR.stato === 'esce' && PR.t > 1.1) { PR.stato = 'via'; PR.on = false; G.visible = false; }
       const pres = PR.stato === 'entra' ? smoothstep((PR.t - 0.25) / 0.8) : PR.stato === 'esce' ? 1 - smoothstep(PR.t / 0.75) : PR.on ? 1 : 0;
       const wPrima = PR.w, fPrima = PR.focusW || 0;
-      PR.w = damp(PR.w, PR.on && PR.stato !== 'esce' ? 1 : 0, 2.6, dt);
-      PR.focusW = damp(fPrima, PR.on && PR.stato === 'qui' && PR.focus ? 1 : 0, 1.6, dt);
+      const dtv = Math.min(0.5, (now - (PR.ultimo || now)) / 1000); PR.ultimo = now;                       // v30: a orologio vero
+      PR.w = damp(PR.w, PR.on && PR.stato !== 'esce' ? 1 : 0, 2.6, dtv);
+      PR.focusW = damp(fPrima, PR.on && PR.stato === 'qui' && PR.focus ? 1 : 0, 1.6, dtv);
       if (Math.abs(PR.w - wPrima) > 1e-4 || Math.abs(PR.focusW - fPrima) > 1e-4 || (PR.w < 0.002 && PR.camX)) { if (PR.w < 0.002) PR.w = 0; inquadraDuo(); placeCamera(); camera.updateProjectionMatrix(); }
       const lampo = PR.stato === 'entra' ? Math.sin(Math.PI * clamp(PR.t / 1.25, 0, 1)) : PR.stato === 'esce' ? Math.sin(Math.PI * clamp(PR.t / 1.1, 0, 1)) : 0;
       P.raggio.material.opacity = 0.55 * lampo; P.raggio.scale.set(0.6 + 0.4 * lampo, 1, 0.6 + 0.4 * lampo); P.raggio.rotation.y += dt * 2;
@@ -21353,7 +21354,7 @@ window.ZepKit = (() => {
     function aggiornaEsp(dt, now) {
       if (!ESP.root) return;
       if (ESP.vuole && (!PR.on || PR.stato === 'esce')) ESP.vuole = null;                  // il Professore se ne va: si spegne
-      const giusto = ESP.vuole && ESP.vuole === ESP.k, dtv = Math.min(0.25, (now - (ESP.ultimo || now)) / 1000); ESP.ultimo = now;   // a orologio vero (anche con fotogrammi lenti)
+      const giusto = ESP.vuole && ESP.vuole === ESP.k, dtv = Math.min(0.5, (now - (ESP.ultimo || now)) / 1000); ESP.ultimo = now;   // a orologio vero (anche con fotogrammi lenti)
       ESP.w = damp(ESP.w, giusto ? 1 : 0, giusto ? 3.2 : 5, dtv);
       if (!giusto && ESP.w < 0.02) { ESP.w = 0; if (ESP.vuole) espCostruisci(ESP.vuole); else { espSvuota(); ESP.root.visible = false; return; } }
       const t = (now - ESP.t0) / 1000, w = smoothstep(ESP.w);

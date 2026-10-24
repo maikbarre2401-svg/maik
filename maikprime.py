@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v29.0                   ║
+║              MAIK PRIME — Server v30.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,17 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v30.0 — MAIK PRIME LABORATORIO 2:
+  • 🔬 Gli esperimenti olografici: «fammi vedere un atomo» (o il sistema solare, il DNA, le onde, il pendolo, la molecola d'acqua,
+    il buco nero) e tra Zep e il Professore si accende la scena 3D dal vivo, mentre lui la spiega. Se gli chiedi una cosa di scienza
+    e c'è l'esperimento giusto, lo accende da solo. «quali esperimenti sai fare?» per l'elenco, «spegni l'esperimento».
+  • 🎭 La lezione a due voci: «spiegatemi la fotosintesi», «fate una lezione sui vulcani»: il Professore spiega, Zep fa le domande,
+    ognuno con la sua voce e la sua bocca.
+  • 📓 Il taccuino del Professore: «cosa mi hai spiegato?» (con la lavagna, gli esperimenti e i voti).
+  • ❓ L'interrogazione: «professore, interrogami» → una domanda su quello che ti ha spiegato, rispondi e ti dà il voto.
+  • Un Professore più vero: pori e rughe sulla pelle, capelli e baffi a fili, la stoffa del camice e della maglia, le ciglia.
+  • GET /professore restituisce anche il taccuino e gli esperimenti.
 
 NOVITÀ v29.0 — MAIK PRIME LABORATORIO:
   • 🧪 Il Professor Flux: «chiama il professore» e accanto a Zep arriva (con un raggio di luce) un secondo assistente in 3D, un personaggio
@@ -454,7 +465,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "29.0"
+VERSIONE  = "30.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -14305,6 +14316,552 @@ def stato_professore(sid):
 
 
 # ════════════════════════════════════════════════════════════
+# V30 — MAIK PRIME LABORATORIO 2: 🔬 gli esperimenti olografici del Professor Flux (il proiettore tra lui e Zep),
+# 🎭 la lezione a due voci (il Professore spiega, Zep fa le domande), 📓 il taccuino del Professore (cosa ti ha spiegato)
+# e ❓ l'interrogazione con il voto
+# ════════════════════════════════════════════════════════════
+
+ESPERIMENTI = {
+    "sistema_solare": {"titolo": "Il sistema solare", "emoji": "🪐", "re": r"sistem[ai]\s+solar|pianet[ai]|\borbit[ae]\b|gravit[àa]",
+                       "descr": "il Sole al centro e i pianeti che gli girano intorno sulle loro orbite (i più vicini vanno più veloci), Saturno con gli anelli, la Luna intorno alla Terra",
+                       "lavagna": ["8 pianeti intorno al Sole", "più vicino al Sole = orbita più veloce", "luce dal Sole alla Terra ≈ 8 min 20 s"]},
+    "atomo": {"titolo": "L'atomo", "emoji": "⚛️", "re": r"\batom[oi]\b|elettron[ei]|proton[ei]|neutron[ei]|nucleo\s+(?:dell['’]\s*)?atom",
+              "descr": "il nucleo fatto di protoni (rossi) e neutroni (blu) e gli elettroni che gli girano intorno sulle orbite",
+              "lavagna": ["nucleo = protoni (+) e neutroni", "elettroni (−) intorno al nucleo", "l'atomo è quasi tutto vuoto"]},
+    "dna": {"titolo": "Il DNA", "emoji": "🧬", "re": r"\bdna\b|\bgen[ie]\b|genetic|cromosom|doppia\s+elica",
+            "descr": "la doppia elica del DNA che gira: due filamenti e, in mezzo, i pioli colorati delle coppie di basi",
+            "lavagna": ["doppia elica: 2 filamenti", "coppie di basi: A–T e C–G", "≈ 3 miliardi di coppie in una cellula umana"]},
+    "onda": {"titolo": "Le onde", "emoji": "🌊", "re": r"(?<!\bin\s)\bond[ae]\b|interferenz|frequenz|lunghezza\s+d['’]\s*onda",
+             "descr": "due sorgenti che fanno onde nella stessa vasca: dove due creste si incontrano l'onda diventa più alta, dove una cresta incontra una valle si annullano (interferenza)",
+             "lavagna": ["v = λ · f", "cresta + cresta = onda più alta", "cresta + valle = si annullano"]},
+    "pendolo": {"titolo": "Il pendolo", "emoji": "🕰️", "re": r"pendol[oi]|oscillazion",
+                "descr": "un pendolo che oscilla, con la scia e la freccia della velocità (più veloce in basso, fermo per un attimo agli estremi)",
+                "lavagna": ["T = 2π · √(L / g)", "il periodo non dipende dalla massa", "filo più lungo = oscilla più lento"]},
+    "molecola": {"titolo": "La molecola d'acqua", "emoji": "💧", "re": r"molecol[ae]|\bh2o\b|h₂o|legam[ei]\s+(?:chimic|covalent|a\s+idrogeno)",
+                 "descr": "una molecola d'acqua: l'ossigeno (rosso) e due idrogeni (bianchi) a 104,5°, con le cariche parziali δ− e δ+, che vibra",
+                 "lavagna": ["H₂O: 2 idrogeni + 1 ossigeno", "angolo ≈ 104,5°", "δ− sull'ossigeno, δ+ sugli idrogeni"]},
+    "buco_nero": {"titolo": "Il buco nero", "emoji": "🕳️", "re": r"buc(?:o|hi)\s+ner[oi]|orizzonte\s+degli\s+eventi",
+                  "descr": "un buco nero: l'orizzonte degli eventi (nero), l'anello di luce intorno e il disco di gas che gira, più veloce vicino al centro",
+                  "lavagna": ["niente esce dall'orizzonte degli eventi", "raggio: r = 2GM / c²", "il disco gira più veloce vicino al centro"]},
+}
+for _k, _e in ESPERIMENTI.items():
+    _e["rx"] = re.compile(_e["re"], re.I)
+
+CARATTERE_PROF = CARATTERE_PROF + (
+    "\nESPERIMENTI OLOGRAFICI: tra te e Zep c'è un proiettore. Se l'argomento è uno di questi, alla fine accendilo scrivendo [[esperimento: CHIAVE]] "
+    "(una sola volta): " + ", ".join(ESPERIMENTI) + "."
+)
+SISTEMA_LEZIONE = (
+    "LEZIONE A DUE VOCI: scrivi una piccola scena di dialogo tra te (il Professor Flux) e Zep, il robottino di MAIK. "
+    "Zep è curioso ed entusiasta, fa le domande semplici che farebbe chi ascolta e ogni tanto una battuta; tu spieghi bene, con precisione e con le tue analogie. "
+    "Rispondi SOLO con un JSON: {\"battute\": [{\"chi\": \"zep\" oppure \"prof\", \"testo\": \"...\"}], \"lavagna\": [\"al massimo 3 righe corte\"], "
+    "\"esperimento\": \"una chiave tra " + ", ".join(ESPERIMENTI) + ", oppure null\"}. "
+    "Da 6 a 10 battute alternate, ognuna di 1-3 frasi; la prima la dice Zep, l'ultima la dici tu. Niente tag [[...]] nelle battute."
+)
+SISTEMA_DOMANDA = (
+    "INTERROGAZIONE: LA DOMANDA. Fai UNA domanda breve e precisa per vedere se la persona ha capito l'argomento (non dare la risposta). "
+    "Rispondi SOLO con un JSON: {\"domanda\": \"...\", \"risposta\": \"la risposta giusta, in breve\"}."
+)
+SISTEMA_VOTO = (
+    "INTERROGAZIONE: IL VOTO. Valuta la risposta della persona con giustizia e simpatia (incoraggia sempre). "
+    "Rispondi SOLO con un JSON: {\"voto\": numero da 1 a 10, \"giudizio\": \"giusto\" oppure \"quasi\" oppure \"sbagliato\", "
+    "\"commento\": \"2-3 frasi: cosa va bene, cosa manca, e la risposta giusta se serve\"}."
+)
+ZEP_APERTURE = ["Professore, oggi si parla di «{t}»! Da dove partiamo?", "Professore, io di «{t}» non so niente. Me lo spiega?", "Bip! Lezione speciale: «{t}». Professore, a lei la parola!"]
+ZEP_INTERVENTI = ["Aspetti, aspetti… quindi?", "Wow! E poi cosa succede?", "Bip! Questa me la segno. E allora?", "Ma davvero? Continui, Professore!"]
+ZEP_FINALI = ["Ho capito tutto! …Quasi tutto. Grazie, Professore!", "Bip bup: lezione salvata nella mia memoria!", "Che lezione! Professore, lei è un genio."]
+APERTURE_INTERROGA = ["Interrogazione a sorpresa!", "Vediamo se eri attento…", "Mettiamo alla prova quel cervello!", "Domanda da laboratorio:"]
+INTERROGAZIONI = {}                                        # chat → la domanda che il Professore ti ha fatto {"domanda", "risposta", "argomento", "id", "t"}
+
+_PROF_NOME = r"prof(?:essor(?:e)?)?(?:\s+flux)?"
+_RE_INDIRIZZO_PROF = re.compile(r"^(?:(?:maik|zep|prime)[,!]?\s+)?(?:caro\s+)?(?:" + _PROF_NOME + r"\s*[,:!]\s*|(?:prof(?:essor(?:e)?)?\s+flux|professore)\s+(?!e\s+zep\b))", re.I)
+_RE_INDIRIZZO_PROF_FINE = re.compile(r"[,\s]+(?:caro\s+)?" + _PROF_NOME + r"\s*[?!.]*$", re.I)
+_PREP = r"(?:su(?:l|lla|ll['’]\s*|i|gli|lle|llo)?|del(?:la|l['’]\s*|lo|i|gli|le)?|di|dell['’]\s*)"
+_RE_LEZIONE = [
+    re.compile(r"^(?:spiegatemelo|spiegatemi|spiegatelo|spiegateci|raccontatemi|raccontateci)(?:\s+in\s+due)?[,:]?\s+(?:" + _PREP + r"\s+)?(?P<tema>\S.{2,})$", re.I),
+    re.compile(r"^(?:(?:il\s+)?professore\s+e\s+zep|zep\s+e\s+(?:il\s+)?professore)[,:]?\s+(?:parlate(?:mi|ci)?|spiegate(?:mi|ci)?|discutete|chiacchierate|"
+               r"fate(?:mi|ci)?\s+una\s+lezione)\s+(?:" + _PREP + r"\s+|come\s+|perch[eé]\s+|cosa\s+)?(?P<tema>\S.{2,})$", re.I),
+    re.compile(r"^(?:(?:fate(?:mi|ci)?|facciamo|fai|fammi|voglio)\s+)?(?:una\s+|un\s+)?(?:lezione\s+a\s+due\s+voci|lezione|dialogo)\s+" + _PREP + r"\s+(?P<tema>\S.{2,})$", re.I),
+    re.compile(r"^(?:lezione|dialogo)\s+a\s+due\s+voci[,:]?\s+(?P<tema>\S.{2,})$", re.I),
+]
+_RE_LINGUA_TEMA = re.compile(r"^(?:l['’]\s*)?(?:inglese|spagnolo|francese|tedesco|portoghese|giapponese|cinese|russo|arabo|italiano)\b", re.I)
+_RE_TACCUINO = re.compile(r"^(?:(?:il\s+)?(?:tuo\s+)?taccuino(?:\s+del\s+" + _PROF_NOME + r")?|cosa\s+mi\s+(?:hai|ha)\s+(?:spiegato|insegnato)(?:\s+il\s+" + _PROF_NOME + r")?|"
+                          r"cosa\s+ho\s+imparato(?:\s+(?:con|dal)\s+(?:il\s+)?" + _PROF_NOME + r")?|(?:le\s+)?(?:tue\s+)?lezioni(?:\s+del\s+" + _PROF_NOME + r")?|"
+                          r"(?:i\s+)?miei\s+voti(?:\s+(?:con|del)\s+(?:il\s+)?" + _PROF_NOME + r")?)$", re.I)
+_RE_ESP_LISTA = re.compile(r"^(?:quali\s+esperimenti(?:\s+(?:sai\s+fare|hai|ci\s+sono|puoi\s+fare|conosci|mi\s+fai\s+vedere))?|che\s+esperimenti\s+(?:sai\s+fare|hai|ci\s+sono|puoi\s+fare)|"
+                           r"(?:i\s+tuoi\s+|gli\s+)?esperimenti(?:\s+(?:olografici|del\s+" + _PROF_NOME + r"))?|(?:l['’]\s*)?elenco\s+(?:degli\s+)?esperimenti)$", re.I)
+_RE_ESP_SPEGNI = re.compile(r"^(?:spegni|chiudi|togli|basta(?:\s+con)?)\s+(?:l['’]\s*|lo\s+|il\s+|gli\s+)?(?:esperiment[oi]|ologramm[ai]|proiettore)$", re.I)
+_RE_ESPERIMENTO = re.compile(r"^(?:(?:fammi|facci|fateci|fatemi|mi\s+fai|ci\s+fai)\s+vedere|mostra(?:mi|ci)?|fai\s+vedere|accendi|proietta|simula|"
+                             r"(?P<esp>(?:fai|fammi|facciamo|fate(?:mi|ci)?)\s+(?:l['’]\s*|un\s+|lo\s+|uno\s+)?esperimento|esperimento))"
+                             r"(?:\s+" + _PREP + r"|\s+con(?:\s+(?:il|la|lo|l['’]|i|le|gli))?)?\s*:?\s*(?P<x>\S.*)?$", re.I)
+_RE_INTERROGA = re.compile(r"^(?:interrogami|mi\s+interroghi|fammi\s+(?:una\s+)?(?:domanda|interrogazione)|mettimi\s+alla\s+prova|un['’]\s*altra\s+domanda|"
+                           r"verifica\s+(?:se\s+ho\s+capito|cosa\s+ho\s+imparato))(?:\s+" + _PREP + r"\s+(?P<tema>\S.+))?$", re.I)
+_RE_NON_SO = re.compile(r"^(?:non\s+(?:lo\s+)?so|boh+|non\s+(?:me\s+lo\s+)?ricordo|mi\s+arrendo|passo|aiuto|dimmelo\s+tu|qual\s+(?:è|era)\s+la\s+risposta|non\s+ne\s+ho\s+idea)$", re.I)
+_RE_BASTA_INT = re.compile(r"^(?:basta(?:\s+(?:interrogazione|domande|cos[iì]))?|lascia(?:mo)?\s+(?:stare|perdere)|annulla|stop|fine(?:\s+interrogazione)?|"
+                           r"non\s+voglio\s+(?:essere\s+interrogat[oa]|rispondere))$", re.I)
+_RE_ESP_TAG = re.compile(r"\[\[\s*esperimento\s*:\s*([A-Za-zÀ-ÿ_ ]+?)\s*\]\]", re.I)
+_RE_TAG_DOPPI = re.compile(r"\[\[[^\]]*\]\]")
+
+
+def esperimento_da(testo):
+    """La chiave dell'esperimento che c'entra con questo testo (o None)."""
+    t = str(testo or "")
+    k = re.sub(r"\s+", "_", t.strip().lower())
+    if k in ESPERIMENTI:
+        return k
+    return next((k for k, e in ESPERIMENTI.items() if e["rx"].search(t)), None)
+
+
+def info_esperimento(k):
+    e = ESPERIMENTI.get(k)
+    return {"k": k, "titolo": e["titolo"], "emoji": e["emoji"], "lavagna": list(e["lavagna"])} if e else None
+
+
+def _senza_prof(t):
+    """«professore, interrogami» → («interrogami», True): toglie il «professore» davanti o in fondo."""
+    fine = _RE_INDIRIZZO_PROF_FINE.search(t)
+    if fine and re.search(r"\b(?:del|dal|il|al|col|con|nel|sul|un|lo|caro|mio)$", t[:fine.start()], re.I):
+        fine = None                                                            # «il taccuino del professore»: non è un richiamo
+    nominato = bool(_RE_INDIRIZZO_PROF.match(t) or fine)
+    t = _RE_INDIRIZZO_PROF.sub("", t, count=1)
+    if fine:
+        t = t[:len(t) - len(fine.group(0))] if t.endswith(fine.group(0)) else _RE_INDIRIZZO_PROF_FINE.sub("", t)
+    t = re.sub(r"^(?:maik|zep|prime)[,!]?\s+", "", t, flags=re.I)
+    return t.strip(), nominato
+
+
+def _argomento(t):
+    t = re.sub(r"\s+", " ", _RE_TAG_DOPPI.sub("", str(t or ""))).strip().rstrip(" ?!.")
+    t, _ = _senza_prof(t)
+    return (t[:1].upper() + t[1:])[:110]
+
+
+def _da_segnare(q, lav, k):
+    """Nel taccuino vanno le spiegazioni vere, non i «ciao» o «chi sei?»."""
+    if lav or k:
+        return True
+    q = (q or "").lower().strip()
+    if len(q) < 8 or re.search(r"\b(?:chi\s+sei|come\s+ti\s+chiami|come\s+stai|grazie|ciao|va\s+bene)\b", q):
+        return False
+    return bool(re.search(r"\?|^(?:come|perch[eé]|cos['’]|cosa|quanto|quant[iae]|qual[ei]?|chi|dove|quando|spiega|dimmi|raccontami|che\s+cos)", q))
+
+
+class Taccuino:
+    """📓 Il taccuino del Professore: cosa ti ha spiegato (con la lavagna e l'esperimento) e i voti delle interrogazioni."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _file():
+        return os.path.join(DATA_DIR, "professore.json")
+
+    def _carica(self):
+        try:
+            with open(self._file(), encoding="utf-8") as f:
+                d = json.load(f)
+            if isinstance(d, dict) and isinstance(d.get("lezioni"), list):
+                d.setdefault("interrogazioni", 0)
+                return d
+        except Exception:
+            pass
+        return {"lezioni": [], "interrogazioni": 0}
+
+    def _salva(self, d):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = self._file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._file())
+
+    def segna(self, argomento, lavagna=None, esperimento=None, tipo="domanda"):
+        argomento = _argomento(argomento)
+        if not argomento:
+            return None
+        with self._lock:
+            d = self._carica()
+            n = Studio._norm(argomento)
+            v = next((x for x in reversed(d["lezioni"][-60:]) if Studio._norm(x["argomento"]) == n), None)
+            if v:
+                d["lezioni"].remove(v)
+            else:
+                v = {"id": uuid.uuid4().hex[:10], "argomento": argomento, "lavagna": [], "esperimento": None, "tipo": tipo, "voti": [], "volte": 0}
+            v["quando"] = datetime.datetime.now().isoformat(timespec="seconds")
+            v["volte"] = v.get("volte", 0) + 1
+            v["lavagna"] = (list(lavagna or []) or v.get("lavagna") or [])[:4]
+            v["esperimento"] = esperimento or v.get("esperimento")
+            v["tipo"] = tipo if tipo != "domanda" else v.get("tipo", tipo)
+            d["lezioni"].append(v)
+            d["lezioni"] = d["lezioni"][-300:]
+            self._salva(d)
+            return v
+
+    def elenco(self, n=12):
+        return list(reversed(self._carica()["lezioni"]))[:n]
+
+    def riassunto(self):
+        d = self._carica()
+        voti = [x for v in d["lezioni"] for x in v.get("voti", [])]
+        return {"lezioni": len(d["lezioni"]), "interrogazioni": d.get("interrogazioni", 0), "media": round(sum(voti) / len(voti), 1) if voti else None}
+
+    def scegli(self, tema=None):
+        """Su cosa interrogarti: quello che chiedi, o una cosa recente che non ti ho ancora chiesto (o che era andata male)."""
+        L = self._carica()["lezioni"]
+        if tema:
+            n = Studio._norm(tema)
+            return next((v for v in reversed(L) if n and (n in Studio._norm(v["argomento"]) or Studio._norm(v["argomento"]) in n)), None)
+        if not L:
+            return None
+        recenti = list(reversed(L))[:15]
+        recenti.sort(key=lambda v: (len(v.get("voti", [])) > 0 and min(v["voti"][-1:] or [10]) >= 7, len(v.get("voti", []))))
+        return random.choice(recenti[:3])
+
+    def voto(self, vid, voto):
+        with self._lock:
+            d = self._carica()
+            d["interrogazioni"] = d.get("interrogazioni", 0) + 1
+            v = next((x for x in d["lezioni"] if x["id"] == vid), None)
+            if v is not None and voto is not None:
+                v.setdefault("voti", []).append(int(voto))
+                v["voti"] = v["voti"][-10:]
+            self._salva(d)
+            return v
+
+
+TACCUINO = Taccuino()
+_FILE_ANNULLABILI["professore.json"] = "🧪 taccuino del Professore"
+
+_professore_intercetta_v29 = professore_intercetta
+_professore_risponde_v29 = professore_risponde
+_carattere_attivo_v29 = carattere_attivo
+
+
+def carattere_attivo():
+    """Come prima; e se sul palco c'è un esperimento acceso, il Professore lo sa (e lo spiega)."""
+    c = _carattere_attivo_v29()
+    k = getattr(_CTX, "prof_esp", None) if getattr(_CTX, "prof", False) else None
+    if k and k in ESPERIMENTI:
+        e = ESPERIMENTI[k]
+        c += (f"\n\nESPERIMENTO IN CORSO: sul palco, tra te e Zep, adesso è acceso l'esperimento olografico «{e['titolo']}»: {e['descr']}. "
+              "Se la persona te l'ha chiesto, spiegale cosa sta vedendo e perché è affascinante (4-6 frasi); non serve riscrivere il tag dell'esperimento.")
+    return c
+
+
+def _prof_entra(sid, st, avvisa):
+    """Se il Professore non c'è, arriva (e la GUI lo vede entrare)."""
+    if st:
+        st["ultimo"] = time.time()
+        return st, False
+    st = PROF_SESSIONI[sid] = {"da": time.time(), "ultimo": time.time(), "domande": 0}
+    avvisa({"professore_entra": True})
+    return st, True
+
+
+def professore_intercetta(motore, testo, on_token, allegato=None, sessione=None, on_evento=None):
+    """V30, prima di quello della V29: la risposta a un'interrogazione, la lezione a due voci, il taccuino, gli esperimenti, «interrogami»."""
+    if allegato or getattr(_CTX, "automazione", False) or not testo:
+        return None
+    sid = motore.memoria.sessione_valida(sessione)
+    t = re.sub(r"\s+", " ", testo.strip())
+    tt = t.rstrip(" ?!.")
+    st = prof_attivo(sid)
+    avvisa = on_evento or (lambda e: None)
+    nucleo, nominato = _senza_prof(tt)
+    lezione = next((m for rx in _RE_LEZIONE for m in [rx.match(tt) or rx.match(nucleo)] if m), None)
+    if lezione and _RE_LINGUA_TEMA.match(lezione.group("tema")):
+        lezione = None                                                           # «lezione di inglese»: è del tutor
+    # ❓ c'è una domanda dell'interrogazione in sospeso: questa è la risposta (se non è un'altra cosa del Professore)
+    iq = INTERROGAZIONI.get(sid)
+    if iq and (not st or time.time() - iq["t"] > 900):
+        INTERROGAZIONI.pop(sid, None); iq = None
+    if iq:
+        altro = (_RE_PROF_CONGEDA.match(tt) or _RE_PROF_CHIAMA.match(tt) or lezione or _RE_TACCUINO.match(nucleo) or _RE_ESP_LISTA.match(nucleo)
+                 or _RE_ESP_SPEGNI.match(nucleo) or (_RE_ESPERIMENTO.match(nucleo) and esperimento_da(nucleo)) or _RE_INTERROGA.match(nucleo)
+                 or re.match(r"^(?:maik|zep|prime)\b", tt, re.I))
+        if altro:
+            INTERROGAZIONI.pop(sid, None)
+        else:
+            return _interroga_valuta(motore, testo, on_token, sid, st, iq, avvisa)
+    # 🎭 la lezione a due voci
+    if lezione:
+        st, entra = _prof_entra(sid, st, avvisa)
+        st["domande"] += 1
+        return _lezione_a_due(motore, testo, lezione.group("tema").strip(" ?!.:"), on_token, sid, entra, avvisa)
+    # 📓 il taccuino
+    if _RE_TACCUINO.match(tt) or _RE_TACCUINO.match(nucleo):
+        return _taccuino_scheda(motore, testo, on_token, sid, st, avvisa)
+    # 🔬 gli esperimenti: l'elenco, spegnere, accenderne uno
+    if _RE_ESP_LISTA.match(tt) or _RE_ESP_LISTA.match(nucleo):
+        return _esperimenti_elenco(motore, testo, on_token, sid, st, avvisa)
+    if _RE_ESP_SPEGNI.match(nucleo) and st:
+        avvisa({"parla": "professore"})
+        st["ultimo"] = time.time()
+        return _prof_fine(motore, testo, on_token, sid, "🧪 Proiettore spento. L'ologramma ringrazia per l'attenzione.", {"on": True, "spegni": True})
+    m = _RE_ESPERIMENTO.match(nucleo)
+    if m:
+        k = esperimento_da(m.group("x") or "")
+        if not k and m.group("esp") and not m.group("x"):
+            k = random.choice(list(ESPERIMENTI))                               # «fammi un esperimento»: sceglie lui
+        if not k and m.group("esp"):
+            st, entra = _prof_entra(sid, st, avvisa)
+            avvisa({"parla": "professore"})
+            elenco = ", ".join(f"{e['emoji']} {e['titolo'].lower()}" for e in ESPERIMENTI.values())
+            return _prof_fine(motore, testo, on_token, sid, f"🧪 Quell'esperimento nel mio proiettore non c'è (ancora!). Posso mostrarti: {elenco}.", {"on": True, "entra": entra})
+        if k:
+            st, entra = _prof_entra(sid, st, avvisa)
+            st["domande"] += 1
+            avvisa({"esperimento": info_esperimento(k)})
+            return {"testo": t, "entra": entra, "sid": sid, "esperimento": k, "domanda": ESPERIMENTI[k]["titolo"], "tipo": "esperimento"}
+    # ❓ «interrogami»: con il Professore qui (o chiamandolo per nome); altrimenti resta il ripasso delle carte
+    m = _RE_INTERROGA.match(nucleo)
+    if m and (nominato or st) and not re.search(r"\b(?:carte|mazzo|flashcard)\b", nucleo, re.I):
+        tema = (m.group("tema") or "").strip()
+        if nominato or tema or TACCUINO.elenco(1):
+            st, entra = _prof_entra(sid, st, avvisa)
+            return _interroga(motore, testo, on_token, sid, st, entra, avvisa, tema or None)
+    r = _professore_intercetta_v29(motore, testo, on_token, allegato, sessione, on_evento)
+    if isinstance(r, dict) and not r.get("done"):
+        r.setdefault("domanda", r["testo"])
+        k = esperimento_da(r["testo"])
+        if k:
+            r["esperimento"] = k                                               # si accende quando comincia a parlare lui
+    return r
+
+
+def professore_risponde(motore, pr, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None, accurato=False):
+    """Come nella V29; in più l'esperimento (acceso con la sua voce), il tag [[esperimento: …]] e il taccuino."""
+    esp = pr.get("esperimento")
+    pezzi = []
+    def tok(x):
+        pezzi.append(x)
+        on_token(x)
+    avvisa = on_evento or (lambda e: None)
+    def ev(e):
+        if esp and isinstance(e, dict) and e.get("parla") == "professore" and "esperimento" not in e:
+            e = dict(e, esperimento=info_esperimento(esp))
+        avvisa(e)
+    _CTX.prof_esp = esp
+    try:
+        meta = _professore_risponde_v29(motore, pr, tok, allegato, rigenera, sessione, ev, accurato)
+    finally:
+        _CTX.prof_esp = None
+    P = meta.get("professore") if isinstance(meta, dict) else None
+    if P and P.get("voce") == "prof":
+        testo = "".join(pezzi)
+        k = esp
+        if not k:
+            mt = _RE_ESP_TAG.search(testo)
+            k = esperimento_da(mt.group(1)) if mt else None
+        if k:
+            P["esperimento"] = info_esperimento(k)
+            if not P.get("lavagna"):
+                P["lavagna"] = list(ESPERIMENTI[k]["lavagna"])
+        domanda = pr.get("domanda") or pr.get("testo")
+        if _da_segnare(domanda, P.get("lavagna"), k):
+            v = TACCUINO.segna(domanda, P.get("lavagna"), k, pr.get("tipo") or "domanda")
+            if v:
+                P["taccuino"] = v["id"]
+    return meta
+
+
+# ---------- 🎭 la lezione a due voci ----------
+def _battute_pulite(L):
+    out = []
+    for b in (L if isinstance(L, list) else [])[:14]:
+        if not isinstance(b, dict):
+            continue
+        chi = str(b.get("chi") or b.get("speaker") or "").strip().lower()
+        chi = "zep" if chi.startswith("z") or "robot" in chi else "prof" if chi.startswith("p") or "flux" in chi else None
+        t = re.sub(r"\s+", " ", _RE_TAG_DOPPI.sub("", str(b.get("testo") or b.get("text") or ""))).strip()
+        t = re.sub(r"^\**(?:zep|prof(?:essore)?(?:\s+flux)?)\**\s*:\s*", "", t, flags=re.I)
+        if chi and 2 < len(t):
+            out.append({"chi": chi, "testo": t[:480]})
+    return out if any(b["chi"] == "prof" for b in out) and any(b["chi"] == "zep" for b in out) else []
+
+
+def genera_lezione(tema):
+    """Il copione della lezione: dal modello (JSON); se non viene bene, una spiegazione del Professore divisa in battute con le domande di Zep."""
+    j = pensa_breve_http(CARATTERE_PROF + "\n\n" + SISTEMA_LEZIONE, f"Argomento della lezione: {tema}", num_predict=900, temperatura=0.7, json_out=True)
+    battute = _battute_pulite(j.get("battute")) if isinstance(j, dict) else []
+    if len(battute) >= 4:
+        lav = [re.sub(r"\s+", " ", str(x)).strip()[:90] for x in (j.get("lavagna") or []) if str(x).strip()][:4] if isinstance(j.get("lavagna"), list) else []
+        k = esperimento_da(str(j.get("esperimento") or "")) if j.get("esperimento") else None
+        return battute, lav, k, "modello"
+    t = pensa_breve_http(CARATTERE_PROF, f"Spiega in 5-7 frasi, in modo chiaro e vivace: {tema}", num_predict=500, temperatura=0.6)
+    if not t or not t.strip():
+        return [], [], None, "errore"
+    lav = lavagna_da(t)
+    mt = _RE_ESP_TAG.search(t)
+    k = esperimento_da(mt.group(1)) if mt else None
+    frasi = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", re.sub(r"\s+", " ", _RE_TAG_DOPPI.sub(" ", t)).strip()) if len(s.strip()) > 2]
+    battute = [{"chi": "zep", "testo": random.choice(ZEP_APERTURE).format(t=tema)}]
+    pezzi = [frasi[i:i + 2] for i in range(0, len(frasi), 2)] or [[t.strip()]]
+    for i, p in enumerate(pezzi[:4]):
+        if i:
+            battute.append({"chi": "zep", "testo": ZEP_INTERVENTI[(i - 1) % len(ZEP_INTERVENTI)]})
+        battute.append({"chi": "prof", "testo": " ".join(p)})
+    battute.append({"chi": "zep", "testo": random.choice(ZEP_FINALI)})
+    return battute, lav, k, "piano_b"
+
+
+def _lezione_a_due(motore, testo, tema, on_token, sid, entra, avvisa):
+    k0 = esperimento_da(tema)
+    avvisa(dict({"dialogo": True}, **({"esperimento": info_esperimento(k0)} if k0 else {})))
+    avvisa({"lavoro": {"tipo": "lezione", "icona": "🎭", "testo": "Il Professore e Zep preparano la lezione…"}})
+    battute, lav, k, fonte = genera_lezione(tema)
+    if not battute:
+        frase = "🧪 Il Professore oggi non riesce a collegarsi al cervello di MAIK (Ollama è acceso?). Riprova tra poco: la lezione è solo rimandata!"
+        on_token(frase)
+        motore.memoria.salva_scambio(testo, frase, sid)
+        return motore._meta(done=True, ok=True, azione=True, sessione=sid, professore={"on": True, "entra": entra, "voce": "prof"})
+    k = k0 or k
+    if not lav and k:
+        lav = list(ESPERIMENTI[k]["lavagna"])
+    out = "".join(f"{'🧪 **Professore:**' if b['chi'] == 'prof' else '🤖 **Zep:**'} {b['testo']}\n\n" for b in battute)
+    if lav:
+        out += "[[lavagna: " + " | ".join(lav) + "]]"
+    on_token(out)
+    motore.memoria.salva_scambio(testo, out, sid)
+    v = TACCUINO.segna(tema, lav, k, "lezione")
+    P = {"on": True, "entra": entra, "voce": "dialogo", "lavagna": lav, "taccuino": v["id"] if v else None}
+    if k:
+        P["esperimento"] = info_esperimento(k)
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid, professore=P, dialogo=battute, lezione={"tema": tema, "fonte": fonte})
+
+
+# ---------- 📓 il taccuino, 🔬 l'elenco degli esperimenti ----------
+def _taccuino_scheda(motore, testo, on_token, sid, st, avvisa):
+    L, R = TACCUINO.elenco(12), TACCUINO.riassunto()
+    voci = [{"id": v["id"], "argomento": v["argomento"], "quando": v.get("quando", "")[:10], "lavagna": v.get("lavagna", []), "tipo": v.get("tipo", "domanda"),
+             "esperimento": info_esperimento(v["esperimento"]) if v.get("esperimento") else None,
+             "voto": round(sum(v["voti"]) / len(v["voti"]), 1) if v.get("voti") else None} for v in L]
+    if not voci:
+        frase = "📓 Il taccuino del Professore è ancora vuoto: chiamalo («chiama il professore») e fagli una domanda; lui spiega e si segna tutto qui."
+    else:
+        righe = []
+        for v in voci:
+            g = v["quando"][8:10] + "/" + v["quando"][5:7] if len(v["quando"]) >= 10 else ""
+            icona = v["esperimento"]["emoji"] if v["esperimento"] else ("🎭" if v["tipo"] == "lezione" else "📌")
+            righe.append(f"• {g} — {icona} {v['argomento']}" + (f" · voto {str(v['voto']).replace('.', ',')}" if v["voto"] is not None else ""))
+        testa = "🧪 Il mio taccuino! Ecco cosa ti ho spiegato" if st else "📓 **Il taccuino del Professor Flux**: ecco cosa ti ha spiegato"
+        media = f" Media dei voti: **{str(R['media']).replace('.', ',')}**." if R["media"] is not None else ""
+        frase = f"{testa} ({R['lezioni']} {'argomento' if R['lezioni'] == 1 else 'argomenti'}).{media}\n" + "\n".join(righe) + \
+                "\n\nDi' «**professore, interrogami**» per vedere se ti ricordi."
+    if st:
+        avvisa({"parla": "professore"}); st["ultimo"] = time.time()
+    on_token(frase)
+    motore.memoria.salva_scambio(testo, frase, sid)
+    extra = {"professore": {"on": True, "voce": "prof"}} if st else {}
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid, taccuino=dict(R, voci=voci), **extra)
+
+
+def _esperimenti_elenco(motore, testo, on_token, sid, st, avvisa):
+    voci = [{"k": k, "titolo": e["titolo"], "emoji": e["emoji"], "frase": f"fammi vedere {e['titolo'][0].lower() + e['titolo'][1:]}"} for k, e in ESPERIMENTI.items()]
+    frase = ("🧪 Ecco cosa sa fare il mio proiettore olografico:\n" if st else "🔬 **Gli esperimenti olografici del Professor Flux**:\n") + \
+            "\n".join(f"• {v['emoji']} {v['titolo']} — «{v['frase']}»" for v in voci) + \
+            "\n\nOppure chiedigli una cosa di scienza: se c'è l'esperimento giusto, lo accende da solo."
+    if st:
+        avvisa({"parla": "professore"}); st["ultimo"] = time.time()
+    on_token(frase)
+    motore.memoria.salva_scambio(testo, frase, sid)
+    extra = {"professore": {"on": True, "voce": "prof"}} if st else {}
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid, esperimenti=voci, **extra)
+
+
+# ---------- ❓ l'interrogazione ----------
+def _interroga(motore, testo, on_token, sid, st, entra, avvisa, tema=None):
+    avvisa({"parla": "professore"})
+    voce = TACCUINO.scegli(tema)
+    if tema and not voce:
+        voce = {"id": None, "argomento": _argomento(tema), "lavagna": []}
+    if not voce:
+        return _prof_fine(motore, testo, on_token, sid, "🧪 Interrogarti? Prima devo spiegarti qualcosa! Fammi una domanda (o «fammi vedere un atomo»), poi ti interrogo.",
+                          {"on": True, "entra": entra})
+    st["domande"] += 1
+    arg, lav = voce["argomento"], voce.get("lavagna") or []
+    j = pensa_breve_http(CARATTERE_PROF + "\n\n" + SISTEMA_DOMANDA, f"Argomento: {arg}\nAppunti alla lavagna: {' | '.join(lav) or '(nessuno)'}",
+                         num_predict=260, temperatura=0.7, json_out=True)
+    domanda = re.sub(r"\s+", " ", str(j.get("domanda") or "")).strip()[:300] if isinstance(j, dict) else ""
+    risposta = re.sub(r"\s+", " ", str(j.get("risposta") or "")).strip()[:400] if isinstance(j, dict) else ""
+    if len(domanda) < 6:
+        domanda = f"Cosa ricordi di «{arg}»? Spiegamelo con parole tue."
+    if not risposta:
+        risposta = " · ".join(lav) or f"quello che ti ho spiegato su «{arg}»"
+    INTERROGAZIONI[sid] = {"domanda": domanda, "risposta": risposta, "argomento": arg, "id": voce.get("id"), "t": time.time()}
+    frase = f"🧪 {random.choice(APERTURE_INTERROGA)} Argomento: **{arg}**.\n\n{domanda}"
+    on_token(frase)
+    motore.memoria.salva_scambio(testo, frase, sid)
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid,
+                        professore={"on": True, "entra": entra, "voce": "prof", "interrogazione": {"domanda": domanda, "argomento": arg}})
+
+
+_VUOTE = {"circa", "quasi", "sono", "della", "delle", "degli", "dello", "nella", "nelle", "molto", "perche", "come", "anche", "questo", "questa", "quello", "quella",
+          "dopo", "prima", "sempre", "ogni", "tutto", "tutti", "cosa", "fatto", "fatta"}
+
+
+def _voto_a_parole(risposta, giusta):
+    """Senza il modello: quante parole importanti (e numeri) della risposta giusta ci sono nella tua. Un numero sbagliato pesa."""
+    def norm(s):
+        s = Studio._norm(re.sub(r"(?<=\d)[.\s](?=\d{3}\b)", "", str(s)))
+        return {w for w in re.findall(r"[a-zà-ÿ]{4,}|\d+", s) if w not in _VUOTE}
+    G, R = norm(giusta), norm(risposta)
+    if not G:
+        return 6
+    voto = max(2, min(10, round(2 + 8 * len(G & R) / len(G))))
+    numeri = {w for w in G if w.isdigit()}
+    if numeri and not numeri & R:
+        voto = min(voto, 4)
+    return voto
+
+
+def _interroga_valuta(motore, testo, on_token, sid, st, iq, avvisa):
+    INTERROGAZIONI.pop(sid, None)
+    st["ultimo"] = time.time()
+    avvisa({"parla": "professore"})
+    t = re.sub(r"\s+", " ", testo.strip()).rstrip(" .!")
+    P = {"on": True, "voce": "prof"}
+    if _RE_BASTA_INT.match(t):
+        frase = "🧪 Va bene, niente interrogazione per oggi. Ma ricorda: il sapere non va mai in vacanza!"
+        P["interrogazione"] = {"fine": True}
+    elif _RE_NON_SO.match(t.rstrip("?")):
+        frase = f"🧪 Niente panico, succede anche ai geni (raramente). La risposta era: {iq['risposta']}\n\nTe la richiedo un'altra volta, contaci!"
+        P.update(voto=None, giudizio="non_so", risposta=iq["risposta"])
+        TACCUINO.voto(iq.get("id"), None)
+    else:
+        j = pensa_breve_http(CARATTERE_PROF + "\n\n" + SISTEMA_VOTO,
+                             f"Domanda: {iq['domanda']}\nRisposta giusta: {iq['risposta']}\nRisposta della persona: {t}", num_predict=280, temperatura=0.3, json_out=True)
+        voto = None
+        if isinstance(j, dict):
+            try:
+                voto = max(1, min(10, int(round(float(str(j.get("voto")).replace(",", "."))))))
+            except (TypeError, ValueError):
+                voto = None
+        if voto is None:
+            voto = _voto_a_parole(t, iq["risposta"])
+        giudizio = str((j or {}).get("giudizio") or "").lower() if isinstance(j, dict) else ""
+        if giudizio not in ("giusto", "quasi", "sbagliato"):
+            giudizio = "giusto" if voto >= 7 else "quasi" if voto >= 5 else "sbagliato"
+        commento = re.sub(r"\s+", " ", str(j.get("commento") or "")).strip()[:500] if isinstance(j, dict) else ""
+        if not commento:
+            commento = {"giusto": "Esatto! Visto? Con un maestro come me…", "quasi": f"Quasi! Ti manca un pezzetto. La risposta completa: {iq['risposta']}",
+                        "sbagliato": f"Mmh, no, ma non ti abbattere. La risposta giusta è: {iq['risposta']}"}[giudizio]
+        frase = f"🧪 {commento}\n\nVoto: **{voto}/10** {'⭐' * (1 + (voto >= 6) + (voto >= 8))}\n\nUn'altra? «**un'altra domanda**»."
+        P.update(voto=voto, giudizio=giudizio, risposta=iq["risposta"])
+        TACCUINO.voto(iq.get("id"), voto)
+    on_token(frase)
+    motore.memoria.salva_scambio(testo, frase, sid)
+    return motore._meta(done=True, ok=True, azione=True, sessione=sid, professore=P)
+
+
+def stato_professore_v30(sid):
+    r = stato_professore(sid)
+    r["taccuino"] = TACCUINO.riassunto()
+    r["interrogazione"] = bool(INTERROGAZIONI.get(sid)) and r["on"]
+    r["esperimenti"] = [{"k": k, "titolo": e["titolo"], "emoji": e["emoji"]} for k, e in ESPERIMENTI.items()]
+    return r
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -15687,7 +16244,7 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
             elif base == "/professore":                               # v29: 🧪 il Professore c'è (in questa chat)?
-                self._json(dict(stato_professore(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
+                self._json(dict(stato_professore_v30(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
             elif base == "/previsione":                               # v28: 🔮 come finisce il mese (spese)
                 p = previsione_spese()
                 self._json(dict(p, ok=True) if p else {"ok": True, "vuoto": True})
@@ -16476,7 +17033,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V29</title>
+<title>MAIK PRIME // Zep V30</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -17293,10 +17850,39 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   #lav29r div{padding:2px 0;border-bottom:1px dashed rgba(103,232,249,.18)}
   body.prof-on #avstate::after{content:' · 🧪 col Professore'}
   @media (max-width:760px){#lav29{bottom:80px;width:min(260px,70%)}}
+
+  /* ===== V30 · esperimenti, dialogo, taccuino, interrogazione ===== */
+  #esp30{position:absolute;right:16px;bottom:96px;z-index:6;display:flex;align-items:center;gap:8px;padding:7px 10px 7px 12px;background:linear-gradient(160deg,rgba(8,47,73,.7),rgba(2,6,23,.7));
+         border:1px solid rgba(103,232,249,.55);box-shadow:0 0 18px rgba(34,211,238,.22);color:#ecfeff;font:600 11.5px 'Orbitron','Share Tech Mono',monospace;letter-spacing:1.5px;
+         clip-path:polygon(0 0,calc(100% - 10px) 0,100% 10px,100% 100%,10px 100%,0 calc(100% - 10px));opacity:0;transform:translateY(6px);transition:opacity .35s,transform .35s}
+  #esp30[hidden]{display:none}#esp30.su{opacity:1;transform:none}
+  #esp30::before{content:'🔬 ESPERIMENTO';color:#67e8f9;font-size:9.5px;margin-right:2px;opacity:.85}
+  #esp30 button{background:transparent;border:1px solid rgba(103,232,249,.5);color:#67e8f9;cursor:pointer;font:inherit;padding:0 6px;line-height:18px}
+  .m.ai.dial30 .b30{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;align-items:start;padding:7px 9px;margin:5px 0;border-left:3px solid transparent;border-radius:6px;transition:background .25s,border-color .25s}
+  .b30>b{font:600 10.5px 'Share Tech Mono',monospace;letter-spacing:1px;white-space:nowrap;padding-top:3px}
+  .b30 .t>p{margin:0}.b30.prof>b{color:#e8c46a}.b30.zep>b{color:var(--accent)}
+  .b30.prof{background:rgba(201,162,75,.06)}.b30.zep{background:rgba(var(--accent-rgb),.05)}
+  .b30.ora.prof{border-left-color:#e8c46a;background:rgba(201,162,75,.16)}.b30.ora.zep{border-left-color:var(--accent);background:rgba(var(--accent-rgb),.14)}
+  @media (max-width:560px){.m.ai.dial30 .b30{grid-template-columns:1fr}}
+  .tacc30{margin:6px 0 8px;padding:10px 12px 8px;border-radius:8px;background:repeating-linear-gradient(180deg,#fbf6e9 0 27px,#d7e3f0 27px 28px);color:#2a2a33;box-shadow:inset 3px 0 0 #e26d6d}
+  .tacc30 .th{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;margin-bottom:4px}.tacc30 .th span{color:#6a6a78;font-size:12px}
+  .tacc30 .tr{display:grid;grid-template-columns:42px 22px 1fr auto auto;gap:6px;align-items:center;min-height:28px;font-size:13.5px}
+  .tacc30 .d{color:#8a8a99;font:12px 'Share Tech Mono',monospace}.tacc30 small{display:block;color:#5c6b80;font:11.5px 'Share Tech Mono',monospace}
+  .tacc30 .v{font:700 12px 'Share Tech Mono',monospace;padding:1px 6px;border-radius:9px;color:#fff}.tacc30 .v.ok{background:#2e9d5b}.tacc30 .v.mah{background:#c48a1a}.tacc30 .v.no{background:#c2410c}
+  .tacc30 button{background:transparent;border:1px solid #c9b78f;border-radius:6px;cursor:pointer;padding:0 5px;line-height:20px}
+  .esp30l{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+  .esp30l button{background:rgba(var(--accent-rgb),.08);border:1px solid rgba(var(--accent-rgb),.4);color:var(--text);border-radius:14px;padding:5px 11px;cursor:pointer;font:inherit;font-size:13px}
+  .esp30l button:hover,.esp30l button:focus-visible{background:rgba(var(--accent-rgb),.2)}
+  .m.ai.int30{box-shadow:0 0 0 1px rgba(232,196,106,.55),0 0 18px rgba(232,196,106,.18)}
+  .int30h{margin-top:8px;font:12px 'Share Tech Mono',monospace;color:#e8c46a;opacity:.9}
+  .m.ai .voto30{float:right;margin:0 0 6px 10px;width:58px;height:58px;border-radius:50%;display:flex;align-items:baseline;justify-content:center;padding-top:12px;box-sizing:border-box;
+         border:3px double currentColor;transform:rotate(-12deg);font-family:'Orbitron','Share Tech Mono',monospace;color:#2e9d5b;background:rgba(46,157,91,.08)}
+  .voto30 b{font-size:22px}.voto30 span{font-size:10px;opacity:.8}.voto30.quasi{color:#c48a1a;background:rgba(196,138,26,.08)}.voto30.sbagliato{color:#ea580c;background:rgba(234,88,12,.08)}
+  @media (max-width:760px){#esp30{bottom:80px;right:10px}}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V29</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V30</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -17353,6 +17939,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openPerf()">⚡ Prestazioni e benessere</button>
     <button class="tbtn" type="button" style="width:100%;margin-top:8px" onclick="openDiagnosi()">🩺 Diagnosi, copie e annulla</button>
     <div class="sbshow"><button class="tbtn" type="button" id="btnprof29" data-prof29="toggle" title="Chiama il Professor Flux">🧪 Professore</button><button class="tbtn" type="button" data-prof29="chiedi" title="Fai una domanda al Professore">❓ Chiedi a lui</button></div>
+    <div class="sbshow"><button class="tbtn" type="button" onclick="qs('quali esperimenti sai fare?')" title="Gli esperimenti olografici del Professore">🔬 Esperimenti</button><button class="tbtn" type="button" data-v30="lezione" title="Lezione a due voci: il Professore e Zep">🎭 Lezione</button><button class="tbtn" type="button" onclick="qs('cosa mi hai spiegato?')" title="Il taccuino del Professore (e i voti)">📓 Taccuino</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('analizza le mie spese')" title="Analisi delle spese con il grafico">🔬 Analisi</button><button class="tbtn" type="button" onclick="qs('quanto spenderò questo mese?')" title="Come finisce il mese">🔮 Previsione</button><button class="tbtn" type="button" onclick="qs('mostrami il mio anno')" title="Un quadratino per ogni giorno">🗓️ Il mio anno</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="toggleHUD()" title="Interfaccia olografica (H)">🛰️ HUD</button><button class="tbtn" type="button" onclick="qs('come siamo messi?')" title="Il punto della situazione">🧠 Situazione</button><button class="tbtn" type="button" onclick="$('#inp').value='organizzami domani: ';$('#inp').focus()" title="Piano d'azione: una frase, più cose in agenda">⚡ Piano</button></div>
     <div class="sbshow"><button class="tbtn" type="button" onclick="qs('cosa cucino stasera?')" title="Chef Zep: cosa cucino?">🍳 Cucina</button><button class="tbtn" type="button" onclick="qs('parliamo in inglese')" title="Conversazione in inglese con il tutor">🗣️ Parliamo</button><button class="tbtn" type="button" onclick="qs('facciamo un esercizio di respirazione')" title="Respiro guidato">🫧 Respira</button></div>
@@ -17369,6 +17956,7 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <div id="stage3d" aria-label="Il personaggio 3D"></div>
       <div id="aiutbar" aria-live="polite" aria-label="Aiutanti al lavoro"></div>
       <div id="lav29" role="region" aria-label="Lavagna del Professore" aria-live="polite" hidden><h6>🧪 LAVAGNA DEL PROFESSORE<button type="button" data-prof29="lavagna" aria-label="Chiudi la lavagna">✕</button></h6><div id="lav29r"></div></div>
+      <div id="esp30" role="status" aria-live="polite" hidden><span id="esp30t"></span><button type="button" data-esp30x aria-label="Spegni l'esperimento">✕</button></div>
       <div id="hud" role="region" aria-label="Interfaccia olografica" hidden>
         <svg id="hudreattore" viewBox="0 0 400 400" aria-hidden="true"><circle class="hr1" cx="200" cy="200" r="192"/><circle class="hr2" cx="200" cy="200" r="160"/><circle class="hr3" cx="200" cy="200" r="132"/><g class="hrtick"></g></svg>
         <div class="hudp" id="hudtl"><h6>◉ PRIME · HUD<button type="button" data-hud="chiudi" aria-label="Chiudi l'interfaccia olografica">✕</button></h6><div id="hudora">--:--:--</div><div id="huddata"></div><div id="hudsaluto"></div><div id="hudmeteo"></div></div>
@@ -17448,6 +18036,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
     <div id="msgs"></div>
     <div id="tutorbar" role="status" hidden></div>
     <div class="quick">
+      <button onclick="qs('fammi vedere un buco nero')">🔬 fammi vedere un buco nero</button>
+      <button data-v30="lezione">🎭 spiegatemi …</button>
+      <button onclick="qs('professore, interrogami')">❓ interrogami</button>
       <button data-prof29="toggle">🧪 chiama il professore</button>
       <button data-prof29="chiedi">❓ professore, …</button>
       <button onclick="qs('in che giorno della settimana spendo di più?')">🔬 in che giorno spendo di più?</button>
@@ -18275,7 +18866,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V29 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V30 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -18298,6 +18889,8 @@ const MaikKit = (() => {
    V27: Zep ologramma (ologramma(true)): corpo azzurro traslucido che tremola appena, l'anello di scansione, la piattaforma del proiettore.
    V29: il Professor Flux (prof.entra()): un secondo personaggio accanto a Zep, con bocca, occhi, gesti e il guanto-analizzatore;
         con voce = 'prof' il labiale va a lui e Zep lo guarda; la telecamera li inquadra tutti e due.
+   V30: prof.esperimento('atomo'): tra Zep e il Professore si accende un esperimento olografico (sistema_solare, atomo, dna, onda,
+        pendolo, molecola, buco_nero); il Professore più dettagliato (pelle, capelli a fili, stoffa, ciglia).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -18858,6 +19451,7 @@ window.ZepKit = (() => {
       speakUntil: 0, parlando: false, alvl: 0, alvlT: 0, mp: { open: 0, wide: 0, round: 0, press: 0 },
       blinkT: 2, blink: 0, sacc: { t: 0, x: 0, y: 0 }, look: { x: 0, y: 0 }, guarda: { x: 0, y: 0 },
       emo: { happy: 0, surprised: 0, thinking: 0, annoyed: 0 }, emoTarget: null, emoUntil: 0, gest: null, nextIdle: 0, brow: 0, browT: 0, beat: 0, beatT: 0 };
+    const ESP = { k: null, vuole: null, w: 0, vis: 0, g: null, upd: null, mats: [], t0: 0, root: null, base: null, label: null, texPunto: null };   // v30: 🔬
     const charRoot = new THREE.Group(); scene.add(charRoot);
     let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, baseY = 0, topY = 1.6;
 
@@ -19463,6 +20057,7 @@ window.ZepKit = (() => {
       aggiornaOlo(dt, now);                                               // v27: 🛰️
       PR.zepParla = PR.on && !PR.voce && speaking;
       aggiornaProf(dt, now);                                              // v29: 🧪
+      aggiornaEsp(dt, now);                                               // v30: 🔬
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -20259,6 +20854,7 @@ window.ZepKit = (() => {
       G.updateMatrixWorld(true);
       PR.top = new THREE.Box3().setFromObject(G).max.y;
       PR.g = G;
+      dettagliProf(PR.parti);                                                                                     // v30: pelle, capelli, stoffa, ciglia
       return G;
     }
 
@@ -20512,6 +21108,352 @@ window.ZepKit = (() => {
       if (parla && PR.voce && S.lookSource !== 'face') S.gaze = { until: now + 300, x: 0.8, y: 0.06 };
     }
 
+    // ============================================================
+    // V30 — 🔬 GLI ESPERIMENTI OLOGRAFICI DEL PROFESSORE: un proiettore tra Zep e il Professor Flux accende una scena 3D dal vivo
+    // (il sistema solare, l'atomo, il DNA, le onde, il pendolo, la molecola d'acqua, il buco nero). E più dettagli sul Professore:
+    // pori e rughe sulla pelle, capelli e baffi a fili, la stoffa del camice e della maglia, le ciglia.
+    // ============================================================
+    PR_POSE.presenta = { sx: -0.42, sy: 0.4, sz: 0.62, ex: -0.75, wr: 0.25 };                 // il palmo aperto verso l'ologramma: «ecco qua!»
+    PR_GESTI.presenta = { D: ['presenta', 'aperta'], dur: 2.6, guarda: [-0.55, -0.12], emo: 'happy' };
+    const ESP_POS = { x: PR.X * 0.5, y: 1.14, z: 0.32, R: 0.31 };                                // dove si accende: in mezzo, un po' davanti
+    const ESPERIMENTI_3D = {
+      sistema_solare: { titolo: 'IL SISTEMA SOLARE', crea: espSistema },
+      atomo: { titolo: "L'ATOMO", crea: espAtomo },
+      dna: { titolo: 'IL DNA', crea: espDna },
+      onda: { titolo: 'LE ONDE', crea: espOnda },
+      pendolo: { titolo: 'IL PENDOLO', crea: espPendolo },
+      molecola: { titolo: "LA MOLECOLA D'ACQUA", crea: espMolecola },
+      buco_nero: { titolo: 'IL BUCO NERO', crea: espBucoNero },
+    };
+
+    // ---------- i mattoncini dell'ologramma ----------
+    function espMat(color, op = 0.85, extra = {}) {
+      const m = new THREE.MeshBasicMaterial(Object.assign({ color: new THREE.Color(color), transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }, extra));
+      ESP.mats.push({ m, o: op }); return m;
+    }
+    function espTexPunto() {                                    // un puntino che brilla (per stelle, elettroni, particelle)
+      if (ESP.texPunto) return ESP.texPunto;
+      const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+      const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,.9)'); gr.addColorStop(0.7, 'rgba(255,255,255,.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+      return (ESP.texPunto = new THREE.CanvasTexture(c));
+    }
+    function espBagliore(color, s, op = 0.6) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: espTexPunto(), color: new THREE.Color(color), transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); ESP.mats.push({ m: sp.material, o: op }); sp.scale.setScalar(s); return sp; }
+    function espSfera(r, color, op, parent, x = 0, y = 0, z = 0, seg = 24) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, Math.max(10, seg * 0.7 | 0)), espMat(color, op)); m.position.set(x, y, z); parent.add(m); return m; }
+    function espLinea(punti, color, op = 0.5, chiusa = false, parent) {
+      const geo = new THREE.BufferGeometry().setFromPoints(punti.map(p => p.isVector3 ? p : new THREE.Vector3(...p)));
+      const l = new (chiusa ? THREE.LineLoop : THREE.Line)(geo, espMat(color, op)); if (parent) parent.add(l); return l;
+    }
+    function espCerchio(r, n = 96, rx = r, ry = 0) { return Array.from({ length: n }, (_, i) => { const a = i / n * Math.PI * 2; return [Math.cos(a) * rx, ry ? Math.sin(a) * ry : 0, ry ? 0 : Math.sin(a) * r]; }); }
+    function espPunti(n, size, parent) {                       // n punti con posizione e colore propri (si aggiornano a ogni fotogramma)
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      const m = new THREE.PointsMaterial({ size, map: espTexPunto(), vertexColors: true, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, sizeAttenuation: true });
+      ESP.mats.push({ m, o: 1 });
+      const p = new THREE.Points(geo, m); parent.add(p); return p;
+    }
+    function espTesto(t, alto = 0.06, col = null) {           // una scritta che fluttua (sempre rivolta verso di te); alto = altezza nel mondo
+      const H = 96, c = document.createElement('canvas'), g = c.getContext('2d'), font = 'bold 46px "Share Tech Mono", "DejaVu Sans Mono", monospace';
+      g.font = font; const w = Math.ceil(g.measureText(t).width + 36); c.width = w; c.height = H;
+      g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; col = col || ('#' + accent.getHexString());
+      g.shadowColor = col; g.shadowBlur = 14; g.fillStyle = col; g.fillText(t, w / 2, H / 2);
+      g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,.85)'; g.fillText(t, w / 2, H / 2);
+      const tx = new THREE.CanvasTexture(c); tx.colorSpace = THREE.SRGBColorSpace;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false }));
+      ESP.mats.push({ m: sp.material, o: 0.95 }); sp.scale.set(alto * w / H, alto, 1); return sp;
+    }
+
+    // ---------- gli esperimenti (in uno spazio di raggio ~1; il gruppo li rimpicciolisce) ----------
+    function espSistema(g) {                                   // 🪐 il Sole e sei pianeti in orbita (tempi veri in proporzione, molto accelerati)
+      g.rotation.x = 0.55;
+      espSfera(0.16, 0xffb347, 1, g); g.add(espBagliore(0xffa020, 0.75, 0.75)); g.add(espBagliore(0xfff0b0, 0.36, 0.9));
+      const dati = [[0.3, 0.035, 2.4, 0xb8b8c0], [0.42, 0.05, 1.8, 0xf0c27a], [0.55, 0.055, 1.4, 0x4fa3ff], [0.68, 0.042, 1.1, 0xff6a3d], [0.85, 0.1, 0.6, 0xe0b48a], [1.0, 0.085, 0.45, 0xead9a8]];
+      const pianeti = dati.map(([d, r, v, c], i) => {
+        espLinea(espCerchio(d), accent, 0.28, true, g);
+        const p = new THREE.Group(); g.add(p); espSfera(r, c, 0.95, p); p.add(espBagliore(c, r * 3.2, 0.35));
+        if (i === 5) { const an = new THREE.Mesh(new THREE.RingGeometry(r * 1.45, r * 2.2, 40), espMat(0xe8d6a8, 0.55, { side: THREE.DoubleSide })); an.rotation.x = Math.PI / 2 - 0.35; p.add(an); }
+        let luna = null; if (i === 2) luna = espSfera(0.016, 0xdfe6f0, 0.9, p, 0.09, 0, 0);
+        return { p, d, v, a: i * 1.7, luna };
+      });
+      const stelle = espPunti(70, 0.006, g), sp = stelle.geometry.attributes.position, sc = stelle.geometry.attributes.color;
+      for (let i = 0; i < 70; i++) { const a = rnd(0, 6.28), e = rnd(-1, 1), r = rnd(1.15, 1.35); sp.setXYZ(i, Math.cos(a) * r, e * 0.5, Math.sin(a) * r); sc.setXYZ(i, 0.6, 0.75, 1); }
+      return (t, dt) => {
+        for (const P of pianeti) { P.a += P.v * dt; P.p.position.set(Math.cos(P.a) * P.d, 0, -Math.sin(P.a) * P.d); if (P.luna) P.luna.position.set(Math.cos(t * 5) * 0.09, 0, Math.sin(t * 5) * 0.09); }
+        g.rotation.y += dt * 0.08;
+      };
+    }
+    function espAtomo(g) {                                     // ⚛️ il nucleo (protoni e neutroni) e gli elettroni sulle orbite
+      const nucleo = new THREE.Group(); g.add(nucleo);
+      const N = 12, nuc = [];
+      for (let i = 0; i < N; i++) {                                        // impacchettati su una sfera (distribuzione di Fibonacci)
+        const y = 1 - (i + 0.5) / N * 2, r = Math.sqrt(1 - y * y), a = i * 2.39996;
+        const pos = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r).multiplyScalar(0.085);
+        nuc.push({ m: espSfera(0.068, i % 2 ? 0x8fb8ff : 0xff5c7a, 0.95, nucleo, pos.x, pos.y, pos.z, 18), p: pos, ph: rnd(0, 6.28) });
+      }
+      nucleo.add(espBagliore(0xff9ab0, 0.55, 0.45));
+      const orbite = [0, 1, 2].map(k => {
+        const o = new THREE.Group(); o.rotation.z = k * Math.PI / 3; o.rotation.x = 0.25; g.add(o);
+        espLinea(espCerchio(0, 120, 0.92, 0.33), accent, 0.42, true, o);
+        const e = new THREE.Group(); o.add(e); espSfera(0.045, 0x9ff6ff, 1, e, 0, 0, 0, 14); e.add(espBagliore(accent, 0.24, 0.8));
+        return { e, v: 2.2 + k * 0.45, ph: k * 2.1 };
+      });
+      return (t) => {
+        for (const n of nuc) n.m.position.copy(n.p).multiplyScalar(1 + 0.04 * Math.sin(t * 9 + n.ph));            // il nucleo vibra appena
+        for (const O of orbite) { const a = t * O.v + O.ph; O.e.position.set(Math.cos(a) * 0.92, Math.sin(a) * 0.33, 0); }
+        g.rotation.y = 0.45 * Math.sin(t * 0.4);
+      };
+    }
+    function espDna(g) {                                       // 🧬 la doppia elica: due filamenti e le coppie di basi (A–T, C–G)
+      g.rotation.z = 0.18;
+      const N = 24, giri = 2.2, R = 0.32, H = 1.7, COPPIE = [[0xff6b6b, 0xffd93d], [0xffd93d, 0xff6b6b], [0x6bcb77, 0x4d96ff], [0x4d96ff, 0x6bcb77]];
+      const fili = [[], []];
+      let seme = 3; const cas = () => { seme = (seme * 9301 + 49297) % 233280; return seme / 233280; };
+      for (let i = 0; i < N; i++) {
+        const y = -H / 2 + H * i / (N - 1), a = i / N * giri * Math.PI * 2, cp = COPPIE[(cas() * 4) | 0];
+        const A = new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R), B = new THREE.Vector3(-A.x, y, -A.z);
+        fili[0].push(A); fili[1].push(B);
+        espSfera(0.042, accent, 0.95, g, A.x, A.y, A.z, 12); espSfera(0.042, accent2, 0.95, g, B.x, B.y, B.z, 12);
+        for (const [P, c] of [[A, cp[0]], [B, cp[1]]]) {                    // mezzo «piolo» per parte: il colore della base
+          const mezzo = P.clone().multiplyScalar(0.5), cil = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, R, 8), espMat(c, 0.85));
+          cil.position.set(mezzo.x, y, mezzo.z); cil.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), P.clone().setY(0).normalize()); g.add(cil);
+        }
+      }
+      espLinea(fili[0], accent, 0.6, false, g); espLinea(fili[1], accent2, 0.6, false, g);
+      return (t, dt) => { g.rotation.y += dt * 0.55; };
+    }
+    function espOnda(g) {                                      // 🌊 due sorgenti, due onde che si sommano: interferenza (creste e valli)
+      g.rotation.x = 0.72;
+      const L = 34, n = L * L, rete = new THREE.Mesh(new THREE.PlaneGeometry(2, 2, L - 1, L - 1), espMat(0xffffff, 0.55, { wireframe: true, vertexColors: true }));
+      rete.geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3)); g.add(rete);
+      const pts = espPunti(n, 0.016, g), pos = pts.geometry.attributes.position, col = pts.geometry.attributes.color, rp = rete.geometry.attributes.position, rc = rete.geometry.attributes.color;
+      const S1 = [-0.42, 0], S2 = [0.42, 0], c1 = new THREE.Color(accent2), c2 = new THREE.Color(accent), cc = new THREE.Color();
+      for (const [x, z] of [S1, S2]) { espSfera(0.04, 0xffffff, 1, g, x, 0.02, z, 12); const b = espBagliore(accent, 0.22, 0.8); b.position.set(x, 0.02, z); g.add(b); }
+      espLinea([[-1, 0, -1], [1, 0, -1], [1, 0, 1], [-1, 0, 1]], accent, 0.25, true, g);
+      return (t) => {
+        for (let i = 0; i < L; i++) for (let j = 0; j < L; j++) {
+          const k = i * L + j, x = -1 + 2 * i / (L - 1), z = -1 + 2 * j / (L - 1);
+          const r1 = Math.hypot(x - S1[0], z - S1[1]), r2 = Math.hypot(x - S2[0], z - S2[1]);
+          const h = (Math.sin(r1 * 15 - t * 4.2) / (1 + r1 * 1.5) + Math.sin(r2 * 15 - t * 4.2) / (1 + r2 * 1.5)) * 0.11;
+          pos.setXYZ(k, x, h, z); rp.setXYZ(j * L + i, x, h, z);
+          const q = clamp(0.5 + h * 3.2, 0, 1); cc.copy(c1).lerp(c2, q).multiplyScalar(0.55 + 1.2 * q); col.setXYZ(k, cc.r, cc.g, cc.b); rc.setXYZ(j * L + i, cc.r, cc.g, cc.b);
+        }
+        pos.needsUpdate = col.needsUpdate = rp.needsUpdate = rc.needsUpdate = true;
+        g.rotation.y = 0.25 * Math.sin(t * 0.3);
+      };
+    }
+    function espPendolo(g) {                                   // 🕰️ il pendolo: oscilla, lascia la scia, la freccia della velocità
+      const Y0 = 0.86, Lp = 1.32, A = 0.62, W = 2.35;
+      espLinea([[-0.62, Y0, 0], [0.62, Y0, 0]], accent, 0.7, false, g); espLinea([[-0.55, Y0, 0], [-0.55, -0.95, 0]], accent, 0.35, false, g); espLinea([[0.55, Y0, 0], [0.55, -0.95, 0]], accent, 0.35, false, g);
+      espLinea([[-0.75, -0.95, 0], [0.75, -0.95, 0]], accent, 0.5, false, g);
+      espSfera(0.03, 0xffffff, 1, g, 0, Y0, 0, 10);
+      const arco = []; for (let i = 0; i <= 40; i++) { const a = -0.75 + 1.5 * i / 40; arco.push([Math.sin(a) * (Lp + 0.08), Y0 - Math.cos(a) * (Lp + 0.08), 0]); } espLinea(arco, accent2, 0.35, false, g);
+      for (let i = -3; i <= 3; i++) { const a = i * 0.2; espLinea([[Math.sin(a) * (Lp + 0.05), Y0 - Math.cos(a) * (Lp + 0.05), 0], [Math.sin(a) * (Lp + 0.13), Y0 - Math.cos(a) * (Lp + 0.13), 0]], accent2, 0.5, false, g); }
+      const filo = espLinea([[0, Y0, 0], [0, Y0 - Lp, 0]], 0xffffff, 0.75, false, g);
+      const palla = new THREE.Group(); g.add(palla); espSfera(0.1, accent, 0.95, palla, 0, 0, 0, 20); palla.add(espBagliore(accent, 0.5, 0.6));
+      const freccia = espLinea([[0, 0, 0], [0, 0, 0]], 0xffe066, 0.95, false, g);
+      const NS = 46, scia = espPunti(NS, 0.012, g), sp = scia.geometry.attributes.position, sc = scia.geometry.attributes.color, storia = [];
+      return (t) => {
+        const th = A * Math.cos(W * t), om = -A * W * Math.sin(W * t);
+        const x = Math.sin(th) * Lp, y = Y0 - Math.cos(th) * Lp;
+        palla.position.set(x, y, 0);
+        const fp = filo.geometry.attributes.position; fp.setXYZ(1, x, y, 0); fp.needsUpdate = true;
+        const fa = freccia.geometry.attributes.position, vx = Math.cos(th) * om * 0.12, vy = Math.sin(th) * om * 0.12; fa.setXYZ(0, x, y, 0.02); fa.setXYZ(1, x + vx, y + vy, 0.02); fa.needsUpdate = true;
+        storia.unshift([x, y]); if (storia.length > NS) storia.pop();
+        for (let i = 0; i < NS; i++) { const s = storia[Math.min(i, storia.length - 1)], k = 1 - i / NS; sp.setXYZ(i, s[0], s[1], -0.01); sc.setXYZ(i, accent.r * k, accent.g * k, accent.b * k); }
+        sp.needsUpdate = sc.needsUpdate = true;
+        g.rotation.y = 0.22 * Math.sin(t * 0.25);
+      };
+    }
+    function espMolecola(g) {                                  // 💧 H₂O: l'ossigeno, i due idrogeni a 104,5°, le cariche parziali; vibra e ruota
+      const O = espSfera(0.3, 0xff5050, 0.9, g, 0, 0.14, 0, 28); O.add(espBagliore(0xff6060, 1.1, 0.35));
+      const ang = 104.5 / 2 * Math.PI / 180, d = 0.62, dirs = [-1, 1].map(s => new THREE.Vector3(s * Math.sin(ang), -Math.cos(ang), 0));
+      const H = dirs.map(v => { const h = espSfera(0.19, 0xf2f6ff, 1, g, 0, 0, 0, 22); h.add(espBagliore(0xcfe0ff, 0.7, 0.4)); return h; });
+      const legami = dirs.map(() => { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1, 10), espMat(0xffffff, 0.45)); g.add(c); return c; });
+      for (const s of [-1, 1]) { const l = espSfera(0.17, accent, 0.18, g, s * 0.2, 0.47, 0.18 * s, 16); l.scale.set(0.8, 1.35, 0.8); l.rotation.z = -s * 0.5; }   // i due «doppietti» liberi
+      const arco = []; for (let i = 0; i <= 24; i++) { const a = -ang + 2 * ang * i / 24; arco.push([Math.sin(a) * 0.4, 0.14 - Math.cos(a) * 0.4, 0.02]); } espLinea(arco, 0xffe066, 0.8, false, g);
+      const gradi = espTesto('104,5°', 0.34, '#ffe066'); gradi.position.set(0, -0.42, 0.1); g.add(gradi);
+      const dm = espTesto('δ−', 0.4, '#ff8080'); dm.position.set(0.5, 0.52, 0.1); g.add(dm);
+      const dp = [-1, 1].map(s => { const t = espTesto('δ+', 0.38, '#cfe0ff'); g.add(t); return t; });
+      const UP = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3();
+      return (t) => {
+        const st = 1 + 0.06 * Math.sin(t * 8.5);                           // lo «stiramento simmetrico»: i legami si allungano e si accorciano
+        dirs.forEach((v, i) => {
+          const p = tmp.copy(v).multiplyScalar(d * st).add(new THREE.Vector3(0, 0.14, 0));
+          H[i].position.copy(p); dp[i].position.set(p.x * 1.32, p.y - 0.2, 0.12);
+          const c = legami[i]; c.position.copy(p).add(new THREE.Vector3(0, 0.14, 0)).multiplyScalar(0.5); c.scale.y = d * st; c.quaternion.setFromUnitVectors(UP, v);
+        });
+        g.rotation.y = 0.6 * Math.sin(t * 0.45); g.rotation.x = 0.12 * Math.sin(t * 0.3);
+      };
+    }
+    function espBucoNero(g) {                                  // 🕳️ l'orizzonte nero, l'anello di fotoni, il disco che gira (più veloce vicino), l'immagine piegata dalla gravità
+      const nero = new THREE.Mesh(new THREE.SphereGeometry(0.22, 40, 28), new THREE.MeshBasicMaterial({ color: 0x000000 })); nero.renderOrder = -1; g.add(nero);
+      const alone = espBagliore(0xff9a3c, 1.6, 0.55); alone.position.z = -0.2; g.add(alone);
+      const anello = new THREE.Mesh(new THREE.TorusGeometry(0.245, 0.011, 8, 80), espMat(0xffe7b0, 0.95)); g.add(anello);
+      const disco = new THREE.Group(); disco.rotation.x = 1.42; g.add(disco);
+      const N = 1300, pd = espPunti(N, 0.016, disco), pos = pd.geometry.attributes.position, col = pd.geometry.attributes.color;
+      const part = Array.from({ length: N }, () => ({ r: Math.sqrt(rnd(0.1, 1)), a: rnd(0, 6.283) }));
+      const caldo = new THREE.Color(0xfff3c4), medio = new THREE.Color(0xffa040), freddo = new THREE.Color(0xff3c1c), cc = new THREE.Color();
+      const NL = 320, pl = espPunti(NL, 0.013, g), lp = pl.geometry.attributes.position, lc = pl.geometry.attributes.color;      // la parte del disco DIETRO il buco, piegata sopra e sotto
+      for (let i = 0; i < NL; i++) { const a = rnd(0, 6.283), r = rnd(0.26, 0.31) * (Math.sin(a) > 0 ? 1.06 : 0.97); lp.setXYZ(i, Math.cos(a) * r, Math.sin(a) * r * 1.02, -0.05); const k = 1.1 - (r - 0.26) * 5; cc.copy(caldo).lerp(medio, 1 - k).multiplyScalar(0.9 * k); lc.setXYZ(i, cc.r, cc.g, cc.b); }
+      return (t, dt) => {
+        for (let i = 0; i < N; i++) {
+          const P = part[i], r = 0.3 + P.r * 0.72;
+          P.a += dt * 1.25 * Math.pow(r / 0.3, -1.5); P.r -= dt * 0.012; if (P.r < 0) { P.r = 1; P.a = rnd(0, 6.283); }   // gira (Keplero) e scivola dentro
+          pos.setXYZ(i, Math.cos(P.a) * r, rnd(-0.004, 0.004), Math.sin(P.a) * r);
+          const q = clamp((r - 0.3) / 0.72, 0, 1), dop = 0.55 + 0.6 * Math.max(0, Math.cos(P.a));      // il lato che viene verso di te è più luminoso
+          cc.copy(caldo).lerp(q < 0.5 ? medio : freddo, q < 0.5 ? q * 2 : (q - 0.5) * 2).multiplyScalar(1.5 * dop * (1.1 - q * 0.6)); col.setXYZ(i, cc.r, cc.g, cc.b);
+        }
+        pos.needsUpdate = col.needsUpdate = true;
+        pl.rotation.z = 0.05 * Math.sin(t * 0.7); anello.material.opacity = (0.8 + 0.2 * Math.sin(t * 3)) * ESP.vis;
+      };
+    }
+
+    // ---------- accendere, cambiare, spegnere ----------
+    function espBase() {                                       // il proiettore sul pavimento e il cono di luce (una volta sola)
+      if (ESP.root) return ESP.root;
+      const R = new THREE.Group(); R.position.set(ESP_POS.x, 0, ESP_POS.z); R.visible = false; scene.add(R);
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128; const g = cv.getContext('2d');
+      const gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.5, 'rgba(255,255,255,.25)'); gr.addColorStop(0.8, 'rgba(255,255,255,.5)'); gr.addColorStop(0.86, 'rgba(255,255,255,.05)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+      const mk = (geo, op, tex) => new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: accent.clone(), map: tex || null, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide }));
+      const disco = mk(new THREE.CircleGeometry(0.2, 48), 0.8, new THREE.CanvasTexture(cv)); disco.rotation.x = -Math.PI / 2; disco.position.y = 0.012; R.add(disco);
+      const anello = mk(new THREE.TorusGeometry(0.17, 0.006, 6, 48), 0.9); anello.rotation.x = Math.PI / 2; anello.position.y = 0.016; R.add(anello);
+      const cvc = document.createElement('canvas'); cvc.width = 4; cvc.height = 128; const gc = cvc.getContext('2d'), gg = gc.createLinearGradient(0, 0, 0, 128);
+      gg.addColorStop(0, 'rgba(255,255,255,0)'); gg.addColorStop(0.6, 'rgba(255,255,255,.35)'); gg.addColorStop(1, 'rgba(255,255,255,.8)'); gc.fillStyle = gg; gc.fillRect(0, 0, 4, 128);
+      const hc = ESP_POS.y - ESP_POS.R * 0.9, cono = mk(new THREE.CylinderGeometry(ESP_POS.R * 1.05, 0.15, hc, 40, 1, true), 0.22, new THREE.CanvasTexture(cvc)); cono.position.y = hc / 2 + 0.012; R.add(cono);
+      const scan = mk(new THREE.TorusGeometry(ESP_POS.R * 0.85, 0.003, 6, 64), 0.7); scan.rotation.x = Math.PI / 2; R.add(scan);
+      const holo = new THREE.Group(); holo.position.y = ESP_POS.y; R.add(holo);
+      ESP.root = R; ESP.base = { disco, anello, cono, scan, holo };
+      return R;
+    }
+    function espSvuota() {
+      if (!ESP.g) return;
+      ESP.g.parent.remove(ESP.g);
+      ESP.g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material && o.material.map && o.material.map !== ESP.texPunto) o.material.map.dispose(); if (o.material) o.material.dispose(); });
+      if (ESP.label) { ESP.label.parent.remove(ESP.label); ESP.label.material.map.dispose(); ESP.label.material.dispose(); }
+      ESP.g = ESP.label = ESP.upd = null; ESP.k = null; ESP.mats = [];
+    }
+    function espCostruisci(k) {
+      const D = ESPERIMENTI_3D[k]; espBase(); espSvuota();
+      ESP.mats = [];
+      const g = new THREE.Group(); g.scale.setScalar(ESP_POS.R); ESP.base.holo.add(g);
+      ESP.upd = D.crea(g); ESP.g = g; ESP.k = k; ESP.t = 0; ESP.t0 = performance.now();
+      const lab = espTesto(D.titolo, 0.085); lab.position.y = ESP_POS.R * 1.38; ESP.base.holo.add(lab); ESP.label = lab;
+      ESP.root.visible = true;
+    }
+    function esperimento(k) {                                  // accende (o cambia) l'esperimento; null lo spegne
+      if (k == null || k === false || k === '') { ESP.vuole = null; return true; }
+      k = String(k).toLowerCase().replace(/\s+/g, '_');
+      if (!ESPERIMENTI_3D[k] || !PR.on || PR.stato === 'esce') return false;
+      ESP.vuole = k;
+      if (!ESP.g) espCostruisci(k);
+      if (PR.stato === 'qui' || PR.stato === 'entra') setTimeout(() => { if (ESP.k === k && PR.on) profGesto('presenta'); }, 500);
+      return true;
+    }
+    function aggiornaEsp(dt, now) {
+      if (!ESP.root) return;
+      if (ESP.vuole && (!PR.on || PR.stato === 'esce')) ESP.vuole = null;                  // il Professore se ne va: si spegne
+      const giusto = ESP.vuole && ESP.vuole === ESP.k, dtv = Math.min(0.25, (now - (ESP.ultimo || now)) / 1000); ESP.ultimo = now;   // a orologio vero (anche con fotogrammi lenti)
+      ESP.w = damp(ESP.w, giusto ? 1 : 0, giusto ? 3.2 : 5, dtv);
+      if (!giusto && ESP.w < 0.02) { ESP.w = 0; if (ESP.vuole) espCostruisci(ESP.vuole); else { espSvuota(); ESP.root.visible = false; return; } }
+      const t = (now - ESP.t0) / 1000, w = smoothstep(ESP.w);
+      const tremo = 0.9 + 0.1 * Math.sin(t * 31) * Math.sin(t * 7.3) - (Math.random() < 0.012 ? 0.35 : 0);       // un ologramma vero tremola
+      ESP.vis = w * tremo;
+      for (const { m, o } of ESP.mats) m.opacity = o * ESP.vis;
+      const B = ESP.base;
+      B.disco.material.opacity = 0.8 * w; B.anello.material.opacity = 0.9 * w; B.cono.material.opacity = 0.2 * w * tremo;
+      B.scan.position.y = ESP_POS.y + ESP_POS.R * 0.8 * Math.sin(t * 1.3); B.scan.material.opacity = 0.3 * w;
+      B.holo.scale.set(lerp(0.75, 1, w), Math.max(0.001, w), lerp(0.75, 1, w));
+      B.holo.position.y = ESP_POS.y + 0.012 * Math.sin(t * 1.1);
+      if (ESP.upd) ESP.upd(t, dt);
+      // chi guarda: Zep guarda l'ologramma (se non sta parlando); il Professore lo indica ogni tanto
+      if (giusto && w > 0.5) {
+        if (!PR.zepParla && S.lookSource !== 'face' && !(PR.parlando && PR.voce)) S.gaze = { until: now + 300, x: 0.42, y: -0.08 };
+        if (PR.stato === 'qui' && !PR.gest && now > (ESP.prossimoGesto || 0)) { ESP.prossimoGesto = now + rnd(5000, 9000); if (!PR.parlando || Math.random() < 0.5) profGesto(pick(['indica', 'scan', 'presenta', 'pensa'])); }
+      }
+    }
+
+    // ---------- 🔍 il Professore più vero: pelle con pori e rughe, capelli a fili, stoffa, ciglia ----------
+    function dettagliProf(P) {
+      const M = P.M; if (M._v30) return; M._v30 = true;
+      let seme = 7; const cas = () => { seme = (seme * 16807) % 2147483647; return seme / 2147483647; };
+      const tela = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return [c, c.getContext('2d')]; };
+      const rumore = (g, w, h, ampiezza, buchi) => {
+        const im = g.createImageData(w, h), d = im.data;
+        for (let i = 0; i < w * h; i++) { const v = 128 + (cas() - 0.5) * ampiezza + (cas() < buchi ? -36 : 0); d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+        g.putImageData(im, 0, 0);
+      };
+      const tex = (c, rep = 1, colore = false) => { const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); if (colore) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; };
+      // la pelle del viso: pori fini + le rughe di un signore anziano (fronte, tra le sopracciglia, zampe di gallina, borse, naso-labiali)
+      {
+        const W = 1024, H = 512, [c, g] = tela(W, H); rumore(g, W, H, 30, 0.02);
+        const P2 = (a, e) => [W * (0.25 + a / (2 * Math.PI)), H * (0.5 - e / Math.PI)];                // (di lato, in su) in radianti → pixel
+        const solco = (pts, lw, f) => {
+          g.save(); g.lineCap = g.lineJoin = 'round';
+          g.filter = 'blur(' + (lw * 0.55).toFixed(1) + 'px)'; g.strokeStyle = 'rgba(25,25,25,' + f + ')'; g.lineWidth = lw;
+          g.beginPath(); pts.forEach(([a, e], i) => { const [x, y] = P2(a, e); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+          g.filter = 'blur(' + (lw * 0.7).toFixed(1) + 'px)'; g.strokeStyle = 'rgba(235,235,235,' + (f * 0.45) + ')'; g.lineWidth = lw * 0.7;           // il bordino in rilievo sopra il solco
+          g.beginPath(); pts.forEach(([a, e], i) => { const [x, y] = P2(a, e + 0.012); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+          g.restore();
+        };
+        const linea = (a0, e0, a1, e1, curva = 0, n = 18) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n; return [lerp(a0, a1, t), lerp(e0, e1, t) + curva * Math.sin(Math.PI * t)]; });
+        for (let k = 0; k < 4; k++) { const e = 0.5 + k * 0.07; solco(Array.from({ length: 31 }, (_, i) => { const a = -0.44 + 0.88 * i / 30; return [a, e + 0.01 * Math.sin(a * 10 + k * 2) - 0.05 * a * a]; }), 3.4 - k * 0.35, 0.8 - k * 0.12); }
+        for (const s of [-1, 1]) solco(linea(s * 0.045, 0.31, s * 0.06, 0.45, 0, 8), 2.6, 0.65);
+        for (const s of [-1, 1]) for (let k = -1; k <= 1; k++) solco(linea(s * 0.64, 0.17 + k * 0.022, s * 0.8, 0.17 + k * 0.075, 0, 8), 2.1, 0.6);
+        for (const s of [-1, 1]) { solco(linea(s * 0.3, 0.075, s * 0.62, 0.085, -0.04), 2.6, 0.6); solco(linea(s * 0.33, 0.035, s * 0.58, 0.05, -0.03), 2, 0.35); }
+        for (const s of [-1, 1]) solco(Array.from({ length: 19 }, (_, i) => { const t = i / 18; return [s * (0.24 + 0.25 * t + 0.05 * Math.sin(Math.PI * t)), lerp(-0.26, -0.68, t)]; }), 3.6, 0.8);
+        for (const s of [-1, 1]) solco(linea(s * 0.22, -0.72, s * 0.3, -0.84, 0.01, 8), 2.2, 0.45);                       // le «marionette» ai lati del mento
+        M.pelle.bumpMap = tex(c); M.pelle.bumpScale = 1.6;
+        const [cc, gc] = tela(512, 256); gc.fillStyle = '#ffffff'; gc.fillRect(0, 0, 512, 256);                           // qualche macchiolina dell'età su fronte e tempie
+        for (let i = 0; i < 34; i++) { const a = rnd(-0.75, 0.75), e = rnd(0.25, 0.95), [x, y] = [512 * (0.25 + a / 6.283), 256 * (0.5 - e / Math.PI)]; gc.fillStyle = 'rgba(150,95,62,' + rnd(0.08, 0.22).toFixed(2) + ')'; gc.beginPath(); gc.ellipse(x, y, rnd(1.5, 4.5), rnd(1.2, 3.5), rnd(0, 3), 0, 6.283); gc.fill(); }
+        gc.filter = 'blur(1px)'; gc.drawImage(cc, 0, 0); M.pelle.map = tex(cc, 1, true);
+        M.pelle.needsUpdate = true;
+      }
+      // pori per il resto della pelle (collo, mani, naso, orecchie, palpebre)
+      { const [c, g] = tela(256, 256); rumore(g, 256, 256, 26, 0.03); const t = tex(c, 3); for (const m of [M.cute, M.naso, M.rosa]) { m.bumpMap = t; m.bumpScale = 0.9; m.needsUpdate = true; } }
+      // capelli, sopracciglia e baffi: tanti fili (rilievo + colore), per i baffi e le sopracciglia girati in orizzontale
+      {
+        const [cb, gb] = tela(256, 256), [cm, gm] = tela(256, 256);
+        gb.fillStyle = '#808080'; gb.fillRect(0, 0, 256, 256); gm.fillStyle = '#eceef1'; gm.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 1700; i++) {
+          const x = cas() * 256, y = cas() * 256, l = 16 + cas() * 60, cu = (cas() - 0.5) * 14, lw = 0.8 + cas() * 1.6, v = 50 + cas() * 180 | 0, m = 200 + cas() * 55 | 0;
+          for (const [g, col] of [[gb, `rgba(${v},${v},${v},.55)`], [gm, `rgba(${m},${m},${Math.min(255, m + 4)},.7)`]]) {
+            g.strokeStyle = col; g.lineWidth = lw; g.beginPath();
+            for (const dy of [0, 256, -256]) { g.moveTo(x, y + dy); g.quadraticCurveTo(x + cu, y + dy + l / 2, x + cu * 0.4, y + dy + l); }
+            g.stroke();
+          }
+        }
+        const bt = tex(cb), mt = tex(cm, 1, true); bt.repeat.set(2, 1); mt.repeat.set(2, 1);
+        for (const m of [M.capelli, M.capelliOmbra]) { m.bumpMap = bt; m.bumpScale = 2.2; m.map = mt; m.needsUpdate = true; }
+        const ruota = t => { const r = t.clone(); r.center.set(0.5, 0.5); r.rotation = Math.PI / 2; r.needsUpdate = true; return r; };
+        const peli = M.capelli.clone(), peliO = M.capelliOmbra.clone();
+        for (const m of [peli, peliO]) { m.bumpMap = ruota(bt); m.map = ruota(mt); }
+        const scambia = o => o.traverse(x => { if (x.material === M.capelli) x.material = peli; else if (x.material === M.capelliOmbra) x.material = peliO; });
+        P.ciglia.forEach(C => scambia(C.b)); scambia(P.baffi);
+        M.peli = peli;
+      }
+      // la stoffa: le pieghe del camice e la trama, la maglia a punto, i pantaloni
+      {
+        const [c, g] = tela(512, 256); rumore(g, 512, 256, 22, 0);
+        for (let i = 0; i < 11; i++) {                                                                    // pieghe verticali, più forti in basso
+          const x = cas() * 512, w = 10 + cas() * 26, gr = g.createLinearGradient(x - w, 0, x + w, 0), f = 0.12 + cas() * 0.16;
+          gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, 'rgba(0,0,0,' + f + ')'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+          g.fillStyle = gr; g.fillRect(x - w, 0, w * 2, 256);
+        }
+        const t = tex(c); t.repeat.set(1, 1);
+        for (const m of [M.camice, M.camiceOmbra]) { m.bumpMap = t; m.bumpScale = 1.1; m.needsUpdate = true; }
+        const [ck, gk] = tela(128, 128); gk.fillStyle = '#7a7a7a'; gk.fillRect(0, 0, 128, 128); gk.strokeStyle = 'rgba(210,210,210,.8)'; gk.lineWidth = 1.6;
+        for (let y = 0; y < 128; y += 8) for (let x = 0; x < 128; x += 8) { gk.beginPath(); gk.moveTo(x, y); gk.lineTo(x + 4, y + 6); gk.lineTo(x + 8, y); gk.stroke(); }   // punto maglia: tante V
+        const tk = tex(ck, 6); M.maglia.bumpMap = tk; M.maglia.bumpScale = 1.3; M.maglia.needsUpdate = true;
+        const [cp, gp] = tela(128, 128); rumore(gp, 128, 128, 30, 0); gp.strokeStyle = 'rgba(60,60,60,.45)'; gp.lineWidth = 1;
+        for (let i = -128; i < 256; i += 5) { gp.beginPath(); gp.moveTo(i, 0); gp.lineTo(i + 128, 128); gp.stroke(); }
+        const tp = tex(cp, 5); M.pantaloni.bumpMap = tp; M.pantaloni.bumpScale = 0.9; M.pantaloni.needsUpdate = true;
+      }
+      // le ciglia (chiare: è un signore anziano) sul bordo della palpebra di sopra
+      const mc = new THREE.MeshStandardMaterial({ color: 0xa7adb5, roughness: 0.8 });
+      for (const O of P.occhi) { const cg = new THREE.Mesh(new THREE.TorusGeometry(0.0207, 0.00085, 4, 24, Math.PI), mc); cg.rotation.x = Math.PI / 2; cg.scale.set(1.03, 1, 1.06); O.su.add(cg); }
+    }
+
     const api = {
       get kind() { return kind; }, get name() { return name; },
       get info() {
@@ -20729,8 +21671,10 @@ window.ZepKit = (() => {
       primoPiano(on) { PR.focus = !!on; return PR.focus; },
       guarda(x, y) { PR.guarda.x = clamp(+x || 0, -1, 1); PR.guarda.y = clamp(+y || 0, -1, 1); },
       get gesti() { return Object.keys(PR_GESTI); },
+      esperimento: k => esperimento(k),                                                                            // v30: 🔬 (null lo spegne)
+      get esperimenti() { return Object.fromEntries(Object.entries(ESPERIMENTI_3D).map(([k, v]) => [k, v.titolo])); },
       get stato() { return { on: PR.on, stato: PR.stato, w: +PR.w.toFixed(2), parla: PR.parlando, voce: PR.voce, gesto: PR.gest ? PR.gest.k : null, bocca: +PR.mp.open.toFixed(2),
-                             scan: +(PR.scanW || 0).toFixed(2), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
+                             scan: +(PR.scanW || 0).toFixed(2), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
     };
     Object.defineProperty(api, 'voce', { get: () => (PR.voce && PR.on ? 'prof' : 'zep'), set: v => { PR.voce = v === 'prof' && PR.on && PR.stato !== 'esce'; }, enumerable: true });
     for (const nome of ['speakLine', 'sync', 'lineEnd', 'audioLevel']) {
@@ -20898,7 +21842,7 @@ async function invia(opt){
   }
   let full='';ctl=new AbortController();$('#stopbtn').style.display='inline-block';
   try{
-    PROF29.parla=false;if(AV)AV.voce='zep';                                                                 // v29: finché non si sa chi risponde, è Zep
+    PROF29.parla=false;if(AV)AV.voce='zep';DIAL30.on=false;if(INT30.on){INT30.on=false;applicaNome();}                                                                 // v29: finché non si sa chi risponde, è Zep
     const body={testo:t,sessione:CUR};if(regen)body.rigenera=true;if(opt.accurato)body.accurato=true;if(A&&A.kind==='text')body.allegato={nome:A.name,contenuto:A.content};
     const resp=await fetch('/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctl.signal});
     const reader=resp.body.getReader();const dec=new TextDecoder();let buf='';
@@ -20913,7 +21857,8 @@ async function invia(opt){
         if(obj.accurato&&!obj.done&&!full)faseAccurata(bubble,obj.accurato);                                     // v23: 📝 bozza → 🔍 controllo
         if(obj.passo)passoAgente(bubble,obj.passo);
         if(obj.ricerca&&!obj.done)faseRicerca(bubble,obj.ricerca);if(obj.multiverso&&!obj.done)faseMultiverso(bubble,obj.multiverso);if(obj.laboratorio&&!obj.done)faseLab(bubble,obj.laboratorio);   // v21: 🌀 i portali · 🔬 il codice                                 // v19: 🔬 ricerca 2 di 4 · ✍️ scrivo                                                // v18: 🤖 passo 2 di 4
-        if(!obj.done&&(obj.parla||obj.professore_entra))eventoProf29(bubble,obj);                                // v29: 🧪 parla il Professore
+        if(!obj.done&&(obj.parla||obj.professore_entra))eventoProf29(bubble,obj);
+        if(!obj.done&&(obj.dialogo||obj.esperimento))eventoV30(bubble,obj);                                      // v30: 🎭 dialogo · 🔬 esperimento                                // v29: 🧪 parla il Professore
         if(obj.lavoro)lavoroInCorso(obj.lavoro);if(obj.tutor_on&&!obj.done)attivaTutor(obj.tutor_on);if(obj.zitto&&!obj.done)ZITTO26=true;                                    // v26: 🗣️ la risposta arriva nella lingua del tutor                                                    // v14: 🌍 sto leggendo internet
         if(obj.strumento){agEl(bubble).insertAdjacentHTML('beforeend',chipH(obj.strumento));if(core)core.pulse(1);$('#msgs').scrollTop=1e9;if(/^(?:cerca_internet|notizie)$/.test(obj.strumento.tipo))lavoroFinito();}   // 🤖 l'agente sta usando uno strumento
         if(obj.done){fermaDisegno();
@@ -20923,7 +21868,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);addV28(bubble,obj);addV29(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);addV28(bubble,obj);addV29(bubble,obj);addV30(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -21199,6 +22144,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🔬','Esperimenti olografici del Professore',()=>qs('quali esperimenti sai fare?'),'esperimenti','atomo dna buco nero sistema solare ologramma'),c('🎭','Lezione a due voci (Professore e Zep)',()=>{$('#inp').value='spiegatemi ';$('#inp').focus();},'lezione','spiegatemi dialogo due voci'),c('📓','Il taccuino del Professore',()=>qs('cosa mi hai spiegato?'),'taccuino','voti lezioni imparato'),c('❓','Interrogami (Professore)',()=>qs('professore, interrogami'),'interrogami','domanda voto verifica'),
     c('🧪','Chiama il Professor Flux',()=>qs('chiama il professore'),'professore','scienziato laboratorio flux genio'),c('👋','Congeda il Professore',()=>qs('grazie professore, puoi andare'),'congeda','professore vai laboratorio'),
     c('🔬','Analizza le mie spese (grafico)',()=>qs('analizza le mie spese'),'analisi','dati grafico statistiche spese categorie'),c('🔮','Previsione di fine mese',()=>qs('quanto spenderò questo mese?'),'previsione','budget fine mese quanto spenderò'),
     c('🗓️','Il mio anno (un quadratino per giorno)',()=>qs('mostrami il mio anno'),'anno','heatmap calendario giorni attivi serie'),c('💰','Simulatore di risparmio…',()=>{$('#inp').value='se risparmio 5 euro al giorno?';$('#inp').focus();},'risparmio','simula soldi da parte obiettivo'),
@@ -21237,7 +22183,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V29',key:'maik_boot_v29',checks:[
+  return MaikKit.boot({version:'PRIME · V30',key:'maik_boot_v30',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -21247,6 +22193,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Esperimenti',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:'🔬 '+((p.esperimenti||[]).length)+' esperimenti · 📓 '+((p.taccuino||{}).lezioni||0)+' nel taccuino'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:p.on?'🧪 il Professore è qui':'🧪 Professor Flux pronto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Analisi',run:async()=>{try{const p=await (await fetch('/previsione')).json();return{ok:true,text:p.vuoto?'🔬 pronta':'🔮 fine mese ≈ '+Math.round(p.previsione)+' €'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'HUD',run:async()=>{try{const s=await (await fetch('/situazione')).json();return{ok:true,text:'🛰️ '+s.allerte.length+' allerte'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -21269,7 +22216,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 29 🧪 Novità: nel mio laboratorio c\'è il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 30 🔬 Novità: il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -21430,7 +22377,7 @@ function feedSpeech(full, done) {
   if (!ttsOn || !voceDisponibile() || RIU.on) return;
   const txt = cleanSpeech(full);
   const upto = done ? txt.length : Math.max(txt.lastIndexOf('. '), txt.lastIndexOf('! '), txt.lastIndexOf('? '), txt.lastIndexOf('… ')) + 1;
-  if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); if (VOICE.cur && VOICE.cur.neurale && VOICE.q.length) sintesi(VOICE.q[0]).catch(() => {}); }
+  if (upto > VOICE.spoken) { sentences(txt.slice(VOICE.spoken, upto)).forEach(s => VOICE.q.push(s)); VOICE.spoken = upto; pump(); if (VOICE.cur && VOICE.cur.neurale && VOICE.q.length) sintesi(testoRiga30(VOICE.q[0])).catch(() => {}); }
 }
 function pump() {
   if (VOICE.cur || !VOICE.q.length) return;
@@ -21438,7 +22385,7 @@ function pump() {
 }
 function pumpBrowser() {
   if (!window.speechSynthesis) { VOICE.q = []; speechDone(); return; }
-  const s = VOICE.q.shift(), u = new SpeechSynthesisUtterance(s);
+  const s = voceRiga30(VOICE.q.shift()), u = new SpeechSynthesisUtterance(s);   // v30: nel dialogo ogni frase sa chi la dice
   u.lang = 'it-IT'; u.rate = 1.03 * (+OPT.velocita || 1); u.pitch = Math.min(2, 1.05 * (+OPT.tono || 1)); const v = sceltaVoce(); if (v) u.voice = v;
   if (PROF29.parla) voceProf29(u);                                            // v29: 🧪 parla il Professore
   u.onstart = () => {
@@ -22107,7 +23054,7 @@ function sintesi(s) {
   return p;
 }
 function pumpNeurale() {
-  const s = VOICE.q.shift(), tok = { s, src: null, neurale: true };
+  const s = voceRiga30(VOICE.q.shift()), tok = { s, src: null, neurale: true };
   VOICE.cur = tok;
   sintesi(s).then(async r => {
     if (VOICE.cur !== tok) return;
@@ -22134,7 +23081,7 @@ function pumpNeurale() {
     };
     src.onended = fine; tok.guardia = setTimeout(fine, r.ms / tono + 2500);
     src.start();
-    if (VOICE.q.length) sintesi(VOICE.q[0]).catch(() => {});                     // intanto prepara la frase dopo
+    if (VOICE.q.length) sintesi(testoRiga30(VOICE.q[0])).catch(() => {});                     // intanto prepara la frase dopo
   }).catch(e => {
     if (VOICE.cur !== tok) return;
     const m = String(e && e.message || e);
@@ -22164,7 +23111,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V29'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V30'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -26161,6 +27108,106 @@ document.addEventListener('click', e => {
 });
 { let n = 0; const t = setInterval(() => { if (AV || ++n > 40) { clearInterval(t); statoProf29(); } }, 500); }   // all'avvio: il Professore era qui?
 
+// ════════════════════════════════════════════════════════════
+// V30 — MAIK PRIME LABORATORIO 2: 🔬 gli esperimenti olografici sul palco, 🎭 la lezione a due voci (ogni battuta con la voce
+// e la bocca di chi la dice), 📓 il taccuino del Professore, ❓ l'interrogazione con il voto
+// ════════════════════════════════════════════════════════════
+const ESP30 = { k: null, t: 0 }, DIAL30 = { on: false }, INT30 = { on: false };
+function accendiEsp30(info) {                                    // l'ologramma tra Zep e il Professore (+ il cartellino con ✕)
+  if (!info || !info.k || !AV || !AV.prof) return false;
+  const ok = AV.prof.esperimento(info.k);
+  if (!ok) return false;
+  ESP30.k = info.k; clearTimeout(ESP30.t); ESP30.t = setTimeout(spegniEsp30, 150000);
+  const el = $('#esp30'); if (el) { $('#esp30t').textContent = (info.emoji ? info.emoji + ' ' : '') + (info.titolo || info.k).toUpperCase(); el.hidden = false; el.classList.add('su'); }
+  return true;
+}
+function spegniEsp30() {
+  clearTimeout(ESP30.t); ESP30.k = null;
+  if (AV && AV.prof) AV.prof.esperimento(null);
+  const el = $('#esp30'); if (el) { el.classList.remove('su'); el.hidden = true; }
+}
+function eventoV30(bubble, obj) {                                // durante la risposta: è un dialogo? si accende un esperimento?
+  if (obj.dialogo) {
+    DIAL30.on = true;
+    if (bubble && !bubble.querySelector('.prof29tag')) { bubble.classList.add('prof29', 'dial30'); bubble.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 PROFESSOR FLUX &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
+  }
+  if (obj.esperimento) accendiEsp30(obj.esperimento);
+}
+function righeDialogo30(B) {
+  return B.map((b, i) => '<div class="b30 ' + (b.chi === 'prof' ? 'prof' : 'zep') + '" data-i="' + i + '"><b>' + (b.chi === 'prof' ? '🧪 Professor Flux' : '🤖 ' + esc(nomeZep())) + '</b><div class="t">' + renderAI(b.testo) + '</div></div>').join('');
+}
+function parlaDialogo30(d, B) {                                  // in coda: ogni frase sa chi la dice
+  if (!ttsOn || !voceDisponibile() || RIU.on) return;
+  stopSpeech();
+  B.forEach((b, i) => sentences(cleanSpeech(b.testo)).slice(0, 8).forEach(s => VOICE.q.push({ s, chi: b.chi, i, d })));
+  pump();
+}
+function voceRiga30(x) {                                         // una frase della coda: se è di un dialogo, prima cambia voce (e bocca) e illumina la battuta
+  if (!x || typeof x !== 'object') return x;
+  PROF29.parla = x.chi === 'prof' && PROF29.on; if (AV) AV.voce = PROF29.parla ? 'prof' : 'zep';
+  if (x.d) { x.d.querySelectorAll('.b30.ora').forEach(e => e.classList.remove('ora')); const r = x.d.querySelector('.b30[data-i="' + x.i + '"]'); if (r) r.classList.add('ora'); }
+  return x.s;
+}
+const testoRiga30 = x => (x && typeof x === 'object' ? x.s : x);
+function cartaTaccuino30(T) {
+  const num = v => String(v).replace('.', ',');
+  const righe = (T.voci || []).map(v => {
+    const ic = v.esperimento ? v.esperimento.emoji : v.tipo === 'lezione' ? '🎭' : '📌', g = (v.quando || '').length >= 10 ? v.quando.slice(8, 10) + '/' + v.quando.slice(5, 7) : '';
+    const cl = v.voto == null ? '' : v.voto >= 7 ? 'ok' : v.voto >= 5 ? 'mah' : 'no';
+    return '<div class="tr"><span class="d">' + g + '</span><span class="i">' + ic + '</span><span class="a">' + esc(v.argomento) + (v.lavagna && v.lavagna.length ? '<small>' + esc(v.lavagna[0]) + '</small>' : '') + '</span>'
+      + (v.voto != null ? '<span class="v ' + cl + '" title="media dei voti">' + num(v.voto) + '</span>' : '') + '<button type="button" data-tacc30="' + esc(v.argomento) + '" title="Interrogami su questo" aria-label="Interrogami su ' + esc(v.argomento) + '">❓</button></div>';
+  }).join('');
+  return '<div class="tacc30"><div class="th"><b>📓 Il taccuino del Professor Flux</b><span>' + T.lezioni + ' ' + (T.lezioni === 1 ? 'argomento' : 'argomenti') + (T.media != null ? ' · media ' + num(T.media) : '') + '</span></div>' + righe + '</div>';
+}
+function addV30(d, obj) {
+  const P = obj.professore || {};
+  if (P.esperimento) accendiEsp30(P.esperimento);
+  if (P.spegni) spegniEsp30();
+  if (obj.dialogo && obj.dialogo.length) {                       // 🎭 il copione: righe con chi parla; poi le voci, una battuta per volta
+    mc(d).innerHTML = righeDialogo30(obj.dialogo) + (P.lavagna && P.lavagna.length ? renderAI('[[lavagna: ' + P.lavagna.join(' | ') + ']]') : '');
+    if (!d.querySelector('.prof29tag')) { d.classList.add('prof29', 'dial30'); d.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 PROFESSOR FLUX &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
+    parlaDialogo30(d, obj.dialogo);
+  }
+  DIAL30.on = false;
+  if (obj.taccuino && obj.taccuino.voci && obj.taccuino.voci.length) {
+    mc(d).innerHTML = cartaTaccuino30(obj.taccuino) + renderAI("Tocca ❓ su un argomento, o di' «**professore, interrogami**», per vedere se ti ricordi.");   // l'elenco diventa la scheda
+  }
+  if (obj.esperimenti && obj.esperimenti.length) {
+    d.insertAdjacentHTML('beforeend', '<div class="esp30l">' + obj.esperimenti.map(v => '<button type="button" data-esp30="' + esc(v.frase) + '">' + v.emoji + ' ' + esc(v.titolo) + '</button>').join('') + '</div>');
+  }
+  if (P.interrogazione && P.interrogazione.domanda) {           // ❓ la domanda: si risponde scrivendo (o a voce)
+    d.classList.add('int30'); INT30.on = true;
+    d.insertAdjacentHTML('beforeend', '<div class="int30h">✍️ Scrivi la tua risposta qui sotto · «non lo so» · «basta»</div>');
+    $('#inp').placeholder = 'La tua risposta per il Professore…';
+    if (AV && AV.prof) AV.prof.gesto('pensa');
+  }
+  if (P.voto != null) {                                          // il voto, come un timbro
+    d.insertAdjacentHTML('afterbegin', '<div class="voto30 ' + esc(P.giudizio || '') + '" aria-label="Voto ' + P.voto + ' su 10"><b>' + P.voto + '</b><span>/10</span></div>');
+    if (AV && AV.prof) AV.prof.gesto(P.voto >= 8 ? 'eureka' : P.voto >= 5 ? 'annuisce' : 'sbuffa');
+    if (AV && P.voto >= 6) setTimeout(() => AV && AV.emote('happy', 1800), 600);
+  }
+}
+// voce e testo: i tag degli esperimenti non si leggono e non si vedono
+const _cleanSpeech29 = cleanSpeech;
+cleanSpeech = t => _cleanSpeech29(String(t || '').replace(/\[\[\s*esperimento\s*:[^\]]*\]\]/gi, ' ').replace(/\[\[\s*esp[^\]]*$/i, ''));
+const _renderAI29 = renderAI;
+renderAI = t => _renderAI29(String(t || '').replace(/\[\[\s*esperimento\s*:[^\]]*\]\]/gi, '').replace(/\[\[\s*esp[^\]]*$/i, ''));
+const _feedSpeech29 = feedSpeech;
+feedSpeech = function (full, done) { if (DIAL30.on) return; return _feedSpeech29(full, done); };        // il dialogo si legge alla fine, battuta per battuta
+const _speechDone29 = speechDone;
+speechDone = function () { document.querySelectorAll('.b30.ora').forEach(e => e.classList.remove('ora')); _speechDone29(); };
+const _profPresente29 = profPresente29;
+profPresente29 = function (on) { _profPresente29(on); if (!on) spegniEsp30(); };
+const _switchChat29 = switchChat;
+switchChat = async function (id, force) { spegniEsp30(); return _switchChat29(id, force); };
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-esp30],[data-esp30x],[data-tacc30],[data-v30]'); if (!b) return;
+  if (b.dataset.esp30) qs(b.dataset.esp30);
+  else if (b.hasAttribute('data-esp30x')) spegniEsp30();
+  else if (b.dataset.tacc30) qs('professore, interrogami su ' + b.dataset.tacc30);
+  else if (b.dataset.v30 === 'lezione') { $('#inp').value = 'spiegatemi '; $('#inp').focus(); }
+});
+
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();if(!document.querySelector('.ov.open'))chiudiHUD();}});
 costruisciReattore();
@@ -26382,8 +27429,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 29.0 — Server avviato         ║
-║ professor flux · analisi · previsioni · hud      ║
+║        MAIK PRIME 30.0 — Server avviato         ║
+║ esperimenti · lezioni · professor flux · hud     ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -26446,7 +27493,7 @@ def main():
     print(f"    GET  /cucina · /cucina/ricetta · /tutor · /respiro · POST /cucina/salva /cucina/elimina /cucina/spesa /respiro/fine   [v26]")
     print(f"    GET  /hud · /situazione · POST /piano/esegui   [v27]")
     print(f"    POST /analisi · GET /previsione · /anno   [v28]")
-    print(f"    GET  /professore   [NUOVO v29]")
+    print(f"    GET  /professore   [v29 · v30: taccuino, esperimenti]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

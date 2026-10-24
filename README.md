@@ -47,6 +47,22 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🔬 Novità V30 — MAIK PRIME Laboratorio 2: esperimenti olografici, lezioni a due voci, il taccuino e l'interrogazione (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🔬 **Gli esperimenti olografici** | «**fammi vedere un buco nero**» e tra Zep e il Professore si accende un proiettore: una scena 3D dal vivo, mentre lui la spiega. Gli esperimenti sono sette: 🪐 **il sistema solare** (i pianeti in orbita, più veloci quelli vicini al Sole, Saturno con gli anelli, la Luna), ⚛️ **l'atomo** (protoni, neutroni ed elettroni sulle orbite), 🧬 **il DNA** (la doppia elica che gira, con le coppie di basi colorate), 🌊 **le onde** (due sorgenti che si sommano: creste, valli, interferenza), 🕰️ **il pendolo** (con la scia e la freccia della velocità), 💧 **la molecola d'acqua** (104,5°, le cariche δ− e δ+, che vibra), 🕳️ **il buco nero** (l'orizzonte nero, l'anello di luce e il disco che gira più veloce vicino al centro). Il Professore lo presenta col palmo aperto, lo indica, lo scansiona col guanto; Zep lo guarda. |
+| 🧠 **Si accende da solo** | Se gli chiedi una cosa di scienza («cos'è un buco nero?», «come funziona il DNA?») e c'è l'esperimento giusto, il Professore lo accende mentre comincia a parlare. Lo può accendere anche lui, se lo ritiene utile. Sul palco compare il cartellino «🔬 ESPERIMENTO · IL BUCO NERO» con la ✕ per spegnerlo (oppure «**spegni l'esperimento**»). «**quali esperimenti sai fare?**» mostra l'elenco con i bottoni; «**fai un esperimento**» e sceglie lui. |
+| 🎭 **La lezione a due voci** | «**spiegatemi la fotosintesi**», «**fate una lezione sui vulcani**», «**professore e Zep, spiegatemi come vola un aereo**»: una piccola scena in cui Zep fa le domande (quelle che faresti tu) e il Professore spiega. Ogni battuta ha **la voce e la bocca di chi la dice**, e nel fumetto si illumina la battuta di chi sta parlando. La formula finisce sulla lavagna; se c'entra un esperimento, si accende. Se il modello non scrive bene il copione, il Professore spiega e Zep fa le domande in mezzo. «Lezione di inglese» resta del tutor. |
+| 📓 **Il taccuino del Professore** | Tutto quello che ti spiega se lo segna: l'argomento, la lavagna, l'esperimento e i voti. «**cosa mi hai spiegato?**» (o il bottone 📓 Taccuino) mostra la scheda, con la data, l'icona (🕳️ esperimento, 🎭 lezione) e la media dei voti. Si legge anche quando lui non c'è. |
+| ❓ **L'interrogazione** | «**professore, interrogami**» (o ❓ su una riga del taccuino, o «interrogami sulla luce»): ti fa una domanda su quello che ti ha spiegato. Rispondi scrivendo (o a voce) e ti dà **il voto**, come un timbro, con il commento. «**non lo so**» → ti dice la risposta; «**basta**» → niente interrogazione; «**un'altra domanda**» → un'altra. Se il modello non dà il voto, lo calcolo io confrontando le parole e i numeri della risposta giusta. Senza il Professore, «interrogami» resta il ripasso delle carte di studio. |
+| 🔍 **Un Professore più vero** | Pori e rughe sulla pelle (la fronte, tra le sopracciglia, le zampe di gallina, le borse sotto gli occhi, i solchi vicino alla bocca), qualche macchiolina dell'età, capelli, sopracciglia e baffi fatti di fili, le pieghe del camice, la maglia a punto, le ciglia. |
+
+- `GET /professore` restituisce anche `taccuino` (`{lezioni, interrogazioni, media}`) ed `esperimenti`. `/chat/stream` manda gli eventi `{"esperimento": {k, titolo, emoji, lavagna}}` e `{"dialogo": true}`, e alla fine `"dialogo": [{chi, testo}]`, `"taccuino"`, `"esperimenti"`, `"professore": {esperimento, interrogazione, voto, giudizio}`.
+- Nuovo file in `dati_maik/`: `professore.json` (il taccuino), tra quelli che «annulla» rimette com'erano.
+- Gli esperimenti sono disegnati in 3D dal codice: sono **modelli semplificati** per capire, non simulazioni scientifiche esatte. Il Professore resta stilizzato, non fotorealistico.
+- Nessun nuovo comando del PC, nessun riconoscimento delle persone; dentro le automazioni il Professore e gli esperimenti non c'entrano.
+
 ## 🧪 Novità V29 — MAIK PRIME Laboratorio: il Professor Flux, un secondo assistente in 3D accanto a Zep (versione server)
 
 | | Cosa fa |
@@ -554,7 +570,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V29 — `maikprime.py`
+## MAIK PRIME — Server V30 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

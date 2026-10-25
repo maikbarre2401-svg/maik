@@ -21189,7 +21189,7 @@ window.ZepKit = (() => {
     function profEntra() {
       creaProf();
       if (PR.on && PR.stato !== 'esce') return false;
-      PR.on = true; PR.stato = 'entra'; PR.t = 0; PR.t0 = performance.now(); PR.g.visible = true; PR.nextIdle = performance.now() + 6000;
+      PR.on = true; PR.stato = 'entra'; PR.t = 0; PR.t0 = performance.now(); PR.avvio = 3; PR.g.visible = true; PR.nextIdle = performance.now() + 6000;
       PR.parti.raggio.visible = PR.parti.anelloR.visible = true;
       setTimeout(() => { if (PR.on) profGesto('saluta'); }, 1300);
       return true;
@@ -21248,6 +21248,7 @@ window.ZepKit = (() => {
       if (!PR.g) return;
       const P = PR.parti, G = PR.g;
       // --- arrivo e uscita col raggio di luce (a orologio vero: anche se i fotogrammi sono lenti)
+      if (PR.avvio > 0) { PR.avvio--; PR.t0 = now; }                                                       // v31: il conto parte quando i fotogrammi vanno
       PR.t = (now - (PR.t0 || now)) / 1000;
       if (PR.stato === 'entra') { if (PR.t > 1.25) PR.stato = 'qui'; }
       if (PR.stato === 'esce' && PR.t > 1.1) { PR.stato = 'via'; PR.on = false; G.visible = false; }
@@ -21980,8 +21981,8 @@ window.ZepKit = (() => {
       return y;
     }
     async function caricaModelloProf(url) {
+      if (!url) { togliModelloProf(); return infoModelloProf(); }               // (il Professor Flux si costruisce solo quando arriva: niente lavoro inutile all'avvio)
       creaProf();
-      if (!url) { togliModelloProf(); return infoModelloProf(); }
       const loader = new GLTFLoader(); if (VRM) loader.register(p => new VRM.VRMLoaderPlugin(p));
       const gltf = await loader.loadAsync(url);
       togliModelloProf();

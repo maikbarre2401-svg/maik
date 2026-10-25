@@ -47,6 +47,20 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🧍 Novità V31 — MAIK PRIME Laboratorio 3: il secondo personaggio è tuo, e il Professor Flux più vero (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🧍 **Il tuo personaggio al posto del Professore** | A sinistra, sotto «🧍 Personaggio 3D», c'è il secondo personaggio con il bottone **🎨 Cambia** (anche da Ctrl+K). Nella finestra **carichi un tuo .glb o .vrm** e prende il posto del Professor Flux: arriva col raggio di luce, risponde con **la sua bocca** (le espressioni di un VRM, i visemi o le forme ARKit di un .glb, per esempio un avatar Ready Player Me), **sbatte le palpebre**, **gesticola** con le sue braccia (saluta, spiega, indica, presenta l'esperimento…), **guarda** te o Zep, usa le **animazioni del file** (idle, talk, wave). La lavagna, gli esperimenti olografici, le lezioni a due voci con Zep, il taccuino e l'interrogazione funzionano come prima. Se il file è in centimetri o minuscolo lo porto a misura d'uomo; se non ha ossa si gira tutto insieme. «↺ Torna il Professor Flux» per rimettere lui. |
+| 🏷️ **Il nome** | Gli dai un nome (per esempio «Nova»): compare nel fumetto («🧪 NOVA»), nei dialoghi, sul bottone, sulla lavagna e sul palco («con Nova»), e il modello sa come si chiama. **Il nome serve anche per chiamarlo**: «**chiama Nova**», «**Nova, perché il cielo è blu?**», «**chiedi a Nova se esistono gli alieni**», «**grazie Nova, puoi andare**». Vale solo quando lo chiami (all'inizio, in fondo, dopo «chiama», «grazie»…): «domani vado a Novara» resta com'è. Va sempre bene anche «chiama il professore». Non si può chiamare «Zep» o «Maik». |
+| 🗣️ **La voce** | **Grave** (quella del Professore), **media** o **acuta**, con il bottone **▶ Prova**. Se nel sistema c'è un'altra voce italiana adatta (maschile per la grave, femminile per l'acuta) usa quella; con la voce neurale (Piper) cambia il tono. |
+| 🎭 **Il carattere** | Vuoto = il Professor Flux (geniale, sarcastico ma affettuoso). Oppure lo descrivi tu in poche parole («una scienziata gentile e paziente che adora le stelle»): il modello lo usa nelle risposte, nelle lezioni e nelle interrogazioni. Le regole restano: italiano, niente volgarità, le cose pratiche le fa MAIK. |
+| 🔍 **Il Professor Flux più vero** | Capelli, sopracciglia e baffi fatti di **ciocche di fili** che si muovono con la testa (non più palline), il naso meno a pallina, il bianco degli occhi con un po' di rosa e le venuzze, le orecchie con il bordo e il lobo, le **unghie**, le maniche del camice con le **pieghe**, il **colletto** e i **bottoni**, la fronte e il naso un po' più lucidi. |
+
+- Nuovi endpoint: `GET/POST /professore/modello` (il file, solo da questo computer, fino a 100 MB come per Zep), `GET /professore/modello/info`, `POST /professore/modello/elimina`, `GET/POST /professore/aspetto` (`{nome, voce, carattere}`). `GET /professore` restituisce anche `aspetto` e `modello`.
+- Nuovi file in `dati_maik/`: `professore_modello/` (il tuo modello) e `professore_aspetto.json` (nome, voce, carattere). Il modello di Zep resta separato.
+- Il Professor Flux resta disegnato dal codice, stilizzato: per un personaggio davvero realistico la strada è caricare un tuo modello fatto con un programma 3D.
+
 ## 🔬 Novità V30 — MAIK PRIME Laboratorio 2: esperimenti olografici, lezioni a due voci, il taccuino e l'interrogazione (versione server)
 
 | | Cosa fa |
@@ -570,7 +584,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V30 — `maikprime.py`
+## MAIK PRIME — Server V31 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

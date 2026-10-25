@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v30.0                   ║
+║              MAIK PRIME — Server v31.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,16 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v31.0 — MAIK PRIME LABORATORIO 3:
+  • 🧍 Il secondo personaggio è tuo: al posto del Professor Flux puoi mettere un tuo personaggio 3D (.glb o .vrm) e dargli
+    un nome, una voce (grave, media, acuta) e un carattere. Fa tutto quello che fa il Professore: arriva col raggio, risponde
+    con la sua bocca e i suoi gesti, la lavagna, gli esperimenti, le lezioni con Zep, il taccuino, l'interrogazione.
+    Il nome vale per chiamarlo: «chiama Nova», «Nova, perché il cielo è blu?», «grazie Nova, puoi andare».
+  • 🔍 Il Professor Flux più vero: capelli, sopracciglia e baffi fatti di ciocche di fili, gli occhi, le orecchie,
+    le unghie, le maniche con le pieghe, il colletto e i bottoni del camice.
+  • Nuovi endpoint: GET/POST /professore/modello, GET /professore/modello/info, POST /professore/modello/elimina,
+    GET/POST /professore/aspetto (nome, voce, carattere)
 
 NOVITÀ v30.0 — MAIK PRIME LABORATORIO 2:
   • 🔬 Gli esperimenti olografici: «fammi vedere un atomo» (o il sistema solare, il DNA, le onde, il pendolo, la molecola d'acqua,
@@ -465,7 +475,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "30.0"
+VERSIONE  = "31.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -14862,6 +14872,206 @@ def stato_professore_v30(sid):
 
 
 # ════════════════════════════════════════════════════════════
+# V31 — MAIK PRIME LABORATORIO 3: 🧍 il secondo personaggio è tuo. Al posto del Professor Flux puoi mettere un tuo personaggio
+# 3D (.glb o .vrm), dargli un nome, una voce (grave, media, acuta) e un carattere: fa tutto quello che fa il Professore
+# (arriva, risponde, spiega, la lavagna, gli esperimenti, le lezioni con Zep, il taccuino, l'interrogazione).
+# ════════════════════════════════════════════════════════════
+VOCI_PROF = {"grave": "grave (più bassa di Zep)", "media": "media", "acuta": "acuta (più alta)"}
+_NOMI_RISERVATI = {"zep", "maik", "prime", "maik prime"}
+
+
+def _cartella_modello_prof():
+    return os.path.join(DATA_DIR, "professore_modello")
+
+
+def info_modello_prof():
+    try:
+        with open(os.path.join(_cartella_modello_prof(), "info.json"), encoding="utf-8") as f:
+            info = json.load(f)
+        return info if os.path.isfile(os.path.join(_cartella_modello_prof(), info.get("file", ""))) else None
+    except Exception:
+        return None
+
+
+def salva_modello_prof(nome, dati):
+    """Il TUO personaggio al posto del Professore: solo glTF binari (.glb, .vrm), come per Zep."""
+    nome = re.sub(r"[^\w .()-]+", "_", os.path.basename(str(nome or "personaggio.glb")))[:80] or "personaggio.glb"
+    if len(dati) < 20 or dati[:4] != b"glTF" or struct.unpack("<I", dati[4:8])[0] != 2:
+        return None, "Non è un modello 3D valido: servono file .vrm o .glb (glTF 2.0 binario)."
+    try:
+        lung_json = struct.unpack("<I", dati[12:16])[0]
+        intestazione = json.loads(dati[20:20 + lung_json].decode("utf-8", "ignore") or "{}")
+    except Exception:
+        intestazione = {}
+    est = intestazione.get("extensions", {}) if isinstance(intestazione, dict) else {}
+    tipo = "vrm" if ("VRMC_vrm" in est or "VRM" in est or nome.lower().endswith(".vrm")) else "glb"
+    cartella = _cartella_modello_prof()
+    os.makedirs(cartella, exist_ok=True)
+    for vecchio in os.listdir(cartella):
+        if vecchio.startswith("modello."):
+            try:
+                os.remove(os.path.join(cartella, vecchio))
+            except OSError:
+                pass
+    file_ = f"modello.{tipo}"
+    with open(os.path.join(cartella, file_ + ".tmp"), "wb") as f:
+        f.write(dati)
+    os.replace(os.path.join(cartella, file_ + ".tmp"), os.path.join(cartella, file_))
+    info = {"nome": nome, "tipo": tipo, "file": file_, "dimensione": len(dati),
+            "animazioni": len(intestazione.get("animations", []) or []) if isinstance(intestazione, dict) else 0,
+            "caricato": datetime.datetime.now().isoformat(timespec="seconds")}
+    with open(os.path.join(cartella, "info.json"), "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False)
+    return info, None
+
+
+def elimina_modello_prof():
+    cartella = _cartella_modello_prof()
+    if os.path.isdir(cartella):
+        shutil.rmtree(cartella, ignore_errors=True)
+        return True
+    return False
+
+
+def aspetto_prof():
+    """Nome, voce e carattere del secondo personaggio (vuoti = il Professor Flux di sempre)."""
+    try:
+        with open(os.path.join(DATA_DIR, "professore_aspetto.json"), encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict):
+            return {"nome": str(d.get("nome") or ""), "voce": d.get("voce") if d.get("voce") in VOCI_PROF else "grave", "carattere": str(d.get("carattere") or "")}
+    except Exception:
+        pass
+    return {"nome": "", "voce": "grave", "carattere": ""}
+
+
+def salva_aspetto_prof(c):
+    """Controlla e salva nome (2-24 lettere, non «Zep» né «Maik»), voce e carattere (al massimo 300 caratteri)."""
+    c = c if isinstance(c, dict) else {}
+    nome = re.sub(r"\s+", " ", re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9 .'’-]", "", re.sub(r"<[^>]*>", " ", str(c.get("nome") or "")))).strip(" .'-")[:24]
+    if nome and (len(nome) < 2 or nome.lower() in _NOMI_RISERVATI or re.fullmatch(r"prof(?:essor(?:e)?)?(?:\s+flux)?", nome, re.I)):
+        if nome.lower() in _NOMI_RISERVATI:
+            return None, f"«{nome}» è già il nome di MAIK o di Zep: scegline un altro."
+        nome = ""
+    voce = c.get("voce") if c.get("voce") in VOCI_PROF else "grave"
+    carattere = re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\[\]{}<>]", " ", str(c.get("carattere") or ""))).strip()[:300]
+    d = {"nome": nome, "voce": voce, "carattere": carattere}
+    os.makedirs(DATA_DIR, exist_ok=True)
+    p = os.path.join(DATA_DIR, "professore_aspetto.json")
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+    return d, None
+
+
+def nome_prof():
+    return aspetto_prof()["nome"] or "Professor Flux"
+
+
+def identita_prof():
+    """Il pezzo di carattere con il nome (e il carattere) che gli ha dato la persona; vuoto se è il Professor Flux di sempre."""
+    a = aspetto_prof()
+    if not (a["nome"] or a["carattere"]):
+        return ""
+    c = "\n\nIL TUO NOME E IL TUO ASPETTO, scelti dalla persona:"
+    if a["nome"]:
+        c += f" ti chiami «{a['nome']}» (non Professor Flux): presentati e firmati così."
+    if a["carattere"]:
+        c += f" Il tuo carattere, come lo vuole la persona: {a['carattere']}."
+    return c + " Restano valide tutte le regole sopra (italiano, niente volgarità, la lavagna, gli esperimenti; le cose pratiche le fa MAIK)."
+
+
+_carattere_attivo_v30 = carattere_attivo
+
+
+def carattere_attivo():
+    """Come prima; e se la persona gli ha dato un altro nome (e un altro carattere), il modello lo sa."""
+    c = _carattere_attivo_v30()
+    return c + identita_prof() if getattr(_CTX, "prof", False) else c
+
+
+_pensa_breve_http_v30 = pensa_breve_http
+
+
+def pensa_breve_http(system, testo, *a, **k):
+    """Anche nelle lezioni a due voci e nelle interrogazioni il modello sa come si chiama (e com'è) il tuo personaggio."""
+    if isinstance(system, str) and system.startswith(CARATTERE_PROF):
+        system = system + identita_prof()
+    return _pensa_breve_http_v30(system, testo, *a, **k)
+
+
+_genera_lezione_v30 = genera_lezione
+
+
+def genera_lezione(tema):
+    """Come prima; e Zep lo chiama con il suo nome («Nova, me lo spiega?»), non «Professore»."""
+    battute, lav, k, fonte = _genera_lezione_v30(tema)
+    n = aspetto_prof()["nome"]
+    if n:
+        for b in battute:
+            b["testo"] = re.sub(r"\bProfessor(?:e)?(?:\s+Flux)?\b", n, b["testo"])
+    return battute, lav, k, fonte
+
+
+def con_nome(t, n):
+    """«il Professor Flux» → «Nova», «del Professore» → «di Nova», «al Professore» → «a Nova»…"""
+    if not n:
+        return t
+    P_ = r"Professor(?:e)?(?:\s+Flux)?\b"
+    t = re.sub(r"\b[Dd](?:el|al)\s+" + P_, lambda m: ("di " if m.group(0)[1:3].lower() == "el" else "da ") + n, t)
+    t = re.sub(r"\b[Aa]l\s+" + P_, "a " + n, t)
+    t = re.sub(r"\b([Ii]l|[Uu]n)\s+" + P_, n, t)
+    return t.replace("Professor Flux", n).replace("PROFESSOR FLUX", n.upper())
+
+
+_prof_fine_v29 = _prof_fine
+
+
+def _prof_fine(motore, testo, on_token, sid, frase, stato):
+    """Le frasi pronte (arriva, se ne va…) con il nome che gli hai dato."""
+    return _prof_fine_v29(motore, testo, on_token, sid, con_nome(frase, aspetto_prof()["nome"]), stato)
+
+
+_professore_intercetta_v30 = professore_intercetta
+
+
+def professore_intercetta(motore, testo, on_token, allegato=None, sessione=None, on_evento=None):
+    """Il nome che gli hai dato vale come «professore»: «chiama Nova», «Nova, perché il cielo è blu?», «grazie Nova, puoi andare»."""
+    n = aspetto_prof()["nome"] if testo else ""
+    t2, tok = testo, on_token
+    if n:
+        t2 = nome_come_professore(testo, n)
+        def tok(x):
+            on_token(con_nome(str(x).replace("**Professore:**", f"**{n}:**"), n))
+    r = _professore_intercetta_v30(motore, t2, tok, allegato, sessione, on_evento)
+    if isinstance(r, dict) and not r.get("done") and t2 != testo:
+        if r.get("testo") == t2:
+            r["testo"] = testo                                                    # al modello va la tua frase, con il nome che hai usato
+        if r.get("domanda") == t2:
+            r["domanda"] = testo
+    return r
+
+
+def nome_come_professore(testo, n):
+    """Il nome vale come «professore» solo quando lo chiami (all'inizio, in fondo, dopo «chiama», «grazie»…): «vai al mare» resta com'è."""
+    if len(n) < 3:
+        return testo
+    N = re.escape(n)
+    t = re.sub(r"^((?:(?:maik|zep|prime)[,!]?\s+)?)" + N + r"(?![\w])", r"\1professore", testo, count=1, flags=re.I)
+    t = re.sub(r"([,\s])" + N + r"(\s*[?!.]*)$", r"\1professore\2", t, count=1, flags=re.I)
+    t = re.sub(r"\b(chiama(?:mi)?|fai\s+venire|(?:voglio|fammi)\s+parlare\s+con|congeda|saluta|grazie|ciao|arrivederci|manda\s+via|chiedi\s+a|domanda\s+a|dov['’]\s*[eè])\s+(?:il\s+|la\s+|lo\s+)?"
+               + N + r"(?![\w])", lambda m: (re.sub(r"\s+a$", " al", m.group(1)) if re.search(r"\s+a$", m.group(1)) else m.group(1)) + " professore", t, flags=re.I)
+    return t
+
+
+def stato_professore_v31(sid):
+    r = stato_professore_v30(sid)
+    r["aspetto"] = dict(aspetto_prof(), nome_mostrato=nome_prof())
+    r["modello"] = info_modello_prof()
+    return r
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -16244,7 +16454,18 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/automazioni/avvisi":
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
             elif base == "/professore":                               # v29: 🧪 il Professore c'è (in questa chat)?
-                self._json(dict(stato_professore_v30(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
+                self._json(dict(stato_professore_v31(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
+            elif base == "/professore/aspetto":                       # v31: 🧍 nome, voce e carattere del secondo personaggio
+                self._json(dict(aspetto_prof(), nome_mostrato=nome_prof(), voci=VOCI_PROF, modello=info_modello_prof(), ok=True))
+            elif base == "/professore/modello/info":
+                info = info_modello_prof()
+                self._json({"presente": bool(info), **(info or {})})
+            elif base == "/professore/modello":
+                info = info_modello_prof()
+                if not info:
+                    self.send_error(404)
+                else:
+                    self._servi_file(os.path.join(_cartella_modello_prof(), info["file"]), "model/gltf-binary", "no-cache")
             elif base == "/previsione":                               # v28: 🔮 come finisce il mese (spese)
                 p = previsione_spese()
                 self._json(dict(p, ok=True) if p else {"ok": True, "vuoto": True})
@@ -16476,6 +16697,14 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "errore": "Il file deve essere tra 1 byte e 20 MB."}, 413); return
                 info, errore = salva_animazione(urllib.parse.unquote(self.headers.get("X-Nome", "animazione.vrma")), self.rfile.read(lung))
                 self._json({"ok": bool(info), "animazione": info, "errore": errore}); return
+            if base == "/professore/modello":                       # v31: 🧍 il tuo personaggio al posto del Professore (file grezzo)
+                lung = int(self.headers.get("Content-Length", 0) or 0)
+                if not self._richiesta_locale():
+                    self._json({"ok": False, "errore": "Solo da questo computer."}, 403); return
+                if lung <= 0 or lung > CONFIG["avatar_max_mb"] * 1024 * 1024:
+                    self._json({"ok": False, "errore": f"Il file deve essere tra 1 byte e {CONFIG['avatar_max_mb']} MB."}, 413); return
+                info, errore = salva_modello_prof(urllib.parse.unquote(self.headers.get("X-Nome", "personaggio.glb")), self.rfile.read(lung))
+                self._json({"ok": bool(info), "modello": info, "errore": errore}); return
             if base == "/avatar":                                   # v11: il tuo personaggio 3D (file grezzo)
                 lung = int(self.headers.get("Content-Length", 0) or 0)
                 if not self._richiesta_locale():
@@ -16709,12 +16938,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": MOTORE.memoria.elimina_documento(str(self._read_json_body().get("id", "")))})
 
             elif base in ("/pc/conferma", "/pc/fiducia", "/pc/prepara", "/avatar/elimina", "/routine", "/routine/elimina",
-                          "/routine/esegui", "/routine/analizza", "/voce", "/voce/scarica", "/voce/imposta", "/animazioni/elimina"):
+                          "/routine/esegui", "/routine/analizza", "/voce", "/voce/scarica", "/voce/imposta", "/animazioni/elimina",
+                          "/professore/modello/elimina", "/professore/aspetto"):
                 c = self._read_json_body()
                 if not self._richiesta_locale():
                     self._json({"ok": False, "esito": "🔒 I comandi del PC si confermano solo da questo computer."}, 403)
                 elif base == "/avatar/elimina":
                     self._json({"ok": elimina_avatar()})
+                elif base == "/professore/modello/elimina":                 # v31: torna il Professor Flux
+                    self._json({"ok": elimina_modello_prof()})
+                elif base == "/professore/aspetto":                         # v31: nome, voce, carattere
+                    d, errore = salva_aspetto_prof(c)
+                    self._json({"ok": bool(d), "aspetto": d, "errore": errore, "nome_mostrato": nome_prof()})
                 elif base == "/routine":
                     passi = ROUTINE.passi_da(c.get("passi"))
                     r, errore = ROUTINE.salva(c.get("nome"), passi, c.get("orario") or None, c.get("giorni"), c.get("id"),
@@ -17033,7 +17268,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V30</title>
+<title>MAIK PRIME // Zep V31</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -17879,10 +18114,18 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
          border:3px double currentColor;transform:rotate(-12deg);font-family:'Orbitron','Share Tech Mono',monospace;color:#2e9d5b;background:rgba(46,157,91,.08)}
   .voto30 b{font-size:22px}.voto30 span{font-size:10px;opacity:.8}.voto30.quasi{color:#c48a1a;background:rgba(196,138,26,.08)}.voto30.sbagliato{color:#ea580c;background:rgba(234,88,12,.08)}
   @media (max-width:760px){#esp30{bottom:80px;right:10px}}
+
+  /* ===== V31 · il secondo personaggio ===== */
+  .p2mod{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(var(--accent-rgb),.05)}
+  .p2mod small{display:block;color:var(--dim);font-size:11px;font-family:'Share Tech Mono',monospace;margin-top:2px}
+  #p2modal input,#p2modal textarea{width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;padding:8px 10px}
+  #p2modal textarea{resize:vertical;min-height:64px}
+  #p2voci .tbtn.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.18);color:var(--text)}
+  body.prof-on #avstate[data-prof]::after{content:' · 🧪 ' attr(data-prof)}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V30</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V31</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -17925,6 +18168,8 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <button class="tbtn" type="button" onclick="$('#avin').click()" title="Carica il tuo personaggio .vrm o .glb">📤 Carica</button></div>
     <input type="file" id="avin" accept=".vrm,.glb" style="display:none" onchange="uploadAvatar(this.files[0]);this.value=''">
     <button class="tbtn" id="avreset" type="button" style="width:100%;margin-top:6px;display:none" onclick="resetAvatar()">↺ Torna a Zep (robot)</button>
+    <div class="avside" style="margin-top:10px"><div><b id="p2side">🧪 Professor Flux</b><small id="p2sidek">il secondo personaggio (integrato)</small></div>
+      <button class="tbtn" type="button" onclick="apriP2()" title="Il secondo personaggio: il tuo modello 3D, il nome, la voce, il carattere">🎨 Cambia</button></div>
     <div class="note" style="margin-top:6px">Crea il tuo gratis con <b>VRoid Studio</b> (esporta .vrm) o usa un .glb. Trascinalo sul personaggio per caricarlo.</div>
     <label class="opt">🎙️ Posso essere interrotto mentre parlo<input type="checkbox" id="optbarge" onchange="setOpt('barge',this.checked)"></label>
     <label class="opt">🌱 Vivo da solo (mi annoio, dormo, passeggio)<input type="checkbox" id="optvita" onchange="setOpt('vita',this.checked);if(AV)AV.setAlive({on:this.checked})"></label>
@@ -18287,6 +18532,29 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <label class="opt">Ti ricordo le pause, mi accorgo se sbadigli o se sei troppo vicino allo schermo<input type="checkbox" id="optbenessere" onchange="setOpt('benessere',this.checked)"></label>
       <label class="opt">⏱️ Ti ricordo la pausa dopo (minuti di fila)<select id="optpausa" onchange="setOpt('pausaMin',+this.value)"><option value="30">30</option><option value="50">50</option><option value="90">90</option></select></label>
       <div class="note" style="margin-top:8px">Tutto quello che la webcam vede resta sul tuo PC: al server mando solo quanti secondi ti ho visto (per «da quanto sono al pc?»). Le foto partono solo quando me lo chiedi tu («leggi quello che ti mostro», «cosa ho in mano?»).</div>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="p2modal" role="dialog" aria-label="Il secondo personaggio">
+  <div class="mod" style="max-width:560px">
+    <div class="modh"><div class="modt">🧍 IL SECONDO PERSONAGGIO</div><button class="ib" onclick="chiudiP2()" aria-label="Chiudi">✕</button></div>
+    <div class="modb">
+      <div class="note">Accanto a Zep c'è il Professor Flux. Al suo posto puoi mettere un <b>tuo personaggio 3D</b> e dargli un <b>nome</b>, una <b>voce</b> e un <b>carattere</b>: fa tutto quello che fa lui (arriva col raggio, risponde con la sua bocca e i suoi gesti, la lavagna, gli esperimenti, le lezioni con Zep, il taccuino).</div>
+      <h4>🗿 IL PERSONAGGIO 3D</h4>
+      <div class="p2mod"><div><b id="p2modnome">Professor Flux</b><small id="p2modinfo">integrato</small></div>
+        <button class="tbtn" type="button" onclick="$('#p2in').click()">📤 Carica .glb / .vrm</button></div>
+      <input type="file" id="p2in" accept=".vrm,.glb" style="display:none" onchange="caricaModelloP2(this.files[0]);this.value=''">
+      <button class="tbtn" id="p2reset" type="button" style="width:100%;margin-top:6px;display:none" onclick="togliModelloP2()">↺ Torna il Professor Flux (3D)</button>
+      <div class="note" style="margin-top:6px">Un <b>.vrm</b> (VRoid Studio) muove la bocca e gli occhi con le sue espressioni; un <b>.glb</b> con i visemi o le forme ARKit (per esempio Ready Player Me) muove la bocca suono per suono; le animazioni nel file (idle, talk, wave) partono da sole. Se il file è in centimetri lo porto a misura d'uomo.</div>
+      <h4>🏷️ NOME</h4>
+      <input id="p2nome" maxlength="24" placeholder="Professor Flux" aria-label="Nome del secondo personaggio">
+      <div class="note">Con il nome lo chiami: «chiama Nova», «Nova, perché il cielo è blu?», «grazie Nova, puoi andare» (va sempre bene anche «chiama il professore»).</div>
+      <h4>🗣️ VOCE</h4>
+      <div class="trow" id="p2voci"><button class="tbtn" type="button" data-p2voce="grave">🎻 Grave</button><button class="tbtn" type="button" data-p2voce="media">🎷 Media</button><button class="tbtn" type="button" data-p2voce="acuta">🎺 Acuta</button><button class="tbtn" type="button" onclick="provaVoceP2()">▶ Prova</button></div>
+      <h4>🎭 CARATTERE</h4>
+      <textarea id="p2car" maxlength="300" rows="3" placeholder="Vuoto = il Professor Flux: geniale, sarcastico ma affettuoso. Oppure descrivilo tu, per esempio: «una scienziata gentile e paziente che adora le stelle»" aria-label="Carattere del secondo personaggio"></textarea>
+      <div class="trow" style="margin-top:10px"><button class="tbtn" type="button" id="p2salva" onclick="salvaP2()">💾 Salva</button><button class="tbtn" type="button" onclick="salvaP2(true)">↺ Come all'inizio</button></div>
     </div>
   </div>
 </div>
@@ -18866,7 +19134,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V30 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V31 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -18891,6 +19159,8 @@ const MaikKit = (() => {
         con voce = 'prof' il labiale va a lui e Zep lo guarda; la telecamera li inquadra tutti e due.
    V30: prof.esperimento('atomo'): tra Zep e il Professore si accende un esperimento olografico (sistema_solare, atomo, dna, onda,
         pendolo, molecola, buco_nero); il Professore più dettagliato (pelle, capelli a fili, stoffa, ciglia).
+   V31: prof.modello(url): il tuo .glb / .vrm al posto del Professore (ossa, bocca, gesti, sguardo, animazioni); prof.modello(null) torna lui.
+        Il Professore più vero: ciocche di capelli, sopracciglia e baffi a fili, occhi, orecchie, unghie, maniche con le pieghe, colletto.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -20058,6 +20328,7 @@ window.ZepKit = (() => {
       PR.zepParla = PR.on && !PR.voce && speaking;
       aggiornaProf(dt, now);                                              // v29: 🧪
       aggiornaEsp(dt, now);                                               // v30: 🔬
+      aggiornaModelloProf(dt, now);                                       // v31: 🧍 il tuo personaggio al posto del Professore
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -20855,6 +21126,7 @@ window.ZepKit = (() => {
       PR.top = new THREE.Box3().setFromObject(G).max.y;
       PR.g = G;
       dettagliProf(PR.parti);                                                                                     // v30: pelle, capelli, stoffa, ciglia
+      realismoV31(PR.parti);                                                                                      // v31: ciocche, occhi, orecchie, unghie, maniche
       return G;
     }
 
@@ -21059,7 +21331,7 @@ window.ZepKit = (() => {
       const ex = clamp((lx - PR.look.x) * 1.4 + PR.sacc.x + PR.look.x * 0.25, -0.45, 0.45), ey = clamp((ly - PR.look.y) * 1.2 + PR.sacc.y + PR.look.y * 0.2 + sbuffa * 0.6, -0.4, 0.55);
       PR.blinkT -= dt;
       if (PR.blinkT <= 0) { PR.blink = 1; PR.blinkT = rnd(2, 5.5); if (Math.random() < 0.15) PR.blinkT = 0.25; }
-      const bl = PR.blink > 0 ? Math.sin(Math.PI * (1 - PR.blink)) : 0; PR.blink = Math.max(0, PR.blink - dt * 7.5);
+      const bl = PR.blink > 0 ? Math.sin(Math.PI * (1 - PR.blink)) : 0; PR.blink = Math.max(0, PR.blink - dt * 7.5); PR.bl = bl;
       const aperto = clamp(0.78 + 0.22 * E.surprised - 0.25 * E.happy - 0.25 * E.annoyed - 0.12 * E.thinking + 0.15 * PR.brow, 0.15, 1) * (1 - bl);
       for (const O of P.occhi) {
         O.bulbo.rotation.set(-ey, ex, 0);
@@ -21455,6 +21727,360 @@ window.ZepKit = (() => {
       for (const O of P.occhi) { const cg = new THREE.Mesh(new THREE.TorusGeometry(0.0207, 0.00085, 4, 24, Math.PI), mc); cg.rotation.x = Math.PI / 2; cg.scale.set(1.03, 1, 1.06); O.su.add(cg); }
     }
 
+    function makeBoneRigProf(bones, morphs, charRoot) {     // v31: (come makeBoneRig, con la radice del personaggio del Professore)
+      const order = ['hips', 'spine', 'chest', 'neck', 'head', 'leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm', 'leftHand', 'rightHand',
+        'leftUpperLeg', 'rightUpperLeg', 'leftLowerLeg', 'rightLowerLeg'];
+      const rest = {}; for (const k of order) if (bones[k]) rest[k] = bones[k].quaternion.clone();
+      const armDrop = {};
+      charRoot.updateMatrixWorld(true);
+      const W = b => b.getWorldPosition(new THREE.Vector3());
+      for (const [up, low, sign] of [['leftUpperArm', 'leftLowerArm', -1], ['rightUpperArm', 'rightLowerArm', 1]]) {
+        if (bones[up] && bones[low]) { const d = W(bones[low]).sub(W(bones[up])); armDrop[up] = Math.atan2(-d.y, Math.abs(d.x) + 1e-6); armDrop.side = Math.sign(d.x) || sign; }
+      }
+      // dita: asse di piegatura di ogni falange (perpendicolare al dito, verso il palmo), nel riferimento del genitore
+      const fingers = {};
+      for (const [side, m] of [['left', 1], ['right', -1]]) {
+        const ch = bones.fingers && bones.fingers[side]; const hand = bones[side + 'Hand'];
+        if (!ch || !hand || !ch.some(f => f[0])) continue;
+        const first = i => ch[i] && (ch[i][0] || ch[i][1]);
+        const mid = first(2) || first(1) || first(3), idx = first(1) || mid, lit = first(4) || first(3) || mid;
+        if (!mid) continue;
+        const d = W(mid).sub(W(hand)).normalize();
+        let s = W(idx).sub(W(lit)); if (s.lengthSq() < 1e-8) s = new THREE.Vector3(0, 0, 1);
+        const n = new THREE.Vector3().crossVectors(d, s.normalize()).multiplyScalar(m).normalize();
+        const list = [];
+        ch.forEach((segs, fi) => {
+          segs.forEach((b, si) => {
+            if (!b || !b.parent) return;
+            const nextB = segs.slice(si + 1).find(Boolean);
+            let dir = nextB ? W(nextB).sub(W(b)) : (b.children[0] ? W(b.children[0]).sub(W(b)) : null);
+            if (!dir || dir.lengthSq() < 1e-10) dir = (list.length && list[list.length - 1].f === fi) ? list[list.length - 1].dir.clone() : d.clone();
+            dir.normalize();
+            let ax = new THREE.Vector3().crossVectors(dir, n); if (ax.lengthSq() < 1e-8) ax = new THREE.Vector3(0, 0, m); ax.normalize();
+            const qp = b.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+            list.push({ b, f: fi, seg: si, rest: b.quaternion.clone(), axis: ax.clone().applyQuaternion(qp).normalize(), dir });
+          });
+        });
+        fingers[side] = list;
+      }
+      const qD = new THREE.Quaternion(), qP = new THREE.Quaternion(), qPi = new THREE.Quaternion(), e = new THREE.Euler(), qA = new THREE.Quaternion(), vA = new THREE.Vector3();
+      const pre = (b) => { if (b.parent) { b.parent.updateWorldMatrix(true, false); b.parent.getWorldQuaternion(qP); } else qP.identity(); charRoot.getWorldQuaternion(qPi); qP.premultiply(qPi.invert()); qPi.copy(qP).invert(); };
+      return {
+        bones, morphs, armDrop, fingers,
+        apply(k, x, y, z) {                // rotazione (radianti) nel riferimento del personaggio, sopra la posa attuale
+          const b = bones[k]; if (!b || (!x && !y && !z)) return;
+          pre(b); qD.setFromEuler(e.set(x, y, z, 'YXZ'));
+          b.quaternion.premultiply(qP).premultiply(qD).premultiply(qPi);      // = P'⁻¹ · D · P' · posa attuale
+        },
+        roll(k, fromK, ang) {              // gira un osso attorno alla direzione genitore→osso (es. il palmo attorno all'avambraccio)
+          const b = bones[k], a = bones[fromK]; if (!b || !a || !ang) return;
+          charRoot.updateMatrixWorld(true);
+          vA.copy(W(b)).sub(W(a)); if (vA.lengthSq() < 1e-10) return;
+          charRoot.getWorldQuaternion(qA); vA.applyQuaternion(qA.invert()).normalize();
+          pre(b); qD.setFromAxisAngle(vA, ang);
+          b.quaternion.premultiply(qP).premultiply(qD).premultiply(qPi);
+        },
+        curl(side, curls, skip) {          // piega le dita: curls = [pollice, indice, medio, anulare, mignolo]
+          for (const F of fingers[side] || []) {
+            if (skip && skip(F.b)) continue;
+            const c = curls[F.f] || 0, max = F.f === 0 ? [0.5, 0.75, 0.8][F.seg] : [1.25, 1.4, 1.05][F.seg];
+            F.b.quaternion.copy(F.rest).premultiply(qA.setFromAxisAngle(F.axis, c * max));
+          }
+        },
+        // (le ossa mosse dalle animazioni del file ripartono dall'ultimo valore dell'animazione: il mixer di three.js
+        //  riscrive un valore solo quando cambia, quindi tornare al riposo le bloccherebbe nei tratti fermi)
+        reset() { for (const k of Object.keys(rest)) bones[k].quaternion.copy(this.mixed && this.mixed[k] ? this.mixed[k] : rest[k]); },
+        capture(animato) { this.mixed = this.mixed || {}; for (const k of Object.keys(rest)) if (animato(bones[k])) (this.mixed[k] = this.mixed[k] || new THREE.Quaternion()).copy(bones[k].quaternion); },
+      };
+    }
+
+
+    // ============================================================
+    // V31 — 🔍 UN PROFESSORE PIÙ VERO: capelli, sopracciglia e baffi fatti di ciocche di fili (non più palline), il bianco degli
+    // occhi con le venuzze, le orecchie con il bordo e il lobo, le unghie, le maniche con le pieghe, il colletto e i bottoni del camice.
+    // 🧍 E IL TUO PERSONAGGIO AL SUO POSTO: un .glb o un .vrm che fa tutto quello che fa lui (arriva col raggio, parla con la sua bocca,
+    // gesticola, guarda, presenta gli esperimenti), con le ossa, le forme del viso e le animazioni del file.
+    // ============================================================
+    function texCiocca() {                                     // una ciocca: tanti fili bianchi e grigi, più radi in punta
+      if (PR.texCiocca) return PR.texCiocca;
+      const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d');
+      let seme = 5; const cas = () => { seme = (seme * 16807) % 2147483647; return seme / 2147483647; };
+      for (let i = 0; i < 34; i++) {
+        const x0 = 4 + cas() * 56, ond = (cas() - 0.5) * 9, v = 200 + cas() * 55 | 0;
+        g.strokeStyle = `rgba(${v},${v},${Math.min(255, v + 6)},${(0.55 + cas() * 0.45).toFixed(2)})`; g.lineWidth = 0.8 + cas() * 1.8;
+        g.beginPath(); g.moveTo(x0, 128); g.bezierCurveTo(x0 + ond, 90, x0 - ond, 45, x0 + ond * 0.6, 4 + cas() * 30); g.stroke();
+      }
+      g.globalCompositeOperation = 'destination-in';                                                  // la punta sfuma
+      const gr = g.createLinearGradient(0, 128, 0, 0); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.6, 'rgba(0,0,0,.9)'); gr.addColorStop(1, 'rgba(0,0,0,.15)');
+      g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+      return (PR.texCiocca = t);
+    }
+    function geoCiocche(fili) {                                // fili: [{a: inizio, d: direzione, l: lunghezza, w: larghezza, c: curva, s: lato}] → una geometria sola
+      const pos = [], uv = [], idx = [], N = 5, P0 = new THREE.Vector3(), Q = new THREE.Vector3(), L = new THREE.Vector3();
+      for (const f of fili) {
+        const base = pos.length / 3;
+        for (let i = 0; i <= N; i++) {
+          const t = i / N;
+          P0.copy(f.a).addScaledVector(f.d, f.l * t).addScaledVector(f.c, f.l * t * t);
+          L.copy(f.s).multiplyScalar(f.w * (1 - 0.55 * t) / 2);
+          Q.copy(P0).sub(L); pos.push(Q.x, Q.y, Q.z); Q.copy(P0).add(L); pos.push(Q.x, Q.y, Q.z);
+          uv.push(0, t, 1, t);
+          if (i) { const k = base + (i - 1) * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx);
+      geo.computeVertexNormals(); return geo;
+    }
+    function realismoV31(P) {
+      const M = P.M; if (M._v31) return; M._v31 = true;
+      PR.topFlux = PR.top;                                                     // (l'inquadratura resta quella di prima: i capelli spettinati non contano)
+      let seme = 31; const cas = () => { seme = (seme * 16807) % 2147483647; return seme / 2147483647; };
+      const V = (x, y, z) => new THREE.Vector3(x, y, z);
+      const tex = texCiocca();
+      const mk = col => new THREE.MeshStandardMaterial({ color: col, map: tex, alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.55 });
+      M.ciocca = mk(0xf3f4f6); M.cioccaO = mk(0xd3d8de);
+      const lato = () => { const a = cas() * Math.PI * 2; return V(Math.cos(a), 0, Math.sin(a)); };
+      // capelli: ogni ciuffo diventa una ciocca di fili (che continua a muoversi con la testa); sotto restano dei batuffoli piccoli e grigi (il volume)
+      for (const C of P.ciuffi) {
+        const sf = C.g.children.find(o => o.isMesh); if (!sf) continue;
+        const r = sf.geometry.parameters.radius || 0.02, alto = sf.position.y;
+        sf.visible = false;                                                                           // niente più palline: solo fili
+        const giu = V(0, -1, 0).applyQuaternion(C.g.quaternion.clone().invert());                // la gravità, vista dal ciuffo
+        const fili = [];
+        for (let k = 0; k < 2; k++) {                                                                 // alla base: ciocche corte e larghe (il volume)
+          const a = cas() * 6.283;
+          fili.push({ a: V(Math.cos(a) * r * 0.3, -0.004, Math.sin(a) * r * 0.3), d: V((cas() - 0.5) * 0.8, 1, (cas() - 0.5) * 0.8).normalize(), l: r * 1.3 + alto, w: r * 2, c: V(Math.cos(a), 0, Math.sin(a)).multiplyScalar(0.5).addScaledVector(giu, 0.4), s: lato() });
+        }
+        for (let k = 0; k < 7; k++) {                                                                 // e i fili lunghi, spettinati, che la gravità piega
+          const a = cas() * 6.283, rr = r * 0.75 * Math.sqrt(cas());
+          const piega = V(Math.cos(a), 0, Math.sin(a)).multiplyScalar(0.4 + cas() * 0.6).addScaledVector(giu, 0.35 + cas() * 0.5);
+          fili.push({ a: V(Math.cos(a) * rr, alto * 0.2, Math.sin(a) * rr), d: V((cas() - 0.5) * 0.6, 1, (cas() - 0.5) * 0.6).normalize(), l: r * (1.7 + cas() * 1.6) + alto, w: r * (0.9 + cas() * 0.6), c: piega, s: lato() });
+        }
+        const m = new THREE.Mesh(geoCiocche(fili), cas() < 0.3 ? M.cioccaO : M.ciocca); C.g.add(m);
+      }
+      // sopracciglia folte: fili che vanno verso l'esterno e un po' in su
+      for (const C of P.ciglia) {
+        C.b.children.forEach(o => { if (o.isMesh) o.scale.multiplyScalar(0.82); });
+        const fili = [];
+        for (let k = 0; k < 24; k++) {
+          const x = C.s * (-0.012 + 0.038 * cas()), y = 0.005 * (cas() - 0.3);
+          const d = V(C.s * (0.55 + 0.4 * cas()), 0.45 + 0.4 * cas(), 0.35).normalize();
+          fili.push({ a: V(x, y, 0.004), d, l: 0.012 + 0.014 * cas(), w: 0.005, c: V(C.s * 0.2, -0.45 - 0.3 * cas(), 0.1), s: V(0, 0, 0).crossVectors(d, V(0, 0, 1)).normalize() });
+        }
+        C.b.add(new THREE.Mesh(geoCiocche(fili), M.ciocca));
+      }
+      // baffoni: fili che scendono verso l'esterno da sotto il naso
+      P.baffo.forEach((g, i) => {
+        const s = i ? 1 : -1, fili = [];
+        g.children.forEach(o => { if (o.isMesh) o.scale.multiplyScalar(0.8); });
+        for (let k = 0; k < 20; k++) {
+          const t = cas(), x = s * (0.003 + 0.041 * t), y = -0.02 * t * t - 0.001;
+          const d = V(s * (0.35 + 0.35 * t), -1, 0.25).normalize();
+          fili.push({ a: V(x, y, 0.004 - 0.016 * t), d, l: 0.014 + 0.016 * cas(), w: 0.0055, c: V(s * 0.25, 0, 0.1), s: V(0, 0, 0).crossVectors(d, V(0, 0, 1)).normalize() });
+        }
+        g.add(new THREE.Mesh(geoCiocche(fili), cas() < 0.5 ? M.ciocca : M.cioccaO));
+      });
+      // gli occhi: il bianco non è bianco (un po' di rosa ai lati, le venuzze), la caruncola rosa nell'angolo interno
+      {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 128; const g = c.getContext('2d');
+        g.fillStyle = '#f7f3ec'; g.fillRect(0, 0, 256, 128);
+        const gr = g.createRadialGradient(64, 64, 18, 64, 64, 90); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(226,170,160,.6)');
+        g.fillStyle = gr; g.fillRect(0, 0, 256, 128);
+        g.strokeStyle = 'rgba(190,60,60,.35)'; g.lineWidth = 0.8;
+        for (let i = 0; i < 14; i++) { const s = i % 2 ? 1 : -1; let x = 64 + s * (40 + cas() * 14), y = 46 + cas() * 36; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 4; k++) { x -= s * (5 + cas() * 6); y += (cas() - 0.5) * 7; g.lineTo(x, y); } g.stroke(); }
+        const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; M.bianco.map = t; M.bianco.needsUpdate = true;
+      }
+      const carun = new THREE.MeshStandardMaterial({ color: 0xd78f88, roughness: 0.35 });
+      for (const O of P.occhi) { const k = new THREE.Mesh(new THREE.SphereGeometry(0.0034, 12, 8), carun); k.position.set(-O.s * 0.0172, -0.0015, 0.0105); k.scale.set(1, 0.8, 0.7); O.c.add(k); }
+      // le orecchie: il bordo (l'elice) e il lobo
+      P.testa.children.filter(o => o.isMesh && o.material === M.rosa).forEach(orecchio => {
+        const s = Math.sign(orecchio.position.x) || 1;
+        const elice = new THREE.Mesh(new THREE.TorusGeometry(0.027, 0.0055, 8, 28, Math.PI * 1.3), M.rosa);
+        elice.rotation.set(0, Math.PI / 2, -0.45 * Math.PI); elice.position.x = s * 0.012; orecchio.add(elice);
+        const lobo = new THREE.Mesh(new THREE.SphereGeometry(0.0095, 14, 10), M.rosa); lobo.position.set(s * 0.004, -0.027, 0.006); orecchio.add(lobo);
+      });
+      // il naso: meno a pallina (la punta più piccola e un po' all'ingiù, le narici più piatte, il dorso più lungo)
+      const naso = P.testa.children.find(o => o.isGroup && o.children.some(m => m.isMesh && m.material === M.naso));
+      if (naso) naso.children.forEach(m => {
+        if (!m.isMesh) return;
+        const r = m.geometry.parameters.radius || 0;
+        if (m.geometry.type === 'CapsuleGeometry') { m.scale.set(0.85, 1.2, 0.85); m.position.z -= 0.002; }
+        else if (r > 0.015) { m.scale.set(0.88, 0.8, 0.9); m.position.set(0, -0.017, 0.0095); }
+        else { m.scale.set(0.9, 0.6, 0.78); m.position.x *= 0.92; m.position.y = -0.021; }
+      });
+      // le mani: le unghie
+      const unghia = new THREE.MeshPhysicalMaterial({ color: 0xf0d5ca, roughness: 0.3, clearcoat: 0.6 });
+      for (const A of Object.values(P.B)) A.dita.forEach(([d1, d2]) => {
+        const cp = d2.children.find(o => o.isMesh); if (!cp) return;
+        const r = cp.geometry.parameters.radius || 0.008, l = cp.geometry.parameters.length || 0.02;
+        const u = new THREE.Mesh(new THREE.SphereGeometry(r * 0.82, 12, 8), unghia); u.scale.set(1, 1.25, 0.32); u.position.set(0, -l - r * 0.35, r * 0.66); d2.add(u);
+      });
+      // il camice: le maniche con le pieghe (al posto dei tubi), il colletto, tre bottoni
+      const manica = (r1, r2, L, rughe) => {
+        const pts = [];
+        for (let i = 0; i <= 6; i++) { const a = Math.PI / 2 * (i / 6); pts.push(new THREE.Vector2(r2 * Math.sin(a), -L / 2 - r2 * Math.cos(a))); }
+        for (let i = 1; i < 18; i++) { const t = i / 18, y = -L / 2 + L * t; pts.push(new THREE.Vector2(lerp(r2, r1, t) * (1 + rughe * 0.03 * Math.sin(t * 34) * (1 - t)), y)); }
+        for (let i = 0; i <= 6; i++) { const a = Math.PI / 2 * (i / 6); pts.push(new THREE.Vector2(r1 * Math.cos(a), L / 2 + r1 * Math.sin(a))); }
+        const geo = new THREE.LatheGeometry(pts, 28), p = geo.attributes.position;
+        for (let i = 0; i < p.count; i++) {                                                          // pieghe anche intorno (non solo anelli)
+          const x = p.getX(i), y = p.getY(i), z = p.getZ(i); if (Math.abs(y) > L / 2) continue;
+          const f = 1 + rughe * 0.045 * Math.sin(Math.atan2(x, z) * 3 + y * 55) * Math.sin(Math.PI * (y / L + 0.5));
+          p.setXYZ(i, x * f, y, z * f);
+        }
+        geo.computeVertexNormals(); return geo;
+      };
+      for (const A of Object.values(P.B)) {
+        const su = A.sp.children.find(o => o.isMesh && o.geometry.type === 'CapsuleGeometry');
+        if (su) { su.geometry.dispose(); su.geometry = manica(0.051, 0.046, 0.25, 1); }
+        const giu = A.go.children.find(o => o.isMesh && o.geometry.type === 'CapsuleGeometry');
+        if (giu) { giu.geometry.dispose(); giu.geometry = manica(0.046, 0.043, 0.2, 1.4); }
+        const spalla = A.sp.children.find(o => o.isMesh && o.geometry.type === 'SphereGeometry');
+        if (spalla) { spalla.scale.set(0.86, 0.76, 0.86); spalla.position.set(-A.s * 0.006, -0.016, 0); }
+      }
+      const colletto = new THREE.Mesh(new THREE.CylinderGeometry(0.084, 0.071, 0.042, 32, 1, true, 0.62, Math.PI * 2 - 1.24), M.camice);
+      colletto.position.set(0, 0.448, -0.004); colletto.scale.z = 0.86; colletto.rotation.x = -0.1; P.schiena.add(colletto);
+      for (const y of [0.12, 0.18, 0.24]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.0062, 0.0062, 0.003, 14), M.scuro); b.rotation.order = 'YXZ'; b.rotation.set(Math.PI / 2, -0.42, 0); b.position.set(-0.081, y, 0.116); P.schiena.add(b); }
+      // la pelle: la fronte e il naso un po' più lucidi (meno ruvidi)
+      {
+        const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+        g.fillStyle = 'rgb(150,150,150)'; g.fillRect(0, 0, 512, 256);
+        const P2 = (a, e) => [512 * (0.25 + a / (2 * Math.PI)), 256 * (0.5 - e / Math.PI)];
+        g.filter = 'blur(10px)'; g.fillStyle = 'rgb(108,108,108)';
+        let [x0, y0] = P2(-0.38, 0.8), [x1, y1] = P2(0.38, 0.38); g.fillRect(x0, y0, x1 - x0, y1 - y0);
+        [x0, y0] = P2(-0.09, 0.25); [x1, y1] = P2(0.09, -0.28); g.fillRect(x0, y0, x1 - x0, y1 - y0);
+        const t = new THREE.CanvasTexture(c); M.pelle.roughnessMap = t; M.pelle.roughness = 1; M.pelle.needsUpdate = true;
+      }
+    }
+
+    // ---------- 🧍 il TUO personaggio al posto del Professore (.glb / .vrm) ----------
+    function infoModelloProf() {
+      const M = PR.mod;
+      if (!M) return { tipo: 'flux', nome: 'Professor Flux' };
+      return { tipo: M.tipo, nome: M.nome, ossa: M.ossa, forme: M.forme, animazioni: Object.keys(M.clips).filter(k => !k.startsWith('__')), altezza: +M.h.toFixed(2),
+               visemi: !!M.oculus, arkit: !!M.arkit };
+    }
+    function togliModelloProf() {
+      const M = PR.mod; if (!M) return;
+      PR.mod = null;
+      if (M.mixer) M.mixer.stopAllAction();
+      if (M.holder.parent) M.holder.parent.remove(M.holder);
+      if (M.guardaObj) scene.remove(M.guardaObj);
+      M.holder.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }
+      });
+      if (PR.parti) { PR.parti.corpo.visible = true; PR.top = PR.topFlux || altezzaProf(PR.parti.corpo); }
+      inquadraDuo(); placeCamera(); camera.updateProjectionMatrix();
+    }
+    function altezzaProf(obj) {                                // la cima del personaggio (a grandezza piena, anche se sta entrando)
+      const sc = PR.g.scale.clone(); PR.g.scale.set(1, 1, 1); PR.g.updateMatrixWorld(true);
+      const y = new THREE.Box3().setFromObject(obj).max.y; PR.g.scale.copy(sc); PR.g.updateMatrixWorld(true);
+      return y;
+    }
+    async function caricaModelloProf(url) {
+      creaProf();
+      if (!url) { togliModelloProf(); return infoModelloProf(); }
+      const loader = new GLTFLoader(); if (VRM) loader.register(p => new VRM.VRMLoaderPlugin(p));
+      const gltf = await loader.loadAsync(url);
+      togliModelloProf();
+      const v = gltf.userData && gltf.userData.vrm, holder = new THREE.Group(); holder.name = 'professore-tuo';
+      const M = { tipo: v ? 'vrm' : 'glb', vrm: v || null, holder, mixer: null, clips: {}, rig: null, oculus: null, arkit: null, m: {}, nome: '', ossa: 0, forme: 0, h: 1.75 };
+      let scena = gltf.scene;
+      if (v) { try { VRM.VRMUtils.removeUnnecessaryVertices(gltf.scene); } catch (e) {} try { VRM.VRMUtils.rotateVRM0(v); } catch (e) {} scena = v.scene; M.nome = (v.meta && (v.meta.name || v.meta.title)) || ''; }
+      scena.traverse(o => { if (o.isMesh) o.frustumCulled = false; });
+      holder.add(scena); holder.updateMatrixWorld(true);
+      let box = new THREE.Box3().setFromObject(holder), h = box.max.y - box.min.y;
+      if (!(h > 0.6 && h < 2.6)) { holder.scale.setScalar(1.72 / (h || 1)); holder.updateMatrixWorld(true); box = new THREE.Box3().setFromObject(holder); h = box.max.y - box.min.y; }   // centimetri o minuscolo: lo porto a misura d'uomo
+      M.h = h;
+      if (v) {
+        const hb = n => { try { return v.humanoid.getNormalizedBoneNode(n); } catch (e) { return null; } };
+        const bones = {}; for (const k of Object.keys(BONE_NAMES)) bones[k] = hb(k);
+        if (!bones.chest) bones.chest = hb('upperChest');
+        bones.fingers = {};
+        for (const side of ['left', 'right']) bones.fingers[side] = FINGERS.map(F => (F === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal']).map(sg => hb(side + F + sg)));
+        M.rig = makeBoneRigProf(bones, null, holder);
+        M.forme = v.expressionManager ? v.expressionManager.expressions.length : 0;
+      } else {
+        const mm = findMorphs(scena); M.m = mm.m; M.oculus = mm.oculus; M.arkit = mm.arkit;
+        M.rig = makeBoneRigProf(findBones(scena), mm.m, holder);
+        const nomi = new Set(); scena.traverse(o => { if (o.morphTargetDictionary) Object.keys(o.morphTargetDictionary).forEach(n => nomi.add(n)); }); M.forme = nomi.size;
+      }
+      M.rig.animatedBone = () => false;
+      if (gltf.animations && gltf.animations.length) {
+        M.mixer = new THREE.AnimationMixer(scena);
+        for (const c of gltf.animations) M.clips[c.name.toLowerCase()] = M.mixer.clipAction(c);
+        const pk = re => Object.entries(M.clips).find(([n]) => re.test(n));
+        const idle = pk(/idle|breath|stand|wait|loop/) || Object.entries(M.clips)[0];
+        if (idle) { idle[1].play(); M.clips.__idle = idle[1]; }
+        const talk = pk(/talk|speak|chat/); if (talk) M.clips.__talk = talk[1];
+        const wave = pk(/wave|hello|greet|saluto/); if (wave) M.clips.__wave = wave[1];
+        const anim = new Set(gltf.animations.flatMap(c => c.tracks.map(tr => tr.name.split('.')[0])));
+        M.rig.animatedBone = b => !!b && anim.has(b.name);
+      }
+      M.ossa = Object.values(M.rig.bones).filter(b => b && b.isObject3D).length;
+      const c = box.getCenter(new THREE.Vector3());
+      holder.position.set(holder.position.x - c.x, holder.position.y - box.min.y, holder.position.z - c.z);       // i piedi a terra, al centro
+      if (v && v.lookAt) { M.guardaObj = new THREE.Object3D(); scene.add(M.guardaObj); v.lookAt.target = M.guardaObj; v.lookAt.autoUpdate = true; }
+      PR.parti.corpo.visible = false;
+      PR.g.add(holder); PR.mod = M;
+      PR.top = altezzaProf(holder);
+      inquadraDuo(); placeCamera(); camera.updateProjectionMatrix();
+      log(`professore: il tuo ${M.tipo} «${M.nome || 'senza nome'}» · ossa ${M.ossa} · forme ${M.forme}${M.oculus ? ' · visemi' : ''}${M.arkit ? ' · ARKit' : ''} · animazioni ${infoModelloProf().animazioni.length}`);
+      return infoModelloProf();
+    }
+    function aggiornaModelloProf(dt, now) {
+      const M = PR.mod; if (!M || !PR.g || !PR.g.visible) return;
+      const P = PR.parti, R = M.rig, anim = k => R.animatedBone(R.bones[k]);
+      R.reset();
+      if (M.mixer) {
+        if (M.clips.__talk) { const a = M.clips.__talk, w = PR.parlando ? 1 : 0; a.enabled = true; if (w && !a.isRunning()) a.play(); a.weight = damp(a.weight || 0, w, 4, dt); }
+        if (M.clips.__wave && PR.gest && PR.gest.k === 'saluta' && PR.gest.t <= dt * 1.5) M.clips.__wave.reset().setLoop(THREE.LoopOnce, 1).fadeIn(0.2).play();
+        M.mixer.update(dt); R.capture(R.animatedBone);
+      }
+      // il corpo, la testa, le braccia, le dita: gli stessi movimenti del Professore (respiro, sguardo, gesti, il ritmo delle parole)
+      if (!anim('spine')) R.apply('spine', (P.schiena.rotation.x - 0.07) * 0.8, 0, P.corpo.rotation.z);
+      if (!anim('neck')) R.apply('neck', P.collo.rotation.x, P.collo.rotation.y, 0);
+      R.apply('head', P.testa.rotation.x, P.testa.rotation.y, P.testa.rotation.z);
+      if (R.bones.leftUpperArm && !anim('leftUpperArm') && !anim('rightUpperArm')) {
+        for (const [lato, side, m] of [['S', 'left', 1], ['D', 'right', -1]]) {
+          const A = P.B[lato].cur, drop = R.armDrop[side + 'UpperArm'] || 0;
+          R.apply(side + 'UpperArm', A.sx, -m * A.sy, m * (A.sz - (Math.PI / 2 - drop)));
+          R.apply(side + 'LowerArm', A.ex, 0, 0);
+          if (A.wr) R.roll(side + 'Hand', side + 'LowerArm', m * A.wr * 0.6);
+        }
+      }
+      for (const [lato, side] of [['S', 'left'], ['D', 'right']]) R.curl(side, P.B[lato].mani, R.animatedBone);
+      // la bocca (gli stessi suoni del Professore), gli occhi, le emozioni
+      const E = PR.emo, mp = PR.mp, o = clamp(mp.open, 0, 1), ro = clamp(mp.round, 0, 1), wi = clamp(mp.wide, 0, 1), bl = clamp(PR.bl || 0, 0, 1);
+      const em = M.vrm && M.vrm.expressionManager;
+      const setE = (k, x) => { x = clamp(x, 0, 1); if (em) { try { em.setValue(k, x); } catch (e) {} } else for (const [mesh, i] of M.m[k] || []) mesh.morphTargetInfluences[i] = x; };
+      const setM = (L, x) => { for (const [mesh, i] of L || []) mesh.morphTargetInfluences[i] = clamp(x, 0, 1); };
+      if (M.oculus) { const Vs = M.oculus; setM(Vs.aa, o * (1 - ro) * 1.1); setM(Vs.O, o * ro * 1.1); setM(Vs.U, ro * (1 - o) * 0.7); setM(Vs.E, wi * o * 0.8); setM(Vs.I, wi * (1 - o) * 0.5); setM(Vs.PP, mp.press * 0.6); setM(Vs.sil, 0); }
+      else if (M.arkit) { const K = M.arkit; setM(K.jawopen, o * 0.8); setM(K.mouthfunnel, ro * o * 0.9); setM(K.mouthpucker, ro * (1 - o) * 0.8); setM(K.mouthpressleft, mp.press * 0.6); setM(K.mouthpressright, mp.press * 0.6);
+                          setM(K.mouthstretchleft, wi * 0.35); setM(K.mouthstretchright, wi * 0.35); setM(K.browinnerup, E.surprised * 0.8 + E.thinking * 0.3); setM(K.browdownleft, E.annoyed * 0.6); setM(K.browdownright, E.annoyed * 0.6); }
+      else { setE('aa', o * (1 - ro)); setE('oh', o * ro); setE('ou', ro * (1 - o) * 0.5); setE('ee', wi * o * 0.6); setE('ih', wi * (1 - o) * 0.3); }
+      setE('blink', bl); if (!em) { setE('blinkLeft', bl); setE('blinkRight', bl); }
+      setE('happy', E.happy * 0.6); if (!em) { setE('happyL', E.happy * 0.5); setE('happyR', E.happy * 0.5); }
+      setE('surprised', E.surprised * 0.6); setE('angry', E.annoyed * 0.35);
+      if (M.vrm) {
+        if (M.guardaObj) M.guardaObj.position.set(camera.position.x + PR.look.x * 2.2, camera.position.y + PR.look.y * 1.2 - 0.1, camera.position.z);
+        M.vrm.update(dt);
+      }
+      if (!R.bones.head && !M.vrm) { M.holder.rotation.y = PR.look.x * 0.35; M.holder.rotation.x = -PR.look.y * 0.06; }    // senza ossa: si gira tutto insieme
+    }
+    function valoreModelloProf(nome) {                          // (per i test) quanto è attiva una forma del viso o un'espressione
+      const M = PR.mod; if (!M) return null;
+      if (M.vrm && M.vrm.expressionManager) { try { return M.vrm.expressionManager.getValue(nome); } catch (e) { return null; } }
+      let out = null; M.holder.traverse(o => { if (out == null && o.morphTargetDictionary && nome in o.morphTargetDictionary) out = o.morphTargetInfluences[o.morphTargetDictionary[nome]]; });
+      return out;
+    }
+    function ossoProf(k) {                                     // (per i test) dov'è un osso del tuo personaggio
+      const b = PR.mod && PR.mod.rig && PR.mod.rig.bones[k]; if (!b || !b.isObject3D) return null;
+      const v = b.getWorldPosition(new THREE.Vector3()); return { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3) };
+    }
+
     const api = {
       get kind() { return kind; }, get name() { return name; },
       get info() {
@@ -21673,9 +22299,10 @@ window.ZepKit = (() => {
       guarda(x, y) { PR.guarda.x = clamp(+x || 0, -1, 1); PR.guarda.y = clamp(+y || 0, -1, 1); },
       get gesti() { return Object.keys(PR_GESTI); },
       esperimento: k => esperimento(k),                                                                            // v30: 🔬 (null lo spegne)
+      modello: url => caricaModelloProf(url), get modelloInfo() { return infoModelloProf(); }, valore: n => valoreModelloProf(n), osso: k => ossoProf(k),   // v31: 🧍
       get esperimenti() { return Object.fromEntries(Object.entries(ESPERIMENTI_3D).map(([k, v]) => [k, v.titolo])); },
       get stato() { return { on: PR.on, stato: PR.stato, w: +PR.w.toFixed(2), parla: PR.parlando, voce: PR.voce, gesto: PR.gest ? PR.gest.k : null, bocca: +PR.mp.open.toFixed(2),
-                             scan: +(PR.scanW || 0).toFixed(2), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
+                             scan: +(PR.scanW || 0).toFixed(2), modello: PR.mod ? PR.mod.tipo : 'flux', realismo: !!(PR.parti && PR.parti.M._v31), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
     };
     Object.defineProperty(api, 'voce', { get: () => (PR.voce && PR.on ? 'prof' : 'zep'), set: v => { PR.voce = v === 'prof' && PR.on && PR.stato !== 'esce'; }, enumerable: true });
     for (const nome of ['speakLine', 'sync', 'lineEnd', 'audioLevel']) {
@@ -22145,6 +22772,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('💶','Le mie spese',()=>openSpese(),'D','soldi budget bollette conti'),c('🧮','Quanto ho speso questo mese?',()=>qs('quanto ho speso questo mese?'),'spese','soldi totale'),
     c('💶','Segna una spesa…',()=>q('ho speso '),'spese','euro pagato comprato'),c('🎯','Imposta il budget del mese…',()=>q('imposta il budget a '),'spese','soldi limite'),
     c('✅','Le mie abitudini',()=>openAbitudini(),'O','obiettivi serie streak'),c('✅','Nuova abitudine…',()=>q('nuova abitudine: '),'abitudini','obiettivo ogni giorno'),
+    c('🧍','Il secondo personaggio: il tuo modello, il nome, la voce',()=>apriP2(),'personaggio','professore glb vrm nome voce carattere'),
     c('🔬','Esperimenti olografici del Professore',()=>qs('quali esperimenti sai fare?'),'esperimenti','atomo dna buco nero sistema solare ologramma'),c('🎭','Lezione a due voci (Professore e Zep)',()=>{$('#inp').value='spiegatemi ';$('#inp').focus();},'lezione','spiegatemi dialogo due voci'),c('📓','Il taccuino del Professore',()=>qs('cosa mi hai spiegato?'),'taccuino','voti lezioni imparato'),c('❓','Interrogami (Professore)',()=>qs('professore, interrogami'),'interrogami','domanda voto verifica'),
     c('🧪','Chiama il Professor Flux',()=>qs('chiama il professore'),'professore','scienziato laboratorio flux genio'),c('👋','Congeda il Professore',()=>qs('grazie professore, puoi andare'),'congeda','professore vai laboratorio'),
     c('🔬','Analizza le mie spese (grafico)',()=>qs('analizza le mie spese'),'analisi','dati grafico statistiche spese categorie'),c('🔮','Previsione di fine mese',()=>qs('quanto spenderò questo mese?'),'previsione','budget fine mese quanto spenderò'),
@@ -22184,7 +22812,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V30',key:'maik_boot_v30',checks:[
+  return MaikKit.boot({version:'PRIME · V31',key:'maik_boot_v31',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -22194,6 +22822,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Personaggio 2',run:async()=>{try{const a=await (await fetch('/professore/aspetto')).json();return{ok:true,text:'🧍 '+(a.nome_mostrato||'Professor Flux')+(a.modello?' · '+a.modello.tipo.toUpperCase():' · integrato')};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Esperimenti',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:'🔬 '+((p.esperimenti||[]).length)+' esperimenti · 📓 '+((p.taccuino||{}).lezioni||0)+' nel taccuino'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:p.on?'🧪 il Professore è qui':'🧪 Professor Flux pronto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Analisi',run:async()=>{try{const p=await (await fetch('/previsione')).json();return{ok:true,text:p.vuoto?'🔬 pronta':'🔮 fine mese ≈ '+Math.round(p.previsione)+' €'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -22217,7 +22846,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 30 🔬 Novità: il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 31 🧍 Novità: il secondo personaggio può essere **tuo**: carica un tuo **.glb o .vrm** al posto del Professore e dagli un **nome**, una **voce** e un **carattere** (a sinistra, «🧍 Personaggio 3D» → «🎨 Cambia»); e il Professor Flux è più vero, con i capelli, i baffi e le sopracciglia a ciocche. Il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -22342,7 +22971,7 @@ async function resetAvatar() { if (!confirm('Tornare a Zep, il robottino integra
 // stato del personaggio = stato di MAIK (pensa, parla, ascolta, sveglia)
 function avState() {
   const s = listening && !speaking ? 'listening' : ({ detecting: 'idle' }[SPH.state] || SPH.state);
-  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal):not(#cucmodal):not(#respmodal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
+  if (AV) { AV.setState(s); AV.pause(!pipWin && !!document.querySelector('.ov.open:not(#lmodal):not(#cucmodal):not(#respmodal):not(#p2modal)')); }   // coperto da una finestra: riposa (mentre lo personalizzi resta sveglio)
   const umore = AV && window.FOCUS && FOCUS.on ? (FOCUS.fase === 'lavoro' ? (FOCUS.ferma ? 'concentrazione in pausa ⏸' : 'si concentra 🍅') : FOCUS.fase === 'pausa' ? 'in pausa ☕' : 'pronto 🍅') : AV && window.LETTURA && LETTURA.on ? (LETTURA.pausa ? 'lettura in pausa ⏸' : 'legge 📖') : AV && window.INTERPRETE && INTERPRETE.on ? (INTERPRETE.rec ? 'ascolta 🎤' : 'interprete 🗣️') : AV && RIU.on ? (RIU.pausa ? 'riunione in pausa ⏸' : 'prende appunti 📝') : AV && s === 'idle' ? (AV.dancing ? 'balla 🕺' : AV.mood === 'sleep' ? 'dorme 💤' : AV.mood === 'drowsy' ? 'ha sonno 🥱' : '') : '';
   const txt = umore || AV_STATE_TXT[s] || s;
   if (document.body.dataset.av !== s || $('#avstate').textContent !== txt) { document.body.dataset.av = s; $('#avstate').textContent = txt; }
@@ -23063,7 +23692,7 @@ function pumpNeurale() {
     if (ctx.state !== 'running') await Promise.race([ctx.resume(), new Promise(ok => setTimeout(ok, 500))]);
     if (VOICE.cur !== tok) return;
     if (ctx.state !== 'running') throw new Error('il browser blocca l\'audio finché non clicchi la pagina');
-    const tono = Math.min(1.6, Math.max(0.6, +OPT.tono || 1)) * (PROF29.parla ? 0.9 : 1);     // v29: il Professore ha la voce più bassa
+    const tono = Math.min(1.6, Math.max(0.6, +OPT.tono || 1)) * (PROF29.parla ? fattoreProf31() : 1);     // v29: il Professore ha la voce più bassa
     const src = ctx.createBufferSource(); src.buffer = r.buf; src.playbackRate.value = tono; src.connect(NEURALE.an); tok.src = src;
     speaking = true; SPH.state = 'speaking'; VOICE.last = s; caption(s); NEURALE.errori = 0;
     const fon = r.fonemi && r.fonemi.length ? r.fonemi.map(([f, a, d]) => [f, a / tono, d / tono]) : null;
@@ -23112,7 +23741,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V30'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V31'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -27048,7 +27677,7 @@ function eventoProf29(bubble, obj) {
   if (obj.professore_entra) profPresente29(true);
   if (obj.parla === 'professore') {
     PROF29.parla = true; if (AV) AV.voce = 'prof';
-    if (bubble && !bubble.querySelector('.prof29tag')) { bubble.classList.add('prof29'); bubble.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🧪 PROFESSOR FLUX</div>'); }
+    if (bubble && !bubble.querySelector('.prof29tag')) { bubble.classList.add('prof29'); bubble.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🧪 ' + esc(nomeProf31()).toUpperCase() + '</div>'); }
   }
 }
 function addV29(d, obj) {
@@ -27057,7 +27686,7 @@ function addV29(d, obj) {
   if (!P.on && PROF29.on) {                                        // se ne va dopo aver salutato (a voce), non a metà frase
     if (ttsOn && voceDisponibile() && (speaking || VOICE.q.length)) PROF29.esciDopo = true; else setTimeout(() => profPresente29(false), 1200);
   }
-  if (P.voce === 'prof' && !d.querySelector('.prof29tag')) { d.classList.add('prof29'); d.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🧪 PROFESSOR FLUX</div>'); }
+  if (P.voce === 'prof' && !d.querySelector('.prof29tag')) { d.classList.add('prof29'); d.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🧪 ' + esc(nomeProf31()).toUpperCase() + '</div>'); }
   if (P.lavagna && P.lavagna.length) { mostraLavagna29(P.lavagna); if (AV && AV.prof) AV.prof.gesto('spiega'); }
   if (P.entra && AV) setTimeout(() => { if (AV) AV.gesture('wave'); }, 1400);
   if (P.entra || P.voce !== 'prof' || !P.on) PROF29.noBattuta = true;                 // Zep commenta le risposte, non l'arrivo o i saluti
@@ -27130,12 +27759,12 @@ function spegniEsp30() {
 function eventoV30(bubble, obj) {                                // durante la risposta: è un dialogo? si accende un esperimento?
   if (obj.dialogo) {
     DIAL30.on = true;
-    if (bubble && !bubble.querySelector('.prof29tag')) { bubble.classList.add('prof29', 'dial30'); bubble.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 PROFESSOR FLUX &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
+    if (bubble && !bubble.querySelector('.prof29tag')) { bubble.classList.add('prof29', 'dial30'); bubble.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 ' + esc(nomeProf31()).toUpperCase() + ' &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
   }
   if (obj.esperimento) accendiEsp30(obj.esperimento);
 }
 function righeDialogo30(B) {
-  return B.map((b, i) => '<div class="b30 ' + (b.chi === 'prof' ? 'prof' : 'zep') + '" data-i="' + i + '"><b>' + (b.chi === 'prof' ? '🧪 Professor Flux' : '🤖 ' + esc(nomeZep())) + '</b><div class="t">' + renderAI(b.testo) + '</div></div>').join('');
+  return B.map((b, i) => '<div class="b30 ' + (b.chi === 'prof' ? 'prof' : 'zep') + '" data-i="' + i + '"><b>' + (b.chi === 'prof' ? '🧪 ' + esc(nomeProf31()) : '🤖 ' + esc(nomeZep())) + '</b><div class="t">' + renderAI(b.testo) + '</div></div>').join('');
 }
 function parlaDialogo30(d, B) {                                  // in coda: ogni frase sa chi la dice
   if (!ttsOn || !voceDisponibile() || RIU.on) return;
@@ -27166,7 +27795,7 @@ function addV30(d, obj) {
   if (P.spegni) spegniEsp30();
   if (obj.dialogo && obj.dialogo.length) {                       // 🎭 il copione: righe con chi parla; poi le voci, una battuta per volta
     mc(d).innerHTML = righeDialogo30(obj.dialogo) + (P.lavagna && P.lavagna.length ? renderAI('[[lavagna: ' + P.lavagna.join(' | ') + ']]') : '');
-    if (!d.querySelector('.prof29tag')) { d.classList.add('prof29', 'dial30'); d.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 PROFESSOR FLUX &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
+    if (!d.querySelector('.prof29tag')) { d.classList.add('prof29', 'dial30'); d.insertAdjacentHTML('afterbegin', '<div class="prof29tag">🎭 ' + esc(nomeProf31()).toUpperCase() + ' &amp; ' + esc(nomeZep()).toUpperCase() + '</div>'); }
     parlaDialogo30(d, obj.dialogo);
   }
   DIAL30.on = false;
@@ -27207,6 +27836,102 @@ document.addEventListener('click', e => {
   else if (b.hasAttribute('data-esp30x')) spegniEsp30();
   else if (b.dataset.tacc30) qs('professore, interrogami su ' + b.dataset.tacc30);
   else if (b.dataset.v30 === 'lezione') { $('#inp').value = 'spiegatemi '; $('#inp').focus(); }
+});
+
+// ════════════════════════════════════════════════════════════
+// V31 — MAIK PRIME LABORATORIO 3: 🧍 il secondo personaggio è tuo — il tuo .glb/.vrm al posto del Professore,
+// il nome (nel fumetto, nei dialoghi, sui bottoni), la voce (grave, media, acuta), il carattere
+// ════════════════════════════════════════════════════════════
+const PERS2 = { nome: '', voce: 'grave', carattere: '', modello: null, url: undefined, sel: 'grave', prova: null };
+const nomeProf31 = () => PERS2.nome || 'Professor Flux';
+function applicaNomeProf31() {
+  const b = $('#btnprof29'); if (b && !PROF29.on) b.textContent = '🧪 ' + (PERS2.nome || 'Professore');
+  const s = $('#p2side'); if (s) s.textContent = '🧪 ' + nomeProf31();
+  const st = $('#avstate'); if (st) st.dataset.prof = PERS2.nome ? 'con ' + PERS2.nome : 'col Professore';         // «Zep pronto · 🧪 con Nova»
+  const h = document.querySelector('#lav29 h6'); if (h && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.textContent = '🧪 LAVAGNA ' + (PERS2.nome ? 'DI ' + PERS2.nome.toUpperCase() : 'DEL PROFESSORE');
+  const k = $('#p2sidek'); if (k) k.textContent = PERS2.modello ? 'il tuo ' + (PERS2.modello.tipo || 'glb').toUpperCase() + ' · ' + PERS2.modello.nome : 'il secondo personaggio (integrato)';
+}
+async function caricaAspetto31() {                               // all'avvio (e dopo ogni cambio): nome, voce, carattere e il modello 3D
+  try { const r = await (await fetch('/professore/aspetto')).json(); Object.assign(PERS2, { nome: r.nome || '', voce: r.voce || 'grave', carattere: r.carattere || '', modello: r.modello || null }); } catch (e) {}
+  applicaNomeProf31();
+  if (AV && AV.prof && AV.prof.modello) {
+    const url = PERS2.modello ? '/professore/modello?v=' + encodeURIComponent(PERS2.modello.caricato || '') : null;
+    if (url !== PERS2.url) {
+      PERS2.url = url;
+      try { await AV.prof.modello(url); }
+      catch (e) { console.info('[Professore] modello non caricato', e); toast('Il tuo personaggio non si carica: per ora c\'è il Professor Flux 🧪', 'err'); PERS2.url = null; try { await AV.prof.modello(null); } catch (e2) {} }
+    }
+  }
+  segnaP2();
+}
+function segnaP2() {
+  if (!$('#p2modal')) return;
+  const M = PERS2.modello, I = AV && AV.prof && AV.prof.modelloInfo;
+  $('#p2modnome').textContent = M ? M.nome : 'Professor Flux';
+  $('#p2modinfo').textContent = M ? (M.tipo === 'vrm' ? 'VRM · espressioni e sguardo' : 'GLB') + (I && I.tipo !== 'flux' ? ' · ' + I.ossa + ' ossa · ' + I.forme + ' forme' + (I.animazioni.length ? ' · ' + I.animazioni.length + ' animazioni' : '') : '')
+                                  : 'integrato · capelli a fili, camice, guanto-analizzatore';
+  $('#p2reset').style.display = M ? 'block' : 'none';
+}
+function apriP2() {
+  $('#p2nome').value = PERS2.nome; $('#p2car').value = PERS2.carattere; PERS2.sel = PERS2.voce; segnaVociP2(); segnaP2();
+  $('#p2modal').classList.add('open'); setTimeout(() => $('#p2nome').focus(), 50);
+}
+function chiudiP2() { $('#p2modal').classList.remove('open'); }
+function segnaVociP2() { document.querySelectorAll('[data-p2voce]').forEach(b => b.classList.toggle('on', b.dataset.p2voce === PERS2.sel)); }
+async function caricaModelloP2(f) {
+  if (!f) return;
+  if (!/\.(vrm|glb)$/i.test(f.name)) { toast('Serve un file .vrm o .glb', 'err'); return; }
+  if (f.size > 100 * 1024 * 1024) { toast('File troppo grande (massimo 100 MB)', 'err'); return; }
+  toast('📤 Carico «' + f.name + '»…');
+  try {
+    const r = await (await fetch('/professore/modello', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Nome': encodeURIComponent(f.name) }, body: f })).json();
+    if (!r.ok) { toast(r.errore || 'File non valido', 'err'); return; }
+    await caricaAspetto31();
+    if (AV && AV.prof && AV.prof.modelloInfo.tipo !== 'flux') { toast('🧍 Ecco il tuo personaggio! ' + (PROF29.on ? '' : 'Chiamalo: «chiama il professore»'), 'ok'); if (PROF29.on) AV.prof.gesto('saluta'); }
+  } catch (e) { toast('Caricamento non riuscito', 'err'); }
+}
+async function togliModelloP2() {
+  if (!confirm('Tornare al Professor Flux (il personaggio integrato)?')) return;
+  try { await postJ('/professore/modello/elimina'); } catch (e) {}
+  await caricaAspetto31(); toast('🧪 È tornato il Professor Flux', 'ok');
+}
+async function salvaP2(ripristina) {
+  const corpo = ripristina ? { nome: '', voce: 'grave', carattere: '' } : { nome: $('#p2nome').value, voce: PERS2.sel, carattere: $('#p2car').value };
+  let r; try { r = await postJ('/professore/aspetto', corpo); } catch (e) { r = { ok: false, errore: 'Non riesco a salvare' }; }
+  if (!r.ok) { toast(r.errore || 'Non riesco a salvare', 'err'); return; }
+  Object.assign(PERS2, { nome: r.aspetto.nome, voce: r.aspetto.voce, carattere: r.aspetto.carattere, sel: r.aspetto.voce });
+  $('#p2nome').value = PERS2.nome; $('#p2car').value = PERS2.carattere; segnaVociP2(); applicaNomeProf31();
+  toast(ripristina ? '🧪 Di nuovo il Professor Flux, come all\'inizio' : '💾 Salvato: ' + nomeProf31() + ' · voce ' + PERS2.voce, 'ok');
+}
+function provaVoceP2() {
+  if (!voceDisponibile()) { toast('La voce non è disponibile in questo browser', 'err'); return; }
+  const was = ttsOn; ttsOn = true; stopSpeech();
+  PERS2.prova = PERS2.sel; PROF29.parla = true;
+  VOICE.q.push('Ciao! Sono ' + (($('#p2nome').value || '').trim() || 'il Professor Flux') + '. Ti piace la mia voce?'); pump();
+  ttsOn = was;
+}
+const VOCE_P2 = { grave: [0.78, 1.07, 0.9], media: [0.97, 1.0, 0.97], acuta: [1.32, 1.03, 1.12] };   // [tono, velocità, tono della voce neurale]
+const fattoreProf31 = () => (VOCE_P2[PERS2.prova || PERS2.voce] || VOCE_P2.grave)[2];
+const _voceProf29 = voceProf29;
+voceProf29 = function (u) {                                      // la voce del secondo personaggio: quella scelta (e, se c'è, un'altra voce adatta)
+  const v = PERS2.prova || PERS2.voce;
+  if (v === 'grave') return _voceProf29(u);
+  const [tono, vel] = VOCE_P2[v] || VOCE_P2.grave;
+  u.pitch = Math.max(0.5, Math.min(2, tono * (+OPT.tono || 1))); u.rate = Math.min(2, 1.03 * vel * (+OPT.velocita || 1));
+  const vs = window.speechSynthesis ? speechSynthesis.getVoices().filter(x => x.lang && x.lang.startsWith('it')) : [], z = sceltaVoce();
+  const re = v === 'acuta' ? /elsa|alice|federica|paola|giulia|isabella|bianca|carla|female|donna|femmin/i : /luca|diego|cosimo|giorgio|roberto|paolo|male|uomo|maschi/i;
+  const alt = vs.find(x => x !== z && re.test(x.name)) || vs.find(x => x !== z && x.name !== (z && z.name));
+  if (alt) u.voice = alt;
+};
+const _speechDone30 = speechDone;
+speechDone = function () { PERS2.prova = null; _speechDone30(); };
+const _avatarInit30 = avatarInit;
+avatarInit = async function () { await _avatarInit30(); PERS2.url = undefined; await caricaAspetto31(); };     // anche dopo aver cambiato Zep
+const _profPresente30 = profPresente29;
+profPresente29 = function (on) { _profPresente30(on); applicaNomeProf31(); };
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-p2voce]'); if (!b) return;
+  PERS2.sel = b.dataset.p2voce; segnaVociP2();
 });
 
 // ---------- INIT ----------
@@ -27430,8 +28155,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 30.0 — Server avviato         ║
-║ esperimenti · lezioni · professor flux · hud     ║
+║        MAIK PRIME 31.0 — Server avviato         ║
+║ il tuo personaggio · esperimenti · lezioni · hud ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -27495,6 +28220,7 @@ def main():
     print(f"    GET  /hud · /situazione · POST /piano/esegui   [v27]")
     print(f"    POST /analisi · GET /previsione · /anno   [v28]")
     print(f"    GET  /professore   [v29 · v30: taccuino, esperimenti]")
+    print(f"    GET/POST /professore/modello · /professore/aspetto   [NUOVO v31]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

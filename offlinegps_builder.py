@@ -207,8 +207,17 @@ dependencies {
     implementation 'org.mapsforge:mapsforge-map-android:0.21.0'
     implementation 'org.mapsforge:mapsforge-themes:0.21.0'
 
-    // v4.0: rimosse le librerie VTM (mai usate dal codice): APK piu' leggero
-    // e niente dipendenza dal repository jitpack, spesso irraggiungibile.
+    // v5.0: VTM = mappa 3D VERA in OpenGL (inclinazione, rotazione, edifici 3D).
+    // Da Maven Central (gruppo org.mapsforge): niente jitpack. Le librerie
+    // native per ogni processore stanno nei pacchetti "natives-*".
+    def vtm_version = "0.25.0"
+    implementation "org.mapsforge:vtm:${vtm_version}"
+    implementation "org.mapsforge:vtm-themes:${vtm_version}"
+    implementation "org.mapsforge:vtm-android:${vtm_version}"
+    implementation "org.mapsforge:vtm-android:${vtm_version}:natives-armeabi-v7a"
+    implementation "org.mapsforge:vtm-android:${vtm_version}:natives-arm64-v8a"
+    implementation "org.mapsforge:vtm-android:${vtm_version}:natives-x86"
+    implementation "org.mapsforge:vtm-android:${vtm_version}:natives-x86_64"
     implementation 'com.caverock:androidsvg:1.4'
 
     def room_version = "2.6.1"
@@ -399,6 +408,10 @@ MANIFEST = """\
         <activity android:name=".ui.SkySpotActivity" android:exported="false" android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"/>
         <activity android:name=".ui.SightingCheckActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <!-- v5.0 MAPPA 3D (OpenGL) -->
+        <activity android:name=".ui.Map3DActivity" android:exported="false"
+            android:screenOrientation="portrait" android:configChanges="orientation|screenSize"
+            android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
             android:foregroundServiceType="location"/>
     </application>
@@ -1378,8 +1391,16 @@ public final class RoutingEngine {
 
         sBuilding.set(true);
         try {
+            // v5.0: la rete contiene auto + bici + piedi. Una rete vecchia (solo auto)
+            // non ha il marcatore: viene cancellata e ricostruita automaticamente.
+            File marker = new File(graphFolder, PROFILES_MARKER);
             boolean alreadyBuilt = graphFolder.exists()
-                && new File(graphFolder, "properties").exists();
+                && new File(graphFolder, "properties").exists() && marker.exists();
+            if (graphFolder.exists() && !alreadyBuilt) {
+                if (listener != null) listener.onProgress(
+                    "Aggiornamento rete stradale per bici e piedi (una volta sola)...", -1);
+                deleteRecursive(graphFolder);
+            }
 
             long pbfMB = pbfFile.length() / (1024 * 1024);
             // stima grossolana: ~10-20 secondi per ogni 50 MB sul telefono
@@ -1416,21 +1437,30 @@ public final class RoutingEngine {
             gh.setGraphHopperLocation(graphFolder.getAbsolutePath());
 
             // GraphHopper 6.2: sistema "classico" senza custom model ne Janino.
-            // OTTIMIZZAZIONE VELOCITA': costruiamo solo il profilo AUTO e SENZA
-            // Contraction Hierarchies (CH). La CH e' la fase piu' pesante in
-            // assoluto e su telefono richiede molti minuti; costruirla per 3
-            // profili la triplica. Senza CH la rete si costruisce in 1-2 min e
-            // il calcolo del singolo percorso resta veloce su distanze normali.
+            // SENZA Contraction Hierarchies (CH): la CH e' la fase piu' pesante e
+            // su telefono richiede molti minuti per ogni profilo. Senza CH i tre
+            // profili costano poco in piu' (qualche bit per strada) e il calcolo
+            // del singolo percorso resta veloce su distanze normali.
+            // v5.0: bici e piedi sono profili VERI (prima si usava sempre l'auto:
+            // niente sentieri/zone pedonali e tempi da auto anche a piedi).
             gh.setProfiles(
-                new Profile(PROFILE_CAR).setVehicle("car").setWeighting("fastest").setTurnCosts(false)
+                new Profile(PROFILE_CAR).setVehicle("car").setWeighting("fastest").setTurnCosts(false),
+                new Profile(PROFILE_BIKE).setVehicle("bike").setWeighting("fastest").setTurnCosts(false),
+                new Profile(PROFILE_FOOT).setVehicle("foot").setWeighting("fastest").setTurnCosts(false)
             );
             // NIENTE setCHProfiles -> usa l'algoritmo "flessibile" (nessuna
             // preparazione pesante).
             gh.setMinNetworkSize(200);
             gh.setElevationProvider(com.graphhopper.reader.dem.ElevationProvider.NOOP);
 
-            gh.importOrLoad();
-            ticking.set(false);
+            try {
+                gh.importOrLoad();
+            } finally {
+                ticking.set(false);
+            }
+            if (!marker.exists()) {
+                try { marker.createNewFile(); } catch (Exception ignored) {}
+            }
 
             hopper = gh;
             loadedRegionTag = regionTag;
@@ -1455,6 +1485,16 @@ public final class RoutingEngine {
         }
     }
 
+    private static final String PROFILES_MARKER = "ogps_profiles_car_bike_foot";
+
+    private static boolean deleteRecursive(File f) {
+        if (f.isDirectory()) {
+            File[] kids = f.listFiles();
+            if (kids != null) for (File k : kids) deleteRecursive(k);
+        }
+        return f.delete();
+    }
+
     /** Ultimo messaggio d'errore leggibile (es. punto lontano da strade). */
     private volatile String lastError = "";
     public String getLastError() { return lastError; }
@@ -1465,8 +1505,8 @@ public final class RoutingEngine {
             @NonNull String profile) {
         lastError = "";
         if (hopper == null) { lastError = "Rete stradale non caricata"; return null; }
-        // Costruiamo solo il profilo AUTO: se arriva bici/piedi, usiamo car.
-        String useProfile = PROFILE_CAR;
+        String useProfile = PROFILE_BIKE.equals(profile) || PROFILE_FOOT.equals(profile)
+            ? profile : PROFILE_CAR;
         GHRequest req = new GHRequest(
             new GHPoint(fromLat, fromLon), new GHPoint(toLat, toLon));
         req.setProfile(useProfile);
@@ -1479,6 +1519,8 @@ public final class RoutingEngine {
             rsp = hopper.route(req);
         } catch (Exception e) {
             lastError = "Errore nel calcolo del percorso";
+            if (e.getMessage() != null && e.getMessage().contains("profile"))
+                lastError = "La rete stradale va ricostruita: Download -> RICOSTRUISCI RETE";
             Log.w(TAG, "Routing exception", e);
             return null;
         }
@@ -1494,7 +1536,7 @@ public final class RoutingEngine {
             return null;
         }
         ResponsePath path = rsp.getBest();
-        return RouteResult.from(path, translationMap.getWithFallBack(Locale.ITALIAN));
+        return RouteResult.from(path, translationMap.getWithFallBack(Locale.ITALIAN), useProfile);
     }
 
     public void close() {
@@ -1506,14 +1548,16 @@ public final class RoutingEngine {
         public final List<NavStep> steps;
         public final double distanceMeters;
         public final long timeMillis;
+        public final String profile;
 
-        private RouteResult(List<double[]> points, List<NavStep> steps,
-                double distanceMeters, long timeMillis) {
+        public RouteResult(List<double[]> points, List<NavStep> steps,
+                double distanceMeters, long timeMillis, String profile) {
             this.points = points; this.steps = steps;
             this.distanceMeters = distanceMeters; this.timeMillis = timeMillis;
+            this.profile = profile;
         }
 
-        static RouteResult from(ResponsePath path, Translation tr) {
+        static RouteResult from(ResponsePath path, Translation tr, String profile) {
             PointList pl = path.getPoints();
             List<double[]> pts = new ArrayList<>(pl.size());
             for (int i = 0; i < pl.size(); i++) pts.add(new double[]{pl.getLat(i), pl.getLon(i)});
@@ -1521,32 +1565,52 @@ public final class RoutingEngine {
             List<NavStep> steps = new ArrayList<>();
             InstructionList instr = path.getInstructions();
             if (instr != null) {
+                // i punti delle istruzioni, messi in fila, sono i punti del percorso:
+                // il primo punto di ogni istruzione e' il luogo della sua manovra
+                int idx = 0;
                 for (Instruction ins : instr) {
                     String text = ins.getTurnDescription(tr);
                     String street = ins.getName();
                     if (text == null || text.isEmpty()) text = street;
-                    steps.add(new NavStep(text, street, ins.getDistance(), ins.getTime(), ins.getSign()));
+                    int at = Math.min(idx, Math.max(0, pts.size() - 1));
+                    double[] p = pts.isEmpty() ? new double[]{Double.NaN, Double.NaN} : pts.get(at);
+                    int exit = 0;
+                    if (ins instanceof com.graphhopper.util.RoundaboutInstruction)
+                        exit = ((com.graphhopper.util.RoundaboutInstruction) ins).getExitNumber();
+                    steps.add(new NavStep(text, street, ins.getDistance(), ins.getTime(), ins.getSign(),
+                        at, p[0], p[1], exit));
+                    PointList ip = ins.getPoints();
+                    idx += ip != null ? ip.size() : 0;
                 }
             }
-            return new RouteResult(pts, steps, path.getDistance(), path.getTime());
+            return new RouteResult(pts, steps, path.getDistance(), path.getTime(), profile);
         }
     }
 
     public static final class NavStep {
         public final String text;
         public final String streetName;
-        public final double distanceMeters;
+        public final double distanceMeters;   // lunghezza del tratto che INIZIA con questa manovra
         public final long timeMillis;
         public final int sign;
+        /** Indice nel percorso e coordinate del punto della manovra. */
+        public final int pointIndex;
+        public final double lat, lon;
+        /** Uscita della rotonda (0 se non e' una rotonda). */
+        public final int exitNumber;
 
-        public NavStep(String text, String streetName, double distanceMeters, long timeMillis, int sign) {
+        public NavStep(String text, String streetName, double distanceMeters, long timeMillis, int sign,
+                       int pointIndex, double lat, double lon, int exitNumber) {
             this.text = text; this.streetName = streetName; this.distanceMeters = distanceMeters;
             this.timeMillis = timeMillis; this.sign = sign;
+            this.pointIndex = pointIndex; this.lat = lat; this.lon = lon; this.exitNumber = exitNumber;
         }
 
-        public String formatDistance() {
-            if (distanceMeters < 1000) return String.format("%.0f m", distanceMeters);
-            return String.format("%.1f km", distanceMeters / 1000.0);
+        public String formatDistance() { return formatMeters(distanceMeters); }
+
+        public static String formatMeters(double m) {
+            if (m < 1000) return String.format(Locale.ITALY, "%.0f m", m);
+            return String.format(Locale.ITALY, "%.1f km", m / 1000.0);
         }
     }
 }
@@ -2806,7 +2870,7 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_main);
-        go(R.id.btn_open_map,  () -> { if (checkGps()) open(MapActivity.class); });
+        go(R.id.btn_open_map,  () -> { if (checkGps()) open(Map3DActivity.class); });
         go(R.id.btn_navigate,  () -> { if (checkGps()) showNavigateDialog(); });
         go(R.id.btn_download,  () -> open(DownloadActivity.class));
         go(R.id.btn_waypoints, () -> open(WaypointsActivity.class));
@@ -3488,6 +3552,7 @@ public class MapActivity extends AppCompatActivity
 NAVIGATION_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.*;
 import android.speech.tts.TextToSpeech;
@@ -3501,15 +3566,23 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.offlinegps.map.AppConfig;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
-import com.offlinegps.map.map.MapController;
+import com.offlinegps.map.map.MapEngine;
+import com.offlinegps.map.map.MapEngines;
+import com.offlinegps.map.routing.NavCore;
 import com.offlinegps.map.routing.RoutingEngine;
 import com.offlinegps.map.routing.WeatherService;
-import org.mapsforge.map.android.graphics.AndroidGraphicFactory;
-import org.mapsforge.map.android.view.MapView;
+import com.offlinegps.map.util.SunCalc;
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.*;
 
+/**
+ * NAVIGATORE v5: mappa 3D che segue la strada (tu in basso, la strada davanti,
+ * mappa ruotata nella direzione di marcia), scheda con la prossima manovra e
+ * la distanza REALE che manca, manovra successiva, tachimetro, orario di
+ * arrivo, avanzamento, annunci vocali a tre distanze, ricalcolo automatico.
+ */
 public class NavigationActivity extends AppCompatActivity
         implements GpsTrackingService.LocationCallback {
 
@@ -3518,17 +3591,16 @@ public class NavigationActivity extends AppCompatActivity
     public static final String EXTRA_DEST_NAME = "dest_name";
     public static final String EXTRA_PROFILE   = "profile";
 
-    private static final double REROUTE_THRESHOLD_M = 40.0;
-    private static final double STEP_ADVANCE_M      = 25.0;
+    private static final long REROUTE_COOLDOWN_MS = 8000;
 
-    private MapView       mapView;
-    private MapController mapCtrl;
-    private TextView      tvInstruction, tvDistanceNext, tvEta, tvTotalDist, tvBuildStatus, tvNextStreet, tvWeather;
-    private ImageView     ivManeuver;
-    private ProgressBar   pbBuild;
-    private RecyclerView  rvSteps;
-    private View          overlayBuild, panelTop, panelBottom;
-    private ImageButton   btnClose, btnRecenter, btnProfileCar, btnProfileBike, btnProfileFoot;
+    private MapEngine engine;
+    private TextView tvInstruction, tvDistanceNext, tvEta, tvTotalDist, tvBuildStatus, tvWeather,
+        tvSpeed, tvThen, tvEngine;
+    private ImageView ivManeuver, ivThen;
+    private ProgressBar pbBuild, pbProgress;
+    private RecyclerView rvSteps;
+    private View overlayBuild, panelThen, btnRecenter;
+    private ImageButton btnProfileCar, btnProfileBike, btnProfileFoot, btn3d, btnVoice;
 
     private double destLat, destLon;
     private String destName = "Destinazione";
@@ -3538,21 +3610,20 @@ public class NavigationActivity extends AppCompatActivity
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     @Nullable private RoutingEngine.RouteResult currentRoute;
-    private int currentStepIdx = 0;
-    private double[] lastReroutePoint = null;
+    @Nullable private NavCore nav;
+    @Nullable private NavCore.Progress lastProgress;
     private StepsAdapter stepsAdapter;
-    private boolean panelExpanded = false;
+    private boolean following = true, tilt3d = true, routing = false, arrivedShown = false;
+    private long lastRerouteAt = 0;
+    private float speedMs = 0f;
+    private int themeShown = -1;
 
     // --- Voce (Text-To-Speech) ---
     @Nullable private TextToSpeech tts;
     private boolean ttsReady = false;
     private boolean voiceEnabled = true;
-    private int lastAnnouncedStep = -1;
-    private boolean announcedClose = false;   // annuncio "tra X metri"
-    private boolean announcedArrival = false;
-    // distanze a cui annunciare l'avvicinamento alla manovra (in metri)
-    private static final double ANNOUNCE_FAR_M  = 250.0;
-    private static final double ANNOUNCE_NEAR_M = 60.0;
+    /** Annunci gia' fatti: chiave = indice manovra * 10 + livello (0 lontano, 1 vicino, 2 adesso). */
+    private final Set<Integer> announced = new HashSet<>();
 
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
@@ -3564,35 +3635,46 @@ public class NavigationActivity extends AppCompatActivity
         if (destName == null) destName = "Destinazione";
         String p = getIntent().getStringExtra(EXTRA_PROFILE);
         if (p != null) profile = p;
-
         if (Double.isNaN(destLat) || Double.isNaN(destLon)) { finish(); return; }
 
-        try { AndroidGraphicFactory.createInstance(getApplication()); } catch (Throwable ignored) {}
         setContentView(R.layout.activity_navigation);
-
-        mapView        = findViewById(R.id.nav_map_view);
         tvInstruction  = findViewById(R.id.tv_nav_instruction);
         tvDistanceNext = findViewById(R.id.tv_nav_distance_next);
         tvEta          = findViewById(R.id.tv_nav_eta);
         tvTotalDist    = findViewById(R.id.tv_nav_total_dist);
         tvBuildStatus  = findViewById(R.id.tv_nav_build_status);
-        tvNextStreet   = findViewById(R.id.tv_nav_next_street);
         tvWeather      = findViewById(R.id.tv_nav_weather);
+        tvSpeed        = findViewById(R.id.tv_nav_speed);
+        tvThen         = findViewById(R.id.tv_nav_then);
+        tvEngine       = findViewById(R.id.tv_nav_engine);
         ivManeuver     = findViewById(R.id.iv_nav_maneuver);
+        ivThen         = findViewById(R.id.iv_nav_then);
         pbBuild        = findViewById(R.id.pb_nav_build);
+        pbProgress     = findViewById(R.id.pb_nav_progress);
         rvSteps        = findViewById(R.id.rv_nav_steps);
         overlayBuild   = findViewById(R.id.overlay_nav_build);
-        panelTop       = findViewById(R.id.panel_nav_top);
-        panelBottom    = findViewById(R.id.panel_nav_bottom);
-        btnClose       = findViewById(R.id.btn_nav_close);
+        panelThen      = findViewById(R.id.panel_nav_then);
         btnRecenter    = findViewById(R.id.btn_nav_recenter);
         btnProfileCar  = findViewById(R.id.btn_nav_profile_car);
         btnProfileBike = findViewById(R.id.btn_nav_profile_bike);
         btnProfileFoot = findViewById(R.id.btn_nav_profile_foot);
+        btn3d          = findViewById(R.id.btn_nav_3d);
+        btnVoice       = findViewById(R.id.btn_nav_voice);
 
-        mapCtrl = new MapController(this);
-        mapCtrl.init(mapView);
+        SharedPreferences prefs = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        tilt3d = prefs.getBoolean("nav_3d", true);
+        voiceEnabled = prefs.getBoolean("nav_voice", true);
+
+        // motore di mappa: 3D OpenGL se possibile, altrimenti 2D
+        FrameLayout container = findViewById(R.id.nav_map_container);
+        engine = MapEngines.create(this);
+        container.addView(engine.view(), 0, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        engine.setOnUserGesture(() -> setFollowing(false));
+        if (tvEngine != null) tvEngine.setText(engine.is3d() ? "3D" : "2D");
         loadBaseMap();
+        engine.setDestination(destLat, destLon);
+        applyTheme(true);
 
         stepsAdapter = new StepsAdapter();
         if (rvSteps != null) {
@@ -3600,38 +3682,34 @@ public class NavigationActivity extends AppCompatActivity
             rvSteps.setAdapter(stepsAdapter);
         }
 
-        if (btnClose != null) btnClose.setOnClickListener(v -> finish());
-        if (btnRecenter != null) btnRecenter.setOnClickListener(v -> centerOnGps());
-        if (panelBottom != null) panelBottom.setOnClickListener(v -> togglePanel());
+        click(R.id.btn_nav_close, v -> finish());
+        click(R.id.btn_nav_recenter, v -> setFollowing(true));
+        click(R.id.btn_nav_overview, v -> showOverview());
+        click(R.id.btn_nav_steps, v -> toggleSteps());
+        click(R.id.btn_nav_3d, v -> toggle3d());
+        click(R.id.btn_nav_voice, v -> toggleVoice());
         setupProfileButtons();
         initTts();
-        setupVoiceToggle();
-
+        updateToggleIcons();
+        setFollowing(true);
         startGpsAndRoute();
     }
 
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    // ------------------------------------------------------------ voce
     private void initTts() {
         try {
             tts = new TextToSpeech(this, status -> {
                 if (status == TextToSpeech.SUCCESS && tts != null) {
                     int r = tts.setLanguage(Locale.ITALIAN);
-                    ttsReady = (r != TextToSpeech.LANG_MISSING_DATA
-                                && r != TextToSpeech.LANG_NOT_SUPPORTED);
+                    ttsReady = (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED);
                 }
             });
         } catch (Exception e) { ttsReady = false; }
-    }
-
-    private void setupVoiceToggle() {
-        ImageButton btnVoice = findViewById(R.id.btn_nav_voice);
-        if (btnVoice == null) return;
-        btnVoice.setOnClickListener(v -> {
-            voiceEnabled = !voiceEnabled;
-            btnVoice.setAlpha(voiceEnabled ? 1f : 0.35f);
-            if (!voiceEnabled && tts != null) tts.stop();
-            Toast.makeText(this, voiceEnabled ? "Voce attiva" : "Voce disattivata",
-                Toast.LENGTH_SHORT).show();
-        });
     }
 
     private void speak(String text) {
@@ -3639,15 +3717,95 @@ public class NavigationActivity extends AppCompatActivity
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
     }
 
+    private void toggleVoice() {
+        voiceEnabled = !voiceEnabled;
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putBoolean("nav_voice", voiceEnabled).apply();
+        if (!voiceEnabled && tts != null) tts.stop();
+        updateToggleIcons();
+        Toast.makeText(this, voiceEnabled ? "Voce attiva" : "Voce disattivata", Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggle3d() {
+        if (!engine.is3d()) {
+            Toast.makeText(this, "Il 3D non e' disponibile su questo telefono: mappa 2D", Toast.LENGTH_LONG).show();
+            return;
+        }
+        tilt3d = !tilt3d;
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putBoolean("nav_3d", tilt3d).apply();
+        updateToggleIcons();
+        if (following) followCamera(true);
+    }
+
+    private void updateToggleIcons() {
+        if (btnVoice != null) btnVoice.setImageResource(voiceEnabled ? R.drawable.ic_v5_volume : R.drawable.ic_v5_volume_off);
+        if (btn3d != null) btn3d.setAlpha(engine != null && engine.is3d() && tilt3d ? 1f : 0.5f);
+        if (tvEngine != null && engine != null) tvEngine.setText(engine.is3d() ? (tilt3d ? "3D" : "2D") : "2D");
+    }
+
+    // ------------------------------------------------------------ mappa
     private void loadBaseMap() {
-        String path = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE)
-            .getString(AppConfig.PREF_MAP_FILE, "");
+        String path = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString(AppConfig.PREF_MAP_FILE, "");
         if (!path.isEmpty()) {
             File f = new File(path);
-            if (f.exists()) mapCtrl.loadMapFile(f);
+            if (f.exists()) engine.loadMapFile(f);
         }
     }
 
+    /** Tema automatico: notte neon quando il sole e' sotto l'orizzonte, giorno altrimenti. */
+    private void applyTheme(boolean force) {
+        Location l = GpsTrackingService.getLastLocation();
+        double la = l != null ? l.getLatitude() : destLat, lo = l != null ? l.getLongitude() : destLon;
+        int t = SunCalc.isDark(System.currentTimeMillis(), la, lo) ? MapEngine.THEME_NIGHT : MapEngine.THEME_DAY;
+        if (force || t != themeShown) {
+            themeShown = t;
+            engine.setTheme(t);
+        }
+    }
+
+    private void setFollowing(boolean on) {
+        following = on;
+        if (btnRecenter != null) btnRecenter.setVisibility(on ? View.GONE : View.VISIBLE);
+        if (on) {
+            engine.setFocusOffset(tilt3d && engine.is3d() ? 0.45f : 0.25f);
+            followCamera(true);
+        } else {
+            engine.setFocusOffset(0f);
+        }
+    }
+
+    /** Inquadratura di guida: zoom secondo la velocita', mappa ruotata sulla rotta. */
+    private void followCamera(boolean animate) {
+        Location loc = GpsTrackingService.getLastLocation();
+        if (loc == null) return;
+        double la = loc.getLatitude(), lo = loc.getLongitude();
+        float brg = travelBearing(loc);
+        if (lastProgress != null && lastProgress.offRouteM < 25) { la = lastProgress.snappedLat; lo = lastProgress.snappedLon; }
+        double zoom = speedMs < 4 ? 18 : speedMs < 14 ? 17 : speedMs < 25 ? 16 : 15;
+        if (RoutingEngine.PROFILE_FOOT.equals(profile)) zoom = 18;
+        boolean is3d = tilt3d && engine.is3d();
+        engine.setFocusOffset(is3d ? 0.45f : 0.25f);
+        engine.moveTo(la, lo, zoom, Float.isNaN(brg) ? 0f : brg, is3d ? 58f : 0f, animate);
+    }
+
+    /** Direzione di marcia: GPS se ci si muove, altrimenti direzione della strada. */
+    private float travelBearing(Location loc) {
+        if (loc.hasBearing() && loc.getSpeed() > 1.5f) return loc.getBearing();
+        if (lastProgress != null && lastProgress.offRouteM < 30) return lastProgress.routeBearing;
+        return loc.hasBearing() ? loc.getBearing() : Float.NaN;
+    }
+
+    private void showOverview() {
+        if (currentRoute == null) return;
+        setFollowing(false);
+        engine.fitBounds(currentRoute.points, true);
+    }
+
+    private void toggleSteps() {
+        if (rvSteps == null) return;
+        rvSteps.setVisibility(rvSteps.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+    }
+
+    // ------------------------------------------------------------ profili
     private void setupProfileButtons() {
         View.OnClickListener l = v -> {
             String newProfile = RoutingEngine.PROFILE_CAR;
@@ -3666,10 +3824,14 @@ public class NavigationActivity extends AppCompatActivity
         setProfileBtnState(btnProfileBike, RoutingEngine.PROFILE_BIKE.equals(profile));
         setProfileBtnState(btnProfileFoot, RoutingEngine.PROFILE_FOOT.equals(profile));
     }
+
     private void setProfileBtnState(@Nullable ImageButton b, boolean active) {
-        if (b != null) b.setAlpha(active ? 1f : 0.4f);
+        if (b == null) return;
+        b.setAlpha(active ? 1f : 0.45f);
+        b.setBackgroundResource(active ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
     }
 
+    // ------------------------------------------------------------ rete stradale e percorso
     private void startGpsAndRoute() {
         GpsTrackingService.setCallback(this);
         Intent i = new Intent(this, GpsTrackingService.class);
@@ -3682,26 +3844,17 @@ public class NavigationActivity extends AppCompatActivity
         else showBuildStatus("Attesa posizione GPS...", true);
     }
 
-    /**
-     * NB: regionTag viene copiata in finalRegionTag prima dell'uso nelle
-     * lambda (deve essere final o effectively final).
-     */
     private void ensureGraphAndRoute(double fromLat, double fromLon) {
         showBuildStatus("Preparazione rete stradale...", true);
         routingExec.execute(() -> {
             File routingDir = new File(getExternalFilesDir(null), "routing");
-
-            // 1) prova a dedurre la regione dalla posizione (o dalla destinazione)
             String regionTag = RegionMapper.tagFor(fromLat, fromLon);
             if (regionTag == null) regionTag = RegionMapper.tagFor(destLat, destLon);
-
-            // 2) individua il file .pbf da usare
             File pbf = null;
             if (regionTag != null) {
                 File candidate = new File(routingDir, regionTag + ".osm.pbf");
                 if (candidate.exists()) pbf = candidate;
             }
-            // 3) se non trovato per regione, usa QUALSIASI .pbf scaricato
             if (pbf == null && routingDir.exists()) {
                 File[] pbfs = routingDir.listFiles((d, n) -> n.endsWith(".pbf"));
                 if (pbfs != null && pbfs.length > 0) {
@@ -3710,7 +3863,6 @@ public class NavigationActivity extends AppCompatActivity
                     regionTag = dot > 0 ? pbf.getName().substring(0, dot) : "regione";
                 }
             }
-
             if (pbf == null) {
                 final String diag = listRoutingDir(routingDir);
                 mainHandler.post(() -> showBuildStatus(
@@ -3718,21 +3870,15 @@ public class NavigationActivity extends AppCompatActivity
                     + "\n\nVai in Download -> tab ROUTING e scarica una zona.", false));
                 return;
             }
-
             final String finalRegionTag = regionTag;
             final File finalPbf = pbf;
             File graphFolder = new File(routingDir, finalRegionTag + "-gh");
-
-            // controllo dimensione minima: un .pbf valido pesa molti MB
-            long sizeMb = finalPbf.length() / (1024 * 1024);
-            if (sizeMb < 1) {
+            if (finalPbf.length() < 1024 * 1024) {
                 mainHandler.post(() -> showBuildStatus(
-                    "Il file " + finalPbf.getName() + " e' troppo piccolo ("
-                    + finalPbf.length() + " byte): download incompleto.\n"
-                    + "Cancellalo e riscaricalo da Download.", false));
+                    "Il file " + finalPbf.getName() + " e' troppo piccolo (" + finalPbf.length()
+                    + " byte): download incompleto.\nCancellalo e riscaricalo da Download.", false));
                 return;
             }
-
             RoutingEngine.getInstance().buildOrLoad(this, finalPbf, graphFolder, finalRegionTag,
                 new RoutingEngine.BuildProgressListener() {
                     @Override public void onProgress(String message, int p) {
@@ -3748,130 +3894,218 @@ public class NavigationActivity extends AppCompatActivity
         });
     }
 
-    /** Diagnostica: elenca i file presenti nella cartella routing. */
     private String listRoutingDir(File dir) {
         StringBuilder sb = new StringBuilder("Cartella: " + dir.getAbsolutePath() + "\n");
         if (!dir.exists()) { sb.append("(la cartella non esiste ancora)"); return sb.toString(); }
         File[] files = dir.listFiles();
         if (files == null || files.length == 0) { sb.append("(vuota)"); return sb.toString(); }
-        for (File f : files) {
-            sb.append("- ").append(f.getName()).append("  ")
-              .append(f.length() / (1024 * 1024)).append(" MB\n");
-        }
+        for (File f : files) sb.append("- ").append(f.getName()).append("  ").append(f.length() / (1024 * 1024)).append(" MB\n");
         return sb.toString();
     }
 
     private void recalcRoute() {
         Location loc = GpsTrackingService.getLastLocation();
-        if (loc == null || !RoutingEngine.getInstance().isReady()) return;
+        if (loc == null || !RoutingEngine.getInstance().isReady() || routing) return;
+        routing = true;
+        lastRerouteAt = System.currentTimeMillis();
         final double fLat = loc.getLatitude(), fLon = loc.getLongitude();
+        final String prof = profile;
         routingExec.execute(() -> {
-            RoutingEngine.RouteResult result = RoutingEngine.getInstance()
-                .route(fLat, fLon, destLat, destLon, profile);
+            RoutingEngine.RouteResult result = RoutingEngine.getInstance().route(fLat, fLon, destLat, destLon, prof);
             mainHandler.post(() -> {
+                routing = false;
+                if (isFinishing()) return;
                 if (result == null) {
                     String why = RoutingEngine.getInstance().getLastError();
                     if (why == null || why.isEmpty()) why = "Percorso non trovato";
                     Toast.makeText(this, why, Toast.LENGTH_LONG).show();
                     return;
                 }
+                boolean first = currentRoute == null || nav == null;
                 currentRoute = result;
-                currentStepIdx = 0;
-                lastReroutePoint = new double[]{fLat, fLon};
-                drawRoute(result);
-                updateInstructionPanel();
+                nav = new NavCore(result.points, result.steps);
+                announced.clear();
+                engine.setRoute(result.points);
                 stepsAdapter.submit(result.steps);
-                if (tvTotalDist != null) tvTotalDist.setText(formatDistance(result.distanceMeters));
-                if (tvEta != null) tvEta.setText(formatEta(result.timeMillis));
+                if (first) {
+                    speak(String.format(Locale.ITALIAN, "Percorso calcolato: %s, circa %s.",
+                        spokenDistance(result.distanceMeters), spokenTime(result.timeMillis)));
+                }
+                Location l2 = GpsTrackingService.getLastLocation();
+                if (l2 != null) onProgress(l2);
                 fetchWeatherForDestination();
             });
         });
     }
 
-    private void drawRoute(RoutingEngine.RouteResult result) {
-        mapCtrl.clearTrack();
-        mapCtrl.addTrackPoints(result.points);
-        if (!result.points.isEmpty()) {
-            double[] first = result.points.get(0);
-            mapCtrl.centerOn(first[0], first[1], true);
-        }
-    }
-
-    /** Meteo a destinazione (richiede internet; se offline non mostra nulla). */
     private void fetchWeatherForDestination() {
         if (tvWeather == null) return;
         WeatherService.fetch(destLat, destLon, w -> {
             if (tvWeather == null) return;
-            if (w == null || Double.isNaN(w.tempC)) {
-                tvWeather.setVisibility(View.GONE);
-                return;
-            }
-            tvWeather.setText(String.format(Locale.ITALIAN, "%s  %.0f gradi  %s",
-                w.emoji(), w.tempC, w.description()));
+            if (w == null || Double.isNaN(w.tempC)) { tvWeather.setVisibility(View.GONE); return; }
+            tvWeather.setText(String.format(Locale.ITALIAN, "%s  %.0f°  %s a destinazione", w.emoji(), w.tempC, w.description()));
             tvWeather.setVisibility(View.VISIBLE);
         });
     }
 
-    private void updateInstructionPanel() {
-        if (currentRoute == null || currentRoute.steps.isEmpty()) return;
-        int idx = Math.min(currentStepIdx, currentRoute.steps.size() - 1);
-        RoutingEngine.NavStep step = currentRoute.steps.get(idx);
-        if (tvInstruction != null) tvInstruction.setText(step.text);
-        if (tvDistanceNext != null) tvDistanceNext.setText(step.formatDistance());
-        if (ivManeuver != null) ivManeuver.setImageResource(maneuverIcon(step.sign));
+    // ------------------------------------------------------------ guida
+    @Override public void onLocationUpdate(@NonNull Location loc, int sats) {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            speedMs = loc.hasSpeed() ? 0.7f * speedMs + 0.3f * loc.getSpeed() : speedMs;
+            if (tvSpeed != null) tvSpeed.setText(String.valueOf(Math.round(speedMs * 3.6f)));
+            if (nav == null) {
+                engine.setUserPosition(loc.getLatitude(), loc.getLongitude(), loc.getAccuracy(), travelBearing(loc));
+                if (following) followCamera(true);
+                if (RoutingEngine.getInstance().isReady()) recalcRoute();
+                else if (!RoutingEngine.isBuilding()) ensureGraphAndRoute(loc.getLatitude(), loc.getLongitude());
+                return;
+            }
+            onProgress(loc);
+        });
+    }
 
-        // nome della strada successiva, se disponibile
-        if (tvNextStreet != null) {
-            String street = (step.streetName != null && !step.streetName.isEmpty())
-                ? step.streetName : "";
-            tvNextStreet.setText(street);
-            tvNextStreet.setVisibility(street.isEmpty() ? View.GONE : View.VISIBLE);
+    private void onProgress(Location loc) {
+        if (nav == null || currentRoute == null) return;
+        NavCore.Progress p = nav.update(loc.getLatitude(), loc.getLongitude(), loc.getAccuracy());
+        lastProgress = p;
+        // la freccia sta sulla strada quando si e' vicini (niente "salti" del GPS)
+        boolean onRoad = p.offRouteM < 20;
+        engine.setUserPosition(onRoad ? p.snappedLat : loc.getLatitude(), onRoad ? p.snappedLon : loc.getLongitude(),
+            loc.getAccuracy(), travelBearing(loc));
+        if (following) followCamera(true);
+        applyTheme(false);
+
+        if (p.offRoute && !p.arrived && !routing && System.currentTimeMillis() - lastRerouteAt > REROUTE_COOLDOWN_MS) {
+            speak("Ricalcolo del percorso");
+            Toast.makeText(this, "Fuori percorso: ricalcolo...", Toast.LENGTH_SHORT).show();
+            recalcRoute();
         }
+        renderProgress(p);
+        announce(p);
+    }
 
+    private void renderProgress(NavCore.Progress p) {
+        List<RoutingEngine.NavStep> steps = currentRoute.steps;
+        if (steps.isEmpty()) return;
+        int idx = Math.min(p.stepIndex, steps.size() - 1);
+        RoutingEngine.NavStep step = steps.get(idx);
+        if (p.arrived) {
+            tvDistanceNext.setText("Arrivato");
+            tvInstruction.setText(destName);
+            ivManeuver.setImageResource(R.drawable.ic_turn_finish);
+            if (panelThen != null) panelThen.setVisibility(View.GONE);
+        } else {
+            tvDistanceNext.setText(RoutingEngine.NavStep.formatMeters(roundDistance(p.distToManeuverM)));
+            tvInstruction.setText(step.text);
+            ivManeuver.setImageResource(maneuverIcon(step.sign));
+            // manovra successiva ravvicinata: "poi ..."
+            if (panelThen != null) {
+                boolean show = idx + 1 < steps.size() && nav.stepAlong(idx + 1) - nav.stepAlong(idx) < 300;
+                panelThen.setVisibility(show ? View.VISIBLE : View.GONE);
+                if (show) {
+                    RoutingEngine.NavStep nx = steps.get(idx + 1);
+                    ivThen.setImageResource(maneuverIcon(nx.sign));
+                    tvThen.setText("Poi " + shortText(nx));
+                }
+            }
+        }
+        long arrival = System.currentTimeMillis() + p.remainingMs;
+        tvEta.setText(p.arrived ? "Arrivato" : formatEta(p.remainingMs));
+        tvTotalDist.setText(RoutingEngine.NavStep.formatMeters(p.remainingM) + "  ·  arrivo "
+            + new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(arrival)));
+        if (pbProgress != null) pbProgress.setProgress(Math.round(p.fraction * 1000));
         stepsAdapter.setActiveIndex(idx);
-
-        // annuncio vocale all'ingresso in un nuovo step
-        if (idx != lastAnnouncedStep) {
-            lastAnnouncedStep = idx;
-            announcedClose = false;
-            speak(buildVoiceText(step, -1));
+        if (p.arrived && !arrivedShown) {
+            arrivedShown = true;
+            speak("Sei arrivato a destinazione");
+            Toast.makeText(this, "Sei arrivato: " + destName, Toast.LENGTH_LONG).show();
         }
     }
 
-    /** Costruisce la frase vocale. Se distMeters>0 antepone "tra X metri". */
-    private String buildVoiceText(RoutingEngine.NavStep step, double distMeters) {
+    /** Tre annunci per manovra: lontano, vicino (con "poi..."), adesso. */
+    private void announce(NavCore.Progress p) {
+        if (p.arrived || currentRoute == null || currentRoute.steps.isEmpty()) return;
+        List<RoutingEngine.NavStep> steps = currentRoute.steps;
+        int idx = Math.min(p.stepIndex, steps.size() - 1);
+        RoutingEngine.NavStep step = steps.get(idx);
+        double[] th = NavCore.announceDistances(speedMs, profile);
+        double d = p.distToManeuverM;
+        int level = d <= th[2] ? 2 : d <= th[1] ? 1 : d <= th[0] ? 0 : -1;
+        if (level < 0) return;
+        // non annuncia il livello "lontano" se si e' gia' vicini (es. manovre ravvicinate)
+        if (level == 0 && d < th[1] * 1.3) return;
+        if (!announced.add(idx * 10 + level)) return;
+        for (int l = 0; l < level; l++) announced.add(idx * 10 + l);
         String action = step.text != null ? step.text : "";
-        if (distMeters > 0) {
-            long rounded = Math.round(distMeters / 10.0) * 10;
-            return "Tra " + rounded + " metri, " + action;
+        String text;
+        if (step.sign == 4 || step.sign == 5) {
+            text = level == 2 ? "Sei quasi arrivato" : "Tra " + spokenDistance(d) + ", arrivo a destinazione";
+        } else if (level == 2) {
+            text = action;
+        } else {
+            text = "Tra " + spokenDistance(d) + ", " + action;
+            if (level == 1 && idx + 1 < steps.size() && nav.stepAlong(idx + 1) - nav.stepAlong(idx) < 120) {
+                RoutingEngine.NavStep nx = steps.get(idx + 1);
+                if (nx.sign != 4) text += ". Poi " + shortText(nx);
+            }
         }
-        return action;
+        speak(text);
     }
 
-    /** Icone manovra vettoriali grandi. */
+    private static String shortText(RoutingEngine.NavStep s) {
+        switch (s.sign) {
+            case -3: return "svolta stretta a sinistra";
+            case -2: return "svolta a sinistra";
+            case -1: return "leggermente a sinistra";
+            case 1:  return "leggermente a destra";
+            case 2:  return "svolta a destra";
+            case 3:  return "svolta stretta a destra";
+            case 4:  return "arrivo";
+            case 6:  return s.exitNumber > 0 ? "alla rotonda prendi l'uscita " + s.exitNumber : "entra nella rotonda";
+            case 7:  return "tieni la destra";
+            case -7: return "tieni la sinistra";
+            case -8: case 8: case -98: return "inversione a U";
+            default: return s.text != null ? s.text : "prosegui";
+        }
+    }
+
+    private static double roundDistance(double m) {
+        if (m < 100) return Math.round(m / 10.0) * 10;
+        if (m < 1000) return Math.round(m / 50.0) * 50;
+        return Math.round(m / 100.0) * 100;
+    }
+
+    private static String spokenDistance(double m) {
+        if (m < 1000) return Math.round(roundDistance(m)) + " metri";
+        double km = Math.round(m / 100.0) / 10.0;
+        return (km == Math.floor(km) ? String.valueOf((long) km) : String.format(Locale.ITALIAN, "%.1f", km))
+            + (km == 1 ? " chilometro" : " chilometri");
+    }
+
+    private static String spokenTime(long ms) {
+        long min = Math.max(1, Math.round(ms / 60000.0));
+        if (min < 60) return min + (min == 1 ? " minuto" : " minuti");
+        long h = min / 60, r = min % 60;
+        return h + (h == 1 ? " ora" : " ore") + (r > 0 ? " e " + r + " minuti" : "");
+    }
+
+    /** Icone manovra vettoriali (segni GraphHopper). */
     private int maneuverIcon(int sign) {
         switch (sign) {
             case -3: return R.drawable.ic_turn_sharp_left;
             case -2: return R.drawable.ic_turn_left;
             case -1: return R.drawable.ic_turn_slight_left;
-            case  0: return R.drawable.ic_turn_straight;
             case  1: return R.drawable.ic_turn_slight_right;
             case  2: return R.drawable.ic_turn_right;
             case  3: return R.drawable.ic_turn_sharp_right;
-            case  4: return R.drawable.ic_turn_straight;    // finish
-            case  6: return R.drawable.ic_turn_roundabout;  // roundabout
+            case  4: case 5: return R.drawable.ic_turn_finish;
+            case  6: return R.drawable.ic_turn_roundabout;
+            case  7: return R.drawable.ic_turn_keep_right;
+            case -7: return R.drawable.ic_turn_keep_left;
+            case -8: case 8: case -98: return R.drawable.ic_turn_uturn;
             default: return R.drawable.ic_turn_straight;
         }
-    }
-
-    private void centerOnGps() {
-        Location loc = GpsTrackingService.getLastLocation();
-        if (loc != null) mapCtrl.centerOn(loc.getLatitude(), loc.getLongitude(), true);
-    }
-
-    private void togglePanel() {
-        panelExpanded = !panelExpanded;
-        if (rvSteps != null) rvSteps.setVisibility(panelExpanded ? View.VISIBLE : View.GONE);
     }
 
     private void showBuildStatus(String msg, boolean indeterminate) {
@@ -3879,96 +4113,45 @@ public class NavigationActivity extends AppCompatActivity
         if (tvBuildStatus != null) tvBuildStatus.setText(msg);
         if (pbBuild != null) pbBuild.setVisibility(indeterminate ? View.VISIBLE : View.GONE);
     }
+
     private void hideBuildStatus() { if (overlayBuild != null) overlayBuild.setVisibility(View.GONE); }
 
-    private String formatDistance(double m) {
-        return m < 1000 ? String.format("%.0f m", m) : String.format("%.1f km", m / 1000.0);
-    }
     private String formatEta(long millis) {
-        long min = millis / 60000;
+        long min = Math.max(0, Math.round(millis / 60000.0));
         if (min < 60) return min + " min";
         return (min / 60) + " h " + (min % 60) + " min";
     }
 
-    @Override public void onLocationUpdate(@NonNull Location loc, int sats) {
-        runOnUiThread(() -> {
-            mapCtrl.updatePosition(loc.getLatitude(), loc.getLongitude(), loc.getAccuracy(), loc.getBearing());
-            if (currentRoute == null) {
-                if (RoutingEngine.getInstance().isReady()) recalcRoute();
-                else if (!RoutingEngine.isBuilding()) ensureGraphAndRoute(loc.getLatitude(), loc.getLongitude());
-                return;
-            }
-            checkProgressAndReroute(loc);
-        });
+    @Override protected void onResume() {
+        super.onResume();
+        GpsTrackingService.setCallback(this);
+        if (engine != null) engine.onResume();
     }
 
-    private void checkProgressAndReroute(@NonNull Location loc) {
-        if (currentRoute == null || currentRoute.points.isEmpty()) return;
-
-        double minDist = Double.MAX_VALUE;
-        for (double[] p : currentRoute.points) {
-            double d = haversine(loc.getLatitude(), loc.getLongitude(), p[0], p[1]);
-            if (d < minDist) minDist = d;
-        }
-
-        if (minDist > REROUTE_THRESHOLD_M && !RoutingEngine.isBuilding()) {
-            Toast.makeText(this, "Fuori percorso, ricalcolo...", Toast.LENGTH_SHORT).show();
-            currentRoute = null;
-            recalcRoute();
-            return;
-        }
-
-        if (currentRoute.steps.isEmpty()) return;
-        RoutingEngine.NavStep step = currentRoute.steps.get(
-            Math.min(currentStepIdx, currentRoute.steps.size() - 1));
-
-        // annuncio vocale di avvicinamento: "tra 200 metri, gira a destra"
-        if (step.distanceMeters > 0 && step.distanceMeters <= ANNOUNCE_FAR_M && !announcedClose) {
-            announcedClose = true;
-            speak(buildVoiceText(step, step.distanceMeters));
-        }
-
-        if (step.distanceMeters > 0 && step.distanceMeters < STEP_ADVANCE_M
-                && currentStepIdx < currentRoute.steps.size() - 1) {
-            currentStepIdx++;
-            updateInstructionPanel();
-        }
-
-        double destDist = haversine(loc.getLatitude(), loc.getLongitude(), destLat, destLon);
-        if (destDist < 20) {
-            if (!announcedArrival) {
-                announcedArrival = true;
-                speak("Sei arrivato a destinazione");
-            }
-            Toast.makeText(this, "Sei arrivato a destinazione", Toast.LENGTH_LONG).show();
-        }
+    @Override protected void onPause() {
+        super.onPause();
+        GpsTrackingService.setCallback(null);
+        if (engine != null) engine.onPause();
     }
 
-    private double haversine(double lat1, double lon1, double lat2, double lon2) {
-        final double R = 6371000.0;
-        double dLat = Math.toRadians(lat2 - lat1), dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat/2)*Math.sin(dLat/2)
-            + Math.cos(Math.toRadians(lat1))*Math.cos(Math.toRadians(lat2))*Math.sin(dLon/2)*Math.sin(dLon/2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    @Override protected void onResume() { super.onResume(); GpsTrackingService.setCallback(this); }
-    @Override protected void onPause()  { super.onPause();  GpsTrackingService.setCallback(null); }
     @Override protected void onDestroy() {
         super.onDestroy();
         GpsTrackingService.setCallback(null);
         mainHandler.removeCallbacksAndMessages(null);
         routingExec.shutdown();
         if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
-        mapCtrl.destroy();
-        AndroidGraphicFactory.clearResourceMemoryCache();
+        if (engine != null) engine.onDestroy();
     }
 
     class StepsAdapter extends RecyclerView.Adapter<StepsAdapter.VH> {
         private final List<RoutingEngine.NavStep> data = new ArrayList<>();
         private int activeIndex = 0;
         void submit(List<RoutingEngine.NavStep> steps) { data.clear(); data.addAll(steps); notifyDataSetChanged(); }
-        void setActiveIndex(int idx) { activeIndex = idx; notifyDataSetChanged(); }
+        void setActiveIndex(int idx) {
+            if (idx == activeIndex) return;
+            activeIndex = idx;
+            notifyDataSetChanged();
+        }
         @NonNull @Override public VH onCreateViewHolder(@NonNull ViewGroup p, int t) {
             return new VH(LayoutInflater.from(p.getContext()).inflate(R.layout.item_nav_step, p, false));
         }
@@ -3976,15 +4159,18 @@ public class NavigationActivity extends AppCompatActivity
             RoutingEngine.NavStep s = data.get(pos);
             h.text.setText(s.text);
             h.dist.setText(s.formatDistance());
-            h.itemView.setAlpha(pos == activeIndex ? 1f : 0.55f);
+            if (h.icon != null) h.icon.setImageResource(maneuverIcon(s.sign));
+            h.itemView.setAlpha(pos < activeIndex ? 0.35f : pos == activeIndex ? 1f : 0.75f);
         }
         @Override public int getItemCount() { return data.size(); }
         class VH extends RecyclerView.ViewHolder {
             TextView text, dist;
+            ImageView icon;
             VH(@NonNull View v) {
                 super(v);
                 text = v.findViewById(R.id.tv_step_text);
                 dist = v.findViewById(R.id.tv_step_dist);
+                icon = v.findViewById(R.id.iv_step_icon);
             }
         }
     }
@@ -9446,141 +9632,6 @@ LAYOUT_MAP = """\
 
 </FrameLayout>"""
 
-LAYOUT_NAVIGATION = """\
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="#050A14">
-
-    <org.mapsforge.map.android.view.MapView android:id="@+id/nav_map_view"
-        android:layout_width="match_parent" android:layout_height="match_parent"/>
-
-    <LinearLayout android:id="@+id/panel_nav_top"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_gravity="top" android:orientation="horizontal"
-        android:gravity="center_vertical" android:background="#EE0D1421"
-        android:padding="18dp">
-        <ImageView android:id="@+id/iv_nav_maneuver"
-            android:layout_width="64dp" android:layout_height="64dp"
-            android:layout_marginEnd="16dp" android:tint="#00E5FF"
-            android:src="@drawable/ic_turn_straight"
-            android:contentDescription="Direzione"/>
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:orientation="vertical">
-            <TextView android:id="@+id/tv_nav_distance_next"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="-- m" android:textColor="#00FF88"
-                android:textSize="24sp" android:textStyle="bold" android:fontFamily="monospace"/>
-            <TextView android:id="@+id/tv_nav_instruction"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:text="Calcolo percorso..." android:textColor="#E8F4FD"
-                android:textSize="17sp" android:textStyle="bold" android:maxLines="2"/>
-            <TextView android:id="@+id/tv_nav_next_street"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:textColor="#00E5FF" android:textSize="14sp"
-                android:visibility="gone" android:maxLines="1"
-                android:ellipsize="end"/>
-        </LinearLayout>
-        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:orientation="vertical" android:gravity="center">
-            <ImageButton android:id="@+id/btn_nav_voice"
-                android:layout_width="40dp" android:layout_height="40dp"
-                android:src="@android:drawable/ic_lock_silent_mode_off"
-                android:background="@android:color/transparent" android:tint="#00FF88"
-                android:contentDescription="Voce"/>
-            <ImageButton android:id="@+id/btn_nav_close"
-                android:layout_width="40dp" android:layout_height="40dp"
-                android:src="@android:drawable/ic_menu_close_clear_cancel"
-                android:background="@android:color/transparent" android:tint="#FF1744"
-                android:contentDescription="Chiudi"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <ImageButton android:id="@+id/btn_nav_recenter"
-        android:layout_width="48dp" android:layout_height="48dp"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="12dp" android:layout_marginBottom="160dp"
-        android:src="@drawable/ic_gps" android:background="#CC141E2E"
-        android:contentDescription="Centra"/>
-
-    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="end|top" android:layout_marginTop="100dp" android:layout_marginEnd="12dp"
-        android:orientation="vertical" android:background="#CC141E2E" android:padding="6dp">
-        <ImageButton android:id="@+id/btn_nav_profile_car"
-            android:layout_width="44dp" android:layout_height="44dp"
-            android:src="@android:drawable/ic_menu_directions"
-            android:background="@android:color/transparent" android:tint="#00E5FF"
-            android:contentDescription="Auto"/>
-        <ImageButton android:id="@+id/btn_nav_profile_bike"
-            android:layout_width="44dp" android:layout_height="44dp"
-            android:src="@android:drawable/ic_menu_compass"
-            android:background="@android:color/transparent" android:tint="#00FF88"
-            android:contentDescription="Bici"/>
-        <ImageButton android:id="@+id/btn_nav_profile_foot"
-            android:layout_width="44dp" android:layout_height="44dp"
-            android:src="@android:drawable/ic_menu_mylocation"
-            android:background="@android:color/transparent" android:tint="#FF6B35"
-            android:contentDescription="A piedi"/>
-    </LinearLayout>
-
-    <LinearLayout android:id="@+id/panel_nav_bottom"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_gravity="bottom" android:orientation="vertical"
-        android:background="#EE0D1421" android:padding="16dp">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="center_vertical">
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical">
-                <TextView android:id="@+id/tv_nav_eta"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="-- min" android:textColor="#00E5FF"
-                    android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>
-                <TextView android:id="@+id/tv_nav_total_dist"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="-- km" android:textColor="#5A7A99" android:textSize="13sp"/>
-            </LinearLayout>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Tocca per i dettagli" android:textColor="#5A7A99" android:textSize="11sp"/>
-        </LinearLayout>
-        <TextView android:id="@+id/tv_nav_weather"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="#00E5FF" android:textSize="13sp" android:fontFamily="monospace"
-            android:layout_marginTop="6dp" android:visibility="gone"/>
-        <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_nav_steps"
-            android:layout_width="match_parent" android:layout_height="260dp"
-            android:layout_marginTop="12dp" android:visibility="gone"/>
-    </LinearLayout>
-
-    <LinearLayout android:id="@+id/overlay_nav_build"
-        android:layout_width="match_parent" android:layout_height="match_parent"
-        android:orientation="vertical" android:gravity="center"
-        android:background="#DD050A14" android:padding="32dp">
-        <ProgressBar android:id="@+id/pb_nav_build"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"/>
-        <TextView android:id="@+id/tv_nav_build_status"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Preparazione rete stradale..." android:textColor="#E8F4FD"
-            android:textSize="15sp" android:gravity="center" android:fontFamily="monospace"
-            android:lineSpacingMultiplier="1.4"/>
-    </LinearLayout>
-
-</FrameLayout>"""
-
-LAYOUT_ITEM_NAV_STEP = """\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="horizontal" android:padding="12dp" android:gravity="center_vertical"
-    android:background="#141E2E" android:layout_marginBottom="2dp">
-    <TextView android:id="@+id/tv_step_text"
-        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-        android:textColor="#E8F4FD" android:textSize="14sp"/>
-    <TextView android:id="@+id/tv_step_dist"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:textColor="#00E5FF" android:textSize="13sp" android:fontFamily="monospace"/>
-</LinearLayout>"""
-
 LAYOUT_DOWNLOAD = """\
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
@@ -13836,7 +13887,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:orientation="horizontal" android:layout_marginTop="14dp">\n'
     + _v4_tile("btn_navigate", "ic_v4_nav", "NAVIGA", "Percorso offline con voce", "green", "122dp")
-    + _v4_tile("btn_open_map", "ic_v4_map", "MAPPA 3D", "Mappe, tracce, waypoint", "cyan", "122dp", end_margin=False) +
+    + _v4_tile("btn_open_map", "ic_v4_map", "MAPPA 3D", "Edifici 3D, inclina e ruota", "cyan", "122dp", end_margin=False) +
     '    </LinearLayout>\n'
     '    <TextView android:id="@+id/tv_status" android:layout_width="match_parent"\n'
     '        android:layout_height="wrap_content" android:layout_marginTop="12dp"\n'
@@ -14020,6 +14071,1519 @@ LAYOUT_ITEM_SPINNER_DARK = (_XML_HEAD +
 
 # <<< V4 SENTINELLA CIELO
 
+# >>> V5 NAVIGATORE 3D
+# ============================================================
+#  v5.0 NAVIGATORE 3D — mappa 3D vera (OpenGL/VTM), navigazione
+#  con avanzamento reale, profili bici/piedi, chat mesh, strumenti.
+# ============================================================
+
+NAV_CORE = r"""package com.offlinegps.map.routing;
+
+import java.util.List;
+
+/**
+ * Avanzamento lungo il percorso, calcolato a ogni posizione GPS:
+ *  - aggancia la posizione al tratto di strada piu' vicino (proiezione sul
+ *    segmento, non sul punto piu' vicino: sui rettilinei i punti sono radi);
+ *  - distanza REALE alla prossima manovra e alla destinazione;
+ *  - tempo residuo dai tempi dei singoli tratti (autostrada != centro citta');
+ *  - fuori percorso solo dopo piu' letture consecutive (il GPS "salta");
+ *  - direzione della strada nel punto agganciato (per ruotare la mappa).
+ * Nessuna dipendenza da Android: e' testato sul computer.
+ */
+public final class NavCore {
+    public static final class Progress {
+        public double snappedLat, snappedLon;
+        public double alongM;            // metri percorsi dall'inizio
+        public double offRouteM;         // distanza dalla strada
+        public int stepIndex;            // prossima manovra (indice in steps)
+        public double distToManeuverM;   // metri alla prossima manovra
+        public double remainingM;
+        public long remainingMs;
+        public float routeBearing;       // direzione della strada (gradi)
+        public boolean offRoute, arrived;
+        public float fraction;           // 0..1 avanzamento totale
+    }
+
+    private static final double ARRIVE_M = 25.0;
+
+    private final double[] lat, lon, cum;
+    private final List<RoutingEngine.NavStep> steps;
+    private final double[] stepAlong;
+    private final double totalM;
+    private int lastSeg = 0;
+    private int badFixes = 0;
+    private int lastNext = 0;
+    private boolean arrived;
+
+    public NavCore(List<double[]> pts, List<RoutingEngine.NavStep> steps) {
+        int n = pts.size();
+        lat = new double[n]; lon = new double[n]; cum = new double[n];
+        for (int i = 0; i < n; i++) {
+            lat[i] = pts.get(i)[0]; lon[i] = pts.get(i)[1];
+            if (i > 0) cum[i] = cum[i - 1] + dist(lat[i - 1], lon[i - 1], lat[i], lon[i]);
+        }
+        totalM = n > 0 ? cum[n - 1] : 0;
+        this.steps = steps;
+        stepAlong = new double[steps.size()];
+        for (int i = 0; i < steps.size(); i++) {
+            int pi = Math.max(0, Math.min(n - 1, steps.get(i).pointIndex));
+            stepAlong[i] = n > 0 ? cum[pi] : 0;
+        }
+    }
+
+    public double totalMeters() { return totalM; }
+    public double stepAlong(int i) { return stepAlong[i]; }
+
+    public Progress update(double la, double lo, float accuracy) {
+        Progress p = new Progress();
+        int n = lat.length;
+        if (n < 2) {
+            p.arrived = true;
+            return p;
+        }
+        // 1) cerca prima vicino all'ultimo tratto (avanti), poi su tutto il percorso
+        int best = -1;
+        double bestD = Double.MAX_VALUE, bestT = 0;
+        int from = Math.max(0, lastSeg - 3), to = Math.min(n - 2, lastSeg + 80);
+        for (int pass = 0; pass < 2 && (best < 0 || bestD > 60); pass++) {
+            for (int i = from; i <= to; i++) {
+                double[] r = project(la, lo, i);
+                // a parita' di distanza preferisce i tratti in avanti (percorsi ad anello)
+                double score = r[0] + (i < lastSeg ? 8 : 0);
+                if (score < bestD) { bestD = score; best = i; bestT = r[1]; }
+            }
+            from = 0; to = n - 2;
+        }
+        double segLen = cum[best + 1] - cum[best];
+        p.alongM = cum[best] + bestT * segLen;
+        p.snappedLat = lat[best] + (lat[best + 1] - lat[best]) * bestT;
+        p.snappedLon = lon[best] + (lon[best + 1] - lon[best]) * bestT;
+        p.offRouteM = dist(la, lo, p.snappedLat, p.snappedLon);
+        p.routeBearing = (float) bearing(lat[best], lon[best], lat[best + 1], lon[best + 1]);
+        lastSeg = best;
+
+        // 2) prossima manovra = la prima che sta ancora davanti
+        int next = steps.size() - 1;
+        for (int i = 1; i < steps.size(); i++) {
+            if (stepAlong[i] > p.alongM + 3) { next = i; break; }
+        }
+        // niente marcia indietro per il rumore GPS appena passata una manovra
+        // (si torna indietro solo se si e' davvero tornati indietro di 25 m)
+        if (next < lastNext && stepAlong[next] - p.alongM < 25) next = lastNext;
+        lastNext = next;
+        p.stepIndex = Math.max(0, next);
+        p.distToManeuverM = steps.isEmpty() ? totalM - p.alongM : Math.max(0, stepAlong[p.stepIndex] - p.alongM);
+        p.remainingM = Math.max(0, totalM - p.alongM);
+        p.fraction = totalM > 0 ? (float) (p.alongM / totalM) : 1f;
+
+        // 3) tempo residuo: tratto in corso in proporzione + tratti successivi interi
+        long ms = 0;
+        for (int i = 0; i < steps.size(); i++) {
+            double start = stepAlong[i];
+            double end = i + 1 < steps.size() ? stepAlong[i + 1] : totalM;
+            if (end <= p.alongM) continue;
+            double len = Math.max(1, end - start);
+            double left = Math.min(len, end - Math.max(start, p.alongM));
+            ms += (long) (steps.get(i).timeMillis * (left / len));
+        }
+        p.remainingMs = ms;
+
+        // 4) fuori percorso: oltre max(30 m, 1,5 x precisione) per 3 letture di fila
+        //    (2 se molto lontano)
+        double limit = Math.max(30, 1.5 * Math.max(0, accuracy));
+        if (p.offRouteM > limit) badFixes++;
+        else badFixes = 0;
+        p.offRoute = badFixes >= 3 || (badFixes >= 2 && p.offRouteM > 2 * limit + 40);
+
+        // 5) arrivo (una sola volta, poi resta vero)
+        if (!arrived && p.remainingM < ARRIVE_M && p.offRouteM < 60) arrived = true;
+        p.arrived = arrived;
+        return p;
+    }
+
+    /** Distanza dal segmento i e posizione t (0..1) della proiezione. */
+    private double[] project(double la, double lo, int i) {
+        // piano locale equirettangolare: precisione ottima su pochi km
+        double k = Math.cos(Math.toRadians(la));
+        double ax = (lon[i] - lo) * k, ay = lat[i] - la;
+        double bx = (lon[i + 1] - lo) * k, by = lat[i + 1] - la;
+        double dx = bx - ax, dy = by - ay;
+        double l2 = dx * dx + dy * dy;
+        double t = l2 > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+        double px = ax + t * dx, py = ay + t * dy;
+        return new double[]{Math.sqrt(px * px + py * py) * 111_195.0, t};
+    }
+
+    public static double dist(double la1, double lo1, double la2, double lo2) {
+        double r = 6371000.0, p1 = Math.toRadians(la1), p2 = Math.toRadians(la2);
+        double dp = p2 - p1, dl = Math.toRadians(lo2 - lo1);
+        double a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    public static double bearing(double la1, double lo1, double la2, double lo2) {
+        double p1 = Math.toRadians(la1), p2 = Math.toRadians(la2), dl = Math.toRadians(lo2 - lo1);
+        double y = Math.sin(dl) * Math.cos(p2);
+        double x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    /**
+     * Distanze (metri) a cui annunciare una manovra, in base alla velocita':
+     * {lontano, vicino, adesso}. A piedi 120/40/12, in citta' 400/120/30,
+     * in strada veloce 1000/350/60.
+     */
+    public static double[] announceDistances(float speedMs, String profile) {
+        if (RoutingEngine.PROFILE_FOOT.equals(profile) || speedMs < 2.5f) return new double[]{120, 40, 12};
+        if (RoutingEngine.PROFILE_BIKE.equals(profile) || speedMs < 9f) return new double[]{250, 80, 20};
+        if (speedMs < 20f) return new double[]{400, 120, 30};
+        return new double[]{1000, 350, 60};
+    }
+}
+"""
+
+SUN_CALC = r"""package com.offlinegps.map.util;
+
+/**
+ * Posizione del Sole e orari del giorno, calcolati offline con le formule
+ * astronomiche standard (anomalia media, equazione del centro, ascensione
+ * retta, tempo siderale). Precisione tipica: 1-2 minuti alle nostre latitudini.
+ * Tutti i tempi sono in millisecondi UTC (System.currentTimeMillis()).
+ */
+public final class SunCalc {
+    private static final double RAD = Math.PI / 180, DAY_MS = 86_400_000.0;
+    private static final double J1970 = 2440588, J2000 = 2451545, J0 = 0.0009;
+    private static final double E = RAD * 23.4397;   // obliquita' dell'eclittica
+
+    /** Angoli del Sole (gradi) che definiscono i momenti della giornata. */
+    public static final double SUNRISE = -0.833, GOLDEN = 6, BLUE_HIGH = -4, CIVIL = -6, NAUTICAL = -12, ASTRO = -18;
+
+    private SunCalc() {}
+
+    /** {altezza sull'orizzonte, azimut da nord in senso orario}, in gradi. */
+    public static double[] position(long ms, double lat, double lon) {
+        double lw = RAD * -lon, phi = RAD * lat, d = toDays(ms);
+        double[] c = sunCoords(d);
+        double h = siderealTime(d, lw) - c[1];
+        double az = Math.atan2(Math.sin(h), Math.cos(h) * Math.sin(phi) - Math.tan(c[0]) * Math.cos(phi));
+        double alt = Math.asin(Math.sin(phi) * Math.sin(c[0]) + Math.cos(phi) * Math.cos(c[0]) * Math.cos(h));
+        return new double[]{alt / RAD, (az / RAD + 180 + 360) % 360};
+    }
+
+    public static final class Times {
+        public long solarNoon, nadir;
+        /** [0] = mattina (sale), [1] = sera (scende); Long.MIN_VALUE se non accade (sole di mezzanotte / notte polare). */
+        public final long[] sunrise = new long[2], golden = new long[2], blueHigh = new long[2],
+            civil = new long[2], nautical = new long[2], astro = new long[2];
+        public double noonAltitude;
+
+        public long dayLengthMs() {
+            return sunrise[0] == Long.MIN_VALUE ? (noonAltitude > 0 ? 86_400_000L : 0) : sunrise[1] - sunrise[0];
+        }
+    }
+
+    /** Orari per il giorno che contiene "ms" (meglio passare il mezzogiorno locale). */
+    public static Times times(long ms, double lat, double lon) {
+        double lw = RAD * -lon, phi = RAD * lat, d = toDays(ms);
+        double n = Math.round(d - J0 - lw / (2 * Math.PI));
+        double ds = approxTransit(0, lw, n);
+        double m = solarMeanAnomaly(ds), l = eclipticLongitude(m), dec = declination(l, 0);
+        double jNoon = solarTransitJ(ds, m, l);
+        Times t = new Times();
+        t.solarNoon = fromJulian(jNoon);
+        t.nadir = fromJulian(jNoon - 0.5);
+        t.noonAltitude = position(t.solarNoon, lat, lon)[0];
+        fill(t.sunrise, SUNRISE, lw, phi, dec, n, m, l, jNoon);
+        fill(t.golden, GOLDEN, lw, phi, dec, n, m, l, jNoon);
+        fill(t.blueHigh, BLUE_HIGH, lw, phi, dec, n, m, l, jNoon);
+        fill(t.civil, CIVIL, lw, phi, dec, n, m, l, jNoon);
+        fill(t.nautical, NAUTICAL, lw, phi, dec, n, m, l, jNoon);
+        fill(t.astro, ASTRO, lw, phi, dec, n, m, l, jNoon);
+        return t;
+    }
+
+    private static void fill(long[] out, double angle, double lw, double phi, double dec,
+                             double n, double m, double l, double jNoon) {
+        double w = hourAngle(angle * RAD, phi, dec);
+        if (Double.isNaN(w)) { out[0] = out[1] = Long.MIN_VALUE; return; }
+        double jSet = solarTransitJ(approxTransit(w, lw, n), m, l);
+        double jRise = jNoon - (jSet - jNoon);
+        out[0] = fromJulian(jRise);
+        out[1] = fromJulian(jSet);
+    }
+
+    /** true se il Sole e' sotto -4 gradi (buio pratico: tema notte). */
+    public static boolean isDark(long ms, double lat, double lon) {
+        return position(ms, lat, lon)[0] < BLUE_HIGH;
+    }
+
+    // ------------------------------------------------------------ formule
+    private static double toJulian(long ms) { return ms / DAY_MS - 0.5 + J1970; }
+    private static long fromJulian(double j) { return Math.round((j + 0.5 - J1970) * DAY_MS); }
+    private static double toDays(long ms) { return toJulian(ms) - J2000; }
+
+    private static double declination(double l, double b) {
+        return Math.asin(Math.sin(b) * Math.cos(E) + Math.cos(b) * Math.sin(E) * Math.sin(l));
+    }
+
+    private static double rightAscension(double l, double b) {
+        return Math.atan2(Math.sin(l) * Math.cos(E) - Math.tan(b) * Math.sin(E), Math.cos(l));
+    }
+
+    private static double siderealTime(double d, double lw) { return RAD * (280.16 + 360.9856235 * d) - lw; }
+    private static double solarMeanAnomaly(double d) { return RAD * (357.5291 + 0.98560028 * d); }
+
+    private static double eclipticLongitude(double m) {
+        double c = RAD * (1.9148 * Math.sin(m) + 0.02 * Math.sin(2 * m) + 0.0003 * Math.sin(3 * m));
+        double p = RAD * 102.9372;   // perielio
+        return m + c + p + Math.PI;
+    }
+
+    /** {declinazione, ascensione retta} in radianti. */
+    private static double[] sunCoords(double d) {
+        double m = solarMeanAnomaly(d), l = eclipticLongitude(m);
+        return new double[]{declination(l, 0), rightAscension(l, 0)};
+    }
+
+    private static double approxTransit(double ht, double lw, double n) { return J0 + (ht + lw) / (2 * Math.PI) + n; }
+
+    private static double solarTransitJ(double ds, double m, double l) {
+        return J2000 + ds + 0.0053 * Math.sin(m) - 0.0069 * Math.sin(2 * l);
+    }
+
+    private static double hourAngle(double h, double phi, double d) {
+        return Math.acos((Math.sin(h) - Math.sin(phi) * Math.sin(d)) / (Math.cos(phi) * Math.cos(d)));
+    }
+}
+"""
+
+MAP_ENGINE = r"""package com.offlinegps.map.map;
+
+import android.view.View;
+import java.io.File;
+import java.util.List;
+
+/**
+ * Motore di mappa usato da navigatore e mappa 3D. Due implementazioni:
+ *  - VtmEngine: OpenGL vero 3D (inclinazione, rotazione, edifici 3D, temi);
+ *  - MapsforgeEngine: la mappa 2D classica, usata se il 3D non e' disponibile.
+ * Le coordinate sono sempre {lat, lon}.
+ */
+public interface MapEngine {
+    int THEME_NIGHT = 0, THEME_DAY = 1, THEME_OUTDOOR = 2, THEME_CLASSIC = 3;
+
+    interface LongPressListener { void onLongPress(double lat, double lon); }
+
+    View view();
+    /** true se il motore puo' inclinare/ruotare la mappa (3D). */
+    boolean is3d();
+    String name();
+
+    boolean loadMapFile(File f);
+
+    void setUserPosition(double lat, double lon, float accuracy, float bearing);
+    void setRoute(List<double[]> pts);
+    void setTrack(List<double[]> pts);
+    void setDestination(double lat, double lon);
+    void setPoints(List<double[]> pts);          // waypoint {lat, lon}
+
+    /** Inquadratura: zoom (livello), rotazione (gradi, 0 = nord su), inclinazione (gradi). */
+    void moveTo(double lat, double lon, double zoom, float bearing, float tilt, boolean animate);
+    void fitBounds(List<double[]> pts, boolean animate);
+    double zoom();
+    float bearing();
+    float tilt();
+    void setTilt(float deg, boolean animate);
+    void setBearing(float deg, boolean animate);
+    void zoomBy(int delta);
+
+    /** Sposta il punto di riferimento in verticale (-1..1): 0,4 = tu in basso, strada davanti. */
+    void setFocusOffset(float y);
+
+    void setTheme(int theme);
+    void setBuildings(boolean on);
+
+    /** Chiamato quando l'utente trascina/ruota/zooma la mappa con le dita. */
+    void setOnUserGesture(Runnable r);
+    void setOnLongPress(LongPressListener l);
+
+    void onResume();
+    void onPause();
+    void onDestroy();
+}
+"""
+
+VTM_ENGINE = r"""package com.offlinegps.map.map;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
+import android.view.View;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import org.oscim.android.MapView;
+import org.oscim.android.canvas.AndroidBitmap;
+import org.oscim.backend.canvas.Bitmap;
+import org.oscim.core.BoundingBox;
+import org.oscim.core.GeoPoint;
+import org.oscim.core.MapPosition;
+import org.oscim.event.Event;
+import org.oscim.event.Gesture;
+import org.oscim.event.GestureListener;
+import org.oscim.event.MotionEvent;
+import org.oscim.layers.Layer;
+import org.oscim.layers.LocationTextureLayer;
+import org.oscim.layers.PathLayer;
+import org.oscim.layers.marker.ItemizedLayer;
+import org.oscim.layers.marker.MarkerInterface;
+import org.oscim.layers.marker.MarkerItem;
+import org.oscim.layers.marker.MarkerSymbol;
+import org.oscim.layers.tile.buildings.BuildingLayer;
+import org.oscim.layers.tile.vector.VectorTileLayer;
+import org.oscim.layers.tile.vector.labeling.LabelLayer;
+import org.oscim.map.Map;
+import org.oscim.renderer.LocationCallback;
+import org.oscim.scalebar.DefaultMapScaleBar;
+import org.oscim.scalebar.MapScaleBarLayer;
+import org.oscim.theme.ThemeFile;
+import org.oscim.theme.internal.VtmThemes;
+import org.oscim.theme.styles.LineStyle;
+import org.oscim.tiling.source.mapfile.MapFileTileSource;
+
+/**
+ * Mappa 3D VERA con VTM (OpenGL ES): inclinazione fino a 65 gradi, rotazione
+ * libera, edifici estrusi in 3D, etichette che restano dritte, temi diversi
+ * (notte neon, giorno, outdoor). Legge gli stessi file .map di Mapsforge.
+ */
+public final class VtmEngine implements MapEngine {
+    private final Context ctx;
+    private final MapView mapView;
+    private final Map map;
+    private final float density;
+    private MapFileTileSource source;
+    private VectorTileLayer tiles;
+    private BuildingLayer buildings;
+    private LabelLayer labels;
+    private PathLayer routeGlow, routeLine, trackLine;
+    private ItemizedLayer pointsLayer, destLayer;
+    private LocationTextureLayer userLayer;
+    private MapScaleBarLayer scaleBar;
+    private volatile float userBearing = Float.NaN;
+    private int theme = THEME_NIGHT;
+    private boolean buildingsOn = true;
+    private Runnable onUserGesture;
+    private LongPressListener onLongPress;
+    private Runnable healthy;
+
+    /** Avvisato quando la schermata si chiude normalmente (nessun crash del 3D). */
+    void setHealthyCallback(Runnable r) { healthy = r; }
+
+    /** Puo' lanciare (es. libreria nativa assente): il chiamante ripiega sul 2D. */
+    public VtmEngine(Context c) {
+        ctx = c;
+        density = c.getResources().getDisplayMetrics().density;
+        mapView = new MapView(c);
+        map = mapView.map();
+        map.viewport().setMaxTilt(65f);
+        map.events.bind(new Map.UpdateListener() {
+            @Override public void onMapEvent(Event e, MapPosition p) {
+                if ((e == Map.MOVE_EVENT || e == Map.ROTATE_EVENT || e == Map.TILT_EVENT)
+                        && onUserGesture != null) mapView.post(onUserGesture);
+            }
+        });
+    }
+
+    @Override public View view() { return mapView; }
+    @Override public boolean is3d() { return true; }
+    @Override public String name() { return "3D (OpenGL)"; }
+
+    // ------------------------------------------------------------ dati mappa
+    @Override public boolean loadMapFile(File f) {
+        if (f == null || !f.exists()) return false;
+        MapFileTileSource ts = new MapFileTileSource();
+        if (!ts.setMapFile(f.getAbsolutePath())) return false;
+        ts.setPreferredLanguage("it");
+        source = ts;
+        tiles = map.setBaseMap(ts);
+        rebuildLayers();
+        applyTheme();
+        try {
+            org.oscim.tiling.source.mapfile.MapInfo info = ts.getMapInfo();
+            if (info != null && info.boundingBox != null) {
+                GeoPoint c = info.boundingBox.getCenterPoint();
+                map.setMapPosition(c.getLatitude(), c.getLongitude(), 1 << 12);
+            }
+        } catch (Exception ignored) {}
+        return true;
+    }
+
+    /** Ordine dei livelli: strade, edifici 3D, percorso, etichette, punti, tu, scala. */
+    private void rebuildLayers() {
+        List<Layer> keep = new ArrayList<>();
+        keep.add(map.getEventLayer());              // gestione gesti (sempre prima)
+        if (tiles != null) keep.add(tiles);
+        map.layers().clear();
+        map.layers().addAll(keep);
+
+        if (tiles != null) {
+            buildings = new BuildingLayer(map, tiles, 16, map.viewport().getMaxZoomLevel(), false, true);
+            buildings.setEnabled(buildingsOn);
+            map.layers().add(buildings);
+        }
+        float w = 7f * density;
+        routeGlow = new PathLayer(map, new LineStyle(0x5500E5FF, w * 3f, org.oscim.backend.canvas.Paint.Cap.ROUND));
+        routeLine = new PathLayer(map, new LineStyle(0xFF00E5FF, w, org.oscim.backend.canvas.Paint.Cap.ROUND));
+        trackLine = new PathLayer(map, new LineStyle(0xFF00FF88, w * 0.7f, org.oscim.backend.canvas.Paint.Cap.ROUND));
+        map.layers().add(trackLine);
+        map.layers().add(routeGlow);
+        map.layers().add(routeLine);
+        if (tiles != null) {
+            labels = new LabelLayer(map, tiles);
+            map.layers().add(labels);
+        }
+        pointsLayer = new ItemizedLayer(map, symbol(pin(0xFF00FF88, 30), MarkerSymbol.HotspotPlace.BOTTOM_CENTER, true));
+        destLayer = new ItemizedLayer(map, symbol(pin(0xFFFF3D71, 42), MarkerSymbol.HotspotPlace.BOTTOM_CENTER, true));
+        map.layers().add(pointsLayer);
+        map.layers().add(destLayer);
+
+        userLayer = new LocationTextureLayer(map);
+        userLayer.locationRenderer.setBitmapArrow(new AndroidBitmap(arrow()));
+        userLayer.locationRenderer.setBitmapMarker(new AndroidBitmap(dot()));
+        userLayer.locationRenderer.setColor(0xFF00E5FF);
+        userLayer.locationRenderer.setShowAccuracyZoom(15);
+        userLayer.locationRenderer.setCallback(new LocationCallback() {
+            @Override public boolean hasRotation() { return !Float.isNaN(userBearing); }
+            @Override public float getRotation() { return Float.isNaN(userBearing) ? 0 : userBearing; }
+        });
+        userLayer.setEnabled(false);
+        map.layers().add(userLayer);
+
+        map.layers().add(new GestureLayer(map));
+        DefaultMapScaleBar bar = new DefaultMapScaleBar(map);
+        bar.setScaleBarMode(DefaultMapScaleBar.ScaleBarMode.SINGLE);
+        scaleBar = new MapScaleBarLayer(map, bar);
+        map.layers().add(scaleBar);
+        map.updateMap(true);
+    }
+
+    @Override public void setUserPosition(double lat, double lon, float accuracy, float bearing) {
+        if (userLayer == null) return;
+        userBearing = bearing;
+        userLayer.setEnabled(true);
+        userLayer.setPosition(lat, lon, Math.max(3f, accuracy));
+        map.updateMap(true);
+    }
+
+    @Override public void setRoute(List<double[]> pts) {
+        if (routeLine == null) return;
+        List<GeoPoint> g = geo(pts);
+        routeGlow.setPoints(g);
+        routeLine.setPoints(g);
+        map.updateMap(true);
+    }
+
+    @Override public void setTrack(List<double[]> pts) {
+        if (trackLine == null) return;
+        trackLine.setPoints(geo(pts));
+        map.updateMap(true);
+    }
+
+    @Override public void setDestination(double lat, double lon) {
+        if (destLayer == null) return;
+        destLayer.removeAllItems();
+        if (!Double.isNaN(lat) && !Double.isNaN(lon))
+            destLayer.addItem(new MarkerItem("Destinazione", "", new GeoPoint(lat, lon)));
+        map.updateMap(true);
+    }
+
+    @Override public void setPoints(List<double[]> pts) {
+        if (pointsLayer == null) return;
+        pointsLayer.removeAllItems();
+        List<MarkerInterface> items = new ArrayList<>();
+        if (pts != null) for (double[] p : pts) items.add(new MarkerItem("", "", new GeoPoint(p[0], p[1])));
+        pointsLayer.addItems(items);
+        map.updateMap(true);
+    }
+
+    // ------------------------------------------------------------ inquadratura
+    @Override public void moveTo(double lat, double lon, double zoom, float bearing, float tilt, boolean animate) {
+        MapPosition p = new MapPosition();
+        map.getMapPosition(p);
+        p.setPosition(lat, lon);
+        if (!Double.isNaN(zoom)) p.setZoom(zoom);
+        if (!Float.isNaN(bearing)) p.setBearing(-bearing);
+        if (!Float.isNaN(tilt)) p.setTilt(map.viewport().limitTilt(tilt));
+        if (animate) map.animator().animateTo(500, p);
+        else map.setMapPosition(p);
+    }
+
+    @Override public void fitBounds(List<double[]> pts, boolean animate) {
+        if (pts == null || pts.size() < 2) return;
+        double minLa = 90, maxLa = -90, minLo = 180, maxLo = -180;
+        for (double[] p : pts) {
+            minLa = Math.min(minLa, p[0]); maxLa = Math.max(maxLa, p[0]);
+            minLo = Math.min(minLo, p[1]); maxLo = Math.max(maxLo, p[1]);
+        }
+        BoundingBox bb = new BoundingBox(minLa, minLo, maxLa, maxLo).extendMargin(1.25f);
+        MapPosition p = new MapPosition();
+        map.getMapPosition(p);
+        p.setByBoundingBox(bb, Math.max(1, map.getWidth()), Math.max(1, map.getHeight()));
+        p.setBearing(0);
+        p.setTilt(0);
+        if (animate) map.animator().animateTo(700, p);
+        else map.setMapPosition(p);
+    }
+
+    @Override public double zoom() { return map.getMapPosition().getZoom(); }
+    @Override public float bearing() { return -map.getMapPosition().getBearing(); }
+    @Override public float tilt() { return map.getMapPosition().getTilt(); }
+
+    @Override public void setTilt(float deg, boolean animate) {
+        MapPosition p = new MapPosition();
+        map.getMapPosition(p);
+        p.setTilt(map.viewport().limitTilt(deg));
+        if (animate) map.animator().animateTo(450, p); else map.setMapPosition(p);
+    }
+
+    @Override public void setBearing(float deg, boolean animate) {
+        MapPosition p = new MapPosition();
+        map.getMapPosition(p);
+        p.setBearing(-deg);
+        if (animate) map.animator().animateTo(450, p); else map.setMapPosition(p);
+    }
+
+    @Override public void zoomBy(int delta) {
+        MapPosition p = new MapPosition();
+        map.getMapPosition(p);
+        p.setZoom(Math.max(3, Math.min(20, p.getZoom() + delta)));
+        map.animator().animateTo(300, p);
+    }
+
+    @Override public void setFocusOffset(float y) {
+        map.viewport().setMapViewCenterY(Math.max(-0.8f, Math.min(0.8f, y)));
+        map.updateMap(true);
+    }
+
+    // ------------------------------------------------------------ aspetto
+    @Override public void setTheme(int t) {
+        theme = t;
+        applyTheme();
+    }
+
+    private void applyTheme() {
+        if (tiles == null) return;
+        ThemeFile tf;
+        switch (theme) {
+            case THEME_DAY:     tf = VtmThemes.DEFAULT; break;
+            case THEME_OUTDOOR: tf = VtmThemes.BIKER; break;
+            case THEME_CLASSIC: tf = VtmThemes.OSMARENDER; break;
+            default:            tf = VtmThemes.TRONRENDER; break;
+        }
+        map.setTheme(tf);
+        map.clearMap();
+    }
+
+    @Override public void setBuildings(boolean on) {
+        buildingsOn = on;
+        if (buildings != null) buildings.setEnabled(on);
+        map.updateMap(true);
+    }
+
+    @Override public void setOnUserGesture(Runnable r) { onUserGesture = r; }
+    @Override public void setOnLongPress(LongPressListener l) { onLongPress = l; }
+
+    @Override public void onResume() { mapView.onResume(); }
+    @Override public void onPause() {
+        mapView.onPause();
+        if (healthy != null) healthy.run();
+    }
+    @Override public void onDestroy() {
+        if (healthy != null) healthy.run();
+        try { mapView.onDestroy(); } catch (Exception ignored) {}
+    }
+
+    // ------------------------------------------------------------ gesti
+    /** Tieni premuto sulla mappa: coordinate del punto (per "naviga qui"). */
+    private final class GestureLayer extends Layer implements GestureListener {
+        GestureLayer(Map m) { super(m); }
+        @Override public boolean onGesture(Gesture g, MotionEvent e) {
+            if (g == Gesture.LONG_PRESS && onLongPress != null) {
+                final GeoPoint gp = map.viewport().fromScreenPoint(e.getX(), e.getY());
+                mapView.post(() -> onLongPress.onLongPress(gp.getLatitude(), gp.getLongitude()));
+                return true;
+            }
+            return false;
+        }
+    }
+
+    // ------------------------------------------------------------ simboli disegnati al volo
+    private static List<GeoPoint> geo(List<double[]> pts) {
+        List<GeoPoint> g = new ArrayList<>();
+        if (pts != null) for (double[] p : pts) g.add(new GeoPoint(p[0], p[1]));
+        return g;
+    }
+
+    private MarkerSymbol symbol(android.graphics.Bitmap b, MarkerSymbol.HotspotPlace hp, boolean billboard) {
+        Bitmap vb = new AndroidBitmap(b);
+        return new MarkerSymbol(vb, hp, billboard);
+    }
+
+    /** Spillo neon con alone. */
+    private android.graphics.Bitmap pin(int color, int sizeDp) {
+        int s = Math.round(sizeDp * density);
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(s, Math.round(s * 1.3f), android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float r = s * 0.36f, cx = s / 2f, cy = r + s * 0.08f;
+        Path path = new Path();
+        path.moveTo(cx, b.getHeight() - 1);
+        path.lineTo(cx - r * 0.85f, cy + r * 0.45f);
+        path.lineTo(cx + r * 0.85f, cy + r * 0.45f);
+        path.close();
+        p.setColor(color);
+        c.drawPath(path, p);
+        p.setShader(new RadialGradient(cx, cy, r * 1.4f, (color & 0x00FFFFFF) | 0x66000000, color & 0x00FFFFFF, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.4f, p);
+        p.setShader(null);
+        p.setColor(color);
+        c.drawCircle(cx, cy, r, p);
+        p.setColor(0xFF050A14);
+        c.drawCircle(cx, cy, r * 0.45f, p);
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(cx, cy, r * 0.22f, p);
+        return b;
+    }
+
+    /** Freccia di navigazione (punta in su = direzione di marcia). */
+    private android.graphics.Bitmap arrow() {
+        int s = Math.round(44 * density);
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(s, s, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cx = s / 2f;
+        p.setShader(new RadialGradient(cx, cx, s / 2f, 0x6600E5FF, 0x0000E5FF, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cx, s / 2f, p);
+        p.setShader(null);
+        Path path = new Path();
+        path.moveTo(cx, s * 0.12f);
+        path.lineTo(s * 0.78f, s * 0.82f);
+        path.lineTo(cx, s * 0.64f);
+        path.lineTo(s * 0.22f, s * 0.82f);
+        path.close();
+        p.setColor(0xFFFFFFFF);
+        c.drawPath(path, p);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(2.2f * density);
+        p.setColor(0xFF00E5FF);
+        c.drawPath(path, p);
+        return b;
+    }
+
+    private android.graphics.Bitmap dot() {
+        int s = Math.round(26 * density);
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(s, s, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cx = s / 2f;
+        p.setColor(0xFFFFFFFF);
+        c.drawCircle(cx, cx, s * 0.36f, p);
+        p.setColor(0xFF00E5FF);
+        c.drawCircle(cx, cx, s * 0.26f, p);
+        return b;
+    }
+}
+"""
+
+MAPSFORGE_ENGINE = r"""package com.offlinegps.map.map;
+
+import android.content.Context;
+import android.view.View;
+import java.io.File;
+import java.util.List;
+import org.mapsforge.core.model.LatLong;
+import org.mapsforge.core.model.MapPosition;
+import org.mapsforge.map.android.view.MapView;
+
+/**
+ * Ripiego 2D (Mapsforge) quando l'OpenGL 3D non e' disponibile: stessa
+ * interfaccia, ma sempre a nord in alto e senza inclinazione.
+ */
+public final class MapsforgeEngine implements MapEngine {
+    private final MapView mapView;
+    private final MapController ctrl;
+    private Runnable onUserGesture;
+
+    public MapsforgeEngine(Context c) {
+        try {
+            org.mapsforge.map.android.graphics.AndroidGraphicFactory.createInstance(
+                (android.app.Application) c.getApplicationContext());
+        } catch (Throwable ignored) {}
+        mapView = new MapView(c);
+        ctrl = new MapController(c);
+        ctrl.init(mapView);
+        mapView.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == android.view.MotionEvent.ACTION_MOVE && onUserGesture != null)
+                onUserGesture.run();
+            return false;
+        });
+    }
+
+    public MapController controller() { return ctrl; }
+
+    @Override public View view() { return mapView; }
+    @Override public boolean is3d() { return false; }
+    @Override public String name() { return "2D (Mapsforge)"; }
+    @Override public boolean loadMapFile(File f) { return ctrl.loadMapFile(f); }
+
+    @Override public void setUserPosition(double lat, double lon, float accuracy, float bearing) {
+        ctrl.updatePosition(lat, lon, accuracy, Float.isNaN(bearing) ? 0f : bearing);
+    }
+
+    @Override public void setRoute(List<double[]> pts) {
+        ctrl.clearTrack();
+        if (pts != null && !pts.isEmpty()) ctrl.addTrackPoints(pts);
+    }
+
+    @Override public void setTrack(List<double[]> pts) { /* la linea e' usata dal percorso */ }
+
+    @Override public void setDestination(double lat, double lon) {
+        if (!Double.isNaN(lat) && !Double.isNaN(lon)) ctrl.setDestinationMarker(lat, lon);
+    }
+
+    @Override public void setPoints(List<double[]> pts) {
+        ctrl.clearWaypointMarkers();
+        if (pts != null) for (double[] p : pts) ctrl.addWaypointMarker(p[0], p[1], "#00FF88");
+    }
+
+    @Override public void moveTo(double lat, double lon, double zoom, float bearing, float tilt, boolean animate) {
+        if (!Double.isNaN(zoom)) {
+            byte z = (byte) Math.max(4, Math.min(19, Math.round(zoom)));
+            if (animate && z == mapView.getModel().mapViewPosition.getZoomLevel()) ctrl.centerOn(lat, lon, true);
+            else mapView.getModel().mapViewPosition.setMapPosition(new MapPosition(new LatLong(lat, lon), z));
+        } else ctrl.centerOn(lat, lon, animate);
+    }
+
+    @Override public void fitBounds(List<double[]> pts, boolean animate) {
+        ctrl.fitTrackBounds();
+    }
+
+    @Override public double zoom() { return ctrl.getZoom(); }
+    @Override public float bearing() { return 0f; }
+    @Override public float tilt() { return 0f; }
+    @Override public void setTilt(float deg, boolean animate) {}
+    @Override public void setBearing(float deg, boolean animate) {}
+    @Override public void zoomBy(int delta) {
+        for (int i = 0; i < Math.abs(delta); i++) { if (delta > 0) ctrl.zoomIn(); else ctrl.zoomOut(); }
+    }
+
+    @Override public void setFocusOffset(float y) {}
+    @Override public void setTheme(int theme) { ctrl.setNightMode(theme == THEME_NIGHT); }
+    @Override public void setBuildings(boolean on) {}
+    @Override public void setOnUserGesture(Runnable r) { onUserGesture = r; }
+    @Override public void setOnLongPress(LongPressListener l) {}
+    @Override public void onResume() {}
+    @Override public void onPause() {}
+    @Override public void onDestroy() { ctrl.destroy(); }
+}
+"""
+
+MAP_ENGINES = r"""package com.offlinegps.map.map;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+
+/**
+ * Sceglie il motore di mappa: 3D OpenGL (VTM) se possibile, altrimenti 2D.
+ * Protezione anti-crash: se l'app si e' chiusa mentre il 3D partiva (driver
+ * grafico o libreria nativa incompatibile), al riavvio usa subito il 2D.
+ */
+public final class MapEngines {
+    private static final String PREFS = "map_engine";
+    private static final String KEY_STARTING = "vtm_starting";
+    private static final String KEY_DISABLED = "vtm_disabled";
+    private static final String KEY_FORCE_2D = "force_2d";
+    private MapEngines() {}
+
+    /** true se l'ultima volta il 3D e' andato in crash all'avvio. */
+    public static boolean disabledAfterCrash(Context c) {
+        return prefs(c).getBoolean(KEY_DISABLED, false);
+    }
+
+    public static boolean force2d(Context c) { return prefs(c).getBoolean(KEY_FORCE_2D, false); }
+
+    public static void setForce2d(Context c, boolean on) {
+        prefs(c).edit().putBoolean(KEY_FORCE_2D, on).putBoolean(KEY_DISABLED, false).apply();
+    }
+
+    public static MapEngine create(Context c) {
+        SharedPreferences p = prefs(c);
+        if (p.getBoolean(KEY_STARTING, false)) {
+            // l'avvio precedente del 3D non e' arrivato in fondo: disattiva
+            p.edit().putBoolean(KEY_STARTING, false).putBoolean(KEY_DISABLED, true).apply();
+        }
+        if (!p.getBoolean(KEY_DISABLED, false) && !p.getBoolean(KEY_FORCE_2D, false)) {
+            p.edit().putBoolean(KEY_STARTING, true).commit();
+            try {
+                VtmEngine e = new VtmEngine(c);
+                Runnable ok = () -> prefs(c).edit().putBoolean(KEY_STARTING, false).apply();
+                e.setHealthyCallback(ok);
+                // se dopo 6 secondi siamo ancora vivi il 3D funziona su questo telefono
+                new Handler(Looper.getMainLooper()).postDelayed(ok, 6000);
+                return e;
+            } catch (Throwable t) {
+                Log.w("MapEngines", "3D non disponibile: " + t);
+                p.edit().putBoolean(KEY_STARTING, false).putBoolean(KEY_DISABLED, true).apply();
+            }
+        }
+        return new MapsforgeEngine(c);
+    }
+
+    private static SharedPreferences prefs(Context c) {
+        return c.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+}
+"""
+
+MAP3D_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.location.Location;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.data.GpsDatabase;
+import com.offlinegps.map.data.WaypointEntity;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.map.MapEngine;
+import com.offlinegps.map.map.MapEngines;
+import com.offlinegps.map.routing.RoutingEngine;
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * MAPPA 3D VERA: inclina con due dita (o col pulsante 3D), ruota con due
+ * dita, edifici in 3D da zoom 16, quattro temi, bussola che segue la
+ * rotazione, segui-GPS con la mappa orientata nella direzione di marcia,
+ * waypoint salvati, tieni premuto per "naviga qui" o "salva punto".
+ */
+public class Map3DActivity extends AppCompatActivity implements GpsTrackingService.LocationCallback {
+    private static final String[] THEME_NAMES = {"Notte neon", "Giorno", "Outdoor", "Classica"};
+    private MapEngine engine;
+    private TextView tvInfo, tvHint;
+    private ImageView ivCompass, ivFollow;
+    private View btnBuildings;
+    private int theme;
+    private boolean follow = false, buildings = true, centeredOnce = false;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final Runnable hud = new Runnable() {
+        @Override public void run() {
+            if (engine == null) return;
+            if (ivCompass != null) ivCompass.setRotation(-engine.bearing());
+            if (tvInfo != null) tvInfo.setText(String.format(Locale.ITALY, "%s · %s · zoom %.0f · %.0f°",
+                engine.is3d() ? "3D" : "2D", THEME_NAMES[theme], engine.zoom(), engine.tilt()));
+            h.postDelayed(this, 150);
+        }
+    };
+
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_map3d);
+        tvInfo = findViewById(R.id.tv_map3d_info);
+        tvHint = findViewById(R.id.tv_map3d_hint);
+        ivCompass = findViewById(R.id.iv_map3d_compass);
+        ivFollow = findViewById(R.id.iv_map3d_follow);
+        btnBuildings = findViewById(R.id.btn_map3d_buildings);
+        SharedPreferences prefs = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        theme = prefs.getInt("map3d_theme", MapEngine.THEME_NIGHT);
+        buildings = prefs.getBoolean("map3d_buildings", true);
+
+        FrameLayout container = findViewById(R.id.map3d_container);
+        engine = MapEngines.create(this);
+        container.addView(engine.view(), 0, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (!engine.is3d()) showFallbackNotice();
+
+        String path = prefs.getString(AppConfig.PREF_MAP_FILE, "");
+        File f = path.isEmpty() ? null : new File(path);
+        if (f == null || !f.exists() || !engine.loadMapFile(f)) {
+            if (tvHint != null) {
+                tvHint.setText("Nessuna mappa offline caricata: vai in Download e scarica la tua zona.");
+                tvHint.setVisibility(View.VISIBLE);
+            }
+        }
+        engine.setTheme(theme);
+        engine.setBuildings(buildings);
+        engine.setTilt(engine.is3d() ? 55f : 0f, false);
+        engine.setOnUserGesture(() -> setFollow(false));
+        engine.setOnLongPress(this::onLongPress);
+
+        click(R.id.btn_map3d_back, v -> finish());
+        click(R.id.btn_map3d_search, v -> startActivity(new Intent(this, AddressSearchActivity.class)));
+        click(R.id.btn_map3d_theme, v -> cycleTheme());
+        click(R.id.btn_map3d_tilt, v -> toggleTilt());
+        click(R.id.btn_map3d_buildings, v -> toggleBuildings());
+        click(R.id.btn_map3d_compass, v -> engine.setBearing(0, true));
+        click(R.id.btn_map3d_zoom_in, v -> engine.zoomBy(1));
+        click(R.id.btn_map3d_zoom_out, v -> engine.zoomBy(-1));
+        click(R.id.btn_map3d_follow, v -> setFollow(!follow));
+        click(R.id.btn_map3d_2d, v -> startActivity(new Intent(this, MapActivity.class)));
+        if (btnBuildings != null) btnBuildings.setAlpha(buildings ? 1f : 0.45f);
+
+        if (tvHint != null && tvHint.getVisibility() != View.VISIBLE && engine.is3d()
+                && !prefs.getBoolean("map3d_hint_seen", false)) {
+            tvHint.setText("Due dita su/giu' per inclinare · ruota con due dita · tieni premuto per navigare");
+            tvHint.setVisibility(View.VISIBLE);
+            h.postDelayed(() -> tvHint.animate().alpha(0f).setDuration(600)
+                .withEndAction(() -> tvHint.setVisibility(View.GONE)).start(), 6000);
+            prefs.edit().putBoolean("map3d_hint_seen", true).apply();
+        }
+        loadWaypoints();
+        startGps();
+        Location last = GpsTrackingService.getLastLocation();
+        if (last != null) onLocationUpdate(last, 0);
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    /** Avvia il GPS (senza registrare la traccia) se il permesso c'e'. */
+    private void startGps() {
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
+        try {
+            Intent i = new Intent(this, GpsTrackingService.class);
+            i.setAction(GpsTrackingService.ACTION_START);
+            i.putExtra(AppConfig.PREF_TRACK_ON, false);
+            startForegroundService(i);
+        } catch (Exception ignored) {}
+    }
+
+    private void showFallbackNotice() {
+        String msg = MapEngines.disabledAfterCrash(this)
+            ? "Il 3D si era bloccato su questo telefono: uso la mappa 2D. Tocca per riprovare il 3D."
+            : "Questo telefono non supporta la mappa 3D OpenGL: uso la mappa 2D.";
+        if (tvHint != null) {
+            tvHint.setText(msg);
+            tvHint.setVisibility(View.VISIBLE);
+            tvHint.setOnClickListener(v -> {
+                MapEngines.setForce2d(this, false);
+                recreate();
+            });
+        }
+    }
+
+    private void cycleTheme() {
+        theme = (theme + 1) % THEME_NAMES.length;
+        engine.setTheme(theme);
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putInt("map3d_theme", theme).apply();
+        Toast.makeText(this, "Tema: " + THEME_NAMES[theme], Toast.LENGTH_SHORT).show();
+    }
+
+    private void toggleTilt() {
+        if (!engine.is3d()) { Toast.makeText(this, "3D non disponibile su questo telefono", Toast.LENGTH_SHORT).show(); return; }
+        engine.setTilt(engine.tilt() > 10 ? 0f : 60f, true);
+    }
+
+    private void toggleBuildings() {
+        buildings = !buildings;
+        engine.setBuildings(buildings);
+        if (btnBuildings != null) btnBuildings.setAlpha(buildings ? 1f : 0.45f);
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putBoolean("map3d_buildings", buildings).apply();
+        Toast.makeText(this, buildings ? "Edifici 3D attivi (zoom 16+)" : "Edifici 3D spenti", Toast.LENGTH_SHORT).show();
+    }
+
+    private void setFollow(boolean on) {
+        follow = on;
+        if (ivFollow != null) ivFollow.setAlpha(on ? 1f : 0.55f);
+        engine.setFocusOffset(on && engine.is3d() ? 0.35f : 0f);
+        if (on) {
+            Location l = GpsTrackingService.getLastLocation();
+            if (l == null) Toast.makeText(this, "In attesa del GPS...", Toast.LENGTH_SHORT).show();
+            else camera(l, true);
+        }
+    }
+
+    private void camera(Location l, boolean animate) {
+        float brg = l.hasBearing() && l.getSpeed() > 1.5f ? l.getBearing() : engine.bearing();
+        engine.moveTo(l.getLatitude(), l.getLongitude(), Math.max(engine.zoom(), 16), brg,
+            engine.is3d() ? Math.max(engine.tilt(), 50f) : 0f, animate);
+    }
+
+    @Override public void onLocationUpdate(@NonNull Location l, int sats) {
+        runOnUiThread(() -> {
+            if (engine == null || isFinishing()) return;
+            float brg = l.hasBearing() ? l.getBearing() : Float.NaN;
+            engine.setUserPosition(l.getLatitude(), l.getLongitude(), l.getAccuracy(), brg);
+            if (!centeredOnce) {
+                centeredOnce = true;
+                engine.moveTo(l.getLatitude(), l.getLongitude(), 16, Float.NaN, Float.NaN, false);
+            }
+            if (follow) camera(l, true);
+        });
+    }
+
+    private void onLongPress(double lat, double lon) {
+        String coords = String.format(Locale.US, "%.6f, %.6f", lat, lon);
+        new AlertDialog.Builder(this)
+            .setTitle("Punto sulla mappa")
+            .setMessage(coords)
+            .setPositiveButton("Naviga qui", (d, w) -> {
+                Intent i = new Intent(this, NavigationActivity.class);
+                i.putExtra(NavigationActivity.EXTRA_DEST_LAT, lat);
+                i.putExtra(NavigationActivity.EXTRA_DEST_LON, lon);
+                i.putExtra(NavigationActivity.EXTRA_DEST_NAME, "Punto " + coords);
+                i.putExtra(NavigationActivity.EXTRA_PROFILE, RoutingEngine.PROFILE_CAR);
+                startActivity(i);
+            })
+            .setNeutralButton("Salva waypoint", (d, w) -> io.execute(() -> {
+                GpsDatabase.getInstance(this).waypointDao().insert(
+                    WaypointEntity.create("Punto 3D " + coords, lat, lon, 0, 0f, "#00FF88"));
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Waypoint salvato", Toast.LENGTH_SHORT).show();
+                    loadWaypoints();
+                });
+            }))
+            .setNegativeButton("Chiudi", null)
+            .show();
+    }
+
+    private void loadWaypoints() {
+        io.execute(() -> {
+            List<double[]> pts = new ArrayList<>();
+            try {
+                for (WaypointEntity w : GpsDatabase.getInstance(this).waypointDao().getAllSync())
+                    pts.add(new double[]{w.latitude, w.longitude});
+            } catch (Exception ignored) {}
+            runOnUiThread(() -> { if (engine != null && !isFinishing()) engine.setPoints(pts); });
+        });
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        GpsTrackingService.setCallback(this);
+        engine.onResume();
+        h.post(hud);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        GpsTrackingService.setCallback(null);
+        engine.onPause();
+        h.removeCallbacks(hud);
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        io.shutdown();
+        if (engine != null) engine.onDestroy();
+    }
+}
+"""
+
+# ------------------------------------------------------------------
+#  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
+#  navigatore 3D e mappa 3D.
+# ------------------------------------------------------------------
+V5_ICONS = {
+    "ic_v5_close":      _v4_icon(["M19,6.41L17.59,5 12,10.59 6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 12,13.41 17.59,19 19,17.59 13.41,12z"]),
+    "ic_v5_volume":     _v4_icon(["M3,9v6h4l5,5V4L7,9H3zm13.5,3c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z"]),
+    "ic_v5_volume_off": _v4_icon(["M16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v2.21l2.45,2.45c0.03,-0.2 0.05,-0.41 0.05,-0.63zM19,12c0,0.94 -0.2,1.82 -0.54,2.64l1.51,1.51C20.63,14.91 21,13.5 21,12c0,-4.28 -2.99,-7.86 -7,-8.77v2.06c2.89,0.86 5,3.54 5,6.71zM4.27,3L3,4.27 7.73,9H3v6h4l5,5v-6.73l4.25,4.25c-0.67,0.52 -1.42,0.93 -2.25,1.18v2.06c1.38,-0.31 2.63,-0.95 3.69,-1.81L19.73,21 21,19.73l-9,-9L4.27,3zM12,4L9.91,6.09 12,8.18V4z"]),
+    "ic_v5_cube":       _v4_icon(["M21,16.5c0,0.38 -0.21,0.71 -0.53,0.88l-7.9,4.44c-0.16,0.12 -0.36,0.18 -0.57,0.18s-0.41,-0.06 -0.57,-0.18l-7.9,-4.44A0.991,0.991 0 0,1 3,16.5v-9c0,-0.38 0.21,-0.71 0.53,-0.88l7.9,-4.44c0.16,-0.12 0.36,-0.18 0.57,-0.18s0.41,0.06 0.57,0.18l7.9,4.44c0.32,0.17 0.53,0.5 0.53,0.88v9zM12,4.15L6.04,7.5 12,10.85l5.96,-3.35L12,4.15zM5,15.91l6,3.38v-6.71L5,9.21v6.7zM19,15.91v-6.7l-6,3.37v6.71l6,-3.38z"]),
+    "ic_v5_route":      _v4_icon(["M19,15.18V7c0,-2.21 -1.79,-4 -4,-4s-4,1.79 -4,4v10c0,1.1 -0.9,2 -2,2s-2,-0.9 -2,-2V8.82C8.16,8.4 9,7.3 9,6c0,-1.66 -1.34,-3 -3,-3S3,4.34 3,6c0,1.3 0.84,2.4 2,2.82V17c0,2.21 1.79,4 4,4s4,-1.79 4,-4V7c0,-1.1 0.9,-2 2,-2s2,0.9 2,2v8.18c-1.16,0.41 -2,1.51 -2,2.82c0,1.66 1.34,3 3,3s3,-1.34 3,-3c0,-1.3 -0.84,-2.4 -2,-2.82z"]),
+    "ic_v5_list":       _v4_icon(["M3,13h2v-2H3v2zm0,4h2v-2H3v2zm0,-8h2V7H3v2zm4,4h14v-2H7v2zm0,4h14v-2H7v2zM7,7v2h14V7H7z"]),
+    "ic_v5_gps":        _v4_icon(["M12,8c-2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4 -1.79,-4 -4,-4zm8.94,3A8.994,8.994 0 0,0 13,3.06V1h-2v2.06A8.994,8.994 0 0,0 3.06,11H1v2h2.06A8.994,8.994 0 0,0 11,20.94V23h2v-2.06A8.994,8.994 0 0,0 20.94,13H23v-2h-2.06zM12,19c-3.87,0 -7,-3.13 -7,-7s3.13,-7 7,-7 7,3.13 7,7 -3.13,7 -7,7z"]),
+    "ic_v5_car":        _v4_icon(["M18.92,6.01C18.72,5.42 18.16,5 17.5,5h-11c-0.66,0 -1.21,0.42 -1.42,1.01L3,12v8c0,0.55 0.45,1 1,1h1c0.55,0 1,-0.45 1,-1v-1h12v1c0,0.55 0.45,1 1,1h1c0.55,0 1,-0.45 1,-1v-8l-2.08,-5.99zM6.5,16c-0.83,0 -1.5,-0.67 -1.5,-1.5S5.67,13 6.5,13s1.5,0.67 1.5,1.5S7.33,16 6.5,16zm11,0c-0.83,0 -1.5,-0.67 -1.5,-1.5s0.67,-1.5 1.5,-1.5 1.5,0.67 1.5,1.5 -0.67,1.5 -1.5,1.5zM5,11l1.5,-4.5h11L19,11H5z"]),
+    "ic_v5_bike":       _v4_icon(["M15.5,5.5c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM5,12c-2.8,0 -5,2.2 -5,5s2.2,5 5,5 5,-2.2 5,-5 -2.2,-5 -5,-5zm0,8.5c-1.9,0 -3.5,-1.6 -3.5,-3.5s1.6,-3.5 3.5,-3.5 3.5,1.6 3.5,3.5 -1.6,3.5 -3.5,3.5zm5.8,-10l2.4,-2.4 0.8,0.8c1.3,1.3 3,2.1 5.1,2.1V9c-1.5,0 -2.7,-0.6 -3.6,-1.5l-1.9,-1.9c-0.5,-0.4 -1,-0.6 -1.6,-0.6s-1.1,0.2 -1.4,0.6L7.8,8.4c-0.4,0.4 -0.6,0.9 -0.6,1.4 0,0.6 0.2,1.1 0.6,1.4L11,14v5h2v-6.2l-2.2,-2.3zM19,12c-2.8,0 -5,2.2 -5,5s2.2,5 5,5 5,-2.2 5,-5 -2.2,-5 -5,-5zm0,8.5c-1.9,0 -3.5,-1.6 -3.5,-3.5s1.6,-3.5 3.5,-3.5 3.5,1.6 3.5,3.5 -1.6,3.5 -3.5,3.5z"]),
+    "ic_v5_walk":       _v4_icon(["M13.5,5.5c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM9.8,8.9L7,23h2.1l1.8,-8 2.1,2v6h2v-7.5l-2.1,-2 0.6,-3C14.8,12 16.8,13 19,13v-2c-1.9,0 -3.5,-1 -4.3,-2.4l-1,-1.6c-0.4,-0.6 -1,-1 -1.7,-1 -0.3,0 -0.5,0.1 -0.8,0.1L6,8.3V13h2V9.6l1.8,-0.7"]),
+    "ic_v5_layers":     _v4_icon(["M11.99,18.54l-7.37,-5.73L3,14.07l9,7 9,-7 -1.63,-1.27 -7.38,5.74zM12,16l7.36,-5.73L21,9l-9,-7 -9,7 1.63,1.27L12,16z"]),
+    "ic_v5_building":   _v4_icon(["M15,11V5l-3,-3 -3,3v2H3v14h18V11h-6zm-8,8H5v-2h2v2zm0,-4H5v-2h2v2zm0,-4H5V9h2v2zm6,8h-2v-2h2v2zm0,-4h-2v-2h2v2zm0,-4h-2V9h2v2zm0,-4h-2V5h2v2zm6,12h-2v-2h2v2zm0,-4h-2v-2h2v2z"]),
+    "ic_v5_plus":       _v4_icon(["M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"]),
+    "ic_v5_minus":      _v4_icon(["M19,13H5v-2h14v2z"]),
+    "ic_v5_search":     _v4_icon(["M15.5,14h-0.79l-0.28,-0.27C15.41,12.59 16,11.11 16,9.5 16,5.91 13.09,3 9.5,3S3,5.91 3,9.5 5.91,16 9.5,16c1.61,0 3.09,-0.59 4.23,-1.57l0.27,0.28v0.79l5,4.99L20.49,19l-4.99,-5zm-6,0C7.01,14 5,11.99 5,9.5S7.01,5 9.5,5 14,7.01 14,9.5 11.99,14 9.5,14z"]),
+    "ic_v5_send":       _v4_icon(["M2.01,21L23,12 2.01,3 2,10l15,2 -15,2z"]),
+    "ic_v5_bluetooth":  _v4_icon(["M17.71,7.71L12,2h-1v7.59L6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 11,14.41V22h1l5.71,-5.71 -4.3,-4.29 4.3,-4.29zM13,5.83l1.88,1.88L13,9.59V5.83zm1.88,10.46L13,18.17v-3.76l1.88,1.88z"]),
+    "ic_v5_sun":        _v4_icon(["M6.76,4.84l-1.8,-1.79 -1.41,1.41 1.79,1.79 1.42,-1.41zM4,10.5H1v2h3v-2zm9,-9.95h-2V3.5h2V0.55zm7.45,3.91l-1.41,-1.41 -1.79,1.79 1.41,1.41 1.79,-1.79zm-3.21,13.7l1.79,1.8 1.41,-1.41 -1.8,-1.79 -1.4,1.4zM20,10.5v2h3v-2h-3zm-8,-5c-3.31,0 -6,2.69 -6,6s2.69,6 6,6 6,-2.69 6,-6 -2.69,-6 -6,-6zm-1,16.95h2V19.5h-2v2.95zm-7.45,-3.91l1.41,1.41 1.79,-1.8 -1.41,-1.41 -1.79,1.8z"]),
+    "ic_v5_map2d":      _v4_icon(["M20.5,3l-0.16,0.03L15,5.1 9,3 3.36,4.9c-0.21,0.07 -0.36,0.25 -0.36,0.48V20.5c0,0.28 0.22,0.5 0.5,0.5l0.16,-0.03L9,18.9l6,2.1 5.64,-1.9c0.21,-0.07 0.36,-0.25 0.36,-0.48V3.5c0,-0.28 -0.22,-0.5 -0.5,-0.5zM15,19l-6,-2.11V5l6,2.11V19z"]),
+}
+
+# manovre aggiuntive (arrivo, tieni sinistra/destra, inversione)
+MANEUVER_ICONS.update({
+    "ic_turn_finish":     _arrow("M14.4,6L14,4H5v17h2v-7h5.6l0.4,2h7V6z"),
+    "ic_turn_keep_left":  _arrow("M9,3L4,8h3.5v13h3V8H14L9,3z M16,10h2v11h-2z"),
+    "ic_turn_keep_right": _arrow("M15,3l5,5h-3.5v13h-3V8H10L15,3z M6,10h2v11H6z"),
+    "ic_turn_uturn":      _arrow("M18,13c0,3.31 -2.69,6 -6,6s-6,-2.69 -6,-6V7H3l4,-5 4,5H8v6c0,2.21 1.79,4 4,4s4,-1.79 4,-4V3h2v10z"),
+})
+
+def _v5_shape(body, shape="rectangle"):
+    return _XML_HEAD + '<shape ' + _NS + ' android:shape="' + shape + '">\n' + body + '</shape>'
+
+V5_DRAWABLES = dict(V5_ICONS)
+V5_DRAWABLES.update({
+    # scheda della manovra: verde-acqua profondo con bordo luminoso
+    "bg_nav_card":
+        _XML_HEAD +
+        '<layer-list ' + _NS + '>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="315"\n'
+        '                android:startColor="#F2007A5E" android:endColor="#F2003A4D"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item android:bottom="44dp">\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="270"\n'
+        '                android:startColor="#22FFFFFF" android:endColor="#00FFFFFF"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#00000000"/>\n'
+        '            <stroke android:width="1.5dp" android:color="#8800FF88"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</layer-list>',
+    "bg_then_chip": _v5_shape('    <solid android:color="#E6003A4D"/>\n'
+                              '    <stroke android:width="1dp" android:color="#5500FF88"/>\n'
+                              '    <corners android:radius="16dp"/>\n'),
+    "bg_disc_glass": _v5_shape('    <solid android:color="#26FFFFFF"/>\n'
+                               '    <stroke android:width="1dp" android:color="#55FFFFFF"/>\n', "oval"),
+    # pulsanti tondi in vetro (con onda al tocco)
+    "bg_fab_glass":
+        _XML_HEAD +
+        '<ripple ' + _NS + ' android:color="#5500E5FF">\n'
+        '    <item>\n'
+        '        <shape android:shape="oval">\n'
+        '            <solid android:color="#E6101A2B"/>\n'
+        '            <stroke android:width="1dp" android:color="#5500E5FF"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</ripple>',
+    "bg_fab_red":
+        _XML_HEAD +
+        '<ripple ' + _NS + ' android:color="#55FFFFFF">\n'
+        '    <item>\n'
+        '        <shape android:shape="oval">\n'
+        '            <gradient android:type="linear" android:angle="270"\n'
+        '                android:startColor="#FF2D55" android:endColor="#C2002A"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</ripple>',
+    "bg_speed_bubble": _v5_shape('    <solid android:color="#F20B1424"/>\n'
+                                 '    <stroke android:width="3dp" android:color="#AA00E5FF"/>\n', "oval"),
+    "bg_scrim_top": _v5_shape('    <gradient android:type="linear" android:angle="270"\n'
+                              '        android:startColor="#CC050A14" android:endColor="#00050A14"/>\n'),
+    "bg_scrim_bottom": _v5_shape('    <gradient android:type="linear" android:angle="90"\n'
+                                 '        android:startColor="#E6050A14" android:endColor="#00050A14"/>\n'),
+    "bg_sheet_v5":
+        _XML_HEAD +
+        '<layer-list ' + _NS + '>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#F70B1424"/>\n'
+        '            <corners android:topLeftRadius="28dp" android:topRightRadius="28dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item android:bottom="200dp">\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#00000000"/>\n'
+        '            <stroke android:width="1dp" android:color="#4400E5FF"/>\n'
+        '            <corners android:topLeftRadius="28dp" android:topRightRadius="28dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</layer-list>',
+    "bg_progress_neon":
+        _XML_HEAD +
+        '<layer-list ' + _NS + '>\n'
+        '    <item android:id="@android:id/background">\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#2200E5FF"/>\n'
+        '            <corners android:radius="3dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item android:id="@android:id/progress">\n'
+        '        <clip>\n'
+        '            <shape android:shape="rectangle">\n'
+        '                <gradient android:type="linear" android:angle="0"\n'
+        '                    android:startColor="#00FF88" android:endColor="#00E5FF"/>\n'
+        '                <corners android:radius="3dp"/>\n'
+        '            </shape>\n'
+        '        </clip>\n'
+        '    </item>\n'
+        '</layer-list>',
+})
+
+def _v5_fab(vid, icon, size="50dp", tint="#E8F4FD", bg="bg_fab_glass", margin_bottom="10dp", desc=""):
+    return ('<ImageButton android:id="@+id/' + vid + '"\n'
+            '    android:layout_width="' + size + '" android:layout_height="' + size + '"\n'
+            '    android:src="@drawable/' + icon + '" android:tint="' + tint + '" android:padding="12dp"\n'
+            '    android:scaleType="fitCenter" android:background="@drawable/' + bg + '"\n'
+            '    android:elevation="6dp" android:layout_marginBottom="' + margin_bottom + '"\n'
+            '    android:contentDescription="' + (desc or vid) + '"/>\n')
+
+def _v5_profile_btn(vid, icon, desc):
+    return ('<ImageButton android:id="@+id/' + vid + '"\n'
+            '    android:layout_width="44dp" android:layout_height="40dp" android:padding="8dp"\n'
+            '    android:src="@drawable/' + icon + '" android:tint="#E8F4FD" android:scaleType="fitCenter"\n'
+            '    android:background="@drawable/bg_chip_off" android:layout_marginStart="6dp"\n'
+            '    android:contentDescription="' + desc + '"/>\n')
+
+# ---------------------------------------------------------------- NAVIGATORE v5
+LAYOUT_NAVIGATION = (_XML_HEAD +
+    '<FrameLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="#050A14">\n'
+    '    <FrameLayout android:id="@+id/nav_map_container"\n'
+    '        android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '    <View android:layout_width="match_parent" android:layout_height="230dp"\n'
+    '        android:layout_gravity="top" android:background="@drawable/bg_scrim_top"/>\n'
+    '    <View android:layout_width="match_parent" android:layout_height="240dp"\n'
+    '        android:layout_gravity="bottom" android:background="@drawable/bg_scrim_bottom"/>\n'
+    # scheda manovra
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="top" android:orientation="vertical"\n'
+    '        android:layout_marginStart="12dp" android:layout_marginEnd="12dp" android:layout_marginTop="14dp">\n'
+    '        <LinearLayout android:id="@+id/panel_nav_top" android:layout_width="match_parent"\n'
+    '            android:layout_height="wrap_content" android:orientation="horizontal"\n'
+    '            android:gravity="center_vertical" android:padding="16dp"\n'
+    '            android:background="@drawable/bg_nav_card" android:elevation="12dp">\n'
+    '            <ImageView android:id="@+id/iv_nav_maneuver" android:layout_width="66dp"\n'
+    '                android:layout_height="66dp" android:padding="8dp" android:tint="#FFFFFF"\n'
+    '                android:src="@drawable/ic_turn_straight" android:background="@drawable/bg_disc_glass"\n'
+    '                android:contentDescription="Manovra"/>\n'
+    '            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+    '                android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">\n'
+    '                <TextView android:id="@+id/tv_nav_distance_next" android:layout_width="wrap_content"\n'
+    '                    android:layout_height="wrap_content" android:text="--" android:textColor="#FFFFFF"\n'
+    '                    android:textSize="34sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+    '                    android:shadowColor="#8800FF88" android:shadowRadius="14"/>\n'
+    '                <TextView android:id="@+id/tv_nav_instruction" android:layout_width="match_parent"\n'
+    '                    android:layout_height="wrap_content" android:text="Calcolo del percorso..."\n'
+    '                    android:textColor="#D8FFF0" android:textSize="16sp" android:maxLines="2"\n'
+    '                    android:ellipsize="end"/>\n'
+    '            </LinearLayout>\n'
+    '        </LinearLayout>\n'
+    '        <LinearLayout android:id="@+id/panel_nav_then" android:layout_width="wrap_content"\n'
+    '            android:layout_height="wrap_content" android:orientation="horizontal"\n'
+    '            android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="14dp"\n'
+    '            android:paddingTop="8dp" android:paddingBottom="8dp" android:layout_marginTop="6dp"\n'
+    '            android:layout_marginStart="10dp" android:background="@drawable/bg_then_chip"\n'
+    '            android:visibility="gone">\n'
+    '            <ImageView android:id="@+id/iv_nav_then" android:layout_width="22dp"\n'
+    '                android:layout_height="22dp" android:tint="#FFFFFF" android:contentDescription="Poi"/>\n'
+    '            <TextView android:id="@+id/tv_nav_then" android:layout_width="wrap_content"\n'
+    '                android:layout_height="wrap_content" android:textColor="#FFFFFF" android:textSize="13sp"\n'
+    '                android:textStyle="bold" android:layout_marginStart="8dp"/>\n'
+    '        </LinearLayout>\n'
+    '        <TextView android:id="@+id/tv_nav_weather" android:layout_width="wrap_content"\n'
+    '            android:layout_height="wrap_content" android:layout_marginTop="6dp" android:layout_marginStart="10dp"\n'
+    '            android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="6dp"\n'
+    '            android:paddingBottom="6dp" android:textColor="#E8F4FD" android:textSize="12sp"\n'
+    '            android:background="@drawable/bg_chip_off" android:visibility="gone"/>\n'
+    '    </LinearLayout>\n'
+    # pulsanti laterali
+    '    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="end|center_vertical" android:orientation="vertical"\n'
+    '        android:gravity="center_horizontal" android:layout_marginEnd="12dp">\n'
+    + _v5_fab("btn_nav_voice", "ic_v5_volume", desc="Voce")
+    + _v5_fab("btn_nav_3d", "ic_v5_cube", margin_bottom="0dp", desc="Vista 3D") +
+    '        <TextView android:id="@+id/tv_nav_engine" android:layout_width="wrap_content"\n'
+    '            android:layout_height="wrap_content" android:text="3D" android:textColor="#00E5FF"\n'
+    '            android:textSize="10sp" android:textStyle="bold" android:layout_marginBottom="8dp"/>\n'
+    + _v5_fab("btn_nav_overview", "ic_v5_route", desc="Panoramica")
+    + _v5_fab("btn_nav_steps", "ic_v5_list", desc="Elenco manovre") +
+    '    </LinearLayout>\n'
+    # tachimetro + riprendi
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="bottom" android:orientation="horizontal" android:gravity="bottom"\n'
+    '        android:layout_marginBottom="176dp" android:layout_marginStart="14dp" android:layout_marginEnd="14dp">\n'
+    '        <LinearLayout android:layout_width="76dp" android:layout_height="76dp"\n'
+    '            android:orientation="vertical" android:gravity="center"\n'
+    '            android:background="@drawable/bg_speed_bubble" android:elevation="8dp">\n'
+    '            <TextView android:id="@+id/tv_nav_speed" android:layout_width="wrap_content"\n'
+    '                android:layout_height="wrap_content" android:text="0" android:textColor="#FFFFFF"\n'
+    '                android:textSize="26sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="km/h" android:textColor="#8FB3D0" android:textSize="10sp"/>\n'
+    '        </LinearLayout>\n'
+    '        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>\n'
+    '        <LinearLayout android:id="@+id/btn_nav_recenter" android:layout_width="wrap_content"\n'
+    '            android:layout_height="48dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
+    '            android:paddingStart="14dp" android:paddingEnd="18dp" android:background="@drawable/bg_tile_cyan"\n'
+    '            android:clickable="true" android:focusable="true" android:elevation="8dp" android:visibility="gone">\n'
+    '            <ImageView android:layout_width="22dp" android:layout_height="22dp"\n'
+    '                android:src="@drawable/ic_v5_gps" android:tint="#00E5FF" android:contentDescription="Riprendi"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="RIPRENDI" android:textColor="#E8F4FD" android:textSize="13sp"\n'
+    '                android:textStyle="bold" android:layout_marginStart="8dp"/>\n'
+    '        </LinearLayout>\n'
+    '    </LinearLayout>\n'
+    # pannello in basso
+    '    <LinearLayout android:id="@+id/panel_nav_bottom" android:layout_width="match_parent"\n'
+    '        android:layout_height="wrap_content" android:layout_gravity="bottom"\n'
+    '        android:orientation="vertical" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+    '        android:paddingTop="14dp" android:paddingBottom="18dp" android:background="@drawable/bg_sheet_v5"\n'
+    '        android:elevation="16dp">\n'
+    '        <ProgressBar android:id="@+id/pb_nav_progress" style="?android:attr/progressBarStyleHorizontal"\n'
+    '            android:layout_width="match_parent" android:layout_height="6dp" android:max="1000"\n'
+    '            android:progress="0" android:progressDrawable="@drawable/bg_progress_neon"/>\n'
+    '        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="12dp">\n'
+    + _v5_fab("btn_nav_close", "ic_v5_close", "48dp", "#FFFFFF", "bg_fab_red", "0dp", "Termina") +
+    '            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+    '                android:layout_weight="1" android:orientation="vertical" android:gravity="center_horizontal">\n'
+    '                <TextView android:id="@+id/tv_nav_eta" android:layout_width="wrap_content"\n'
+    '                    android:layout_height="wrap_content" android:text="--" android:textColor="#00FF88"\n'
+    '                    android:textSize="28sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"/>\n'
+    '                <TextView android:id="@+id/tv_nav_total_dist" android:layout_width="wrap_content"\n'
+    '                    android:layout_height="wrap_content" android:textColor="#8FB3D0" android:textSize="13sp"/>\n'
+    '            </LinearLayout>\n'
+    '            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:orientation="horizontal">\n'
+    + _v5_profile_btn("btn_nav_profile_car", "ic_v5_car", "Auto")
+    + _v5_profile_btn("btn_nav_profile_bike", "ic_v5_bike", "Bici")
+    + _v5_profile_btn("btn_nav_profile_foot", "ic_v5_walk", "A piedi") +
+    '            </LinearLayout>\n'
+    '        </LinearLayout>\n'
+    '        <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_nav_steps"\n'
+    '            android:layout_width="match_parent" android:layout_height="240dp"\n'
+    '            android:layout_marginTop="12dp" android:visibility="gone"/>\n'
+    '    </LinearLayout>\n'
+    # costruzione rete
+    '    <LinearLayout android:id="@+id/overlay_nav_build" android:layout_width="match_parent"\n'
+    '        android:layout_height="match_parent" android:orientation="vertical" android:gravity="center"\n'
+    '        android:padding="32dp" android:background="#E6050A14" android:clickable="true"\n'
+    '        android:focusable="true" android:visibility="gone">\n'
+    '        <ProgressBar android:id="@+id/pb_nav_build" android:layout_width="64dp"\n'
+    '            android:layout_height="64dp" android:indeterminateTint="#00E5FF"/>\n'
+    '        <TextView android:id="@+id/tv_nav_build_status" android:layout_width="wrap_content"\n'
+    '            android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center"\n'
+    '            android:textColor="#E8F4FD" android:textSize="15sp" android:lineSpacingMultiplier="1.3"/>\n'
+    '    </LinearLayout>\n'
+    '</FrameLayout>')
+
+LAYOUT_ITEM_NAV_STEP = (_XML_HEAD +
+    '<LinearLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '    android:orientation="horizontal" android:paddingTop="10dp" android:paddingBottom="10dp"\n'
+    '    android:paddingStart="6dp" android:paddingEnd="6dp" android:gravity="center_vertical">\n'
+    '    <ImageView android:id="@+id/iv_step_icon" android:layout_width="30dp" android:layout_height="30dp"\n'
+    '        android:padding="4dp" android:tint="#00E5FF" android:background="@drawable/bg_disc_cyan"\n'
+    '        android:contentDescription="Manovra"/>\n'
+    '    <TextView android:id="@+id/tv_step_text"\n'
+    '        android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+    '        android:layout_marginStart="12dp" android:textColor="#E8F4FD" android:textSize="14sp"/>\n'
+    '    <TextView android:id="@+id/tv_step_dist"\n'
+    '        android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:textColor="#00E5FF" android:textSize="13sp" android:textStyle="bold"/>\n'
+    '</LinearLayout>')
+
+# ---------------------------------------------------------------- MAPPA 3D
+LAYOUT_MAP3D = (_XML_HEAD +
+    '<FrameLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="#050A14">\n'
+    '    <FrameLayout android:id="@+id/map3d_container"\n'
+    '        android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '    <View android:layout_width="match_parent" android:layout_height="130dp"\n'
+    '        android:layout_gravity="top" android:background="@drawable/bg_scrim_top"/>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="top" android:orientation="horizontal" android:gravity="center_vertical"\n'
+    '        android:padding="12dp">\n'
+    '        <ImageView android:id="@+id/btn_map3d_back" android:layout_width="46dp" android:layout_height="46dp"\n'
+    '            android:padding="11dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+    '            android:background="@drawable/bg_fab_glass" android:clickable="true" android:focusable="true"\n'
+    '            android:contentDescription="Indietro"/>\n'
+    '        <LinearLayout android:id="@+id/btn_map3d_search" android:layout_width="0dp"\n'
+    '            android:layout_height="46dp" android:layout_weight="1" android:orientation="horizontal"\n'
+    '            android:gravity="center_vertical" android:paddingStart="14dp" android:layout_marginStart="10dp"\n'
+    '            android:layout_marginEnd="10dp" android:background="@drawable/bg_searchbar"\n'
+    '            android:clickable="true" android:focusable="true" android:elevation="6dp">\n'
+    '            <ImageView android:layout_width="20dp" android:layout_height="20dp"\n'
+    '                android:src="@drawable/ic_v5_search" android:tint="#00E5FF" android:contentDescription="Cerca"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:layout_marginStart="10dp" android:text="Cerca via, civico, citta..."\n'
+    '                android:textColor="#8FB3D0" android:textSize="14sp"/>\n'
+    '        </LinearLayout>\n'
+    '        <ImageView android:id="@+id/btn_map3d_2d" android:layout_width="46dp" android:layout_height="46dp"\n'
+    '            android:padding="12dp" android:src="@drawable/ic_v5_map2d" android:tint="#E8F4FD"\n'
+    '            android:background="@drawable/bg_fab_glass" android:clickable="true" android:focusable="true"\n'
+    '            android:contentDescription="Mappa 2D con strumenti"/>\n'
+    '    </LinearLayout>\n'
+    '    <TextView android:id="@+id/tv_map3d_hint" android:layout_width="wrap_content"\n'
+    '        android:layout_height="wrap_content" android:layout_gravity="top|center_horizontal"\n'
+    '        android:layout_marginTop="76dp" android:layout_marginStart="24dp" android:layout_marginEnd="24dp"\n'
+    '        android:padding="12dp" android:gravity="center" android:textColor="#E8F4FD" android:textSize="13sp"\n'
+    '        android:background="@drawable/bg_hint" android:visibility="gone"/>\n'
+    # colonna destra
+    '    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="top|end" android:orientation="vertical" android:layout_marginTop="140dp"\n'
+    '        android:layout_marginEnd="12dp">\n'
+    '        <FrameLayout android:id="@+id/btn_map3d_compass" android:layout_width="50dp"\n'
+    '            android:layout_height="50dp" android:background="@drawable/bg_fab_glass" android:clickable="true"\n'
+    '            android:focusable="true" android:elevation="6dp" android:layout_marginBottom="10dp">\n'
+    '            <ImageView android:id="@+id/iv_map3d_compass" android:layout_width="34dp"\n'
+    '                android:layout_height="34dp" android:layout_gravity="center"\n'
+    '                android:src="@drawable/ic_compass_needle" android:contentDescription="Bussola: tocca per il nord"/>\n'
+    '        </FrameLayout>\n'
+    + _v5_fab("btn_map3d_tilt", "ic_v5_cube", desc="Inclina 3D")
+    + _v5_fab("btn_map3d_buildings", "ic_v5_building", desc="Edifici 3D")
+    + _v5_fab("btn_map3d_theme", "ic_v5_layers", desc="Tema mappa") +
+    '    </LinearLayout>\n'
+    # zoom e posizione
+    '    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="bottom|end" android:orientation="vertical" android:gravity="center_horizontal"\n'
+    '        android:layout_marginEnd="12dp" android:layout_marginBottom="22dp">\n'
+    + _v5_fab("btn_map3d_zoom_in", "ic_v5_plus", desc="Zoom avanti")
+    + _v5_fab("btn_map3d_zoom_out", "ic_v5_minus", desc="Zoom indietro") +
+    '        <FrameLayout android:id="@+id/btn_map3d_follow" android:layout_width="62dp"\n'
+    '            android:layout_height="62dp" android:background="@drawable/bg_tile_cyan" android:clickable="true"\n'
+    '            android:focusable="true" android:elevation="8dp">\n'
+    '            <ImageView android:id="@+id/iv_map3d_follow" android:layout_width="30dp"\n'
+    '                android:layout_height="30dp" android:layout_gravity="center" android:alpha="0.55"\n'
+    '                android:src="@drawable/ic_v5_gps" android:tint="#00E5FF"\n'
+    '                android:contentDescription="Seguimi"/>\n'
+    '        </FrameLayout>\n'
+    '    </LinearLayout>\n'
+    '    <TextView android:id="@+id/tv_map3d_info" android:layout_width="wrap_content"\n'
+    '        android:layout_height="wrap_content" android:layout_gravity="bottom|start"\n'
+    '        android:layout_marginStart="12dp" android:layout_marginBottom="26dp" android:paddingStart="12dp"\n'
+    '        android:paddingEnd="12dp" android:paddingTop="6dp" android:paddingBottom="6dp"\n'
+    '        android:textColor="#00E5FF" android:textSize="11sp" android:textStyle="bold"\n'
+    '        android:background="@drawable/bg_chip_off"/>\n'
+    '</FrameLayout>')
+
+# <<< V5 NAVIGATORE 3D
+
 # ============================================================
 #  FILE MAP + FUNZIONI BUILDER (multipiattaforma v3.0)
 # ============================================================
@@ -14109,6 +15673,14 @@ def build_java_file_map():
         f"{PKG_UI}/AcousticDetectorActivity.java": ACOUSTIC_DETECTOR_ACTIVITY,
         f"{PKG_UI}/SkySpotActivity.java":        SKY_SPOT_ACTIVITY,
         f"{PKG_UI}/SightingCheckActivity.java":  SIGHTING_CHECK_ACTIVITY,
+        # NUOVI v5.0 — mappa 3D, navigazione, sole
+        f"{PKG_ROUTING}/NavCore.java":           NAV_CORE,
+        f"{PKG_UTIL}/SunCalc.java":              SUN_CALC,
+        f"{PKG_MAP}/MapEngine.java":             MAP_ENGINE,
+        f"{PKG_MAP}/VtmEngine.java":             VTM_ENGINE,
+        f"{PKG_MAP}/MapsforgeEngine.java":       MAPSFORGE_ENGINE,
+        f"{PKG_MAP}/MapEngines.java":            MAP_ENGINES,
+        f"{PKG_UI}/Map3DActivity.java":          MAP3D_ACTIVITY,
     }
 
 def build_layout_map():
@@ -14169,6 +15741,8 @@ def build_layout_map():
         "activity_skyspot.xml":        LAYOUT_SKYSPOT,
         "activity_sighting_check.xml": LAYOUT_SIGHTING_CHECK,
         "item_spinner_dark.xml":       LAYOUT_ITEM_SPINNER_DARK,
+        # NUOVI v5.0
+        "activity_map3d.xml":          LAYOUT_MAP3D,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -14318,6 +15892,9 @@ def create_project(java_path):
         write_file(res_dir / "drawable" / (d_name + ".xml"), d_xml)
     for a_name, a_xml in V4_ANIMS.items():
         write_file(res_dir / "anim" / (a_name + ".xml"), a_xml)
+    # v5.0: icone e grafica di navigatore, mappa 3D, chat e strumenti
+    for d_name, d_xml in V5_DRAWABLES.items():
+        write_file(res_dir / "drawable" / (d_name + ".xml"), d_xml)
     for density in ("mdpi","hdpi","xhdpi","xxhdpi","xxxhdpi"):
         mip = res_dir / f"mipmap-{density}"
         mip.mkdir(parents=True, exist_ok=True)

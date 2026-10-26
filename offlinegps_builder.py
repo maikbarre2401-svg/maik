@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v4.0 — Builder COMPLETO con NAVIGAZIONE OFFLINE (routing GraphHopper)
-                      + SENTINELLA CIELO (rilevamento passivo droni)
+OfflineGPS 3D v5.0 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+                      + STRUMENTI OUTDOOR RIFATTI + CHAT MESH + SENTINELLA CIELO
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -49,7 +49,7 @@ NOVITA' v3.1 — RICERCA VIE E CIVICI COMPLETA (fix "me ne da' poche"):
  * Indice V2: quelli vecchi vengono ricostruiti automaticamente al primo
    avvio della ricerca (nessuna azione manuale necessaria).
 
-NOVITA' v4.0 (questa versione) — SENTINELLA CIELO + GRAFICA NUOVA:
+NOVITA' v4.0 — SENTINELLA CIELO + GRAFICA NUOVA:
  * SENTINELLA CIELO: rilevamento PASSIVO dei droni vicini.
      - Scanner REMOTE ID: riceve via Bluetooth (anche long range BT5) e
        Wi-Fi Beacon i messaggi che i droni UE trasmettono per legge
@@ -77,6 +77,41 @@ NOVITA' v4.0 (questa versione) — SENTINELLA CIELO + GRAFICA NUOVA:
    entrano in sequenza in TUTTA l'app; tema scuro coerente (anche i
    dialoghi); percorso sulla mappa con alone luminoso.
  * Rimosse le librerie VTM inutilizzate (APK piu' leggero, niente jitpack).
+
+NOVITA' v5.0 (questa versione) — NAVIGATORE 3D + MAPPA 3D VERA + STRUMENTI RIFATTI:
+ * NAVIGATORE CHE NAVIGA DAVVERO: segue l'avanzamento sul percorso (posizione
+   agganciata alla strada, distanza alla manovra, tempo e ora di arrivo
+   reali), voce a 3 livelli con "poi...", ricalcolo fuori percorso, profili
+   AUTO / BICI / A PIEDI, camera 3D inclinata che ruota con la marcia e
+   zooma con la velocita', tema giorno/notte dal sole. Continua a guidare
+   anche a schermo spento.
+ * MAPPA 3D VERA (OpenGL, VTM 0.25 da Maven Central): edifici in 3D,
+   inclina e ruota con due dita, 4 stili, bussola, tocco lungo per
+   "naviga qui" o salvare un punto. Se il 3D non parte torna da sola al 2D.
+ * CHAT MESH OFFLINE: i messaggi passano di telefono in telefono via
+   Bluetooth (fino a 7 vicini, piu' salti), conferme di consegna e lettura,
+   invio posizione e SOS (ricorda che non sostituisce il 112).
+ * SERVIZIO GPS NUOVO: acceso solo quando una schermata lo usa, si spegne
+   da solo (batteria); registrazione traccia anche a schermo spento;
+   distanza e dislivello filtrati dal rumore del GPS.
+ * STRUMENTI analizzati e rifatti:
+     - SOLE & TRAMONTO: calcolo astronomico al minuto, grafico del sole,
+       crepuscoli, ora d'oro, qualunque data.
+     - FUOCO & BIVACCO (nuovo): legna e buio, controlli di sicurezza, tipi
+       di fuoco, spegnimento, tenda verso l'alba, Luna stanotte, divieti.
+     - NORD DAL SOLE con l'azimut vero (di notte Luna o Stella Polare).
+     - COORDINATE: UTM e MGRS veri, Plus Code, gradi-primi.
+     - EMERGENZA: CHIAMA 112, SMS a un contatto, frase per l'operatore.
+     - ROTTA DI RITORNO e VAI A COORDINATE con bussola-guida; incolla
+       coordinate in qualsiasi formato (anche link e Plus Code).
+     - REGISTRA TRACCIA: profilo altimetrico, storico, GPX valido.
+     - QR POSIZIONE vero (prima era una matrice casuale illeggibile).
+     - FISCHIETTO con segnale alpino, SEGNALI LUMINOSI con SOS e flash,
+       TIMER, IDRATAZIONE giornaliera, ALTIMETRO, TACHIMETRO, ALLARME
+       DISTANZA, STRUMENTI: corretti cicli doppi e calcoli sbagliati.
+ * GRAFICA: menu Sopravvivenza e Strumenti a riquadri con icone, schermate
+   degli strumenti nuove (vetro, neon, riquadri statistici).
+ * Compilazione con encoding UTF-8 (accenti corretti anche su Windows).
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -122,8 +157,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 47
-        versionName "4.0.0"
+        versionCode 48
+        versionName "5.0.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -220,6 +255,8 @@ dependencies {
     implementation "org.mapsforge:vtm-android:${vtm_version}:natives-arm64-v8a"
     implementation "org.mapsforge:vtm-android:${vtm_version}:natives-x86"
     implementation "org.mapsforge:vtm-android:${vtm_version}:natives-x86_64"
+    // v5.0: codici QR veri (solo la libreria di base, nessun permesso)
+    implementation "com.google.zxing:core:3.5.3"
     implementation 'com.caverock:androidsvg:1.4'
 
     def room_version = "2.6.1"
@@ -414,8 +451,17 @@ MANIFEST = """\
         <activity android:name=".ui.Map3DActivity" android:exported="false"
             android:screenOrientation="portrait" android:configChanges="orientation|screenSize"
             android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
+        <!-- v5.0 STRUMENTI -->
+        <activity android:name=".ui.FireCampActivity" android:exported="false" android:screenOrientation="portrait"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
             android:foregroundServiceType="location"/>
+        <!-- v5.0: condivisione di tracce GPX e immagini QR -->
+        <provider android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files" android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
     </application>
 </manifest>
 """
@@ -467,6 +513,8 @@ public class OfflineGpsApp extends Application {
 
         // v4.0: effetto molla sui pulsanti + ingresso a cascata in tutte le schermate
         com.offlinegps.map.ui.UiFx.install(this);
+        // v5.0: il GPS si accende solo mentre una schermata che lo usa e' visibile
+        com.offlinegps.map.gps.GpsTrackingService.installAuto(this);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
@@ -610,6 +658,10 @@ public interface TrackDao {
     @Query("SELECT COUNT(*) FROM track_points WHERE session_id = :sid")
     int countSession(long sid);
     @Query("DELETE FROM track_points WHERE session_id = :sid") void deleteSession(long sid);
+    /** v5.0: elenco delle tracce registrate, dalla piu' recente. */
+    @Query("SELECT session_id, MIN(timestamp) AS first_ts, MAX(timestamp) AS last_ts, COUNT(*) AS n "
+         + "FROM track_points GROUP BY session_id ORDER BY session_id DESC LIMIT 60")
+    List<TrackSessionInfo> getSessions();
 }
 """
 
@@ -728,29 +780,66 @@ import com.offlinegps.map.OfflineGpsApp;
 import com.offlinegps.map.R;
 import com.offlinegps.map.data.*;
 import com.offlinegps.map.ui.MapActivity;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 
+/**
+ * Servizio GPS condiviso da tutta l'app (v5: gestione corretta del ciclo di vita).
+ *  - Le schermate lo PRENOTANO (acquire) e lo RILASCIANO (release): quando
+ *    nessuno lo usa da 30 s si spegne da solo. Prima restava acceso per sempre
+ *    in alta precisione dopo il primo uso della mappa (batteria).
+ *  - Avviarlo di nuovo non azzera piu' la sessione e non registra un secondo
+ *    ascoltatore GPS (prima: posizioni doppie e distanza gonfiata).
+ *  - Registrazione traccia nel database anche a schermo spento, con
+ *    statistiche robuste al rumore (TrackStats).
+ *  - Piu' ascoltatori contemporanei (addListener): il navigatore continua a
+ *    guidare a voce anche quando sopra c'e' un'altra schermata o lo schermo
+ *    e' spento.
+ *  - Le schermate che usano la posizione (elenco GPS_SCREENS) lo prenotano
+ *    da sole mentre sono visibili: nessuna deve ricordarsi di farlo.
+ */
 public class GpsTrackingService extends Service {
     private static final String TAG = "GpsService";
     public static final String ACTION_START = "GPS_START";
     public static final String ACTION_STOP  = "GPS_STOP";
+    private static final long IDLE_STOP_MS = 30_000;
 
     private static final AtomicReference<Location> sLastLocation = new AtomicReference<>();
     private static final AtomicBoolean sRunning = new AtomicBoolean(false);
     private static final AtomicLong sSessionId = new AtomicLong(0L);
     private static volatile LocationCallback sCallback;
+    private static final Set<LocationCallback> sListeners = new CopyOnWriteArraySet<>();
     private static final AtomicReference<Float> sMaxSpeed   = new AtomicReference<>(0f);
     private static final AtomicReference<Float> sTotalDistM = new AtomicReference<>(0f);
     private static final AtomicInteger sSatCount = new AtomicInteger(0);
     private static Location sPrevLoc = null;
 
+    // --- prenotazioni e registrazione ---
+    private static final Set<String> sHolders = ConcurrentHashMap.newKeySet();
+    private static final Handler sMain = new Handler(Looper.getMainLooper());
+    private static volatile Context sAppCtx;
+    private static final Runnable sIdleStop = () -> {
+        Context c = sAppCtx;
+        if (c != null && sHolders.isEmpty()) {
+            try { c.stopService(new Intent(c, GpsTrackingService.class)); } catch (Exception ignored) {}
+        }
+    };
+    private static final AtomicBoolean sRecording = new AtomicBoolean(false);
+    private static final AtomicBoolean sRecPaused = new AtomicBoolean(false);
+    private static final AtomicLong sRecSession = new AtomicLong(0L);
+    private static final AtomicLong sRecStart = new AtomicLong(0L);
+    private static final TrackStats sStats = new TrackStats();
+    private static volatile GpsTrackingService sInstance;
+
     private LocationManager locManager;
     private GnssStatus.Callback gnssCallback;
     private FusedLocationProviderClient fusedClient;
     private com.google.android.gms.location.LocationCallback fusedCallback;
-    private boolean doRecord = false;
     private final ExecutorService dbExec = Executors.newSingleThreadExecutor();
+    private long lastNotif = 0;
 
     public static @Nullable Location getLastLocation() { return sLastLocation.get(); }
     public static boolean isActive()          { return sRunning.get(); }
@@ -759,56 +848,181 @@ public class GpsTrackingService extends Service {
     public static int   getSatCount()         { return sSatCount.get(); }
     public static long  getSessionId()        { return sSessionId.get(); }
     public static void  setCallback(LocationCallback cb) { sCallback = cb; }
+    /** Ascoltatore aggiuntivo che resta attivo finche' non viene rimosso. */
+    public static void  addListener(LocationCallback cb)    { if (cb != null) sListeners.add(cb); }
+    public static void  removeListener(LocationCallback cb) { sListeners.remove(cb); }
 
     public interface LocationCallback {
         void onLocationUpdate(@NonNull Location loc, int satellites);
     }
 
+    // ------------------------------------------------------------ prenotazioni
+    public static boolean hasPermission(Context c) {
+        return ActivityCompat.checkSelfPermission(c, Manifest.permission.ACCESS_FINE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** "Mi serve il GPS": avvia il servizio se serve. Senza permesso non fa nulla. */
+    public static void acquire(Context c, String who) {
+        sAppCtx = c.getApplicationContext();
+        if (!hasPermission(c)) return;
+        sHolders.add(who);
+        sMain.removeCallbacks(sIdleStop);
+        if (!sRunning.get() || sInstance == null) {
+            try {
+                Intent i = new Intent(c, GpsTrackingService.class);
+                i.setAction(ACTION_START);
+                c.startForegroundService(i);
+            } catch (Exception e) { Log.w(TAG, "avvio GPS: " + e.getMessage()); }
+        }
+    }
+
+    /** "Non mi serve piu'": se nessuno lo usa si spegne dopo 30 s. */
+    public static void release(Context c, String who) {
+        sAppCtx = c.getApplicationContext();
+        sHolders.remove(who);
+        if (sHolders.isEmpty()) {
+            sMain.removeCallbacks(sIdleStop);
+            sMain.postDelayed(sIdleStop, IDLE_STOP_MS);
+        }
+    }
+
+    /** Schermate che usano la posizione: prenotano il GPS solo mentre sono visibili. */
+    private static final Set<String> GPS_SCREENS = new HashSet<>(Arrays.asList(
+        "MapActivity", "Map3DActivity", "AddressSearchActivity", "WaypointsActivity",
+        "StatsActivity", "ToolsActivity", "SurvivalActivity", "ProximityToolActivity",
+        "CoordsToolActivity", "DaylightToolActivity", "BacktrackActivity", "AreaToolActivity",
+        "TrackRecorderActivity", "GeoNotesActivity", "GotoCoordsActivity", "QrPositionActivity",
+        "ChatActivity", "EmergencyActivity", "SpeedHudActivity", "SunCompassActivity",
+        "AltimeterActivity", "FireCampActivity", "PaceCalcActivity", "MoonPhaseActivity"));
+
+    public static void installAuto(Application app) {
+        sAppCtx = app;
+        app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityStarted(@NonNull Activity a) {
+                String n = a.getClass().getSimpleName();
+                if (GPS_SCREENS.contains(n)) acquire(a, n);
+            }
+            @Override public void onActivityStopped(@NonNull Activity a) {
+                String n = a.getClass().getSimpleName();
+                if (GPS_SCREENS.contains(n)) release(a, n);
+            }
+            @Override public void onActivityCreated(@NonNull Activity a, @Nullable Bundle b) {}
+            @Override public void onActivityResumed(@NonNull Activity a) {}
+            @Override public void onActivityPaused(@NonNull Activity a) {}
+            @Override public void onActivitySaveInstanceState(@NonNull Activity a, @NonNull Bundle b) {}
+            @Override public void onActivityDestroyed(@NonNull Activity a) {}
+        });
+    }
+
+    // ------------------------------------------------------------ registrazione traccia
+    public static boolean isRecording() { return sRecording.get(); }
+    /** Traccia iniziata e messa in pausa (non ancora terminata). */
+    public static boolean isRecordingPaused() { return sRecPaused.get(); }
+    public static long recordingSessionId() { return sRecSession.get(); }
+    public static long recordingStartedAt() { return sRecStart.get(); }
+
+    /** Copia delle statistiche della traccia in corso. */
+    public static TrackStats recordingStats() {
+        synchronized (sStats) {
+            TrackStats c = new TrackStats();
+            c.distanceM = sStats.distanceM; c.ascentM = sStats.ascentM; c.descentM = sStats.descentM;
+            c.maxSpeedMs = sStats.maxSpeedMs; c.movingMs = sStats.movingMs; c.elapsedMs = sStats.elapsedMs;
+            c.minAlt = sStats.minAlt; c.maxAlt = sStats.maxAlt; c.points = sStats.points;
+            return c;
+        }
+    }
+
+    /** Avvia una NUOVA traccia (azzera le statistiche). */
+    public static void startRecording(Context c) {
+        synchronized (sStats) { sStats.reset(); }
+        sRecSession.set(System.currentTimeMillis());
+        sRecStart.set(System.currentTimeMillis());
+        sRecPaused.set(false);
+        sRecording.set(true);
+        acquire(c, "recorder");
+    }
+
+    public static void pauseRecording(Context c, boolean pause) {
+        synchronized (sStats) { if (pause) sStats.pause(); else sStats.resume(); }
+        sRecording.set(!pause);
+        sRecPaused.set(pause);
+        if (pause) release(c, "recorder"); else acquire(c, "recorder");
+    }
+
+    public static void stopRecording(Context c) {
+        sRecording.set(false);
+        sRecPaused.set(false);
+        synchronized (sStats) { sStats.pause(); }
+        release(c, "recorder");
+    }
+
+    // ------------------------------------------------------------ posizioni
     private void handleNewLocation(@NonNull Location loc) {
         sLastLocation.set(loc);
         float spd = loc.getSpeed();
         if (spd > sMaxSpeed.get()) sMaxSpeed.set(spd);
         if (sPrevLoc != null) {
             float dist = sPrevLoc.distanceTo(loc);
-            if (dist < 500) sTotalDistM.set(sTotalDistM.get() + dist);
+            if (dist < 500 && loc.getAccuracy() < 40) sTotalDistM.set(sTotalDistM.get() + dist);
         }
         sPrevLoc = loc;
-        if (doRecord) savePoint(loc);
-        updateNotif(loc);
+        if (sRecording.get()) {
+            boolean used;
+            synchronized (sStats) {
+                used = sStats.add(loc.getLatitude(), loc.getLongitude(), loc.getAltitude(), loc.hasAltitude(),
+                    loc.hasAccuracy() ? loc.getAccuracy() : 20f, loc.hasSpeed() ? loc.getSpeed() : -1f, loc.getTime());
+            }
+            if (used) savePoint(loc);
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastNotif > 5000) { lastNotif = now; updateNotif(loc); }
+        int sats = sSatCount.get();
         LocationCallback cb = sCallback;
-        if (cb != null) try { cb.onLocationUpdate(loc, sSatCount.get()); } catch (Exception ignored) {}
+        if (cb != null) try { cb.onLocationUpdate(loc, sats); } catch (Exception e) { Log.w(TAG, "callback", e); }
+        for (LocationCallback l : sListeners) {
+            if (l == cb) continue;
+            try { l.onLocationUpdate(loc, sats); } catch (Exception e) { Log.w(TAG, "listener", e); }
+        }
     }
 
     @Override public void onCreate() {
         super.onCreate();
+        sInstance = this;
+        sAppCtx = getApplicationContext();
         locManager  = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         fusedClient = LocationServices.getFusedLocationProviderClient(this);
         sRunning.set(true);
+        sSessionId.set(System.currentTimeMillis());
+        sMaxSpeed.set(0f); sTotalDistM.set(0f); sPrevLoc = null;
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
-        long sid = System.currentTimeMillis();
-        sSessionId.set(sid);
-        sMaxSpeed.set(0f); sTotalDistM.set(0f); sPrevLoc = null;
-        doRecord = intent != null && intent.getBooleanExtra(AppConfig.PREF_TRACK_ON, false);
-        startFg(null);
-        startUpdates();
-        return START_STICKY;
+        // compatibilita': chi chiede la registrazione con l'extra la avvia
+        if (intent != null && intent.getBooleanExtra(AppConfig.PREF_TRACK_ON, false) && !sRecording.get())
+            startRecording(this);
+        startFg(sLastLocation.get());
+        if (fusedCallback == null) startUpdates();      // una sola registrazione GPS
+        // riavviato dal sistema senza nessuno che lo usi: si rispegne da solo
+        if (sHolders.isEmpty()) {
+            sMain.removeCallbacks(sIdleStop);
+            sMain.postDelayed(sIdleStop, IDLE_STOP_MS);
+        }
+        return START_NOT_STICKY;
     }
 
     private void startUpdates() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) return;
+        if (!hasPermission(this)) return;
         try {
             fusedClient.getLastLocation().addOnSuccessListener(loc -> {
-                if (loc != null) handleNewLocation(loc);
+                if (loc != null && sLastLocation.get() == null) handleNewLocation(loc);
             });
         } catch (SecurityException ignored) {}
 
         LocationRequest req = new LocationRequest.Builder(
                 Priority.PRIORITY_HIGH_ACCURACY, AppConfig.GPS_MIN_TIME_MS)
-            .setMinUpdateDistanceMeters(AppConfig.GPS_MIN_DIST_M)
+            .setMinUpdateDistanceMeters(0f)
             .setMinUpdateIntervalMillis(500L)
             .setWaitForAccurateLocation(false)
             .build();
@@ -821,10 +1035,13 @@ public class GpsTrackingService extends Service {
         };
         try {
             fusedClient.requestLocationUpdates(req, fusedCallback, Looper.getMainLooper());
-        } catch (SecurityException e) { Log.e(TAG, "fused updates: " + e.getMessage()); }
+        } catch (SecurityException e) {
+            Log.e(TAG, "fused updates: " + e.getMessage());
+            fusedCallback = null;
+        }
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && gnssCallback == null) {
                 gnssCallback = new GnssStatus.Callback() {
                     @Override public void onSatelliteStatusChanged(@NonNull GnssStatus s) {
                         int used = 0;
@@ -838,7 +1055,7 @@ public class GpsTrackingService extends Service {
     }
 
     private void savePoint(Location loc) {
-        long sid = sSessionId.get();
+        long sid = sRecSession.get();
         dbExec.execute(() -> {
             TrackPointEntity p = new TrackPointEntity();
             p.sessionId = sid; p.latitude = loc.getLatitude(); p.longitude = loc.getLongitude();
@@ -849,39 +1066,46 @@ public class GpsTrackingService extends Service {
         });
     }
 
-    private void startFg(@Nullable Location loc) {
+    private Notification buildNotif(@Nullable Location loc) {
         Intent pi = new Intent(this, MapActivity.class);
         PendingIntent pIntent = PendingIntent.getActivity(this, 0, pi,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        String txt = loc == null ? "Acquisizione segnale GPS..."
-            : String.format("%.5f, %.5f  +/-%.0fm  %d SAT",
+        String title = sRecording.get() ? "Registrazione traccia in corso" : "GPS attivo";
+        String txt;
+        if (loc == null) txt = "Acquisizione segnale GPS...";
+        else if (sRecording.get()) {
+            TrackStats st = recordingStats();
+            txt = String.format(java.util.Locale.ITALY, "%.2f km  ·  +%.0f m  ·  %d SAT",
+                st.distanceM / 1000.0, st.ascentM, sSatCount.get());
+        } else {
+            txt = String.format(java.util.Locale.US, "%.5f, %.5f  +/-%.0fm  %d SAT",
                 loc.getLatitude(), loc.getLongitude(), loc.getAccuracy(), sSatCount.get());
-        Notification n = new NotificationCompat.Builder(this, OfflineGpsApp.CHANNEL_GPS)
-            .setSmallIcon(R.drawable.ic_gps).setContentTitle("OfflineGPS 3D")
+        }
+        return new NotificationCompat.Builder(this, OfflineGpsApp.CHANNEL_GPS)
+            .setSmallIcon(R.drawable.ic_gps).setContentTitle(title)
             .setContentText(txt).setOngoing(true).setContentIntent(pIntent).build();
-        startForeground(AppConfig.NOTIF_ID_GPS, n);
+    }
+
+    private void startFg(@Nullable Location loc) {
+        startForeground(AppConfig.NOTIF_ID_GPS, buildNotif(loc));
     }
 
     private void updateNotif(Location loc) {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (nm == null) return;
-        Intent pi = new Intent(this, MapActivity.class);
-        PendingIntent pIntent = PendingIntent.getActivity(this, 0, pi,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        String txt = String.format("%.5f, %.5f  %.1f km/h  %d SAT",
-            loc.getLatitude(), loc.getLongitude(), loc.getSpeed()*3.6f, sSatCount.get());
-        nm.notify(AppConfig.NOTIF_ID_GPS, new NotificationCompat.Builder(this, OfflineGpsApp.CHANNEL_GPS)
-            .setSmallIcon(R.drawable.ic_gps).setContentTitle("OfflineGPS 3D")
-            .setContentText(txt).setOngoing(true).setContentIntent(pIntent).build());
+        if (nm != null) nm.notify(AppConfig.NOTIF_ID_GPS, buildNotif(loc));
     }
 
     @Override public void onDestroy() {
-        super.onDestroy(); sRunning.set(false);
+        super.onDestroy();
+        sRunning.set(false);
+        sInstance = null;
         if (fusedCallback != null) try { fusedClient.removeLocationUpdates(fusedCallback); } catch (Exception ignored) {}
+        fusedCallback = null;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && gnssCallback != null)
             try { locManager.unregisterGnssStatusCallback(gnssCallback); } catch (Exception ignored) {}
         dbExec.shutdown();
     }
+
     @Override public @Nullable IBinder onBind(Intent i) { return null; }
 }
 """
@@ -1289,35 +1513,57 @@ import android.content.Context;
 import androidx.annotation.*;
 import com.offlinegps.map.data.*;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
+/**
+ * Esporta una traccia in GPX 1.1 valido (si apre in Google Earth, Komoot,
+ * Strava, OsmAnd...). v5.0: numeri sempre con il punto decimale (prima,
+ * con il telefono in italiano, uscivano "41,9" e il file era illeggibile).
+ */
 public final class GpxExporter {
     private GpxExporter() {}
 
     @WorkerThread @NonNull
     public static File exportSession(@NonNull Context ctx, long sessionId) throws IOException {
+        return exportSession(ctx, sessionId, null);
+    }
+
+    @WorkerThread @NonNull
+    public static File exportSession(@NonNull Context ctx, long sessionId, @Nullable String name) throws IOException {
         List<TrackPointEntity> points =
             GpsDatabase.getInstance(ctx).trackDao().getSessionSync(sessionId);
         SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
         iso.setTimeZone(TimeZone.getTimeZone("UTC"));
-        File dir = new File(ctx.getExternalFilesDir(null), "tracks"); dir.mkdirs();
-        File f = new File(dir, "track_" + sessionId + ".gpx");
-        try (PrintWriter pw = new PrintWriter(new FileWriter(f))) {
+        SimpleDateFormat fileFmt = new SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.US);
+        File dir = new File(ctx.getExternalFilesDir(null), "tracks");
+        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("cartella tracce non creata");
+        File f = new File(dir, "traccia_" + fileFmt.format(new Date(sessionId)) + ".gpx");
+        String title = name != null ? name : "Traccia " + new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY).format(new Date(sessionId));
+        try (PrintWriter pw = new PrintWriter(new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8))) {
             pw.println("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-            pw.println("<gpx version=\"1.1\" creator=\"OfflineGPS 3D v3.0\"");
-            pw.println("  xmlns=\"http://www.topografix.com/GPX/1/1\">");
-            pw.println("  <trk><name>Track " + iso.format(new Date(sessionId)) + "</name><trkseg>");
+            pw.println("<gpx version=\"1.1\" creator=\"OfflineGPS 3D\"");
+            pw.println("  xmlns=\"http://www.topografix.com/GPX/1/1\"");
+            pw.println("  xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"");
+            pw.println("  xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\">");
+            pw.println("  <metadata><name>" + esc(title) + "</name><time>" + iso.format(new Date(sessionId)) + "</time></metadata>");
+            pw.println("  <trk><name>" + esc(title) + "</name><trkseg>");
             for (TrackPointEntity p : points) {
-                pw.printf("    <trkpt lat=\"%.8f\" lon=\"%.8f\">%n", p.latitude, p.longitude);
-                pw.printf("      <ele>%.2f</ele>%n", p.altitude);
-                pw.printf("      <time>%s</time>%n", iso.format(new Date(p.timestamp)));
-                pw.printf("      <speed>%.4f</speed>%n", p.speedMs);
-                pw.println("    </trkpt>");
+                pw.print(String.format(Locale.US, "    <trkpt lat=\"%.7f\" lon=\"%.7f\">", p.latitude, p.longitude));
+                if (p.altitude != 0) pw.print(String.format(Locale.US, "<ele>%.1f</ele>", p.altitude));
+                pw.print("<time>" + iso.format(new Date(p.timestamp)) + "</time>");
+                if (p.accuracy > 0) pw.print(String.format(Locale.US, "<hdop>%.1f</hdop>", p.accuracy / 5f));
+                pw.println("</trkpt>");
             }
-            pw.println("  </trkseg></trk></gpx>");
+            pw.println("  </trkseg></trk>");
+            pw.println("</gpx>");
         }
         return f;
+    }
+
+    static String esc(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 }
 """
@@ -2946,7 +3192,7 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
 
     private void updateStatus() {
         boolean gps    = hasGpsPerm();
-        boolean gpsSvc = GpsTrackingService.isActive();
+        boolean rec = GpsTrackingService.isRecording(), recPaused = GpsTrackingService.isRecordingPaused();
         String mapPath = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString(AppConfig.PREF_MAP_FILE, "");
         boolean hasMap = !mapPath.isEmpty() && new File(mapPath).exists();
         File routingDir = new File(getExternalFilesDir(null), "routing");
@@ -2955,7 +3201,9 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
         SkyUi.chip(findViewById(R.id.chip_gps), gps ? SkyUi.CHIP_ON : SkyUi.CHIP_ALERT, gps ? "GPS OK" : "GPS NO");
         SkyUi.chip(findViewById(R.id.chip_map), hasMap ? SkyUi.CHIP_ON : SkyUi.CHIP_WARN, hasMap ? "MAPPA OK" : "NO MAPPA");
         SkyUi.chip(findViewById(R.id.chip_routing), hasRouting ? SkyUi.CHIP_ON : SkyUi.CHIP_WARN, hasRouting ? "ROUTING OK" : "NO ROUTING");
-        SkyUi.chip(findViewById(R.id.chip_service), gpsSvc ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, gpsSvc ? "TRACCIA ON" : "TRACCIA OFF");
+        // v5.0: il chip mostra la registrazione della traccia (il GPS ora si accende solo quando serve)
+        SkyUi.chip(findViewById(R.id.chip_service), rec ? SkyUi.CHIP_ON : recPaused ? SkyUi.CHIP_WARN : SkyUi.CHIP_OFF,
+            rec ? "● REC" : recPaused ? "IN PAUSA" : "TRACCIA");
         TextView tv = findViewById(R.id.tv_status);
         if (tv != null) {
             String hint = !hasMap ? "Scarica o carica una mappa da Download per iniziare."
@@ -3460,10 +3708,8 @@ public class MapActivity extends AppCompatActivity
         }
         awaitingLocationEnable = false;
         GpsTrackingService.setCallback(this);
-        Intent i = new Intent(this, GpsTrackingService.class);
-        i.setAction(GpsTrackingService.ACTION_START);
-        i.putExtra(AppConfig.PREF_TRACK_ON, false);
-        startForegroundService(i);
+        // prenota il GPS: si spegne da solo quando nessuna schermata lo usa
+        GpsTrackingService.acquire(this, "MapActivity");
         Location last = GpsTrackingService.getLastLocation();
         if (last != null) onLocationUpdate(last, GpsTrackingService.getSatCount());
     }
@@ -3835,11 +4081,10 @@ public class NavigationActivity extends AppCompatActivity
 
     // ------------------------------------------------------------ rete stradale e percorso
     private void startGpsAndRoute() {
-        GpsTrackingService.setCallback(this);
-        Intent i = new Intent(this, GpsTrackingService.class);
-        i.setAction(GpsTrackingService.ACTION_START);
-        i.putExtra(AppConfig.PREF_TRACK_ON, false);
-        startForegroundService(i);
+        // ascoltatore fisso + GPS prenotato fino alla chiusura del navigatore:
+        // la guida vocale continua anche a schermo spento o con altre app sopra
+        GpsTrackingService.addListener(this);
+        GpsTrackingService.acquire(this, "NavigationActivity");
 
         Location last = GpsTrackingService.getLastLocation();
         if (last != null) ensureGraphAndRoute(last.getLatitude(), last.getLongitude());
@@ -4126,19 +4371,19 @@ public class NavigationActivity extends AppCompatActivity
 
     @Override protected void onResume() {
         super.onResume();
-        GpsTrackingService.setCallback(this);
         if (engine != null) engine.onResume();
+        if (following && lastProgress != null) followCamera(false);
     }
 
     @Override protected void onPause() {
         super.onPause();
-        GpsTrackingService.setCallback(null);
         if (engine != null) engine.onPause();
     }
 
     @Override protected void onDestroy() {
         super.onDestroy();
-        GpsTrackingService.setCallback(null);
+        GpsTrackingService.removeListener(this);
+        GpsTrackingService.release(this, "NavigationActivity");
         mainHandler.removeCallbacksAndMessages(null);
         routingExec.shutdown();
         if (tts != null) { tts.stop(); tts.shutdown(); tts = null; }
@@ -4756,6 +5001,9 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
     // pressione
     private TextView tvPressure;
     private boolean labelsActive = false;
+    // v5.0: un solo ciclo di aggiornamento, che continua anche se il GPS non e' ancora pronto
+    private final Handler labelHandler = new Handler(Looper.getMainLooper());
+    private final Runnable labelTick = this::updateLocationLabels;
 
     private TextView tvCompass, tvAzimuth, tvAltitude, tvCoords, tvSteps, tvParkInfo, tvDistInfo;
     private View compassRose;
@@ -4842,6 +5090,7 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
     @Override protected void onPause() {
         super.onPause();
         labelsActive = false;
+        labelHandler.removeCallbacks(labelTick);
         if (sensorMgr != null) sensorMgr.unregisterListener(this);
         stopSosTorch();
         // ferma gli aggiornamenti in sospeso (il cronometro continua a contare
@@ -4892,8 +5141,8 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
             stepsToday = (int) (e.values[0] - stepBase);
             if (tvSteps != null) {
                 double km = stepsToday * 0.75 / 1000.0;
-                tvSteps.setText(stepsToday + " passi  (~"
-                    + String.format(java.util.Locale.US, "%.2f km", km) + ")");
+                tvSteps.setText(stepsToday + " · "
+                    + String.format(java.util.Locale.ITALY, "%.2f km", km));
             }
         } else if (e.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
             // livella: x,y indicano l'inclinazione; filtro per stabilita'
@@ -4915,8 +5164,8 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
             if (tvPressure != null) {
                 float hpa = e.values[0];
                 double altBaro = 44330.0 * (1.0 - Math.pow(hpa / 1013.25, 0.1903));
-                tvPressure.setText(String.format(java.util.Locale.US,
-                    "%.1f hPa  (~%.0f m barometrica)", hpa, altBaro));
+                tvPressure.setText(String.format(java.util.Locale.ITALY,
+                    "%.0f hPa · %.0f m", hpa, altBaro));
             }
         }
     }
@@ -4937,6 +5186,8 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
 
     private void updateLocationLabels() {
         if (!labelsActive) return;
+        labelHandler.removeCallbacks(labelTick);
+        labelHandler.postDelayed(labelTick, 2000);
         Location loc = GpsTrackingService.getLastLocation();
         if (loc == null) {
             if (tvCoords != null) tvCoords.setText("In attesa del GPS...");
@@ -4958,7 +5209,6 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
                     "Max %.0f km/h   Media %.0f km/h", speedMax, avg));
             }
         }
-        new Handler(Looper.getMainLooper()).postDelayed(this::updateLocationLabels, 2000);
         updateDistanceLabel(loc);
     }
 
@@ -4982,7 +5232,10 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         String lo = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString("park_lon", "");
         long t = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getLong("park_time", 0);
         String when = android.text.format.DateUtils.getRelativeTimeSpanString(t).toString();
-        tvParkInfo.setText("Auto: " + la + ", " + lo + "  (" + when + ")");
+        try {
+            tvParkInfo.setText(String.format(java.util.Locale.US, "Auto: %.5f, %.5f", Double.parseDouble(la),
+                Double.parseDouble(lo)) + "  (" + when + ")");
+        } catch (NumberFormatException e) { tvParkInfo.setText("Auto salvata (" + when + ")"); }
     }
 
     private void gotoParking() {
@@ -4990,11 +5243,14 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         String lo = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString("park_lon", "");
         if (la.isEmpty()) { Toast.makeText(this, "Salva prima l'auto", Toast.LENGTH_SHORT).show(); return; }
         try {
-            Intent i = new Intent(this, MapActivity.class);
-            i.putExtra("focus_lat", Double.parseDouble(la));
-            i.putExtra("focus_lon", Double.parseDouble(lo));
-            i.putExtra("focus_label", "La mia auto");
-            startActivity(i);
+            final double plat = Double.parseDouble(la), plon = Double.parseDouble(lo);
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Riportami all'auto")
+                .setItems(new String[]{"Naviga a piedi", "Mostra sulla mappa"}, (d, w) -> {
+                    if (w == 0) ToolKit.navigate(this, plat, plon, "La mia auto",
+                        com.offlinegps.map.routing.RoutingEngine.PROFILE_FOOT);
+                    else ToolKit.showOnMap(this, plat, plon, "La mia auto");
+                }).show();
         } catch (Exception e) {
             Toast.makeText(this, "Errore", Toast.LENGTH_SHORT).show();
         }
@@ -5097,259 +5353,11 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         long s = ms / 1000;
         if (tvChrono != null) tvChrono.setText(String.format(java.util.Locale.US,
             "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60));
+        chronoHandler.removeCallbacksAndMessages(null);       // mai due cicli insieme
         chronoHandler.postDelayed(this::chronoTick, 500);
     }
 }
 """
-
-LAYOUT_TOOLS = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="20dp">
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:gravity="center_vertical"
-        android:layout_marginBottom="20dp">
-        <Button android:id="@+id/btn_tools_back"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-            android:textSize="13sp" android:layout_marginEnd="12dp"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="STRUMENTI OUTDOOR" android:textColor="#FF6B35"
-            android:textSize="20sp" android:textStyle="bold" android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <!-- BUSSOLA + QUOTA -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="BUSSOLA E QUOTA" android:textColor="#00E5FF" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="12dp"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal" android:gravity="center_vertical">
-            <ImageView android:id="@+id/iv_compass_rose"
-                android:layout_width="90dp" android:layout_height="90dp"
-                android:src="@drawable/ic_compass_needle" android:layout_marginEnd="20dp"
-                android:contentDescription="Bussola"/>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical">
-                <TextView android:id="@+id/tv_compass_dir"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="N" android:textColor="#00FF88" android:textSize="40sp"
-                    android:textStyle="bold" android:fontFamily="monospace"/>
-                <TextView android:id="@+id/tv_azimuth"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="0°" android:textColor="#E8F4FD" android:textSize="20sp"
-                    android:fontFamily="monospace"/>
-                <TextView android:id="@+id/tv_altitude"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text="-- m" android:textColor="#FFD600" android:textSize="18sp"
-                    android:fontFamily="monospace" android:layout_marginTop="4dp"/>
-            </LinearLayout>
-        </LinearLayout>
-        <TextView android:id="@+id/tv_tool_coords"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="In attesa del GPS..." android:textColor="#5A7A99" android:textSize="13sp"
-            android:fontFamily="monospace" android:layout_marginTop="10dp"/>
-    </LinearLayout>
-
-    <!-- DOVE HO PARCHEGGIATO -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="DOVE HO PARCHEGGIATO" android:textColor="#00FF88" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/tv_park_info"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Nessuna auto salvata" android:textColor="#5A7A99" android:textSize="12sp"
-            android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <Button android:id="@+id/btn_save_parking"
-                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
-                android:text="Salva auto qui" android:backgroundTint="#00FF88" android:textColor="#050A14"
-                android:textStyle="bold" android:textSize="13sp" android:layout_marginEnd="8dp"/>
-            <Button android:id="@+id/btn_goto_parking"
-                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
-                android:text="Riportami all'auto" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-                android:textStyle="bold" android:textSize="13sp"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- SOS -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="EMERGENZA SOS" android:textColor="#FF1744" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="12dp"/>
-        <Button android:id="@+id/btn_sos_message"
-            android:layout_width="match_parent" android:layout_height="50dp"
-            android:text="INVIA SOS CON POSIZIONE" android:backgroundTint="#FF1744" android:textColor="#FFFFFF"
-            android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-        <Button android:id="@+id/btn_sos_torch"
-            android:layout_width="match_parent" android:layout_height="50dp"
-            android:text="TORCIA SOS (MORSE)" android:backgroundTint="#FFD600" android:textColor="#050A14"
-            android:textStyle="bold" android:textSize="14sp"/>
-    </LinearLayout>
-
-    <!-- CONTAPASSI -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="CONTAPASSI" android:textColor="#00E5FF" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/tv_steps"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="0 passi" android:textColor="#E8F4FD" android:textSize="18sp"
-            android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <!-- DISTANZA DA PUNTO -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="DISTANZA DA UN PUNTO" android:textColor="#FFD600" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/tv_dist_info"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Nessun punto marcato" android:textColor="#E8F4FD" android:textSize="16sp"
-            android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-        <Button android:id="@+id/btn_mark_point"
-            android:layout_width="match_parent" android:layout_height="48dp"
-            android:text="Marca questo punto" android:backgroundTint="#FFD600" android:textColor="#050A14"
-            android:textStyle="bold" android:textSize="13sp"/>
-    </LinearLayout>
-
-    <!-- LIVELLA A BOLLA -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="LIVELLA A BOLLA" android:textColor="#00E5FF" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="12dp"/>
-        <FrameLayout android:layout_width="120dp" android:layout_height="120dp"
-            android:layout_gravity="center_horizontal" android:background="@drawable/bg_round_card">
-            <View android:layout_width="40dp" android:layout_height="40dp"
-                android:layout_gravity="center" android:background="@drawable/bg_crosshair"
-                android:alpha="0.3"/>
-            <View android:id="@+id/view_bubble"
-                android:layout_width="28dp" android:layout_height="28dp"
-                android:layout_gravity="center" android:background="@drawable/bg_fab_primary"/>
-        </FrameLayout>
-        <TextView android:id="@+id/tv_level"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="X 0.0°   Y 0.0°" android:textColor="#E8F4FD" android:textSize="16sp"
-            android:fontFamily="monospace" android:gravity="center" android:layout_marginTop="10dp"/>
-    </LinearLayout>
-
-    <!-- CRONOMETRO -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="CRONOMETRO" android:textColor="#00FF88" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="8dp"/>
-        <TextView android:id="@+id/tv_chrono"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="00:00:00" android:textColor="#E8F4FD" android:textSize="32sp"
-            android:textStyle="bold" android:fontFamily="monospace" android:gravity="center"
-            android:layout_marginBottom="12dp"/>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <Button android:id="@+id/btn_chrono_toggle"
-                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
-                android:text="Avvia / Pausa" android:backgroundTint="#00FF88" android:textColor="#050A14"
-                android:textStyle="bold" android:textSize="13sp" android:layout_marginEnd="8dp"/>
-            <Button android:id="@+id/btn_chrono_reset"
-                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
-                android:text="Azzera" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-                android:textStyle="bold" android:textSize="13sp"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <!-- VELOCITA -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="VELOCITA SESSIONE" android:textColor="#FF6B35" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/tv_speed_stats"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Max 0 km/h   Media 0 km/h" android:textColor="#E8F4FD" android:textSize="16sp"
-            android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-        <Button android:id="@+id/btn_speed_reset"
-            android:layout_width="match_parent" android:layout_height="44dp"
-            android:text="Azzera velocita" android:backgroundTint="#141E2E" android:textColor="#FF6B35"
-            android:textStyle="bold" android:textSize="13sp"/>
-    </LinearLayout>
-
-    <!-- PRESSIONE / ALTITUDINE BAROMETRICA -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="@drawable/bg_card_glass" android:padding="18dp"
-        android:layout_marginBottom="14dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="PRESSIONE BAROMETRICA" android:textColor="#FFD600" android:textSize="13sp"
-            android:textStyle="bold" android:layout_marginBottom="4dp"/>
-        <TextView android:id="@+id/tv_pressure"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Sensore non disponibile su questo telefono" android:textColor="#E8F4FD"
-            android:textSize="15sp" android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="STRUMENTI AVANZATI" android:textColor="#FF6B35" android:textSize="15sp"
-        android:textStyle="bold" android:layout_marginTop="8dp" android:layout_marginBottom="12dp"/>
-    <Button android:id="@+id/open_area"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="CALCOLO AREA TERRENO" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_recorder"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="REGISTRA TRACCIA (km, dislivello)" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_unitconv"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="CONVERTITORE UNITA" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_timer"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="TIMER" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_slope"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="INCLINOMETRO (pendenza)" android:backgroundTint="#141E2E" android:textColor="#FFD600"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="NUOVI STRUMENTI v3.0" android:textColor="#00E5FF" android:textSize="15sp"
-        android:textStyle="bold" android:layout_marginTop="8dp" android:layout_marginBottom="12dp"/>
-    <Button android:id="@+id/open_metal"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="METAL DETECTOR (magnetometro)" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_heat"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="TEMPERATURA PERCEPITA" android:backgroundTint="#141E2E" android:textColor="#FF6B35"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_pace"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="TEMPI DI MARCIA (Naismith)" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-    <Button android:id="@+id/open_speedhud"
-        android:layout_width="match_parent" android:layout_height="50dp"
-        android:text="TACHIMETRO HUD PARABREZZA" android:backgroundTint="#141E2E" android:textColor="#FFD600"
-        android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>
-
-</LinearLayout></ScrollView>"""
 
 # ============================================================
 #  KIT SOPRAVVIVENZA - menu a schede
@@ -5394,6 +5402,8 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_moon, MoonPhaseActivity.class);
         wire(R.id.card_nightvision, NightVisionActivity.class);
         wire(R.id.card_firstaid, FirstAidActivity.class);
+        // NUOVO v5.0
+        wire(R.id.card_fire, FireCampActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -5414,86 +5424,6 @@ def _surv_card(card_id, title_text, color, desc):
         '        android:text="' + desc + '" android:textColor="#5A7A99" android:textSize="13sp"\n'
         '        android:layout_marginTop="6dp"/>\n'
         '</LinearLayout>\n')
-
-LAYOUT_SURVIVAL = ("""\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="20dp">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="20dp">
-        <Button android:id="@+id/btn_surv_back"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-            android:textSize="13sp" android:layout_marginEnd="12dp"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="KIT SOPRAVVIVENZA" android:textColor="#FF1744"
-            android:textSize="20sp" android:textStyle="bold" android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <LinearLayout android:id="@+id/card_emergency"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="vertical" android:background="#3A0610" android:padding="22dp"
-        android:layout_marginBottom="14dp" android:elevation="6dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="SCHEDA EMERGENZA" android:textColor="#FF1744" android:textSize="19sp"
-            android:textStyle="bold"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Posizione enorme e sempre visibile + SMS al 112. Per quando sei in difficolta'."
-            android:textColor="#FFAAAA" android:textSize="13sp" android:layout_marginTop="6dp"/>
-    </LinearLayout>
-
-"""
-    + _surv_card("card_altimeter", "ALTIMETRO + METEO", "#FFD600",
-        "Quota precisa e avviso temporale: se la pressione cala, il tempo peggiora.")
-    + _surv_card("card_battery", "RISPARMIO BATTERIA", "#00FF88",
-        "Stima autonomia, modalita schermo nero e scorciatoie per durare a lungo fuori.")
-    + _surv_card("card_moon", "FASE LUNARE [NUOVO]", "#E8F4FD",
-        "Quanta luna avrai stanotte: illuminazione e prossima luna piena, offline.")
-    + _surv_card("card_nightvision", "VISIONE NOTTURNA [NUOVO]", "#FF1744",
-        "Schermo rosso regolabile: leggi la mappa senza rovinare l'occhio al buio.")
-    + _surv_card("card_firstaid", "PRIMO SOCCORSO [NUOVO]", "#FF6B35",
-        "Guida rapida offline: emorragie, ipotermia, ustioni, RCP, vipera.")
-    + _surv_card("card_proximity", "ALLARME PROSSIMITA", "#FF1744",
-        "Suona se ti allontani troppo dal campo o dall'auto.")
-    + _surv_card("card_coords", "COORDINATE PER SOCCORSI", "#00E5FF",
-        "La tua posizione in tutti i formati, da copiare o inviare.")
-    + _surv_card("card_daylight", "ORE DI LUCE / TRAMONTO", "#FFD600",
-        "Quanta luce solare ti resta prima del buio.")
-    + _surv_card("card_backtrack", "ROTTA DI RITORNO", "#00FF88",
-        "Fissa la partenza e ti riporto indietro con direzione e distanza.")
-    + _surv_card("card_mirror", "SPECCHIO SEGNALE SOS", "#E8F4FD",
-        "Schermo bianco lampeggiante per farti vedere da lontano.")
-    + _surv_card("card_whistle", "FISCHIETTO SOS", "#FFD600",
-        "Tono acuto e forte per attirare l'attenzione.")
-    + _surv_card("card_morse", "CODICE MORSE", "#FFD600",
-        "Scrivi un messaggio e trasmettilo col flash.")
-    + _surv_card("card_suncompass", "NORD DAL SOLE", "#FFD600",
-        "Trova il Nord senza bussola, usando il sole.")
-    + _surv_card("card_hydration", "IDRATAZIONE", "#00E5FF",
-        "Tieni il conto dell'acqua bevuta nella giornata.")
-    + _surv_card("card_checklist", "CHECKLIST ZAINO", "#00FF88",
-        "Spunta l'attrezzatura prima di partire.")
-    + _surv_card("card_guide", "GUIDA SOPRAVVIVENZA", "#FF1744",
-        "Regole base e segnali di emergenza, offline.")
-    + _surv_card("card_geonotes", "NOTE SUL POSTO", "#00E5FF",
-        "Salva appunti legati a un luogo: ti torna dove l'hai scritto.")
-    + _surv_card("card_gotocoords", "VAI A COORDINATE", "#00FF88",
-        "Inserisci lat/lon e vedi il punto sulla mappa.")
-    + _surv_card("card_flashlight", "TORCIA", "#FFD600",
-        "Accendi il flash come torcia.")
-    + _surv_card("card_calc", "CALCOLATRICE", "#00E5FF",
-        "Calcoli rapidi offline.")
-    + _surv_card("card_notepad", "BLOCCO NOTE", "#00FF88",
-        "Appunti liberi, salvati automaticamente.")
-    + _surv_card("card_currency", "CONVERTITORE VALUTE", "#FFD600",
-        "Converti EUR, USD, GBP e altre, offline.")
-    + _surv_card("card_qr", "QR POSIZIONE", "#00E5FF",
-        "Codice visivo della tua posizione.")
-    + """
-</LinearLayout></ScrollView>""")
 
 PROXIMITY_TOOL_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -5524,6 +5454,8 @@ public class ProximityToolActivity extends AppCompatActivity {
     private ToneGenerator tone;
     private Vibrator vib;
     private boolean alarming = false;
+    private int outCount = 0;
+    private final Runnable loopR = this::loop, beepR = this::beep;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
@@ -5553,12 +5485,22 @@ public class ProximityToolActivity extends AppCompatActivity {
     }
 
     private void toggleArm() {
-        if (armed) { armed = false; stopAlarm(); setStatus("Allarme disattivato"); return; }
+        if (armed) {
+            armed = false; stopAlarm(); setStatus("Allarme disattivato");
+            h.removeCallbacks(loopR);
+            GpsTrackingService.release(this, "proximity");
+            return;
+        }
         Location loc = GpsTrackingService.getLastLocation();
         if (loc == null) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
         anchorLat = loc.getLatitude(); anchorLon = loc.getLongitude();
         armed = true;
+        outCount = 0;
+        // il GPS resta acceso anche a schermo spento finche' l'allarme e' armato
+        GpsTrackingService.acquire(this, "proximity");
+        getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setStatus("ATTIVO - punto fissato qui");
+        h.removeCallbacks(loopR);
         loop();
     }
 
@@ -5571,9 +5513,11 @@ public class ProximityToolActivity extends AppCompatActivity {
             float d = res[0];
             if (tvDistance != null) tvDistance.setText(String.format(java.util.Locale.US,
                 "Distanza dal punto: %.0f m", d));
-            if (d > radiusM) startAlarm(); else stopAlarm();
+            // allarme solo se fuori anche tenendo conto dell'errore GPS, per 2 letture di fila
+            if (d - Math.min(loc.getAccuracy(), 30) > radiusM) { if (++outCount >= 2) startAlarm(); }
+            else { outCount = 0; if (d < radiusM) stopAlarm(); }
         }
-        h.postDelayed(this::loop, 1500);
+        h.postDelayed(loopR, 1500);
     }
 
     private void startAlarm() {
@@ -5590,17 +5534,20 @@ public class ProximityToolActivity extends AppCompatActivity {
                 vib.vibrate(VibrationEffect.createOneShot(400, VibrationEffect.DEFAULT_AMPLITUDE));
             else vib.vibrate(400);
         }
-        h.postDelayed(this::beep, 900);
+        h.postDelayed(beepR, 900);
     }
     private void stopAlarm() {
         if (!alarming) return;
         alarming = false;
+        h.removeCallbacks(beepR);
         if (armed) setStatus("ATTIVO - sei dentro il raggio");
     }
     private void setStatus(String s) { if (tvStatus != null) tvStatus.setText(s); }
 
     @Override protected void onDestroy() {
         super.onDestroy(); armed = false; alarming = false;
+        h.removeCallbacksAndMessages(null);
+        GpsTrackingService.release(this, "proximity");
         if (tone != null) tone.release();
     }
 }
@@ -5611,7 +5558,6 @@ COORDS_TOOL_ACTIVITY = r"""package com.offlinegps.map.ui;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.Intent;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
@@ -5623,168 +5569,332 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.ShareUtil;
+import java.util.Locale;
 
-/** Convertitore coordinate: decimale, gradi-minuti-secondi, con copia e condivisione. */
+/**
+ * Coordinate per i soccorsi (v5.0): decimale, gradi-minuti-secondi,
+ * gradi-minuti, UTM e MGRS veri (prima la riga "UTM" mostrava di nuovo
+ * lat/lon) e Plus Code. Tocca un formato per copiarlo.
+ */
 public class CoordsToolActivity extends AppCompatActivity {
-    private TextView tvDec, tvDms, tvUtm, tvAlt;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextView tvDec, tvDms, tvDdm, tvUtm, tvMgrs, tvPlus, tvAlt, tvAcc;
     private String shareText = "";
-    private boolean active = false;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 2000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_coords);
         tvDec = findViewById(R.id.tv_c_dec);
         tvDms = findViewById(R.id.tv_c_dms);
+        tvDdm = findViewById(R.id.tv_c_ddm);
         tvUtm = findViewById(R.id.tv_c_utm);
+        tvMgrs = findViewById(R.id.tv_c_mgrs);
+        tvPlus = findViewById(R.id.tv_c_plus);
         tvAlt = findViewById(R.id.tv_c_alt);
-        View back = findViewById(R.id.btn_c_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View copy = findViewById(R.id.btn_c_copy);
-        if (copy != null) copy.setOnClickListener(v -> copyCoords());
-        View share = findViewById(R.id.btn_c_share);
-        if (share != null) share.setOnClickListener(v -> shareCoords());
+        tvAcc = findViewById(R.id.tv_c_acc);
+        click(R.id.btn_c_back, v -> finish());
+        click(R.id.btn_c_copy, v -> copy("Coordinate", shareText));
+        click(R.id.btn_c_share, v -> { if (!shareText.isEmpty()) ShareUtil.shareText(this, shareText, "Condividi posizione"); });
+        copyOnTap(R.id.card_c_dec, tvDec, "Decimale");
+        copyOnTap(R.id.card_c_dms, tvDms, "Gradi, primi, secondi");
+        copyOnTap(R.id.card_c_ddm, tvDdm, "Gradi e primi");
+        copyOnTap(R.id.card_c_utm, tvUtm, "UTM");
+        copyOnTap(R.id.card_c_mgrs, tvMgrs, "MGRS");
+        copyOnTap(R.id.card_c_plus, tvPlus, "Plus Code");
     }
 
-    @Override protected void onResume() { super.onResume(); active = true; refresh(); }
-    @Override protected void onPause() { super.onPause(); active = false; }
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private void copyOnTap(int cardId, TextView tv, String label) {
+        click(cardId, v -> { if (tv != null) copy(label, tv.getText().toString()); });
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
 
     private void refresh() {
-        if (!active) return;
         Location loc = GpsTrackingService.getLastLocation();
         if (loc == null) {
-            if (tvDec != null) tvDec.setText("In attesa del GPS...");
-            new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 1500);
+            set(tvDec, "In attesa del GPS...");
+            set(tvAcc, "NO GPS");
             return;
         }
         double la = loc.getLatitude(), lo = loc.getLongitude();
-        String dec = String.format(java.util.Locale.US, "%.6f, %.6f", la, lo);
-        String dms = toDms(la, true) + "   " + toDms(lo, false);
-        if (tvDec != null) tvDec.setText(dec);
-        if (tvDms != null) tvDms.setText(dms);
-        if (tvUtm != null) tvUtm.setText("Plus: " + String.format(java.util.Locale.US, "%.4f,%.4f", la, lo));
-        if (tvAlt != null) tvAlt.setText(loc.hasAltitude()
-            ? String.format(java.util.Locale.US, "Quota: %.0f m", loc.getAltitude()) : "Quota: --");
-        shareText = "La mia posizione:\n" + dec + "\n" + dms
-            + "\nhttps://maps.google.com/?q=" + String.format(java.util.Locale.US, "%.6f,%.6f", la, lo);
-        new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 2000);
-    }
-
-    private static String toDms(double v, boolean lat) {
-        String hemi = lat ? (v >= 0 ? "N" : "S") : (v >= 0 ? "E" : "O");
-        v = Math.abs(v);
-        int d = (int) v;
-        double mFull = (v - d) * 60;
-        int m = (int) mFull;
-        double sec = (mFull - m) * 60;
-        return String.format(java.util.Locale.US, "%d°%02d'%04.1f\"%s", d, m, sec, hemi);
-    }
-
-    private void copyCoords() {
-        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        if (cb != null && !shareText.isEmpty()) {
-            cb.setPrimaryClip(ClipData.newPlainText("coords", shareText));
-            Toast.makeText(this, "Coordinate copiate", Toast.LENGTH_SHORT).show();
+        GeoFormat.Utm u = GeoFormat.utm(la, lo);
+        String mgrs = GeoFormat.mgrs(la, lo);
+        set(tvDec, GeoFormat.decimal(la, lo));
+        set(tvDms, GeoFormat.dms(la, lo));
+        set(tvDdm, GeoFormat.ddm(la, lo));
+        set(tvUtm, u == null ? "fuori zona UTM (poli)" : u.toString());
+        set(tvMgrs, mgrs == null ? "--" : mgrs);
+        set(tvPlus, GeoFormat.plusCode(la, lo));
+        set(tvAlt, loc.hasAltitude() ? String.format(Locale.ITALY, "%.0f m s.l.m. (GPS)", loc.getAltitude()) : "quota non disponibile");
+        float acc = loc.getAccuracy();
+        if (tvAcc != null) {
+            tvAcc.setText(String.format(Locale.ITALY, "± %.0f m", acc));
+            tvAcc.setTextColor(acc <= 10 ? 0xFF00FF88 : (acc <= 30 ? 0xFFFFD600 : 0xFFFF3D71));
         }
+        shareText = "La mia posizione (± " + Math.round(acc) + " m):\n"
+            + GeoFormat.decimal(la, lo) + "\n" + GeoFormat.dms(la, lo)
+            + (u == null ? "" : "\nUTM " + u) + (mgrs == null ? "" : "\nMGRS " + mgrs)
+            + "\nPlus Code " + GeoFormat.plusCode(la, lo)
+            + (loc.hasAltitude() ? String.format(Locale.ITALY, "\nQuota %.0f m", loc.getAltitude()) : "")
+            + String.format(Locale.US, "\nhttps://maps.google.com/?q=%.6f,%.6f", la, lo);
     }
-    private void shareCoords() {
-        if (shareText.isEmpty()) return;
-        Intent i = new Intent(Intent.ACTION_SEND);
-        i.setType("text/plain");
-        i.putExtra(Intent.EXTRA_TEXT, shareText);
-        startActivity(Intent.createChooser(i, "Condividi posizione"));
+
+    private void copy(String label, String text) {
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cb == null || text == null || text.isEmpty()) return;
+        cb.setPrimaryClip(ClipData.newPlainText(label, text));
+        Toast.makeText(this, label + " copiato", Toast.LENGTH_SHORT).show();
     }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
 DAYLIGHT_TOOL_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.location.Location;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
-import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.SunCalc;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Collections;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
-/** Ore di luce rimaste e orario tramonto (calcolo solare offline). */
+/**
+ * "Sole & tramonto" (v5.0): calcolo astronomico vero, precisione 1-2 minuti.
+ * Conto alla rovescia al tramonto e al buio, percorso del Sole nel cielo,
+ * tutte le fasi del giorno (crepuscoli, ora d'oro, ora blu), direzione del
+ * tramonto, durata del giorno e qualunque altra data.
+ */
 public class DaylightToolActivity extends AppCompatActivity {
-    private TextView tvSunset, tvRemaining, tvSunrise, tvNote;
-    private boolean active = false;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextView tvBig, tvBigLabel, tvBigSub, tvDate, tvPlace, tvAlt, tvAz, tvSetDir, tvLen, tvDelta, tvNoon;
+    private SunPathView path;
+    private LinearLayout timeline;
+    private int dayOffset = 0;
+    private boolean visible;
+    private double lat = Double.NaN, lon;
+    private boolean fresh;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, Double.isNaN(lat) ? 2000 : 15_000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_daylight);
-        tvSunset = findViewById(R.id.tv_sunset);
-        tvSunrise = findViewById(R.id.tv_sunrise);
-        tvRemaining = findViewById(R.id.tv_remaining);
-        tvNote = findViewById(R.id.tv_day_note);
-        View back = findViewById(R.id.btn_day_back);
-        if (back != null) back.setOnClickListener(v -> finish());
+        tvBig = findViewById(R.id.tv_day_big);
+        tvBigLabel = findViewById(R.id.tv_day_big_label);
+        tvBigSub = findViewById(R.id.tv_day_big_sub);
+        tvDate = findViewById(R.id.tv_day_date);
+        tvPlace = findViewById(R.id.tv_day_place);
+        tvAlt = findViewById(R.id.tv_sun_alt);
+        tvAz = findViewById(R.id.tv_sun_az);
+        tvSetDir = findViewById(R.id.tv_sun_setdir);
+        tvLen = findViewById(R.id.tv_day_length);
+        tvDelta = findViewById(R.id.tv_day_delta);
+        tvNoon = findViewById(R.id.tv_day_noon);
+        path = findViewById(R.id.sun_path);
+        timeline = findViewById(R.id.day_timeline);
+        click(R.id.btn_day_back, v -> finish());
+        click(R.id.btn_day_prev, v -> { dayOffset--; refresh(); });
+        click(R.id.btn_day_next, v -> { dayOffset++; refresh(); });
+        click(R.id.tv_day_date, v -> { dayOffset = 0; refresh(); });
     }
 
-    @Override protected void onResume() { super.onResume(); active = true; refresh(); }
-    @Override protected void onPause() { super.onPause(); active = false; }
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+    }
 
     private void refresh() {
-        if (!active) return;
-        Location loc = GpsTrackingService.getLastLocation();
-        if (loc == null) {
-            if (tvNote != null) tvNote.setText("In attesa del GPS...");
-            new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 1500);
+        double[] w = ToolKit.where(this);
+        if (w == null) {
+            set(tvBig, "--");
+            set(tvBigLabel, "in attesa della posizione");
+            set(tvBigSub, "Basta una posizione approssimativa: esci all'aperto qualche secondo o apri la mappa una volta.");
             return;
         }
-        Calendar now = Calendar.getInstance();
-        int doy = now.get(Calendar.DAY_OF_YEAR);
-        double[] sun = sunriseSunset(loc.getLatitude(), loc.getLongitude(), doy,
-            now.get(Calendar.ZONE_OFFSET) + now.get(Calendar.DST_OFFSET));
-        double sr = sun[0], ss = sun[1];
-        if (tvSunrise != null) tvSunrise.setText("Alba: " + hm(sr));
-        if (tvSunset != null) tvSunset.setText("Tramonto: " + hm(ss));
-        double nowH = now.get(Calendar.HOUR_OF_DAY) + now.get(Calendar.MINUTE) / 60.0;
-        double rem = ss - nowH;
-        if (tvRemaining != null) {
-            if (rem > 0) {
-                tvRemaining.setText(hmDur(rem) + " di luce rimaste");
-                tvRemaining.setTextColor(rem < 1.5 ? 0xFFFF1744 : 0xFF00FF88);
-            } else {
-                tvRemaining.setText("E' gia' buio");
-                tvRemaining.setTextColor(0xFFFF1744);
-            }
+        lat = w[0]; lon = w[1]; fresh = w[2] > 0;
+        set(tvPlace, fresh ? "GPS" : "ULTIMA POS.");
+        long now = System.currentTimeMillis();
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_MONTH, dayOffset);
+        cal.set(Calendar.HOUR_OF_DAY, 12); cal.set(Calendar.MINUTE, 0);
+        long noonLocal = cal.getTimeInMillis();
+        SunCalc.Times t = SunCalc.times(noonLocal, lat, lon);
+        SunCalc.Times y = SunCalc.times(noonLocal - 86_400_000L, lat, lon);
+
+        set(tvDate, dayOffset == 0 ? "OGGI  ·  " + new SimpleDateFormat("EEE d MMM", Locale.ITALY).format(new Date(noonLocal))
+            : new SimpleDateFormat("EEEE d MMMM yyyy", Locale.ITALY).format(new Date(noonLocal)) + "  ·  torna a oggi");
+        if (path != null) { path.setDay(noonLocal, lat, lon); path.setNow(dayOffset == 0 ? now : -1); }
+
+        // conto alla rovescia principale (sempre su oggi/domani reali)
+        hero(now);
+
+        // sole adesso
+        double[] pos = SunCalc.position(now, lat, lon);
+        set(tvAlt, String.format(Locale.ITALY, "%+.1f°", pos[0]));
+        set(tvAz, String.format(Locale.ITALY, "%.0f° %s", pos[1], GeoFormat.cardinal(pos[1])));
+        if (t.sunrise[1] != Long.MIN_VALUE) {
+            double az = SunCalc.position(t.sunrise[1], lat, lon)[1];
+            set(tvSetDir, String.format(Locale.ITALY, "%.0f° %s", az, GeoFormat.cardinal(az)));
+        } else set(tvSetDir, "--");
+
+        long len = t.dayLengthMs(), dlen = len - y.dayLengthMs();
+        set(tvLen, String.format(Locale.ITALY, "%d h %02d", len / 3_600_000, (len / 60_000) % 60));
+        long dsec = dlen / 1000;
+        set(tvDelta, String.format(Locale.ITALY, "%s%d:%02d", dsec >= 0 ? "+" : "-", Math.abs(dsec) / 60, Math.abs(dsec) % 60));
+        set(tvNoon, ToolKit.hhmm(t.solarNoon) + String.format(Locale.ITALY, "  %.0f°", t.noonAltitude));
+        fillTimeline(t, dayOffset == 0 ? now : -1);
+    }
+
+    private void hero(long now) {
+        SunCalc.Times today = SunCalc.times(now, lat, lon);
+        long sunset = today.sunrise[1], dark = today.civil[1], rise = today.sunrise[0];
+        if (rise == Long.MIN_VALUE) {
+            set(tvBig, today.noonAltitude > 0 ? "24 h" : "0 h");
+            set(tvBigLabel, today.noonAltitude > 0 ? "sole di mezzanotte" : "notte polare");
+            set(tvBigSub, "Il sole oggi non sorge o non tramonta a questa latitudine.");
+            return;
         }
-        if (tvNote != null) tvNote.setText(rem > 0 && rem < 2
-            ? "Poca luce: valuta di montare il campo ora."
-            : "Calcolo solare locale (puo' variare di ~15 min).");
-        new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 30000);
+        if (now < rise) {
+            set(tvBig, ToolKit.span(rise - now));
+            set(tvBigLabel, "all'alba (" + ToolKit.hhmm(rise) + ")");
+            set(tvBigSub, "Prima luce utile (crepuscolo civile) alle " + ToolKit.hhmm(today.civil[0]));
+        } else if (now < sunset) {
+            set(tvBig, ToolKit.span(sunset - now));
+            set(tvBigLabel, "al tramonto (" + ToolKit.hhmm(sunset) + ")");
+            set(tvBigSub, "Buio pratico alle " + ToolKit.hhmm(dark) + "  ·  luce utile ancora " + ToolKit.span(dark - now)
+                + (today.golden[1] != Long.MIN_VALUE && now < today.golden[1]
+                    ? "\nOra d'oro dalle " + ToolKit.hhmm(today.golden[1]) : ""));
+        } else if (now < dark) {
+            set(tvBig, ToolKit.span(dark - now));
+            set(tvBigLabel, "al buio (fine crepuscolo civile)");
+            set(tvBigSub, "Il sole e' tramontato alle " + ToolKit.hhmm(sunset) + ": accendi la frontale e scendi su sentieri noti.");
+        } else {
+            SunCalc.Times tom = SunCalc.times(now + 86_400_000L, lat, lon);
+            long r = tom.sunrise[0];
+            set(tvBig, r == Long.MIN_VALUE ? "--" : ToolKit.span(r - now));
+            set(tvBigLabel, r == Long.MIN_VALUE ? "notte" : "all'alba di domani (" + ToolKit.hhmm(r) + ")");
+            set(tvBigSub, "Notte. Prima luce alle " + (tom.civil[0] == Long.MIN_VALUE ? "--" : ToolKit.hhmm(tom.civil[0])));
+        }
     }
 
-    // Algoritmo alba/tramonto semplificato (in ore locali).
-    private static double[] sunriseSunset(double lat, double lon, int doy, int tzMillis) {
-        double tz = tzMillis / 3600000.0;
-        double decl = 23.45 * Math.sin(Math.toRadians(360.0 / 365.0 * (doy - 81)));
-        double latR = Math.toRadians(lat), declR = Math.toRadians(decl);
-        double cosH = -Math.tan(latR) * Math.tan(declR);
-        if (cosH > 1) return new double[]{-1, -1};    // sole mai sorto
-        if (cosH < -1) return new double[]{0, 24};    // sole sempre alto
-        double H = Math.toDegrees(Math.acos(cosH)) / 15.0;
-        double solarNoon = 12.0 - lon / 15.0 + tz;
-        return new double[]{solarNoon - H, solarNoon + H};
+    private void fillTimeline(SunCalc.Times t, long now) {
+        if (timeline == null) return;
+        timeline.removeAllViews();
+        List<Object[]> ev = new ArrayList<>();
+        add(ev, t.astro[0], "Alba astronomica", "il cielo inizia a schiarire", 0xFF3949AB);
+        add(ev, t.nautical[0], "Alba nautica", "si vede l'orizzonte", 0xFF5C6BC0);
+        add(ev, t.civil[0], "Alba civile", "luce sufficiente per camminare", 0xFF7986CB);
+        add(ev, t.sunrise[0], "Alba", "il sole sorge", 0xFFFF8A3D);
+        add(ev, t.golden[0], "Fine ora d'oro", "luce calda per le foto", 0xFFFFC94D);
+        add(ev, t.solarNoon, "Mezzogiorno solare", String.format(Locale.ITALY, "sole al punto piu' alto (%.0f°)%s", t.noonAltitude,
+            lat > 23.5 ? ": le ombre puntano a Nord" : lat < -23.5 ? ": le ombre puntano a Sud" : ""), 0xFFFFE57F);
+        add(ev, t.golden[1], "Inizio ora d'oro", "luce calda e ombre lunghe", 0xFFFFC94D);
+        add(ev, t.sunrise[1], "Tramonto", "il sole scompare", 0xFFFF6B35);
+        add(ev, t.civil[1], "Fine crepuscolo civile", "serve la luce artificiale", 0xFF7986CB);
+        add(ev, t.nautical[1], "Fine crepuscolo nautico", "orizzonte invisibile", 0xFF5C6BC0);
+        add(ev, t.astro[1], "Notte astronomica", "cielo completamente buio: stelle", 0xFF3949AB);
+        Collections.sort(ev, (a, b) -> Long.compare((Long) a[0], (Long) b[0]));
+        float dp = getResources().getDisplayMetrics().density;
+        boolean nextMarked = false;
+        for (Object[] e : ev) {
+            long when = (Long) e[0];
+            boolean past = now >= 0 && when < now;
+            boolean next = now >= 0 && !past && !nextMarked;
+            if (next) nextMarked = true;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            int pv = (int) (9 * dp);
+            row.setPadding((int) (12 * dp), pv, (int) (12 * dp), pv);
+            if (next) row.setBackgroundResource(R.drawable.bg_chip_on);
+            View dot = new View(this);
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            g.setColor((Integer) e[3]);
+            dot.setBackground(g);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams((int) (10 * dp), (int) (10 * dp));
+            dl.rightMargin = (int) (12 * dp);
+            row.addView(dot, dl);
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView name = new TextView(this);
+            name.setText((String) e[1]);
+            name.setTextColor(past ? 0xFF5A7A99 : 0xFFE8F4FD);
+            name.setTextSize(14);
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            TextView sub = new TextView(this);
+            sub.setText(next ? "tra " + ToolKit.span(when - now) + "  ·  " + e[2] : (String) e[2]);
+            sub.setTextColor(next ? 0xFF00E5FF : 0xFF5A7A99);
+            sub.setTextSize(11.5f);
+            col.addView(name);
+            col.addView(sub);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView tm = new TextView(this);
+            tm.setText(ToolKit.hhmm(when));
+            tm.setTextColor(past ? 0xFF5A7A99 : (Integer) e[3]);
+            tm.setTextSize(17);
+            tm.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+            row.addView(tm);
+            timeline.addView(row);
+        }
     }
 
-    private static String hm(double h) {
-        if (h < 0) return "--";
-        h = ((h % 24) + 24) % 24;
-        int hh = (int) h; int mm = (int) Math.round((h - hh) * 60);
-        if (mm == 60) { mm = 0; hh = (hh + 1) % 24; }
-        return String.format(java.util.Locale.US, "%02d:%02d", hh, mm);
+    private static void add(List<Object[]> ev, long when, String name, String desc, int color) {
+        if (when != Long.MIN_VALUE) ev.add(new Object[]{when, name, desc, color});
     }
-    private static String hmDur(double h) {
-        int hh = (int) h; int mm = (int) Math.round((h - hh) * 60);
-        return hh + "h " + mm + "min";
-    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
@@ -5825,211 +5935,284 @@ LAYOUT_PROXIMITY = """\
         android:textStyle="bold" android:textSize="16sp"/>
 </LinearLayout></ScrollView>"""
 
-LAYOUT_COORDS = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="20dp">
-    <Button android:id="@+id/btn_c_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_marginBottom="20dp"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="COORDINATE" android:textColor="#00E5FF" android:textSize="22sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="20dp"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Decimale (GPS)" android:textColor="#5A7A99" android:textSize="12sp"/>
-    <TextView android:id="@+id/tv_c_dec"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="--" android:textColor="#00FF88" android:textSize="18sp"
-        android:fontFamily="monospace" android:layout_marginBottom="16dp"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Gradi Minuti Secondi" android:textColor="#5A7A99" android:textSize="12sp"/>
-    <TextView android:id="@+id/tv_c_dms"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="--" android:textColor="#E8F4FD" android:textSize="16sp"
-        android:fontFamily="monospace" android:layout_marginBottom="16dp"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Posizione" android:textColor="#5A7A99" android:textSize="12sp"/>
-    <TextView android:id="@+id/tv_c_utm"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="--" android:textColor="#E8F4FD" android:textSize="15sp"
-        android:fontFamily="monospace" android:layout_marginBottom="16dp"/>
-
-    <TextView android:id="@+id/tv_c_alt"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Quota: --" android:textColor="#FFD600" android:textSize="16sp"
-        android:fontFamily="monospace" android:layout_marginBottom="24dp"/>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal">
-        <Button android:id="@+id/btn_c_copy"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="Copia" android:backgroundTint="#00E5FF" android:textColor="#050A14"
-            android:textStyle="bold" android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_c_share"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="Condividi" android:backgroundTint="#00FF88" android:textColor="#050A14"
-            android:textStyle="bold"/>
-    </LinearLayout>
-</LinearLayout></ScrollView>"""
-
-LAYOUT_DAYLIGHT = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="20dp">
-    <Button android:id="@+id/btn_day_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_marginBottom="20dp"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="ORE DI LUCE" android:textColor="#FFD600" android:textSize="22sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="24dp"/>
-    <TextView android:id="@+id/tv_remaining"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="--" android:textColor="#00FF88" android:textSize="28sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:gravity="center"
-        android:padding="20dp" android:background="#0D1421" android:layout_marginBottom="20dp"/>
-    <TextView android:id="@+id/tv_sunrise"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Alba: --" android:textColor="#E8F4FD" android:textSize="20sp"
-        android:fontFamily="monospace" android:layout_marginBottom="8dp"/>
-    <TextView android:id="@+id/tv_sunset"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Tramonto: --" android:textColor="#FF6B35" android:textSize="20sp"
-        android:fontFamily="monospace" android:layout_marginBottom="20dp"/>
-    <TextView android:id="@+id/tv_day_note"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="" android:textColor="#5A7A99" android:textSize="13sp"/>
-</LinearLayout></ScrollView>"""
-
 SIGNAL_MIRROR_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.content.Context;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
-import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
-import com.offlinegps.map.R;
-
-/**
- * Specchio di segnalazione: schermo bianco lampeggiante ad alta luminosita'
- * per farsi vedere da lontano (SOS visivo).
- */
-public class SignalMirrorActivity extends AppCompatActivity {
-    private final Handler h = new Handler(Looper.getMainLooper());
-    private boolean on = true, flashing = true;
-    private View root;
-
-    @Override protected void onCreate(@Nullable Bundle s) {
-        super.onCreate(s);
-        setContentView(R.layout.activity_mirror);
-        root = findViewById(R.id.mirror_root);
-        // massima luminosita'
-        WindowManager.LayoutParams lp = getWindow().getAttributes();
-        lp.screenBrightness = 1.0f;
-        getWindow().setAttributes(lp);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        if (root != null) root.setOnClickListener(v -> {
-            flashing = !flashing;
-            if (!flashing) setWhite(true);
-        });
-        flash();
-    }
-
-    private void flash() {
-        if (!flashing) { h.postDelayed(this::flash, 200); return; }
-        on = !on;
-        setWhite(on);
-        h.postDelayed(this::flash, 250);  // ~SOS rapido
-    }
-
-    private void setWhite(boolean white) {
-        if (root != null) root.setBackgroundColor(white ? 0xFFFFFFFF : 0xFF000000);
-    }
-
-    @Override protected void onDestroy() { super.onDestroy(); flashing = false; }
-}
-"""
-
-WHISTLE_ACTIVITY = r"""package com.offlinegps.map.ui;
-
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioTrack;
-import android.os.Bundle;
-import android.view.View;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 
 /**
- * Fischietto di emergenza: genera un tono acuto e forte (2.8-3 kHz) per
- * attirare l'attenzione. Suono sintetizzato, nessun file audio.
+ * Segnalazione luminosa (v5.0): schermo bianco a luminosita' massima, fisso,
+ * lampeggiante o in codice SOS (... --- ...), anche con il LED del flash.
+ * Prima il ciclo di lampeggio continuava anche dopo aver chiuso la schermata.
+ */
+public class SignalMirrorActivity extends AppCompatActivity {
+    private static final int FIXED = 0, BLINK = 1, SOS = 2;
+    private static final int UNIT = 220;                  // ms, un "punto" Morse
+    /** SOS: durate alternate acceso/spento in unita' (punto 1, linea 3, pausa lettera 3, parola 7). */
+    private static final int[] SOS_PATTERN = {1, 1, 1, 1, 1, 3, 3, 1, 3, 1, 3, 3, 1, 1, 1, 1, 1, 7};
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private View root, controls;
+    private TextView[] chips;
+    private TextView tvTorch;
+    private int mode = SOS, step = 0;
+    private boolean visible, torchWanted, lit;
+    private String torchId;
+    private CameraManager cam;
+
+    private final Runnable blink = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            long delay;
+            if (mode == FIXED) { setLit(true); return; }
+            if (mode == BLINK) { setLit(!lit); delay = 300; }
+            else {
+                int i = step % SOS_PATTERN.length;
+                setLit(i % 2 == 0);
+                delay = (long) SOS_PATTERN[i] * UNIT;
+                step++;
+            }
+            h.postDelayed(this, delay);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_mirror);
+        root = findViewById(R.id.mirror_root);
+        controls = findViewById(R.id.mirror_controls);
+        tvTorch = findViewById(R.id.mir_torch);
+        chips = new TextView[]{findViewById(R.id.mir_mode_fixed), findViewById(R.id.mir_mode_blink), findViewById(R.id.mir_mode_sos)};
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 1.0f;
+        getWindow().setAttributes(lp);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        for (int i = 0; i < chips.length; i++) {
+            final int m = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> setMode(m));
+        }
+        if (root != null) root.setOnClickListener(v -> {
+            if (controls != null) controls.setVisibility(controls.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        });
+        View back = findViewById(R.id.btn_mirror_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        cam = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        try {
+            if (cam != null) for (String id : cam.getCameraIdList()) {
+                Boolean f = cam.getCameraCharacteristics(id).get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                if (f != null && f) { torchId = id; break; }
+            }
+        } catch (Exception ignored) {}
+        if (tvTorch != null) {
+            if (torchId == null) tvTorch.setVisibility(View.GONE);
+            else tvTorch.setOnClickListener(v -> { torchWanted = !torchWanted; refreshChips(); setLit(lit); });
+        }
+        refreshChips();
+    }
+
+    private void setMode(int m) {
+        mode = m; step = 0;
+        refreshChips();
+        h.removeCallbacks(blink);
+        h.post(blink);
+    }
+
+    private void refreshChips() {
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == mode ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == mode ? 0xFF00E5FF : 0xFF8FB3D0);
+        }
+        if (tvTorch != null) {
+            tvTorch.setBackgroundResource(torchWanted ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            tvTorch.setTextColor(torchWanted ? 0xFFFFD600 : 0xFF8FB3D0);
+        }
+    }
+
+    private void setLit(boolean on) {
+        lit = on;
+        if (root != null) root.setBackgroundColor(on ? 0xFFFFFFFF : 0xFF000000);
+        if (torchId != null && cam != null) {
+            try { cam.setTorchMode(torchId, on && torchWanted); } catch (Exception ignored) {}
+        }
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(blink); h.post(blink); }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(blink);
+        if (torchId != null && cam != null) try { cam.setTorchMode(torchId, false); } catch (Exception ignored) {}
+    }
+}
+"""
+
+WHISTLE_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.media.AudioAttributes;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioTrack;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+
+/**
+ * Fischietto di emergenza (v5.0). Suona sul canale SVEGLIA, quindi si sente
+ * anche con il volume multimediale a zero. Tre segnali:
+ *  - PULSATO: fischi continui per farsi trovare;
+ *  - SOS: ... --- ... in codice Morse;
+ *  - SEGNALE ALPINO: 6 fischi al minuto (uno ogni 10 s), poi un minuto di
+ *    pausa, e si ripete. Chi risponde fa 3 segnali al minuto.
  */
 public class WhistleActivity extends AppCompatActivity {
-    private AudioTrack track;
-    private volatile boolean playing = false;
+    private static final int PULSE = 0, SOS = 1, ALPINE = 2;
+    private static final int SR = 44100, FREQ = 3150;   // intorno ai 3 kHz l'orecchio e' piu' sensibile
+    /** sequenze {ms acceso, ms spento, ...} */
+    private static final int[][] PATTERNS = {
+        {400, 120},
+        {200, 200, 200, 200, 200, 600, 600, 200, 600, 200, 600, 600, 200, 200, 200, 200, 200, 1400},
+        {2000, 8000, 2000, 8000, 2000, 8000, 2000, 8000, 2000, 8000, 2000, 68000},   // 2 minuti esatti
+    };
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private volatile boolean playing;
+    private volatile int mode = PULSE;
+    private volatile long patternStart;
     private Thread player;
-    private TextView tvState;
+    private TextView tvState, tvHint;
+    private TextView[] chips;
+    private int savedVolume = -1;
+
+    private final Runnable ui = new Runnable() {
+        @Override public void run() {
+            if (!playing) return;
+            if (mode == ALPINE) {
+                long t = (System.currentTimeMillis() - patternStart) % 120_000L;
+                if (t < 60_000L) tvState.setText("SEGNALE ALPINO  ·  fischio " + (t / 10_000 + 1) + " di 6");
+                else tvState.setText("PAUSA  ·  riprende tra " + ((120_000L - t) / 1000 + 1) + " s  ·  ascolta se rispondono");
+            }
+            h.postDelayed(this, 500);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_whistle);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         tvState = findViewById(R.id.tv_whistle_state);
+        tvHint = findViewById(R.id.tv_whistle_hint);
+        chips = new TextView[]{findViewById(R.id.wh_mode_pulse), findViewById(R.id.wh_mode_sos), findViewById(R.id.wh_mode_alpine)};
+        for (int i = 0; i < chips.length; i++) {
+            final int m = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> { mode = m; patternStart = System.currentTimeMillis(); refresh(); });
+        }
         View back = findViewById(R.id.btn_whistle_back);
         if (back != null) back.setOnClickListener(v -> finish());
         View btn = findViewById(R.id.btn_whistle);
-        if (btn != null) btn.setOnClickListener(v -> toggle());
+        if (btn != null) btn.setOnClickListener(v -> { if (playing) stop(); else start(); });
+        refresh();
     }
 
-    private void toggle() {
-        if (playing) { stop(); return; }
+    private void refresh() {
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == mode ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == mode ? 0xFFFFD600 : 0xFF8FB3D0);
+        }
+        if (tvHint != null) tvHint.setText(mode == PULSE
+            ? "Fischi continui: per farti sentire da chi ti cerca vicino."
+            : mode == SOS ? "SOS in Morse: tre brevi, tre lunghi, tre brevi. Riconosciuto ovunque."
+            : "Segnale internazionale di soccorso in montagna: 6 segnali in un minuto, un minuto di pausa, si ripete. "
+              + "La risposta e' 3 segnali al minuto. Vale anche con luce o gesti.");
+        if (!playing && tvState != null) tvState.setText("Premi per fischiare");
+        else if (playing && mode != ALPINE && tvState != null) tvState.setText(mode == SOS ? "SOS IN CORSO" : "FISCHIO ATTIVO");
+    }
+
+    private void start() {
+        if (playing) return;
         playing = true;
-        if (tvState != null) tvState.setText("FISCHIO ATTIVO");
-        final int sr = 44100;
-        final int freq = 2900;  // frequenza acuta, molto udibile
-        player = new Thread(() -> {
-            int min = AudioTrack.getMinBufferSize(sr,
-                AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
-            track = new AudioTrack(AudioManager.STREAM_MUSIC, sr,
-                AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT,
-                Math.max(min, sr), AudioTrack.MODE_STREAM);
-            short[] buf = new short[sr / 10];
-            track.play();
-            double phase = 0;
-            boolean pulseOn = true;
-            int pulseCount = 0;
-            while (playing) {
-                // pulsazione tipo fischietto: 0.4s on, 0.1s off
-                pulseCount++;
-                pulseOn = (pulseCount % 5) < 4;
-                for (int i = 0; i < buf.length; i++) {
-                    double inc = 2 * Math.PI * freq / sr;
-                    phase += inc;
-                    buf[i] = pulseOn ? (short) (Math.sin(phase) * 32000) : 0;
-                }
-                try { track.write(buf, 0, buf.length); } catch (Exception e) { break; }
-            }
-            try { track.stop(); track.release(); } catch (Exception ignored) {}
-        });
+        patternStart = System.currentTimeMillis();
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am != null) {
+            savedVolume = am.getStreamVolume(AudioManager.STREAM_ALARM);
+            am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);
+        }
+        player = new Thread(this::synth, "fischietto");
         player.start();
+        refresh();
+        h.removeCallbacks(ui);
+        h.post(ui);
+    }
+
+    /** Sintesi del suono: onda con attacco/rilascio morbidi (niente "click"). */
+    private void synth() {
+        int min = AudioTrack.getMinBufferSize(SR, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        AudioTrack track;
+        try {
+            track = new AudioTrack.Builder()
+                .setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(SR)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(Math.max(min, SR / 5))
+                .setTransferMode(AudioTrack.MODE_STREAM).build();
+        } catch (Exception e) { playing = false; return; }
+        short[] buf = new short[SR / 50];                 // blocchi da 20 ms
+        double phase = 0, env = 0;
+        long sample = 0;
+        track.play();
+        while (playing) {
+            int[] pat = PATTERNS[mode];
+            int total = 0;
+            for (int d : pat) total += d;
+            long ms = (System.currentTimeMillis() - patternStart) % Math.max(1, total);
+            boolean on = false;
+            int acc = 0;
+            for (int k = 0; k < pat.length; k++) {
+                acc += pat[k];
+                if (ms < acc) { on = k % 2 == 0; break; }
+            }
+            double target = on ? 1 : 0;
+            for (int i = 0; i < buf.length; i++, sample++) {
+                env += (target - env) * 0.004;            // ~5 ms di rampa
+                // leggero vibrato come un fischietto vero
+                double f = FREQ * (1 + 0.012 * Math.sin(2 * Math.PI * 28 * sample / SR));
+                phase += 2 * Math.PI * f / SR;
+                if (phase > 2 * Math.PI) phase -= 2 * Math.PI;
+                double v = Math.sin(phase) + 0.25 * Math.sin(2 * phase);
+                buf[i] = (short) (v / 1.25 * env * 32000);
+            }
+            try { track.write(buf, 0, buf.length); } catch (Exception e) { break; }
+        }
+        try { track.stop(); track.release(); } catch (Exception ignored) {}
     }
 
     private void stop() {
         playing = false;
-        if (tvState != null) tvState.setText("Premi per fischiare");
+        h.removeCallbacks(ui);
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        if (am != null && savedVolume >= 0) {
+            try { am.setStreamVolume(AudioManager.STREAM_ALARM, savedVolume, 0); } catch (Exception ignored) {}
+            savedVolume = -1;
+        }
+        refresh();
     }
 
     @Override protected void onDestroy() { super.onDestroy(); stop(); }
@@ -6038,7 +6221,7 @@ public class WhistleActivity extends AppCompatActivity {
 
 BACKTRACK_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.content.Intent;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Handler;
@@ -6048,181 +6231,119 @@ import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import com.offlinegps.map.R;
 import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.RoutingEngine;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
- * Rotta di ritorno: registra il punto di partenza e ti guida indietro,
- * mostrando direzione (bearing) e distanza per tornare.
+ * Rotta di ritorno (v5.0): fissi la partenza e una bussola-guida ti riporta
+ * indietro con freccia, distanza e tempo; oppure il navigatore a piedi sui
+ * sentieri della mappa. Il punto resta salvato anche chiudendo l'app.
  */
 public class BacktrackActivity extends AppCompatActivity {
-    private double startLat, startLon;
-    private boolean tracking = false;
     private final Handler h = new Handler(Looper.getMainLooper());
-    private TextView tvState, tvDist, tvBearing, tvHint;
+    private double startLat, startLon;
+    private long startAt;
+    private boolean hasStart, visible;
+    private TextView tvState, tvInfo;
+    private TargetGuide guide;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            render();
+            h.postDelayed(this, 1000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_backtrack);
         tvState = findViewById(R.id.tv_bt_state);
-        tvDist = findViewById(R.id.tv_bt_dist);
-        tvBearing = findViewById(R.id.tv_bt_bearing);
-        tvHint = findViewById(R.id.tv_bt_hint);
-        View back = findViewById(R.id.btn_bt_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View mark = findViewById(R.id.btn_bt_mark);
-        if (mark != null) mark.setOnClickListener(v -> markStart());
-        View show = findViewById(R.id.btn_bt_map);
-        if (show != null) show.setOnClickListener(v -> showOnMap());
-        // ripristina punto salvato
-        String la = prefs().getString("bt_lat", "");
+        tvInfo = findViewById(R.id.tv_bt_info);
+        guide = new TargetGuide(this, findViewById(R.id.bt_compass));
+        click(R.id.btn_bt_back, v -> finish());
+        click(R.id.btn_bt_mark, v -> markStart());
+        click(R.id.btn_bt_nav, v -> {
+            if (hasStart) ToolKit.navigate(this, startLat, startLon, "Punto di partenza", RoutingEngine.PROFILE_FOOT);
+            else Toast.makeText(this, "Fissa prima la partenza", Toast.LENGTH_SHORT).show();
+        });
+        click(R.id.btn_bt_map, v -> {
+            if (hasStart) ToolKit.showOnMap(this, startLat, startLon, "Punto di partenza");
+            else Toast.makeText(this, "Fissa prima la partenza", Toast.LENGTH_SHORT).show();
+        });
+        SharedPreferences p = prefs();
+        String la = p.getString("bt_lat", "");
         if (!la.isEmpty()) {
-            startLat = Double.parseDouble(la);
-            startLon = Double.parseDouble(prefs().getString("bt_lon", "0"));
-            tracking = true;
-            if (tvState != null) tvState.setText("Punto di partenza salvato");
-            loop();
+            try {
+                startLat = Double.parseDouble(la);
+                startLon = Double.parseDouble(p.getString("bt_lon", "0"));
+                startAt = p.getLong("bt_time", 0);
+                hasStart = true;
+            } catch (NumberFormatException ignored) {}
         }
     }
 
-    private android.content.SharedPreferences prefs() {
-        return getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private SharedPreferences prefs() { return getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE); }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        guide.start();
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        guide.stop();
+        h.removeCallbacks(tick);
     }
 
     private void markStart() {
         Location loc = GpsTrackingService.getLastLocation();
-        if (loc == null) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
-        startLat = loc.getLatitude(); startLon = loc.getLongitude();
+        if (loc == null) { Toast.makeText(this, "GPS non pronto: aspetta qualche secondo all'aperto", Toast.LENGTH_SHORT).show(); return; }
+        if (loc.getAccuracy() > 40)
+            Toast.makeText(this, "Segnale debole (± " + Math.round(loc.getAccuracy()) + " m): punto salvato comunque", Toast.LENGTH_LONG).show();
+        startLat = loc.getLatitude(); startLon = loc.getLongitude(); startAt = System.currentTimeMillis();
         prefs().edit().putString("bt_lat", String.valueOf(startLat))
-            .putString("bt_lon", String.valueOf(startLon)).apply();
-        tracking = true;
-        if (tvState != null) tvState.setText("Partenza fissata! Ti guido al ritorno.");
-        Toast.makeText(this, "Punto di partenza salvato", Toast.LENGTH_SHORT).show();
-        loop();
+            .putString("bt_lon", String.valueOf(startLon)).putLong("bt_time", startAt).apply();
+        hasStart = true;
+        Toast.makeText(this, "Partenza fissata: ti riporto qui", Toast.LENGTH_SHORT).show();
+        render();
     }
 
-    private void loop() {
-        if (!tracking) return;
-        Location loc = GpsTrackingService.getLastLocation();
-        if (loc != null) {
-            float[] res = new float[2];
-            Location.distanceBetween(loc.getLatitude(), loc.getLongitude(), startLat, startLon, res);
-            float dist = res[0];
-            float bearing = res[1];  // direzione verso la partenza
-            if (bearing < 0) bearing += 360;
-            if (tvDist != null) tvDist.setText(dist < 1000
-                ? String.format(java.util.Locale.US, "%.0f m al ritorno", dist)
-                : String.format(java.util.Locale.US, "%.2f km al ritorno", dist / 1000.0));
-            if (tvBearing != null) tvBearing.setText(String.format(java.util.Locale.US,
-                "Direzione: %.0f° %s", bearing, compass(bearing)));
-            if (tvHint != null) tvHint.setText(dist < 15
-                ? "Sei tornato al punto di partenza!"
-                : "Cammina verso " + compass(bearing) + " seguendo la bussola.");
+    private void render() {
+        if (!hasStart) {
+            if (tvState != null) tvState.setText("NESSUN PUNTO");
+            if (tvInfo != null) tvInfo.setText("Premi FISSA PARTENZA dove lasci l'auto o il campo. Poi, in qualsiasi momento, "
+                + "la freccia ti riporta li' anche senza rete.");
+            guide.update(Double.NaN, Double.NaN, null);
+            return;
         }
-        h.postDelayed(this::loop, 1500);
+        Location me = GpsTrackingService.getLastLocation();
+        double d = guide.update(startLat, startLon, me);
+        if (tvState != null) tvState.setText(startAt > 0
+            ? "DAL " + new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(startAt)) : "SALVATO");
+        if (tvInfo != null) {
+            if (me == null) tvInfo.setText("In attesa del GPS...");
+            else if (d >= 0 && d < Math.max(10, me.getAccuracy())) tvInfo.setText("Sei tornato al punto di partenza.");
+            else tvInfo.setText("Tieni il telefono in piano davanti a te e cammina dove punta la freccia. "
+                + "La linea d'aria non segue i sentieri: in montagna usa NAVIGA A PIEDI.");
+        }
     }
-
-    private static String compass(float b) {
-        String[] d = {"Nord","Nord-Est","Est","Sud-Est","Sud","Sud-Ovest","Ovest","Nord-Ovest"};
-        return d[(int) Math.round(b / 45f) % 8];
-    }
-
-    private void showOnMap() {
-        if (!tracking) { Toast.makeText(this, "Fissa prima la partenza", Toast.LENGTH_SHORT).show(); return; }
-        Intent i = new Intent(this, MapActivity.class);
-        i.putExtra("focus_lat", startLat);
-        i.putExtra("focus_lon", startLon);
-        i.putExtra("focus_label", "Punto di partenza");
-        startActivity(i);
-    }
-
-    @Override protected void onDestroy() { super.onDestroy(); tracking = false; }
 }
 """
-
-LAYOUT_MIRROR = """\
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/mirror_root"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="#FFFFFF">
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="center" android:text="SOS" android:textColor="#22000000"
-        android:textSize="48sp" android:textStyle="bold"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="bottom|center_horizontal" android:layout_marginBottom="40dp"
-        android:text="Tocca per fermare il lampeggio" android:textColor="#44000000"
-        android:textSize="13sp"/>
-</FrameLayout>"""
-
-LAYOUT_WHISTLE = """\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="20dp" android:background="#050A14"
-    android:gravity="center">
-    <Button android:id="@+id/btn_whistle_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_gravity="start"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="FISCHIETTO SOS" android:textColor="#FFD600" android:textSize="24sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-    <TextView android:id="@+id/tv_whistle_state"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Premi per fischiare" android:textColor="#5A7A99" android:textSize="16sp"
-        android:layout_marginBottom="40dp"/>
-    <Button android:id="@+id/btn_whistle"
-        android:layout_width="200dp" android:layout_height="200dp"
-        android:text="FISCHIA" android:backgroundTint="#FFD600" android:textColor="#050A14"
-        android:textStyle="bold" android:textSize="22sp"/>
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Tono acuto e forte per attirare l'attenzione. Tieni il volume al massimo."
-        android:textColor="#5A7A99" android:textSize="12sp" android:gravity="center"
-        android:layout_marginTop="40dp"/>
-</LinearLayout>"""
-
-LAYOUT_BACKTRACK = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="20dp">
-    <Button android:id="@+id/btn_bt_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_marginBottom="20dp"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="ROTTA DI RITORNO" android:textColor="#00FF88" android:textSize="22sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="8dp"/>
-    <TextView android:id="@+id/tv_bt_state"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Fissa il punto di partenza prima di incamminarti." android:textColor="#5A7A99"
-        android:textSize="13sp" android:layout_marginBottom="20dp"/>
-    <TextView android:id="@+id/tv_bt_dist"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="-- m al ritorno" android:textColor="#00FF88" android:textSize="26sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:gravity="center"
-        android:padding="18dp" android:background="#0D1421" android:layout_marginBottom="12dp"/>
-    <TextView android:id="@+id/tv_bt_bearing"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Direzione: --" android:textColor="#00E5FF" android:textSize="20sp"
-        android:fontFamily="monospace" android:gravity="center" android:layout_marginBottom="12dp"/>
-    <TextView android:id="@+id/tv_bt_hint"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="" android:textColor="#FFD600" android:textSize="15sp"
-        android:gravity="center" android:layout_marginBottom="24dp"/>
-    <Button android:id="@+id/btn_bt_mark"
-        android:layout_width="match_parent" android:layout_height="56dp"
-        android:text="FISSA PARTENZA QUI" android:backgroundTint="#00FF88" android:textColor="#050A14"
-        android:textStyle="bold" android:textSize="16sp" android:layout_marginBottom="12dp"/>
-    <Button android:id="@+id/btn_bt_map"
-        android:layout_width="match_parent" android:layout_height="52dp"
-        android:text="VEDI PARTENZA SU MAPPA" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-        android:textStyle="bold" android:textSize="14sp"/>
-</LinearLayout></ScrollView>"""
 
 AREA_TOOL_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -6372,63 +6493,121 @@ MULTI_TIMER_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.media.AudioManager;
 import android.media.ToneGenerator;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.CountDownTimer;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import java.util.Locale;
 
-/** Timer da minuti con avviso sonoro a fine conteggio. */
+/**
+ * Timer (v5.0): preimpostazioni rapide, barra di avanzamento e avviso finale
+ * con 5 bip DISTANZIATI e vibrazione (prima i 5 bip partivano tutti insieme
+ * e se ne sentiva uno solo). Schermo acceso mentre conta.
+ */
 public class MultiTimerActivity extends AppCompatActivity {
+    private static final int[] PRESETS = {3, 5, 10, 15, 30, 60};
+    private final Handler h = new Handler(Looper.getMainLooper());
     private CountDownTimer timer;
-    private TextView tvTime;
+    private TextView tvTime, tvEnd;
     private EditText etMin;
+    private ProgressBar pb;
     private ToneGenerator tone;
+    private long totalMs;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_timer);
         tvTime = findViewById(R.id.tv_timer);
+        tvEnd = findViewById(R.id.tv_timer_end);
         etMin = findViewById(R.id.et_timer_min);
-        View back = findViewById(R.id.btn_timer_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View start = findViewById(R.id.btn_timer_start);
-        if (start != null) start.setOnClickListener(v -> startTimer());
-        View stop = findViewById(R.id.btn_timer_stop);
-        if (stop != null) stop.setOnClickListener(v -> stopTimer());
+        pb = findViewById(R.id.pb_timer);
+        click(R.id.btn_timer_back, v -> finish());
+        click(R.id.btn_timer_start, v -> {
+            try { start(Integer.parseInt(etMin.getText().toString().trim())); }
+            catch (Exception e) { Toast.makeText(this, "Scrivi i minuti o tocca una durata", Toast.LENGTH_SHORT).show(); }
+        });
+        click(R.id.btn_timer_stop, v -> stopTimer());
+        int[] ids = {R.id.timer_p3, R.id.timer_p5, R.id.timer_p10, R.id.timer_p15, R.id.timer_p30, R.id.timer_p60};
+        for (int i = 0; i < ids.length; i++) {
+            final int min = PRESETS[i];
+            click(ids[i], v -> start(min));
+        }
         try { tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100); } catch (Exception ignored) {}
     }
 
-    private void startTimer() {
-        try {
-            int min = Integer.parseInt(etMin.getText().toString());
-            if (timer != null) timer.cancel();
-            timer = new CountDownTimer(min * 60000L, 1000) {
-                public void onTick(long ms) {
-                    long s = ms / 1000;
-                    if (tvTime != null) tvTime.setText(String.format(java.util.Locale.US,
-                        "%02d:%02d", s / 60, s % 60));
-                }
-                public void onFinish() {
-                    if (tvTime != null) tvTime.setText("FINITO!");
-                    for (int i = 0; i < 5; i++) {
-                        try { if (tone != null) tone.startTone(ToneGenerator.TONE_CDMA_HIGH_L, 500); } catch (Exception ignored) {}
-                    }
-                }
-            }.start();
-        } catch (Exception e) { Toast.makeText(this, "Inserisci i minuti", Toast.LENGTH_SHORT).show(); }
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
     }
+
+    private void start(int min) {
+        if (min <= 0 || min > 24 * 60) { Toast.makeText(this, "Da 1 minuto a 24 ore", Toast.LENGTH_SHORT).show(); return; }
+        if (timer != null) timer.cancel();
+        h.removeCallbacksAndMessages(null);
+        totalMs = min * 60_000L;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (tvEnd != null) tvEnd.setText("Suona alle " + ToolKit.hhmm(System.currentTimeMillis() + totalMs));
+        timer = new CountDownTimer(totalMs, 250) {
+            @Override public void onTick(long ms) { show(ms); }
+            @Override public void onFinish() {
+                show(0);
+                if (tvTime != null) tvTime.setText("FINITO!");
+                if (tvEnd != null) tvEnd.setText("Tempo scaduto");
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                ring();
+            }
+        }.start();
+    }
+
+    private void show(long ms) {
+        long sec = (ms + 999) / 1000;
+        if (tvTime != null) tvTime.setText(sec >= 3600
+            ? String.format(Locale.US, "%d:%02d:%02d", sec / 3600, (sec % 3600) / 60, sec % 60)
+            : String.format(Locale.US, "%02d:%02d", sec / 60, sec % 60));
+        if (pb != null && totalMs > 0) pb.setProgress((int) (1000 - ms * 1000 / totalMs));
+    }
+
+    /** 5 bip uno dopo l'altro + vibrazione. */
+    private void ring() {
+        for (int i = 0; i < 5; i++) {
+            h.postDelayed(() -> {
+                try { if (tone != null) tone.startTone(ToneGenerator.TONE_CDMA_HIGH_L, 450); } catch (Exception ignored) {}
+            }, i * 800L);
+        }
+        Vibrator vib = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        if (vib != null) {
+            long[] p = {0, 450, 350, 450, 350, 450, 350, 450, 350, 450};
+            if (Build.VERSION.SDK_INT >= 26) vib.vibrate(VibrationEffect.createWaveform(p, -1));
+            else vib.vibrate(p, -1);
+        }
+    }
+
     private void stopTimer() {
         if (timer != null) timer.cancel();
+        h.removeCallbacksAndMessages(null);
+        totalMs = 0;
         if (tvTime != null) tvTime.setText("00:00");
+        if (tvEnd != null) tvEnd.setText("");
+        if (pb != null) pb.setProgress(0);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
+
     @Override protected void onDestroy() {
         super.onDestroy();
         if (timer != null) timer.cancel();
+        h.removeCallbacksAndMessages(null);
         if (tone != null) tone.release();
     }
 }
@@ -6495,100 +6674,307 @@ public class SlopeToolActivity extends AppCompatActivity implements SensorEventL
 
 TRACK_RECORDER_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.location.Location;
+import android.app.AlertDialog;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.data.GpsDatabase;
+import com.offlinegps.map.data.TrackPointEntity;
+import com.offlinegps.map.data.TrackSessionInfo;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.gps.TrackStats;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.GpxExporter;
+import com.offlinegps.map.util.ShareUtil;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
-/** Registratore traccia: distanza, durata, velocita', dislivello. */
+/**
+ * Registratore traccia v5.0. La registrazione la fa il servizio GPS, quindi
+ * continua a schermo spento e con altre app aperte. Distanza e dislivello
+ * sono filtrati dal rumore (TrackStats), il tempo in pausa non conta,
+ * profilo altimetrico dal vivo, storico delle tracce ed esportazione GPX.
+ */
 public class TrackRecorderActivity extends AppCompatActivity {
-    private boolean recording = false;
-    private double totalDist = 0, ascent = 0, descent = 0, maxSpeed = 0;
-    private double lastLat, lastLon, lastAlt = Double.NaN;
-    private long startTime = 0;
     private final Handler h = new Handler(Looper.getMainLooper());
-    private TextView tvDist, tvTime, tvSpeed, tvElev, tvState;
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private TextView tvState, tvTime, tvElapsed, tvDist, tvAvg, tvMax, tvUp, tvDown, tvAlt, tvToggle, tvEmpty;
+    private ImageView ivToggle;
+    private TrackProfileView profile;
+    private LinearLayout history;
+    private long lastProfileAt = 0;
+    private boolean visible = false;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            render();
+            if (System.currentTimeMillis() - lastProfileAt > 10_000) loadProfile();
+            h.postDelayed(this, 1000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_recorder);
-        tvDist = findViewById(R.id.tv_rec_dist);
-        tvTime = findViewById(R.id.tv_rec_time);
-        tvSpeed = findViewById(R.id.tv_rec_speed);
-        tvElev = findViewById(R.id.tv_rec_elev);
         tvState = findViewById(R.id.tv_rec_state);
-        View back = findViewById(R.id.btn_rec_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View tgl = findViewById(R.id.btn_rec_toggle);
-        if (tgl != null) tgl.setOnClickListener(v -> toggle());
-        View rst = findViewById(R.id.btn_rec_reset);
-        if (rst != null) rst.setOnClickListener(v -> reset());
+        tvTime = findViewById(R.id.tv_rec_time);
+        tvElapsed = findViewById(R.id.tv_rec_elapsed);
+        tvDist = findViewById(R.id.tv_rec_dist);
+        tvAvg = findViewById(R.id.tv_rec_avg);
+        tvMax = findViewById(R.id.tv_rec_max);
+        tvUp = findViewById(R.id.tv_rec_up);
+        tvDown = findViewById(R.id.tv_rec_down);
+        tvAlt = findViewById(R.id.tv_rec_alt);
+        tvToggle = findViewById(R.id.tv_rec_toggle);
+        ivToggle = findViewById(R.id.iv_rec_toggle);
+        tvEmpty = findViewById(R.id.tv_rec_hist_empty);
+        profile = findViewById(R.id.rec_profile);
+        history = findViewById(R.id.rec_history);
+        click(R.id.btn_rec_back, v -> finish());
+        click(R.id.btn_rec_toggle, v -> toggle());
+        click(R.id.btn_rec_stop, v -> confirmStop());
+        click(R.id.btn_rec_export, v -> {
+            long sid = GpsTrackingService.recordingSessionId();
+            if (sid == 0) Toast.makeText(this, "Nessuna traccia registrata in questa sessione", Toast.LENGTH_SHORT).show();
+            else export(sid);
+        });
     }
 
-    private void toggle() {
-        recording = !recording;
-        if (recording) {
-            if (startTime == 0) startTime = System.currentTimeMillis();
-            lastAlt = Double.NaN;
-            if (tvState != null) tvState.setText("REGISTRAZIONE IN CORSO");
-            loop();
-        } else {
-            if (tvState != null) tvState.setText("In pausa");
-        }
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
     }
-    private void reset() {
-        recording = false; totalDist = ascent = descent = maxSpeed = 0;
-        startTime = 0; lastAlt = Double.NaN;
-        if (tvState != null) tvState.setText("Pronto");
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        h.removeCallbacks(tick);
+        h.post(tick);
+        loadProfile();
+        loadHistory();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        io.shutdown();
+    }
+
+    // ------------------------------------------------------------ comandi
+    private void toggle() {
+        if (!GpsTrackingService.hasPermission(this)) {
+            Toast.makeText(this, "Serve il permesso di posizione (aprilo dalla mappa)", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (GpsTrackingService.isRecording()) {
+            GpsTrackingService.pauseRecording(this, true);
+        } else if (GpsTrackingService.isRecordingPaused()) {
+            GpsTrackingService.pauseRecording(this, false);
+        } else {
+            GpsTrackingService.startRecording(this);
+            Toast.makeText(this, "Registrazione avviata: continua anche a schermo spento", Toast.LENGTH_LONG).show();
+            if (profile != null) profile.setData(null, null);
+        }
         render();
     }
 
-    private void loop() {
-        if (!recording) return;
-        try {
-            Location loc = GpsTrackingService.getLastLocation();
-            if (loc != null) {
-                if (lastLat != 0 || lastLon != 0) {
-                    float[] r = new float[1];
-                    Location.distanceBetween(lastLat, lastLon, loc.getLatitude(), loc.getLongitude(), r);
-                    if (r[0] > 1 && r[0] < 100) totalDist += r[0];
-                }
-                lastLat = loc.getLatitude(); lastLon = loc.getLongitude();
-                if (loc.hasAltitude()) {
-                    double a = loc.getAltitude();
-                    if (!Double.isNaN(lastAlt)) {
-                        double d = a - lastAlt;
-                        if (d > 0.5) ascent += d; else if (d < -0.5) descent += -d;
-                    }
-                    lastAlt = a;
-                }
-                if (loc.hasSpeed()) { double k = loc.getSpeed() * 3.6; if (k > maxSpeed) maxSpeed = k; }
-            }
-            render();
-        } catch (Exception ignored) {}
-        h.postDelayed(this::loop, 2000);
+    private void confirmStop() {
+        if (!GpsTrackingService.isRecording() && !GpsTrackingService.isRecordingPaused()) {
+            Toast.makeText(this, "Nessuna registrazione in corso", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Terminare la traccia?")
+            .setMessage("La traccia resta salvata: potrai esportarla in GPX dallo storico.")
+            .setPositiveButton("TERMINA", (d, w) -> {
+                GpsTrackingService.stopRecording(this);
+                render();
+                loadHistory();
+            })
+            .setNegativeButton("Annulla", null)
+            .show();
     }
 
-    private void render() {
-        if (tvDist != null) tvDist.setText(totalDist < 1000
-            ? String.format(java.util.Locale.US, "%.0f m", totalDist)
-            : String.format(java.util.Locale.US, "%.2f km", totalDist / 1000.0));
-        if (tvTime != null && startTime > 0) {
-            long sec = (System.currentTimeMillis() - startTime) / 1000;
-            tvTime.setText(String.format(java.util.Locale.US, "%02d:%02d:%02d",
-                sec / 3600, (sec % 3600) / 60, sec % 60));
-        }
-        if (tvSpeed != null) tvSpeed.setText(String.format(java.util.Locale.US, "Max %.0f km/h", maxSpeed));
-        if (tvElev != null) tvElev.setText(String.format(java.util.Locale.US,
-            "Salita %.0f m  Discesa %.0f m", ascent, descent));
+    private void export(long sessionId) {
+        Toast.makeText(this, "Creo il file GPX...", Toast.LENGTH_SHORT).show();
+        io.execute(() -> {
+            try {
+                File f = GpxExporter.exportSession(getApplicationContext(), sessionId);
+                runOnUiThread(() -> {
+                    if (isFinishing()) return;
+                    Toast.makeText(this, "Salvato: " + f.getName(), Toast.LENGTH_SHORT).show();
+                    ShareUtil.shareFile(this, f, "application/gpx+xml", "Condividi traccia GPX");
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Errore GPX: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
     }
-    @Override protected void onDestroy() { super.onDestroy(); recording = false; }
+
+    // ------------------------------------------------------------ visualizzazione
+    private void render() {
+        boolean rec = GpsTrackingService.isRecording(), paused = GpsTrackingService.isRecordingPaused();
+        TrackStats st = GpsTrackingService.recordingStats();
+        boolean any = rec || paused || GpsTrackingService.recordingSessionId() != 0;
+        if (tvState != null) {
+            tvState.setText(rec ? "● REC" : paused ? "PAUSA" : any ? "TERMINATA" : "PRONTO");
+            tvState.setTextColor(rec ? 0xFFFF3D71 : paused ? 0xFFFFD600 : 0xFF8FB3D0);
+            tvState.setBackgroundResource(rec ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+        }
+        if (tvToggle != null) tvToggle.setText(rec ? "PAUSA" : paused ? "RIPRENDI" : "AVVIA");
+        if (ivToggle != null) ivToggle.setImageResource(rec ? R.drawable.ic_v5_pause : R.drawable.ic_v5_record);
+        set(tvTime, any ? hms(st.movingMs) : "00:00:00");
+        set(tvElapsed, any ? "totale con le soste " + hms(st.elapsedMs) : "Premi AVVIA: poi puoi spegnere lo schermo");
+        set(tvDist, dist(st.distanceM));
+        set(tvAvg, String.format(Locale.ITALY, "%.1f", st.avgMovingSpeed() * 3.6));
+        set(tvMax, String.format(Locale.ITALY, "%.1f", st.maxSpeedMs * 3.6));
+        set(tvUp, String.format(Locale.ITALY, "+%.0f", st.ascentM));
+        set(tvDown, String.format(Locale.ITALY, "-%.0f", st.descentM));
+        set(tvAlt, Double.isNaN(st.minAlt) ? "--"
+            : String.format(Locale.ITALY, "%.0f–%.0f", st.minAlt, st.maxAlt));
+    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
+
+    private static String hms(long ms) {
+        long s = ms / 1000;
+        return String.format(Locale.US, "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60);
+    }
+
+    private static String dist(double m) {
+        return m < 1000 ? String.format(Locale.ITALY, "%.0f m", m) : String.format(Locale.ITALY, "%.2f km", m / 1000);
+    }
+
+    /** Profilo altimetrico della traccia in corso (dal database, in background). */
+    private void loadProfile() {
+        lastProfileAt = System.currentTimeMillis();
+        long sid = GpsTrackingService.recordingSessionId();
+        if (sid == 0 || profile == null) return;
+        io.execute(() -> {
+            List<TrackPointEntity> pts = GpsDatabase.getInstance(getApplicationContext()).trackDao().getSessionSync(sid);
+            float[][] pr = buildProfile(pts);
+            runOnUiThread(() -> { if (profile != null) profile.setData(pr[0], pr[1]); });
+        });
+    }
+
+    /** Distanza progressiva e quota smussata, ridotte a ~300 punti. */
+    static float[][] buildProfile(List<TrackPointEntity> pts) {
+        int n = pts.size();
+        if (n < 2) return new float[][]{new float[0], new float[0]};
+        double[] d = new double[n], a = new double[n];
+        for (int i = 1; i < n; i++) {
+            TrackPointEntity p = pts.get(i - 1), q = pts.get(i);
+            double step = GeoFormat.distance(p.latitude, p.longitude, q.latitude, q.longitude);
+            d[i] = d[i - 1] + (step < 500 ? step : 0);
+        }
+        int w = 7;
+        for (int i = 0; i < n; i++) {
+            double sum = 0; int c = 0;
+            for (int j = Math.max(0, i - w); j <= Math.min(n - 1, i + w); j++) { sum += pts.get(j).altitude; c++; }
+            a[i] = sum / c;
+        }
+        int step = Math.max(1, n / 300);
+        List<float[]> out = new ArrayList<>();
+        for (int i = 0; i < n; i += step) out.add(new float[]{(float) d[i], (float) a[i]});
+        if ((n - 1) % step != 0) out.add(new float[]{(float) d[n - 1], (float) a[n - 1]});
+        float[] dd = new float[out.size()], aa = new float[out.size()];
+        for (int i = 0; i < out.size(); i++) { dd[i] = out.get(i)[0]; aa[i] = out.get(i)[1]; }
+        return new float[][]{dd, aa};
+    }
+
+    /** Storico delle tracce con distanza, durata e dislivello ricalcolati. */
+    private void loadHistory() {
+        if (history == null) return;
+        io.execute(() -> {
+            GpsDatabase db = GpsDatabase.getInstance(getApplicationContext());
+            List<TrackSessionInfo> list = db.trackDao().getSessions();
+            List<Object[]> rows = new ArrayList<>();
+            int shown = 0;
+            for (TrackSessionInfo si : list) {
+                if (si.count < 2 || shown >= 20) continue;
+                TrackStats st = new TrackStats();
+                for (TrackPointEntity p : db.trackDao().getSessionSync(si.sessionId))
+                    st.add(p.latitude, p.longitude, p.altitude, p.altitude != 0, p.accuracy > 0 ? p.accuracy : 15f,
+                        p.speedMs > 0 ? p.speedMs : -1f, p.timestamp);
+                rows.add(new Object[]{si, st});
+                shown++;
+            }
+            runOnUiThread(() -> showHistory(rows));
+        });
+    }
+
+    private void showHistory(List<Object[]> rows) {
+        if (isFinishing() || history == null) return;
+        history.removeAllViews();
+        if (tvEmpty != null) tvEmpty.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
+        SimpleDateFormat f = new SimpleDateFormat("EEE d MMM  HH:mm", Locale.ITALY);
+        float dp = getResources().getDisplayMetrics().density;
+        for (Object[] r : rows) {
+            TrackSessionInfo si = (TrackSessionInfo) r[0];
+            TrackStats st = (TrackStats) r[1];
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setBackgroundResource(R.drawable.bg_tile_green);
+            int p = (int) (14 * dp);
+            row.setPadding(p, (int) (12 * dp), p, (int) (12 * dp));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (10 * dp);
+            TextView t1 = new TextView(this);
+            t1.setText(f.format(new Date(si.firstTs > 0 ? si.firstTs : si.sessionId))
+                + (si.sessionId == GpsTrackingService.recordingSessionId()
+                    && (GpsTrackingService.isRecording() || GpsTrackingService.isRecordingPaused()) ? "   ● in corso" : ""));
+            t1.setTextColor(0xFFE8F4FD);
+            t1.setTextSize(14);
+            t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            TextView t2 = new TextView(this);
+            t2.setText(String.format(Locale.ITALY, "%s  ·  %s  ·  +%.0f m  ·  %d punti",
+                dist(st.distanceM), hms(Math.max(0, si.lastTs - si.firstTs)), st.ascentM, si.count));
+            t2.setTextColor(0xFF8FB3D0);
+            t2.setTextSize(12);
+            row.addView(t1);
+            row.addView(t2);
+            row.setOnClickListener(v -> trackActions(si));
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            history.addView(row, lp);
+        }
+    }
+
+    private void trackActions(TrackSessionInfo si) {
+        new AlertDialog.Builder(this)
+            .setTitle("Traccia del " + new SimpleDateFormat("d MMM HH:mm", Locale.ITALY).format(new Date(si.sessionId)))
+            .setItems(new String[]{"Esporta e condividi GPX", "Elimina"}, (d, which) -> {
+                if (which == 0) export(si.sessionId);
+                else new AlertDialog.Builder(this)
+                    .setMessage("Eliminare definitivamente questa traccia?")
+                    .setPositiveButton("ELIMINA", (d2, w2) -> io.execute(() -> {
+                        GpsDatabase.getInstance(getApplicationContext()).trackDao().deleteSession(si.sessionId);
+                        runOnUiThread(this::loadHistory);
+                    }))
+                    .setNegativeButton("Annulla", null).show();
+            })
+            .show();
+    }
 }
 """
 
@@ -6687,81 +7073,194 @@ public class MorseActivity extends AppCompatActivity {
 SUN_COMPASS_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
-import java.util.Calendar;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.SunCalc;
+import java.util.Locale;
 
-/** Trova il Nord usando il sole e l'ora, senza bussola magnetica. */
+/**
+ * Nord dal Sole (v5.0): la posizione del Sole calcolata per il tuo luogo e
+ * l'ora esatta (non piu' "mattina = Est"). Punti la cima del telefono verso
+ * il Sole e la freccia indica il Nord vero. Di notte usa la Luna se e' alta,
+ * altrimenti spiega la Stella Polare. Non serve la bussola magnetica.
+ */
 public class SunCompassActivity extends AppCompatActivity {
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private GuideCompassView dial;
+    private TextView tvInfo, tvDetail;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 20_000);
+        }
+    };
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_suncompass);
         View back = findViewById(R.id.btn_sun_back);
         if (back != null) back.setOnClickListener(v -> finish());
-        Calendar c = Calendar.getInstance();
-        int hour = c.get(Calendar.HOUR_OF_DAY);
-        TextView t = findViewById(R.id.tv_sun_info);
-        String txt;
-        if (hour >= 6 && hour <= 9)
-            txt = "Mattina: il sole e' a EST.\nPuntalo: il Nord e' alla tua sinistra.";
-        else if (hour > 9 && hour < 15)
-            txt = "Mezzogiorno: il sole e' a SUD (in Italia).\nLa tua ombra punta a NORD.";
-        else if (hour >= 15 && hour <= 19)
-            txt = "Pomeriggio: il sole e' a OVEST.\nPuntalo: il Nord e' alla tua destra.";
-        else
-            txt = "Di notte: cerca la Stella Polare.\nE' allineata con le due stelle finali del Grande Carro.";
-        if (t != null) t.setText(txt);
+        dial = findViewById(R.id.sun_dial);
+        tvInfo = findViewById(R.id.tv_sun_info);
+        tvDetail = findViewById(R.id.tv_sun_detail);
     }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
+
+    private void refresh() {
+        double[] w = ToolKit.where(this);
+        if (w == null) {
+            set(tvInfo, "Serve una posizione approssimativa (anche vecchia): apri la mappa una volta all'aperto.");
+            return;
+        }
+        long now = System.currentTimeMillis();
+        double[] sun = SunCalc.position(now, w[0], w[1]);
+        double[] moon = SunCalc.moonPosition(now, w[0], w[1]);
+        double[] ill = SunCalc.moonIllumination(now);
+        if (sun[0] > 2) {
+            // si finge che il telefono punti al sole: la freccia indica il Nord
+            dial.setAccent(0xFFFFD600);
+            dial.setHeading((float) sun[1]);
+            dial.setTarget(0f, "NORD", "cima del telefono verso il SOLE");
+            set(tvInfo, String.format(Locale.ITALY,
+                "Punta la cima del telefono verso il Sole (non guardarlo!): la freccia indica il Nord vero.\n"
+                + "Il Sole ora e' a %.0f° (%s), alto %.0f° sull'orizzonte.", sun[1], GeoFormat.cardinal(sun[1]), sun[0]));
+            double shadow = (sun[1] + 180) % 360;
+            set(tvDetail, String.format(Locale.ITALY, "La tua ombra punta a %.0f° (%s).", shadow, GeoFormat.cardinal(shadow)));
+        } else if (moon[0] > 5 && ill[0] > 0.15) {
+            dial.setAccent(0xFFB388FF);
+            dial.setHeading((float) moon[1]);
+            dial.setTarget(0f, "NORD", "cima del telefono verso la LUNA");
+            set(tvInfo, String.format(Locale.ITALY,
+                "Notte: usa la Luna. Punta la cima del telefono verso la Luna: la freccia indica il Nord.\n"
+                + "La Luna ora e' a %.0f° (%s), %s al %.0f%%.", moon[1], GeoFormat.cardinal(moon[1]),
+                SunCalc.moonPhaseName(ill[1]).toLowerCase(Locale.ITALY), ill[0] * 100));
+            set(tvDetail, "Senza Luna: cerca la Stella Polare (vedi sotto).");
+        } else if (w[0] < 0) {
+            dial.setAccent(0xFF00E5FF);
+            dial.setHeading(0f);
+            dial.setTarget(180f, "SUD", "la Croce del Sud indica il Sud");
+            set(tvInfo, "Emisfero sud: prolunga di circa 4,5 volte l'asse lungo della Croce del Sud: "
+                + "il punto raggiunto, proiettato sull'orizzonte, e' il Sud.");
+            set(tvDetail, "La Stella Polare qui non e' visibile.");
+        } else {
+            dial.setAccent(0xFF00E5FF);
+            dial.setHeading(0f);
+            dial.setTarget(0f, "POLARE", "la Stella Polare indica il Nord");
+            set(tvInfo, "Notte senza Luna utile: trova il Grande Carro, prolunga di 5 volte la distanza fra le "
+                + "due stelle del bordo esterno del \"carro\": arrivi alla Stella Polare. Sotto di lei, all'orizzonte, c'e' il Nord.");
+            set(tvDetail, String.format(Locale.ITALY, "Alla tua latitudine la Polare e' alta circa %.0f° sull'orizzonte.", Math.abs(w[0])));
+        }
+    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
 HYDRATION_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import com.offlinegps.map.R;
 import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
-/** Contatore acqua/idratazione giornaliero per attivita' outdoor. */
+/**
+ * Idratazione (v5.0): si azzera da sola ogni giorno (prima si sommava per
+ * sempre), obiettivo regolabile, annulla l'ultima aggiunta, tempo
+ * dall'ultima bevuta.
+ */
 public class HydrationActivity extends AppCompatActivity {
-    private int ml = 0;
-    private TextView tvMl, tvGoal;
-    private static final int GOAL = 3000;
+    private static final int[] GOALS = {2000, 2500, 3000, 4000};
+    private int ml, goal, lastAdd;
+    private long lastAt;
+    private TextView tvMl, tvGoal, tvLast;
+    private ProgressBar pb;
+    private TextView[] goalChips;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_hydration);
         tvMl = findViewById(R.id.tv_hydra_ml);
         tvGoal = findViewById(R.id.tv_hydra_goal);
-        ml = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getInt("hydra_ml", 0);
-        View back = findViewById(R.id.btn_hydra_back);
-        if (back != null) back.setOnClickListener(v -> finish());
+        tvLast = findViewById(R.id.tv_hydra_last);
+        pb = findViewById(R.id.pb_hydra);
+        goalChips = new TextView[]{findViewById(R.id.hydra_goal_2), findViewById(R.id.hydra_goal_25),
+            findViewById(R.id.hydra_goal_3), findViewById(R.id.hydra_goal_4)};
+        SharedPreferences p = prefs();
+        goal = p.getInt("hydra_goal", 2500);
+        if (today().equals(p.getString("hydra_day", ""))) {
+            ml = p.getInt("hydra_ml", 0);
+            lastAt = p.getLong("hydra_last", 0);
+        }
+        click(R.id.btn_hydra_back, v -> finish());
         bind(R.id.btn_add_250, 250);
         bind(R.id.btn_add_500, 500);
         bind(R.id.btn_add_1000, 1000);
-        View rst = findViewById(R.id.btn_hydra_reset);
-        if (rst != null) rst.setOnClickListener(v -> { ml = 0; save(); });
+        click(R.id.btn_hydra_undo, v -> { ml = Math.max(0, ml - lastAdd); lastAdd = 0; save(); });
+        click(R.id.btn_hydra_reset, v -> { ml = 0; lastAdd = 0; lastAt = 0; save(); });
+        for (int i = 0; i < goalChips.length; i++) {
+            final int g = GOALS[i];
+            if (goalChips[i] != null) goalChips[i].setOnClickListener(v -> { goal = g; save(); });
+        }
         render();
     }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (!today().equals(prefs().getString("hydra_day", ""))) { ml = 0; lastAt = 0; save(); }
+        render();
+    }
+
+    private SharedPreferences prefs() { return getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE); }
+    private static String today() { return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()); }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
     private void bind(int id, int amount) {
-        View b = findViewById(id);
-        if (b != null) b.setOnClickListener(v -> { ml += amount; save(); });
+        click(id, v -> { ml += amount; lastAdd = amount; lastAt = System.currentTimeMillis(); save(); });
     }
+
     private void save() {
-        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putInt("hydra_ml", ml).apply();
+        prefs().edit().putInt("hydra_ml", ml).putInt("hydra_goal", goal)
+            .putString("hydra_day", today()).putLong("hydra_last", lastAt).apply();
         render();
     }
+
     private void render() {
-        if (tvMl != null) tvMl.setText(String.format(java.util.Locale.US, "%.1f L", ml / 1000.0));
-        if (tvGoal != null) {
-            int pct = Math.min(100, ml * 100 / GOAL);
-            tvGoal.setText("Obiettivo: " + (GOAL/1000) + " L   (" + pct + "%)");
+        if (tvMl != null) tvMl.setText(String.format(Locale.ITALY, "%.2f L", ml / 1000.0));
+        int pct = goal > 0 ? Math.min(100, ml * 100 / goal) : 0;
+        if (tvGoal != null) tvGoal.setText(String.format(Locale.ITALY, "%d%% di %.1f L%s", pct, goal / 1000.0,
+            ml >= goal ? "  ·  obiettivo raggiunto" : String.format(Locale.ITALY, "  ·  mancano %.2f L", (goal - ml) / 1000.0)));
+        if (pb != null) pb.setProgress(pct * 10);
+        if (tvLast != null) tvLast.setText(lastAt == 0 ? "Nessuna bevuta registrata oggi"
+            : "Ultima bevuta " + ToolKit.span(System.currentTimeMillis() - lastAt) + " fa"
+              + (System.currentTimeMillis() - lastAt > 45 * 60_000L ? "  ·  e' ora di bere" : ""));
+        for (int i = 0; i < goalChips.length; i++) {
+            if (goalChips[i] == null) continue;
+            boolean on = GOALS[i] == goal;
+            goalChips[i].setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            goalChips[i].setTextColor(on ? 0xFF00E5FF : 0xFF8FB3D0);
         }
     }
 }
@@ -6895,28 +7394,10 @@ LAYOUT_UNITCONV = _scroll(_tool_header("CONVERTITORE", "btn_unit_back", "#00E5FF
     + _btn("btn_u_temp", "C > F", "#141E2E", "#FFD600")
     + _btn("btn_u_speed", "km/h > mph", "#141E2E", "#FFD600"))
 
-LAYOUT_TIMER = _scroll(_tool_header("TIMER", "btn_timer_back", "#00FF88")
-    + '<EditText android:id="@+id/et_timer_min" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:inputType="number" android:hint="Minuti"\n'
-      '    android:textColor="#E8F4FD" android:textColorHint="#5A7A99" android:textSize="20sp"\n'
-      '    android:layout_marginBottom="16dp"/>\n'
-    + _big("tv_timer", "00:00", "#00FF88")
-    + _btn("btn_timer_start", "AVVIA", "#00FF88")
-    + _btn("btn_timer_stop", "Ferma", "#141E2E", "#FF6B35"))
-
 LAYOUT_SLOPE = _scroll(_tool_header("INCLINOMETRO", "btn_slope_back", "#FFD600")
     + _big("tv_slope_deg", "0°", "#00FF88")
     + _big("tv_slope_pct", "0% pendenza", "#00E5FF")
     + _big("tv_slope_hint", "Appoggia il telefono sulla superficie", "#E8F4FD"))
-
-LAYOUT_RECORDER = _scroll(_tool_header("REGISTRA TRACCIA", "btn_rec_back", "#00FF88")
-    + _big("tv_rec_state", "Pronto", "#FFD600")
-    + _big("tv_rec_dist", "0 m", "#00FF88")
-    + _big("tv_rec_time", "00:00:00", "#E8F4FD")
-    + _big("tv_rec_speed", "Max 0 km/h", "#00E5FF")
-    + _big("tv_rec_elev", "Salita 0 m  Discesa 0 m", "#FFD600")
-    + _btn("btn_rec_toggle", "AVVIA / PAUSA", "#00FF88")
-    + _btn("btn_rec_reset", "Azzera", "#141E2E", "#FF6B35"))
 
 LAYOUT_MORSE = _scroll(_tool_header("CODICE MORSE", "btn_morse_back", "#FFD600")
     + '<EditText android:id="@+id/et_morse" android:layout_width="match_parent"\n'
@@ -6926,17 +7407,6 @@ LAYOUT_MORSE = _scroll(_tool_header("CODICE MORSE", "btn_morse_back", "#FFD600")
     + _big("tv_morse_code", "... --- ...", "#FFD600")
     + _btn("btn_morse_translate", "TRADUCI", "#00E5FF")
     + _btn("btn_morse_send", "TRASMETTI COL FLASH", "#FFD600"))
-
-LAYOUT_SUNCOMPASS = _scroll(_tool_header("NORD DAL SOLE", "btn_sun_back", "#FFD600")
-    + _big("tv_sun_info", "Calcolo...", "#E8F4FD"))
-
-LAYOUT_HYDRATION = _scroll(_tool_header("IDRATAZIONE", "btn_hydra_back", "#00E5FF")
-    + _big("tv_hydra_ml", "0.0 L", "#00E5FF")
-    + _big("tv_hydra_goal", "Obiettivo: 3 L", "#5A7A99")
-    + _btn("btn_add_250", "+ 250 ml (bicchiere)", "#00E5FF")
-    + _btn("btn_add_500", "+ 500 ml (bottiglietta)", "#00E5FF")
-    + _btn("btn_add_1000", "+ 1 L (borraccia)", "#00E5FF")
-    + _btn("btn_hydra_reset", "Azzera giornata", "#141E2E", "#FF6B35"))
 
 LAYOUT_CHECKLIST = _scroll(_tool_header("CHECKLIST ZAINO", "btn_check_back", "#00FF88")
     + '<LinearLayout android:id="@+id/checklist_box" android:layout_width="match_parent"\n'
@@ -7093,43 +7563,142 @@ public class GeoNotesActivity extends AppCompatActivity {
 
 GOTOCOORDS_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.content.Intent;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.data.GpsDatabase;
+import com.offlinegps.map.data.WaypointEntity;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.concurrent.Executors;
 
-/** Vai a coordinate: inserisci lat/lon e le vedi sulla mappa. */
+/**
+ * Vai a coordinate (v5.0): incolla o scrivi una posizione in QUALSIASI
+ * formato (decimale, gradi-primi-secondi, UTM, Plus Code, link di Google
+ * Maps o un messaggio intero) e la riconosce. Poi bussola-guida verso il
+ * punto, mappa, navigatore o salvataggio come waypoint.
+ */
 public class GotoCoordsActivity extends AppCompatActivity {
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private EditText input;
+    private TextView tvResult;
+    private TargetGuide guide;
+    private double[] target;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            if (target != null) guide.update(target[0], target[1], GpsTrackingService.getLastLocation());
+            h.postDelayed(this, 1000);
+        }
+    };
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_gotocoords);
-        View back = findViewById(R.id.btn_goto_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View go = findViewById(R.id.btn_goto_show);
-        if (go != null) go.setOnClickListener(v -> show());
+        input = findViewById(R.id.et_goto_input);
+        tvResult = findViewById(R.id.tv_goto_result);
+        guide = new TargetGuide(this, findViewById(R.id.goto_compass));
+        click(R.id.btn_goto_back, v -> finish());
+        click(R.id.btn_goto_paste, v -> paste());
+        click(R.id.btn_goto_show, v -> { if (check()) ToolKit.showOnMap(this, target[0], target[1], "Punto inserito"); });
+        click(R.id.btn_goto_nav, v -> { if (check()) chooseProfile(); });
+        click(R.id.btn_goto_save, v -> { if (check()) save(); });
+        if (input != null) input.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void afterTextChanged(Editable e) { parse(); }
+        });
+        parse();
     }
-    private void show() {
-        try {
-            EditText la = findViewById(R.id.et_lat);
-            EditText lo = findViewById(R.id.et_lon);
-            double lat = Double.parseDouble(la.getText().toString().trim());
-            double lon = Double.parseDouble(lo.getText().toString().trim());
-            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-                Toast.makeText(this, "Coordinate fuori range", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            Intent i = new Intent(this, MapActivity.class);
-            i.putExtra("focus_lat", lat);
-            i.putExtra("focus_lon", lon);
-            i.putExtra("focus_label", "Punto inserito");
-            startActivity(i);
-        } catch (Exception e) {
-            Toast.makeText(this, "Inserisci numeri validi (es. 41.9028)", Toast.LENGTH_SHORT).show();
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; guide.start(); h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; guide.stop(); h.removeCallbacks(tick); }
+
+    private void paste() {
+        ClipboardManager cb = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cb == null || !cb.hasPrimaryClip() || cb.getPrimaryClip() == null || cb.getPrimaryClip().getItemCount() == 0) {
+            Toast.makeText(this, "Appunti vuoti", Toast.LENGTH_SHORT).show();
+            return;
         }
+        ClipData.Item it = cb.getPrimaryClip().getItemAt(0);
+        CharSequence t = it.coerceToText(this);
+        if (input != null && t != null) input.setText(t);
+    }
+
+    private void parse() {
+        String txt = input == null ? "" : input.getText().toString();
+        Location me = GpsTrackingService.getLastLocation();
+        double[] ref = ToolKit.where(this);
+        target = GeoFormat.parse(txt, ref == null ? Double.NaN : ref[0], ref == null ? Double.NaN : ref[1]);
+        if (tvResult == null) return;
+        if (target == null) {
+            tvResult.setTextColor(0xFF8FB3D0);
+            tvResult.setText(txt.trim().isEmpty()
+                ? "Esempi (la stessa cima): 45.8326, 6.8652  ·  45°49'57\"N 6°51'55\"E  ·  32T 334200 5077664  ·  8FQ8RVM8+23  ·  oppure un link di Google Maps"
+                : "Non riconosco una posizione in questo testo.");
+            guide.update(Double.NaN, Double.NaN, null);
+            return;
+        }
+        GeoFormat.Utm u = GeoFormat.utm(target[0], target[1]);
+        tvResult.setTextColor(0xFF00FF88);
+        tvResult.setText(GeoFormat.decimal(target[0], target[1]) + "\n" + GeoFormat.dms(target[0], target[1])
+            + (u == null ? "" : "\nUTM " + u) + "\nPlus Code " + GeoFormat.plusCode(target[0], target[1]));
+        guide.update(target[0], target[1], me);
+    }
+
+    private boolean check() {
+        if (target != null) return true;
+        Toast.makeText(this, "Inserisci prima una posizione valida", Toast.LENGTH_SHORT).show();
+        return false;
+    }
+
+    private void chooseProfile() {
+        new AlertDialog.Builder(this)
+            .setTitle("Come ci vai?")
+            .setItems(new String[]{"A piedi", "In bici", "In auto"}, (d, which) -> ToolKit.navigate(this, target[0], target[1],
+                "Coordinate inserite", which == 0 ? RoutingEngine.PROFILE_FOOT : which == 1 ? RoutingEngine.PROFILE_BIKE : RoutingEngine.PROFILE_CAR))
+            .show();
+    }
+
+    private void save() {
+        final EditText name = new EditText(this);
+        name.setHint("Nome del punto");
+        name.setText("Punto inserito");
+        new AlertDialog.Builder(this)
+            .setTitle("Salva come waypoint")
+            .setView(name)
+            .setPositiveButton("SALVA", (d, w) -> {
+                String n = name.getText().toString().trim();
+                WaypointEntity wp = WaypointEntity.create(n.isEmpty() ? "Punto inserito" : n, target[0], target[1], 0, 0, "#00FF88");
+                Executors.newSingleThreadExecutor().execute(() -> {
+                    GpsDatabase.getInstance(getApplicationContext()).waypointDao().insert(wp);
+                    runOnUiThread(() -> Toast.makeText(this, "Waypoint salvato", Toast.LENGTH_SHORT).show());
+                });
+            })
+            .setNegativeButton("Annulla", null)
+            .show();
     }
 }
 """
@@ -7144,21 +7713,6 @@ LAYOUT_GEONOTES = _scroll(_tool_header("NOTE SUL POSTO", "btn_notes_back", "#00E
     + '<LinearLayout android:id="@+id/notes_box" android:layout_width="match_parent"\n'
       '    android:layout_height="wrap_content" android:orientation="vertical"\n'
       '    android:layout_marginTop="16dp"/>')
-
-LAYOUT_GOTOCOORDS = _scroll(_tool_header("VAI A COORDINATE", "btn_goto_back", "#00FF88")
-    + '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-      '    android:text="Latitudine" android:textColor="#5A7A99" android:textSize="13sp"/>\n'
-      '<EditText android:id="@+id/et_lat" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:inputType="numberSigned|numberDecimal"\n'
-      '    android:hint="es. 41.9028" android:textColor="#E8F4FD" android:textColorHint="#5A7A99"\n'
-      '    android:textSize="20sp" android:layout_marginBottom="16dp"/>\n'
-      '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-      '    android:text="Longitudine" android:textColor="#5A7A99" android:textSize="13sp"/>\n'
-      '<EditText android:id="@+id/et_lon" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:inputType="numberSigned|numberDecimal"\n'
-      '    android:hint="es. 12.4964" android:textColor="#E8F4FD" android:textColorHint="#5A7A99"\n'
-      '    android:textSize="20sp" android:layout_marginBottom="24dp"/>\n'
-    + _btn("btn_goto_show", "MOSTRA SULLA MAPPA", "#00FF88"))
 
 FLASHLIGHT_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -7366,10 +7920,12 @@ public class CurrencyActivity extends AppCompatActivity {
 QR_POSITION_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -7377,37 +7933,111 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.QrMaker;
+import com.offlinegps.map.util.ShareUtil;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.util.Locale;
 
-/** Genera un codice visivo (matrice) con le coordinate, per condivisione visiva. */
+/**
+ * QR posizione (v5.0): un QR VERO e standard (prima era una matrice casuale
+ * che nessuna fotocamera poteva leggere). Chi lo inquadra apre la posizione
+ * nella sua app di mappe, senza internet per chi lo mostra.
+ */
 public class QrPositionActivity extends AppCompatActivity {
+    private static final int MODE_GEO = 0, MODE_LINK = 1, MODE_TEXT = 2;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private ImageView iv;
+    private TextView tvText;
+    private TextView[] chips;
+    private int mode = MODE_GEO;
+    private String content = "";
+    private Bitmap bitmap;
+    private boolean visible;
+    private double lastLat = Double.NaN, lastLon;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            Location l = GpsTrackingService.getLastLocation();
+            // si rigenera solo se ti sei spostato (il QR resta fermo da inquadrare)
+            if (l != null && (Double.isNaN(lastLat)
+                    || GeoFormat.distance(lastLat, lastLon, l.getLatitude(), l.getLongitude()) > 15)) render();
+            h.postDelayed(this, 3000);
+        }
+    };
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_qr);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 1f;                      // piu' facile da inquadrare
+        getWindow().setAttributes(lp);
+        iv = findViewById(R.id.iv_qr);
+        tvText = findViewById(R.id.tv_qr_text);
+        chips = new TextView[]{findViewById(R.id.qr_mode_geo), findViewById(R.id.qr_mode_link), findViewById(R.id.qr_mode_text)};
+        for (int i = 0; i < chips.length; i++) {
+            final int m = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> { mode = m; render(); });
+        }
         View back = findViewById(R.id.btn_qr_back);
         if (back != null) back.setOnClickListener(v -> finish());
-        TextView tv = findViewById(R.id.tv_qr_text);
-        ImageView iv = findViewById(R.id.iv_qr);
+        View share = findViewById(R.id.btn_qr_share);
+        if (share != null) share.setOnClickListener(v -> shareImage());
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; render(); h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
+
+    private void render() {
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == mode ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == mode ? 0xFF00E5FF : 0xFF8FB3D0);
+        }
         Location loc = GpsTrackingService.getLastLocation();
-        if (loc == null) { if (tv != null) tv.setText("GPS non pronto"); return; }
-        String data = String.format(java.util.Locale.US, "geo:%.6f,%.6f",
-            loc.getLatitude(), loc.getLongitude());
-        if (tv != null) tv.setText(data);
-        // QR vero richiede libreria; mostriamo una matrice pseudo-casuale dai dati
-        // come "codice visivo" leggibile, piu' il testo sotto.
+        if (loc == null) {
+            if (tvText != null) tvText.setText("In attesa del GPS...");
+            return;
+        }
+        double la = loc.getLatitude(), lo = loc.getLongitude();
+        lastLat = la; lastLon = lo;
+        GeoFormat.Utm u = GeoFormat.utm(la, lo);
+        if (mode == MODE_GEO) content = String.format(Locale.US, "geo:%.6f,%.6f?q=%.6f,%.6f", la, lo, la, lo);
+        else if (mode == MODE_LINK) content = String.format(Locale.US, "https://maps.google.com/?q=%.6f,%.6f", la, lo);
+        else content = "Posizione (± " + Math.round(loc.getAccuracy()) + " m):\n" + GeoFormat.decimal(la, lo) + "\n"
+            + GeoFormat.dms(la, lo) + (u == null ? "" : "\nUTM " + u) + "\nPlus Code " + GeoFormat.plusCode(la, lo)
+            + (loc.hasAltitude() ? String.format(Locale.ITALY, "\nQuota %.0f m", loc.getAltitude()) : "");
         try {
-            int size = 25;
-            Bitmap bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-            long seed = data.hashCode();
-            java.util.Random rnd = new java.util.Random(seed);
-            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++) {
-                boolean border = x<2||y<2||x>=size-2||y>=size-2;
-                boolean corner = (x<7&&y<7)||(x>=size-7&&y<7)||(x<7&&y>=size-7);
-                boolean fill = corner ? ((x+y)%2==0||x<2||y<2) : rnd.nextBoolean();
-                bmp.setPixel(x, y, (fill||border)&&!(corner&&x>1&&x<6&&y>1&&y<6)
-                    ? Color.BLACK : Color.WHITE);
-            }
-            if (iv != null) iv.setImageBitmap(bmp);
-        } catch (Exception e) { Toast.makeText(this, "Errore QR", Toast.LENGTH_SHORT).show(); }
+            boolean[][] m = QrMaker.encode(content);
+            int n = m.length, scale = Math.max(4, 720 / n);
+            int[] px = new int[n * scale * n * scale];
+            int w = n * scale;
+            for (int y = 0; y < w; y++)
+                for (int x = 0; x < w; x++) px[y * w + x] = m[y / scale][x / scale] ? 0xFF000000 : 0xFFFFFFFF;
+            bitmap = Bitmap.createBitmap(px, w, w, Bitmap.Config.ARGB_8888);
+            if (iv != null) iv.setImageBitmap(bitmap);
+        } catch (Exception e) {
+            Toast.makeText(this, "Errore QR: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+        if (tvText != null) tvText.setText(mode == MODE_GEO
+            ? "Apre la posizione nell'app di mappe di chi inquadra\n" + GeoFormat.decimal(la, lo)
+            : mode == MODE_LINK ? "Link a Google Maps (serve internet a chi inquadra)\n" + GeoFormat.decimal(la, lo)
+            : "Testo con tutti i formati, leggibile anche offline");
+    }
+
+    private void shareImage() {
+        if (bitmap == null) { Toast.makeText(this, "GPS non ancora pronto", Toast.LENGTH_SHORT).show(); return; }
+        try {
+            File dir = new File(getExternalFilesDir(null), "qr");
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new java.io.IOException("cartella non creata");
+            File f = new File(dir, "posizione_qr.png");
+            try (FileOutputStream out = new FileOutputStream(f)) { bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); }
+            ShareUtil.shareFile(this, f, "image/png", "Condividi QR della posizione");
+        } catch (Exception e) {
+            Toast.makeText(this, "Errore: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
     }
 }
 """
@@ -7514,19 +8144,6 @@ LAYOUT_CURRENCY = _scroll(_tool_header("VALUTE", "btn_cur_back", "#FFD600")
     + '<TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
       '    android:text="Tassi indicativi salvati offline, possono non essere aggiornati."\n'
       '    android:textColor="#5A7A99" android:textSize="12sp" android:layout_marginTop="12dp"/>')
-
-LAYOUT_QR = _scroll(_tool_header("QR POSIZIONE", "btn_qr_back", "#00E5FF")
-    + '<ImageView android:id="@+id/iv_qr" android:layout_width="240dp" android:layout_height="240dp"\n'
-      '    android:layout_gravity="center" android:background="#FFFFFF" android:padding="10dp"\n'
-      '    android:scaleType="fitCenter" android:contentDescription="QR"/>\n'
-      '<TextView android:id="@+id/tv_qr_text" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:text="--" android:textColor="#00E5FF"\n'
-      '    android:textSize="14sp" android:fontFamily="monospace" android:gravity="center"\n'
-      '    android:layout_marginTop="20dp"/>\n'
-      '<TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
-      '    android:text="Codice visivo della tua posizione. Mostralo o fotografalo come riferimento."\n'
-      '    android:textColor="#5A7A99" android:textSize="12sp" android:gravity="center"\n'
-      '    android:layout_marginTop="16dp"/>')
 
 # ============================================================
 #  CHAT OFFLINE via Bluetooth — un telefono OSPITA, l'altro ENTRA.
@@ -8088,8 +8705,10 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
 
 EMERGENCY_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.location.Location;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -8101,12 +8720,29 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.ShareUtil;
+import java.util.Locale;
 
-/** Scheda emergenza: posizione grande e sempre visibile, schermo acceso. */
+/**
+ * Scheda emergenza (v5.0). Posizione grande e sempre visibile, in tutti i
+ * formati che chiedono i soccorsi, e la frase pronta da leggere al telefono.
+ * Il pulsante principale CHIAMA il 112: l'SMS al 112 in Italia e' riservato
+ * alle persone sorde registrate, quindi l'SMS va a un contatto di fiducia.
+ */
 public class EmergencyActivity extends AppCompatActivity {
-    private TextView tvLat, tvLon, tvDms, tvAlt, tvAcc, tvTime;
-    private boolean active = false;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextView tvLat, tvLon, tvDms, tvUtm, tvPlus, tvAlt, tvAcc, tvTime, tvRead;
+    private boolean visible;
     private String shareText = "";
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 2000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
@@ -8122,148 +8758,97 @@ public class EmergencyActivity extends AppCompatActivity {
         tvLat = findViewById(R.id.em_lat);
         tvLon = findViewById(R.id.em_lon);
         tvDms = findViewById(R.id.em_dms);
+        tvUtm = findViewById(R.id.em_utm);
+        tvPlus = findViewById(R.id.em_plus);
         tvAlt = findViewById(R.id.em_alt);
         tvAcc = findViewById(R.id.em_acc);
         tvTime = findViewById(R.id.em_time);
-
-        View back = findViewById(R.id.btn_em_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View share = findViewById(R.id.btn_em_share);
-        if (share != null) share.setOnClickListener(v -> share());
-        View sos = findViewById(R.id.btn_em_sos);
-        if (sos != null) sos.setOnClickListener(v -> sosMessage());
+        tvRead = findViewById(R.id.em_read);
+        click(R.id.btn_em_back, v -> finish());
+        click(R.id.btn_em_call, v -> call112());
+        click(R.id.btn_em_sms, v -> smsContact());
+        click(R.id.btn_em_share, v -> {
+            if (shareText.isEmpty()) Toast.makeText(this, "GPS non ancora pronto", Toast.LENGTH_SHORT).show();
+            else ShareUtil.shareText(this, shareText, "Invia posizione di emergenza");
+        });
     }
 
-    @Override protected void onResume() { super.onResume(); active = true; refresh(); }
-    @Override protected void onPause() { super.onPause(); active = false; }
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
 
     private void refresh() {
-        if (!active) return;
+        set(tvTime, android.text.format.DateFormat.format("HH:mm:ss", System.currentTimeMillis()).toString());
         Location loc = GpsTrackingService.getLastLocation();
         if (loc == null) {
-            if (tvLat != null) tvLat.setText("Attendo GPS...");
-            new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 1500);
+            set(tvLat, "Attendo GPS...");
+            set(tvRead, "Se non arriva il segnale: chiama comunque il 112 e descrivi dove sei "
+                + "(sentiero, rifugio, cima, ultimo paese, cosa vedi intorno).");
             return;
         }
         double la = loc.getLatitude(), lo = loc.getLongitude();
-        if (tvLat != null) tvLat.setText(String.format(java.util.Locale.US, "%.5f", la));
-        if (tvLon != null) tvLon.setText(String.format(java.util.Locale.US, "%.5f", lo));
-        if (tvDms != null) tvDms.setText(toDms(la, true) + "   " + toDms(lo, false));
-        if (tvAlt != null) tvAlt.setText(loc.hasAltitude()
-            ? String.format(java.util.Locale.US, "%.0f m", loc.getAltitude()) : "-- m");
+        GeoFormat.Utm u = GeoFormat.utm(la, lo);
+        set(tvLat, String.format(Locale.US, "%.5f", la));
+        set(tvLon, String.format(Locale.US, "%.5f", lo));
+        set(tvDms, GeoFormat.dms(la, lo));
+        set(tvUtm, u == null ? "--" : u.toString());
+        set(tvPlus, GeoFormat.plusCode(la, lo));
+        set(tvAlt, loc.hasAltitude() ? String.format(Locale.ITALY, "%.0f m", loc.getAltitude()) : "-- m");
+        float acc = loc.getAccuracy();
+        long age = (System.currentTimeMillis() - loc.getTime()) / 1000;
         if (tvAcc != null) {
-            float acc = loc.getAccuracy();
-            tvAcc.setText(String.format(java.util.Locale.US, "+/- %.0f m", acc));
+            tvAcc.setText(String.format(Locale.ITALY, "± %.0f m%s", acc, age > 30 ? "  ·  " + (age / 60) + " min fa" : ""));
             tvAcc.setTextColor(acc <= 10 ? 0xFF00FF88 : (acc <= 25 ? 0xFFFFD600 : 0xFFFF1744));
         }
-        if (tvTime != null) tvTime.setText(android.text.format.DateFormat
-            .format("HH:mm:ss", System.currentTimeMillis()).toString());
-        shareText = "EMERGENZA - La mia posizione:\n"
-            + String.format(java.util.Locale.US, "%.6f, %.6f", la, lo) + "\n"
-            + toDms(la, true) + " " + toDms(lo, false)
-            + (loc.hasAltitude() ? String.format(java.util.Locale.US, "\nQuota: %.0f m", loc.getAltitude()) : "")
-            + "\nhttps://maps.google.com/?q=" + String.format(java.util.Locale.US, "%.6f,%.6f", la, lo);
-        new Handler(Looper.getMainLooper()).postDelayed(this::refresh, 2000);
+        set(tvRead, "Leggi all'operatore:\n\"Latitudine " + spoken(la, true) + ", longitudine " + spoken(lo, false)
+            + (loc.hasAltitude() ? String.format(Locale.ITALY, ", quota circa %d metri", Math.round(loc.getAltitude() / 10.0) * 10) : "")
+            + ", precisione " + Math.round(acc) + " metri.\"");
+        shareText = "EMERGENZA - mi trovo qui (± " + Math.round(acc) + " m):\n"
+            + GeoFormat.decimal(la, lo) + "\n" + GeoFormat.dms(la, lo)
+            + (u == null ? "" : "\nUTM " + u)
+            + "\nPlus Code " + GeoFormat.plusCode(la, lo)
+            + (loc.hasAltitude() ? String.format(Locale.ITALY, "\nQuota %.0f m", loc.getAltitude()) : "")
+            + String.format(Locale.US, "\nhttps://maps.google.com/?q=%.6f,%.6f", la, lo)
+            + "\nOra: " + android.text.format.DateFormat.format("HH:mm", loc.getTime());
     }
 
-    private static String toDms(double v, boolean lat) {
-        String hemi = lat ? (v >= 0 ? "N" : "S") : (v >= 0 ? "E" : "O");
-        v = Math.abs(v);
-        int d = (int) v; double mF = (v - d) * 60; int m = (int) mF; double sec = (mF - m) * 60;
-        return String.format(java.util.Locale.US, "%d°%02d'%04.1f\"%s", d, m, sec, hemi);
+    /** "41 virgola 89021 nord" */
+    private static String spoken(double v, boolean lat) {
+        String s = String.format(Locale.US, "%.5f", Math.abs(v)).replace(".", " virgola ");
+        return s + (lat ? (v >= 0 ? " nord" : " sud") : (v >= 0 ? " est" : " ovest"));
     }
 
-    private void share() {
-        if (shareText.isEmpty()) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
-        Intent i = new Intent(Intent.ACTION_SEND);
-        i.setType("text/plain");
-        i.putExtra(Intent.EXTRA_TEXT, shareText);
-        startActivity(Intent.createChooser(i, "Condividi posizione di emergenza"));
+    private void call112() {
+        new AlertDialog.Builder(this)
+            .setTitle("Chiamare il 112?")
+            .setMessage("Si apre il telefono con il 112 gia' composto. Durante la chiamata molti telefoni Android "
+                + "inviano da soli la posizione al 112 (AML). Tieni questa schermata per leggere le coordinate.")
+            .setPositiveButton("CHIAMA 112", (d, w) -> {
+                try { startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:112"))); }
+                catch (Exception e) { Toast.makeText(this, "Componi 112 dal telefono", Toast.LENGTH_LONG).show(); }
+            })
+            .setNegativeButton("Annulla", null)
+            .show();
     }
-    private void sosMessage() {
-        if (shareText.isEmpty()) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
-        // prova ad aprire l'SMS verso il 112 (numero unico emergenze europeo)
+
+    private void smsContact() {
+        if (shareText.isEmpty()) { Toast.makeText(this, "GPS non ancora pronto", Toast.LENGTH_SHORT).show(); return; }
         try {
-            Intent i = new Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:112"));
+            Intent i = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"));
             i.putExtra("sms_body", shareText);
             startActivity(i);
-        } catch (Exception e) { share(); }
+        } catch (Exception e) {
+            ShareUtil.shareText(this, shareText, "Invia posizione di emergenza");
+        }
     }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
-
-LAYOUT_EMERGENCY = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="#0A0000">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="16dp">
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="8dp">
-        <Button android:id="@+id/btn_em_back" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="&lt; Indietro" android:backgroundTint="#2A1010"
-            android:textColor="#FF8888" android:textSize="13sp" android:layout_marginEnd="10dp"/>
-        <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:text="EMERGENZA" android:textColor="#FF1744" android:textSize="22sp"
-            android:textStyle="bold" android:fontFamily="monospace" android:gravity="center"/>
-        <TextView android:id="@+id/em_time" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="--:--" android:textColor="#FF8888"
-            android:textSize="14sp" android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="LATITUDINE" android:textColor="#FF6666" android:textSize="14sp"
-        android:layout_marginTop="8dp"/>
-    <TextView android:id="@+id/em_lat" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="--" android:textColor="#FFFFFF"
-        android:textSize="44sp" android:textStyle="bold" android:fontFamily="monospace"/>
-
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="LONGITUDINE" android:textColor="#FF6666" android:textSize="14sp"
-        android:layout_marginTop="8dp"/>
-    <TextView android:id="@+id/em_lon" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="--" android:textColor="#FFFFFF"
-        android:textSize="44sp" android:textStyle="bold" android:fontFamily="monospace"/>
-
-    <TextView android:id="@+id/em_dms" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="--" android:textColor="#FFD600"
-        android:textSize="18sp" android:fontFamily="monospace" android:layout_marginTop="12dp"/>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="16dp">
-        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:orientation="vertical">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="QUOTA" android:textColor="#FF6666" android:textSize="13sp"/>
-            <TextView android:id="@+id/em_alt" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:text="-- m" android:textColor="#FFFFFF"
-                android:textSize="26sp" android:textStyle="bold" android:fontFamily="monospace"/>
-        </LinearLayout>
-        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:orientation="vertical">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="PRECISIONE" android:textColor="#FF6666" android:textSize="13sp"/>
-            <TextView android:id="@+id/em_acc" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:text="--" android:textColor="#00FF88"
-                android:textSize="26sp" android:textStyle="bold" android:fontFamily="monospace"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <Button android:id="@+id/btn_em_share" android:layout_width="match_parent"
-        android:layout_height="58dp" android:text="CONDIVIDI POSIZIONE" android:backgroundTint="#00AA55"
-        android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="16sp"
-        android:layout_marginTop="24dp"/>
-    <Button android:id="@+id/btn_em_sos" android:layout_width="match_parent"
-        android:layout_height="58dp" android:text="SMS AL 112 CON POSIZIONE" android:backgroundTint="#FF1744"
-        android:textColor="#FFFFFF" android:textStyle="bold" android:textSize="16sp"
-        android:layout_marginTop="12dp"/>
-    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="Il 112 e' il numero unico europeo per le emergenze. L'SMS puo' partire anche con segnale debole."
-        android:textColor="#AA6666" android:textSize="12sp" android:layout_marginTop="12dp"/>
-
-</LinearLayout></ScrollView>"""
 
 ALTIMETER_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -8287,9 +8872,13 @@ public class AltimeterActivity extends AppCompatActivity implements SensorEventL
     private TextView tvAlt, tvPressure, tvTrend, tvWarning, tvNoSensor;
     private float seaLevel = 1013.25f;
 
-    // storia pressione: coppie (tempo_ms, hPa) per calcolare la tendenza
-    private final ArrayDeque<float[]> history = new ArrayDeque<>();
+    // storia pressione: un campione medio ogni 30 s per 3 ore (max 360).
+    // v5.0: prima ogni lettura (5 al secondo) con il tempo in float, che
+    // arrotondava i millisecondi di ~2 minuti e falsava la tendenza.
+    private final ArrayDeque<long[]> history = new ArrayDeque<>();   // {tempo ms, hPa x 1000}
     private float lastHpa = 0;
+    private double accHpa = 0; private int accN = 0; private long accStart = 0;
+    private double smoothHpa = Double.NaN;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
@@ -8327,13 +8916,20 @@ public class AltimeterActivity extends AppCompatActivity implements SensorEventL
     }
 
     @Override public void onSensorChanged(SensorEvent e) {
-        float hpa = e.values[0];
+        float raw = e.values[0];
+        // filtro leggero: la quota non "balla" di un metro a ogni lettura
+        smoothHpa = Double.isNaN(smoothHpa) ? raw : smoothHpa + 0.1 * (raw - smoothHpa);
+        float hpa = (float) smoothHpa;
         lastHpa = hpa;
         long now = System.currentTimeMillis();
-        history.addLast(new float[]{now, hpa});
-        // teniamo solo le ultime 3 ore
-        while (!history.isEmpty() && now - history.peekFirst()[0] > 3 * 3600_000L)
-            history.removeFirst();
+        if (accN == 0) accStart = now;
+        accHpa += raw; accN++;
+        if (now - accStart >= 30_000L) {
+            history.addLast(new long[]{now, Math.round(accHpa / accN * 1000)});
+            accHpa = 0; accN = 0;
+            while (!history.isEmpty() && now - history.peekFirst()[0] > 3 * 3600_000L)
+                history.removeFirst();
+        }
 
         // quota dalla formula barometrica internazionale
         double alt = 44330.0 * (1.0 - Math.pow(hpa / seaLevel, 0.190284));
@@ -8347,8 +8943,12 @@ public class AltimeterActivity extends AppCompatActivity implements SensorEventL
     private void evaluateTrend(long now, float hpa) {
         // cerco la pressione di circa 1 ora fa per calcolare la variazione
         float oldHpa = hpa; long oldTime = now;
-        for (float[] p : history) {
-            if (now - p[0] >= 3600_000L) { oldHpa = p[1]; oldTime = (long) p[0]; }
+        for (long[] p : history) {
+            if (now - p[0] >= 3600_000L) { oldHpa = p[1] / 1000f; oldTime = p[0]; }
+            else break;
+        }
+        if (oldTime == now && !history.isEmpty()) {          // meno di un'ora: il campione piu' vecchio
+            oldHpa = history.peekFirst()[1] / 1000f; oldTime = history.peekFirst()[0];
         }
         float deltaPerHour;
         long span = now - oldTime;
@@ -9112,22 +9712,27 @@ public class SpeedHudActivity extends AppCompatActivity {
         });
     }
 
-    @Override protected void onResume() { super.onResume(); active = true; tick(); }
-    @Override protected void onPause() { super.onPause(); active = false; }
+    private final Runnable tickR = this::tick;
+
+    @Override protected void onResume() { super.onResume(); active = true; h.removeCallbacks(tickR); tick(); }
+    @Override protected void onPause() { super.onPause(); active = false; h.removeCallbacks(tickR); }
 
     private void tick() {
         if (!active) return;
         Location loc = GpsTrackingService.getLastLocation();
-        if (loc != null && loc.hasSpeed()) {
+        boolean fresh = loc != null && System.currentTimeMillis() - loc.getTime() < 5000;
+        if (fresh && loc.hasSpeed()) {
             double kmh = loc.getSpeed() * 3.6;
-            if (kmh > maxKmh) maxKmh = kmh;
+            if (kmh < 1) kmh = 0;
+            // massima solo con fix buono (niente picchi da riflessi del segnale)
+            if (kmh > maxKmh && loc.getAccuracy() < 25) maxKmh = kmh;
             if (tvSpeed != null) tvSpeed.setText(String.valueOf(Math.round(kmh)));
             if (tvMax != null) tvMax.setText(String.format(java.util.Locale.US,
                 "max %.0f km/h", maxKmh));
         } else if (tvSpeed != null) {
             tvSpeed.setText("--");
         }
-        h.postDelayed(this::tick, 800);
+        h.postDelayed(tickR, 500);
     }
 }
 """
@@ -14087,7 +14692,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v4.0 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.0 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -14111,7 +14716,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '            android:orientation="vertical" android:padding="18dp">\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="24dp"\n'
     '                android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"\n'
-    '                android:text="NUOVO · v4.0" android:textColor="#D9C7FF" android:textSize="10sp"\n'
+    '                android:text="RADAR LIVE" android:textColor="#D9C7FF" android:textSize="10sp"\n'
     '                android:textStyle="bold" android:letterSpacing="0.1"\n'
     '                android:background="@drawable/bg_chip_violet"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
@@ -14561,6 +15166,48 @@ public final class SunCalc {
     /** true se il Sole e' sotto -4 gradi (buio pratico: tema notte). */
     public static boolean isDark(long ms, double lat, double lon) {
         return position(ms, lat, lon)[0] < BLUE_HIGH;
+    }
+
+    // ------------------------------------------------------------ Luna
+    /** {parte illuminata 0..1, fase 0..1 (0 nuova, 0.25 primo quarto, 0.5 piena, 0.75 ultimo quarto)}. */
+    public static double[] moonIllumination(long ms) {
+        double d = toDays(ms);
+        double[] s = sunCoords(d), m = moonCoords(d);
+        double sdist = 149598000;   // km
+        double phi = Math.acos(Math.sin(s[0]) * Math.sin(m[0]) + Math.cos(s[0]) * Math.cos(m[0]) * Math.cos(s[1] - m[1]));
+        double inc = Math.atan2(sdist * Math.sin(phi), m[2] - sdist * Math.cos(phi));
+        double angle = Math.atan2(Math.cos(s[0]) * Math.sin(s[1] - m[1]),
+            Math.sin(s[0]) * Math.cos(m[0]) - Math.cos(s[0]) * Math.sin(m[0]) * Math.cos(s[1] - m[1]));
+        return new double[]{(1 + Math.cos(inc)) / 2, 0.5 + 0.5 * inc * (angle < 0 ? -1 : 1) / Math.PI};
+    }
+
+    /** {altezza, azimut da nord} della Luna in gradi (con rifrazione). */
+    public static double[] moonPosition(long ms, double lat, double lon) {
+        double lw = RAD * -lon, phi = RAD * lat, d = toDays(ms);
+        double[] c = moonCoords(d);
+        double h = siderealTime(d, lw) - c[1];
+        double alt = Math.asin(Math.sin(phi) * Math.sin(c[0]) + Math.cos(phi) * Math.cos(c[0]) * Math.cos(h));
+        if (alt > 0) alt += 0.0002967 / Math.tan(alt + 0.00312536 / (alt + 0.08901179));   // rifrazione
+        double az = Math.atan2(Math.sin(h), Math.cos(h) * Math.sin(phi) - Math.tan(c[0]) * Math.cos(phi));
+        return new double[]{alt / RAD, (az / RAD + 180 + 360) % 360};
+    }
+
+    public static String moonPhaseName(double phase) {
+        if (phase < 0.03 || phase > 0.97) return "Luna nuova";
+        if (phase < 0.22) return "Falce crescente";
+        if (phase < 0.28) return "Primo quarto";
+        if (phase < 0.47) return "Gibbosa crescente";
+        if (phase < 0.53) return "Luna piena";
+        if (phase < 0.72) return "Gibbosa calante";
+        if (phase < 0.78) return "Ultimo quarto";
+        return "Falce calante";
+    }
+
+    /** {declinazione, ascensione retta, distanza km}. */
+    private static double[] moonCoords(double d) {
+        double l = RAD * (218.316 + 13.176396 * d), m = RAD * (134.963 + 13.064993 * d), f = RAD * (93.272 + 13.229350 * d);
+        double lng = l + RAD * 6.289 * Math.sin(m), b = RAD * 5.128 * Math.sin(f);
+        return new double[]{declination(lng, b), rightAscension(lng, b), 385001 - 20905 * Math.cos(m)};
     }
 
     // ------------------------------------------------------------ formule
@@ -15322,12 +15969,7 @@ public class Map3DActivity extends AppCompatActivity implements GpsTrackingServi
     private void startGps() {
         if (checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) return;
-        try {
-            Intent i = new Intent(this, GpsTrackingService.class);
-            i.setAction(GpsTrackingService.ACTION_START);
-            i.putExtra(AppConfig.PREF_TRACK_ON, false);
-            startForegroundService(i);
-        } catch (Exception ignored) {}
+        GpsTrackingService.acquire(this, "Map3DActivity");
     }
 
     private void showFallbackNotice() {
@@ -15723,6 +16365,1284 @@ public final class MeshNode {
     private static int parseInt(String s, int d) { try { return Integer.parseInt(s); } catch (Exception e) { return d; } }
     private static long parseLong(String s, long d) { try { return Long.parseLong(s); } catch (Exception e) { return d; } }
     private static double parseDouble(String s) { try { return Double.parseDouble(s); } catch (Exception e) { return Double.NaN; } }
+}
+"""
+
+TRACK_STATS = r"""package com.offlinegps.map.gps;
+
+/**
+ * Statistiche di una traccia registrata, robuste al rumore del GPS:
+ *  - distanza: velocita' misurata dal GPS (effetto Doppler, precisa anche
+ *    quando la posizione "balla") integrata nel tempo; da fermi non conta
+ *    nulla. Dopo un buco di segnale si usa la distanza in linea retta;
+ *  - dislivello: quota mediata sugli ultimi ~20 s, poi isteresi di 3 m
+ *    (la quota GPS oscilla di 2-5 m a ogni lettura: senza filtro si
+ *    contavano centinaia di metri di salita inesistente);
+ *  - tempo in movimento separato dal tempo totale, pause escluse.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class TrackStats {
+    private static final double ALT_HYSTERESIS_M = 3.0;
+    private static final float MAX_ACCURACY_M = 35f;
+    private static final float MOVING_MS = 0.5f;
+    private static final int ALT_WINDOW = 20;
+
+    public double distanceM, ascentM, descentM, maxSpeedMs;
+    public long movingMs, elapsedMs;
+    public double minAlt = Double.NaN, maxAlt = Double.NaN;
+    public int points;
+
+    private double lastLat = Double.NaN, lastLon = Double.NaN, altRef = Double.NaN;
+    /** Posizione mediata (solo per i telefoni che non danno la velocita'). */
+    private double avgLat = Double.NaN, avgLon = Double.NaN, refLat = Double.NaN, refLon = Double.NaN;
+    private final double[] altBuf = new double[ALT_WINDOW];
+    private int altCount, altPos;
+    private long lastTime = -1;
+    private boolean paused;
+
+    public void pause() { paused = true; lastTime = -1; }
+    public void resume() {
+        paused = false; lastTime = -1;
+        lastLat = lastLon = avgLat = avgLon = refLat = refLon = Double.NaN;
+    }
+    public boolean isPaused() { return paused; }
+
+    public void reset() {
+        distanceM = ascentM = descentM = maxSpeedMs = 0;
+        movingMs = elapsedMs = 0;
+        minAlt = maxAlt = Double.NaN;
+        points = 0;
+        lastLat = lastLon = altRef = Double.NaN;
+        avgLat = avgLon = refLat = refLon = Double.NaN;
+        altCount = altPos = 0;
+        lastTime = -1;
+        paused = false;
+    }
+
+    /**
+     * Aggiunge una posizione. speedMs < 0 = velocita' non disponibile.
+     * Ritorna true se e' stata usata (precisione sufficiente).
+     */
+    public boolean add(double lat, double lon, double alt, boolean hasAlt, float accuracy, float speedMs, long timeMs) {
+        if (paused) return false;
+        if (accuracy > MAX_ACCURACY_M) return false;
+        points++;
+        if (Double.isNaN(avgLat)) { avgLat = lat; avgLon = lon; refLat = lat; refLon = lon; }
+        else { avgLat += 0.2 * (lat - avgLat); avgLon += 0.2 * (lon - avgLon); }
+        boolean netMove = false;
+        if (lastTime >= 0 && timeMs > lastTime && !Double.isNaN(lastLat)) {
+            long dt = timeMs - lastTime;
+            double straight = dist(lastLat, lastLon, lat, lon);
+            if (dt > 10_000) {
+                // buco di segnale (galleria, bosco fitto): conta la linea retta se plausibile
+                if (straight < 50.0 * dt / 1000.0) distanceM += straight;
+            } else if (speedMs >= 0) {
+                if (speedMs >= MOVING_MS) distanceM += speedMs * dt / 1000.0;
+            } else {
+                // niente velocita': si confrontano posizioni MEDIATE (il rumore si annulla)
+                double moved = dist(refLat, refLon, avgLat, avgLon);
+                if (moved >= Math.max(6.0, accuracy)) {
+                    distanceM += moved;
+                    refLat = avgLat; refLon = avgLon;
+                    netMove = true;
+                }
+            }
+            long capped = Math.min(dt, 60_000);
+            elapsedMs += capped;
+            if (speedMs >= MOVING_MS || netMove) movingMs += capped;
+        }
+        lastTime = timeMs;
+        lastLat = lat; lastLon = lon;
+        if (speedMs > maxSpeedMs && speedMs < 90) maxSpeedMs = speedMs;
+
+        if (hasAlt) {
+            altBuf[altPos] = alt;
+            altPos = (altPos + 1) % ALT_WINDOW;
+            if (altCount < ALT_WINDOW) altCount++;
+            double sum = 0;
+            for (int i = 0; i < altCount; i++) sum += altBuf[i];
+            double smooth = sum / altCount;
+            if (altCount >= Math.min(5, ALT_WINDOW)) {
+                if (Double.isNaN(minAlt) || smooth < minAlt) minAlt = smooth;
+                if (Double.isNaN(maxAlt) || smooth > maxAlt) maxAlt = smooth;
+                if (Double.isNaN(altRef)) altRef = smooth;
+                else if (smooth - altRef >= ALT_HYSTERESIS_M) { ascentM += smooth - altRef; altRef = smooth; }
+                else if (altRef - smooth >= ALT_HYSTERESIS_M) { descentM += altRef - smooth; altRef = smooth; }
+            }
+        }
+        return true;
+    }
+
+    /** Velocita' media in movimento (m/s). */
+    public double avgMovingSpeed() { return movingMs > 0 ? distanceM / (movingMs / 1000.0) : 0; }
+
+    static double dist(double la1, double lo1, double la2, double lo2) {
+        double r = 6371000.0, p1 = Math.toRadians(la1), p2 = Math.toRadians(la2);
+        double dp = p2 - p1, dl = Math.toRadians(lo2 - lo1);
+        double a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+}
+"""
+
+TRACK_SESSION_INFO = r"""package com.offlinegps.map.data;
+
+import androidx.room.ColumnInfo;
+
+/** Riassunto di una traccia registrata (risultato di TrackDao.getSessions). */
+public class TrackSessionInfo {
+    @ColumnInfo(name = "session_id") public long sessionId;
+    @ColumnInfo(name = "first_ts") public long firstTs;
+    @ColumnInfo(name = "last_ts") public long lastTs;
+    @ColumnInfo(name = "n") public int count;
+}
+"""
+
+GEO_FORMAT = r"""package com.offlinegps.map.util;
+
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Coordinate in tutti i formati usati da soccorso alpino, protezione civile
+ * e cartine: decimale, gradi-minuti-secondi, gradi-minuti decimali, UTM,
+ * MGRS (reticolato militare/soccorsi) e Plus Code (Open Location Code).
+ * Legge anche le coordinate incollate da messaggi e link di mappe.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class GeoFormat {
+    private GeoFormat() {}
+
+    // ------------------------------------------------------------ decimale / sessagesimale
+    public static String decimal(double lat, double lon) {
+        return String.format(Locale.US, "%.6f, %.6f", lat, lon);
+    }
+
+    /** 41°53'24.8"N 12°29'32.0"E (arrotondamento corretto: mai 60 secondi). */
+    public static String dms(double lat, double lon) {
+        return dms1(lat, true) + " " + dms1(lon, false);
+    }
+
+    public static String dms1(double v, boolean isLat) {
+        String hemi = isLat ? (v >= 0 ? "N" : "S") : (v >= 0 ? "E" : "W");
+        long tenths = Math.round(Math.abs(v) * 36000.0);   // decimi di secondo
+        long d = tenths / 36000, rem = tenths % 36000;
+        long m = rem / 600;
+        double s = (rem % 600) / 10.0;
+        return String.format(Locale.US, "%d°%02d'%04.1f\"%s", d, m, s, hemi);
+    }
+
+    /** 41°53.413'N 12°29.533'E (formato di molti GPS e della nautica). */
+    public static String ddm(double lat, double lon) {
+        return ddm1(lat, true) + " " + ddm1(lon, false);
+    }
+
+    private static String ddm1(double v, boolean isLat) {
+        String hemi = isLat ? (v >= 0 ? "N" : "S") : (v >= 0 ? "E" : "W");
+        long thou = Math.round(Math.abs(v) * 60000.0);      // millesimi di primo
+        long d = thou / 60000;
+        double m = (thou % 60000) / 1000.0;
+        return String.format(Locale.US, "%d°%06.3f'%s", d, m, hemi);
+    }
+
+    // ------------------------------------------------------------ UTM / MGRS (WGS84)
+    public static final class Utm {
+        public final int zone; public final char band; public final double easting, northing;
+        Utm(int zone, char band, double e, double n) { this.zone = zone; this.band = band; easting = e; northing = n; }
+        public boolean north() { return band >= 'N'; }
+        @Override public String toString() {
+            return String.format(Locale.US, "%d%c %d %d", zone, band, (long) Math.floor(easting), (long) Math.floor(northing));
+        }
+    }
+
+    private static final double A = 6378137.0, F = 1 / 298.257223563, K0 = 0.9996;
+    private static final double E2 = F * (2 - F), EP2 = E2 / (1 - E2);
+    private static final String BANDS = "CDEFGHJKLMNPQRSTUVWX";
+
+    public static boolean utmValid(double lat) { return lat >= -80 && lat < 84; }
+
+    public static int utmZone(double lat, double lon) {
+        int zone = (int) Math.floor((lon + 180) / 6) + 1;
+        if (zone > 60) zone = 60;
+        if (lat >= 56 && lat < 64 && lon >= 3 && lon < 12) zone = 32;          // Norvegia
+        if (lat >= 72 && lat < 84) {                                            // Svalbard
+            if (lon >= 0 && lon < 9) zone = 31;
+            else if (lon >= 9 && lon < 21) zone = 33;
+            else if (lon >= 21 && lon < 33) zone = 35;
+            else if (lon >= 33 && lon < 42) zone = 37;
+        }
+        return zone;
+    }
+
+    public static Utm utm(double lat, double lon) {
+        if (!utmValid(lat)) return null;
+        int zone = utmZone(lat, lon);
+        char band = BANDS.charAt(Math.min(19, (int) Math.floor((lat + 80) / 8)));
+        double lon0 = Math.toRadians((zone - 1) * 6 - 180 + 3);
+        double phi = Math.toRadians(lat), lam = Math.toRadians(lon);
+        double sin = Math.sin(phi), cos = Math.cos(phi), tan = Math.tan(phi);
+        double n = A / Math.sqrt(1 - E2 * sin * sin);
+        double t = tan * tan, c = EP2 * cos * cos, a = cos * (lam - lon0);
+        double m = A * ((1 - E2 / 4 - 3 * E2 * E2 / 64 - 5 * E2 * E2 * E2 / 256) * phi
+            - (3 * E2 / 8 + 3 * E2 * E2 / 32 + 45 * E2 * E2 * E2 / 1024) * Math.sin(2 * phi)
+            + (15 * E2 * E2 / 256 + 45 * E2 * E2 * E2 / 1024) * Math.sin(4 * phi)
+            - (35 * E2 * E2 * E2 / 3072) * Math.sin(6 * phi));
+        double x = K0 * n * (a + (1 - t + c) * a * a * a / 6
+            + (5 - 18 * t + t * t + 72 * c - 58 * EP2) * Math.pow(a, 5) / 120) + 500000.0;
+        double y = K0 * (m + n * tan * (a * a / 2 + (5 - t + 9 * c + 4 * c * c) * Math.pow(a, 4) / 24
+            + (61 - 58 * t + t * t + 600 * c - 330 * EP2) * Math.pow(a, 6) / 720));
+        if (lat < 0) y += 10000000.0;
+        return new Utm(zone, band, x, y);
+    }
+
+    /** UTM -> lat/lon. north = emisfero nord. */
+    public static double[] fromUtm(int zone, boolean north, double easting, double northing) {
+        double x = easting - 500000.0, y = north ? northing : northing - 10000000.0;
+        double lon0 = Math.toRadians((zone - 1) * 6 - 180 + 3);
+        double m = y / K0;
+        double mu = m / (A * (1 - E2 / 4 - 3 * E2 * E2 / 64 - 5 * E2 * E2 * E2 / 256));
+        double e1 = (1 - Math.sqrt(1 - E2)) / (1 + Math.sqrt(1 - E2));
+        double phi1 = mu + (3 * e1 / 2 - 27 * Math.pow(e1, 3) / 32) * Math.sin(2 * mu)
+            + (21 * e1 * e1 / 16 - 55 * Math.pow(e1, 4) / 32) * Math.sin(4 * mu)
+            + (151 * Math.pow(e1, 3) / 96) * Math.sin(6 * mu)
+            + (1097 * Math.pow(e1, 4) / 512) * Math.sin(8 * mu);
+        double sin = Math.sin(phi1), cos = Math.cos(phi1), tan = Math.tan(phi1);
+        double n1 = A / Math.sqrt(1 - E2 * sin * sin);
+        double t1 = tan * tan, c1 = EP2 * cos * cos;
+        double r1 = A * (1 - E2) / Math.pow(1 - E2 * sin * sin, 1.5);
+        double d = x / (n1 * K0);
+        double lat = phi1 - (n1 * tan / r1) * (d * d / 2
+            - (5 + 3 * t1 + 10 * c1 - 4 * c1 * c1 - 9 * EP2) * Math.pow(d, 4) / 24
+            + (61 + 90 * t1 + 298 * c1 + 45 * t1 * t1 - 252 * EP2 - 3 * c1 * c1) * Math.pow(d, 6) / 720);
+        double lon = lon0 + (d - (1 + 2 * t1 + c1) * Math.pow(d, 3) / 6
+            + (5 - 2 * c1 + 28 * t1 - 3 * c1 * c1 + 8 * EP2 + 24 * t1 * t1) * Math.pow(d, 5) / 120) / cos;
+        return new double[]{Math.toDegrees(lat), Math.toDegrees(lon)};
+    }
+
+    private static final String[] MGRS_COLS = {"ABCDEFGH", "JKLMNPQR", "STUVWXYZ"};
+    private static final String MGRS_ROWS = "ABCDEFGHJKLMNPQRSTUV";
+
+    /** MGRS a 1 m: "33T TG 91234 40987". */
+    public static String mgrs(double lat, double lon) {
+        Utm u = utm(lat, lon);
+        if (u == null) return null;
+        int set = (u.zone - 1) % 3;
+        long e = (long) Math.floor(u.easting), n = (long) Math.floor(u.northing);
+        int col = (int) (e / 100000) - 1;
+        int row = (int) ((n / 100000) % 20);
+        if (u.zone % 2 == 0) row = (row + 5) % 20;
+        if (col < 0 || col > 7) return null;
+        return String.format(Locale.US, "%d%c %c%c %05d %05d", u.zone, u.band,
+            MGRS_COLS[set].charAt(col), MGRS_ROWS.charAt(row), e % 100000, n % 100000);
+    }
+
+    // ------------------------------------------------------------ Plus Code (Open Location Code)
+    private static final String OLC = "23456789CFGHJMPQRVWX";
+
+    /** Plus Code completo a 10 cifre (~14 m), es. "8FHJVFRJ+2V". */
+    public static String plusCode(double lat, double lon) {
+        lat = Math.max(-90, Math.min(90, lat));
+        if (lat == 90) lat -= 0.000125 / 2;
+        lon = ((lon + 180) % 360 + 360) % 360 - 180;
+        // come la libreria ufficiale: interi alla precisione massima, arrotondati
+        // a 6 decimali prima di troncare (evita errori tipo 80799.99999 -> 80799)
+        long la = (long) Math.floor(Math.round((lat + 90) * 2.5e7 * 1e6) / 1e6) / 3125;  // 1/8000 di grado
+        long lo = (long) Math.floor(Math.round((lon + 180) * 8.192e6 * 1e6) / 1e6) / 1024;
+        char[] out = new char[11];
+        long[] div = {160000, 8000, 400, 20, 1};
+        int k = 0;
+        for (int i = 0; i < 5; i++) {
+            out[k++] = OLC.charAt((int) ((la / div[i]) % 20));
+            out[k++] = OLC.charAt((int) ((lo / div[i]) % 20));
+            if (k == 8) out[k++] = '+';
+        }
+        return new String(out);
+    }
+
+    /** Decodifica un Plus Code completo (centro dell'area). null se non valido. */
+    public static double[] decodePlusCode(String code) {
+        String c = code.trim().toUpperCase(Locale.US).replace("+", "");
+        if (c.length() < 8 || c.length() > 10 || c.length() % 2 != 0) return null;
+        double lat = -90, lon = -180, res = 20;
+        for (int i = 0; i < c.length(); i += 2) {
+            int a = OLC.indexOf(c.charAt(i)), b = OLC.indexOf(c.charAt(i + 1));
+            if (a < 0 || b < 0) return null;
+            lat += a * res; lon += b * res;
+            if (i + 2 < c.length()) res /= 20;
+        }
+        return new double[]{lat + res / 2, lon + res / 2};
+    }
+
+    /** Plus Code breve ("VFRJ+2V") completato con una posizione vicina. */
+    public static double[] recoverPlusCode(String shortCode, double refLat, double refLon) {
+        String s = shortCode.trim().toUpperCase(Locale.US);
+        int plus = s.indexOf('+');
+        if (plus < 0 || plus >= 8) return plus == 8 ? decodePlusCode(s) : null;
+        int pad = 8 - plus;
+        double res = Math.pow(20, 2 - pad / 2.0);
+        String full = plusCode(refLat, refLon).substring(0, pad) + s;
+        double[] p = decodePlusCode(full);
+        if (p == null) return null;
+        double half = res / 2;
+        if (refLat + half < p[0] && p[0] - res >= -90) p[0] -= res;
+        else if (refLat - half > p[0] && p[0] + res <= 90) p[0] += res;
+        if (refLon + half < p[1]) p[1] -= res;
+        else if (refLon - half > p[1]) p[1] += res;
+        return p;
+    }
+
+    // ------------------------------------------------------------ lettura testo incollato
+    private static final Pattern P_PLUS = Pattern.compile("(?i)\\b([23456789CFGHJMPQRVWX]{4,8}\\+[23456789CFGHJMPQRVWX]{0,3})");
+    private static final Pattern P_UTM = Pattern.compile("(?i)\\b(\\d{1,2})\\s*([C-HJ-NP-X])\\s+(\\d{5,7}(?:[.,]\\d+)?)\\s*(?:m?E)?[\\s,;]+(\\d{6,8}(?:[.,]\\d+)?)\\s*(?:m?N)?\\b");
+    private static final Pattern P_SEXA = Pattern.compile(
+        "([NSEWO])?\\s*(\\d{1,3}(?:[.,]\\d+)?)\\s*[°º:dD ]\\s*(?:(\\d{1,2}(?:[.,]\\d+)?)\\s*['′:mM ]\\s*)?(?:(\\d{1,2}(?:[.,]\\d+)?)\\s*(?:\"|″|''|[sS])\\s*)?([NSEWO])?");
+    private static final Pattern P_DEC = Pattern.compile("(-?\\d{1,3}\\.\\d+)\\s*[,;\\s]\\s*(-?\\d{1,3}\\.\\d+)");
+    private static final Pattern P_DEC_COMMA = Pattern.compile("(-?\\d{1,3},\\d{3,})\\s*[;\\s]\\s*(-?\\d{1,3},\\d{3,})");
+
+    /**
+     * Prova a leggere una posizione da testo libero: "41.89, 12.49",
+     * "41,89 12,49", 41°53'24"N 12°29'32"E, 41°53.4'N, link geo:/Google Maps,
+     * UTM "33T 291234 4640987", Plus Code (breve se c'e' un riferimento).
+     * Ritorna {lat, lon} oppure null.
+     */
+    public static double[] parse(String text, double refLat, double refLon) {
+        if (text == null) return null;
+        String t = text.trim();
+        if (t.isEmpty()) return null;
+        Matcher m = P_UTM.matcher(t);
+        if (m.find()) {
+            int zone = Integer.parseInt(m.group(1));
+            char band = Character.toUpperCase(m.group(2).charAt(0));
+            if (zone >= 1 && zone <= 60) {
+                double e = num(m.group(3)), n = num(m.group(4));
+                double[] p = fromUtm(zone, band >= 'N', e, n);
+                if (valid(p)) return p;
+            }
+        }
+        m = P_PLUS.matcher(t);
+        if (m.find()) {
+            String code = m.group(1);
+            double[] p = code.indexOf('+') == 8 ? decodePlusCode(code)
+                : (Double.isNaN(refLat) ? null : recoverPlusCode(code, refLat, refLon));
+            if (valid(p)) return p;
+        }
+        double[] sexa = parseSexagesimal(t);
+        if (sexa != null) return sexa;
+        m = P_DEC.matcher(t);
+        if (m.find()) {
+            double[] p = {Double.parseDouble(m.group(1)), Double.parseDouble(m.group(2))};
+            if (valid(p)) return p;
+        }
+        m = P_DEC_COMMA.matcher(t);
+        if (m.find()) {
+            double[] p = {num(m.group(1)), num(m.group(2))};
+            if (valid(p)) return p;
+        }
+        return null;
+    }
+
+    private static double[] parseSexagesimal(String t) {
+        if (t.indexOf('°') < 0 && t.indexOf('º') < 0 && t.indexOf('\'') < 0) return null;
+        Matcher m = P_SEXA.matcher(t);
+        double[] vals = new double[2];
+        char[] hemi = new char[2];
+        int found = 0;
+        while (m.find() && found < 2) {
+            if (m.group(2) == null) continue;
+            String pre = m.group(1), post = m.group(5);
+            boolean hasMarks = m.group(3) != null || m.group(4) != null || m.group(0).contains("°") || m.group(0).contains("º");
+            if (!hasMarks && pre == null && post == null) continue;
+            double v = num(m.group(2));
+            if (m.group(3) != null) v += num(m.group(3)) / 60.0;
+            if (m.group(4) != null) v += num(m.group(4)) / 3600.0;
+            String h = pre != null ? pre : post;
+            hemi[found] = h == null ? 0 : Character.toUpperCase(h.charAt(0));
+            vals[found++] = v;
+            // "N 41°53' E 12°29'": la lettera dopo il primo numero e' della coordinata seguente
+            if (pre != null && post != null) m.region(m.start(5), t.length());
+        }
+        if (found < 2) return null;
+        double lat = vals[0], lon = vals[1];
+        // l'ordine puo' essere invertito ("12°E 41°N")
+        if (hemi[0] == 'E' || hemi[0] == 'W' || hemi[0] == 'O') {
+            double tmp = lat; lat = lon; lon = tmp;
+            char th = hemi[0]; hemi[0] = hemi[1]; hemi[1] = th;
+        }
+        if (hemi[0] == 'S') lat = -lat;
+        if (hemi[1] == 'W' || hemi[1] == 'O') lon = -lon;
+        double[] p = {lat, lon};
+        return valid(p) ? p : null;
+    }
+
+    private static double num(String s) { return Double.parseDouble(s.replace(',', '.')); }
+
+    private static boolean valid(double[] p) {
+        return p != null && !Double.isNaN(p[0]) && !Double.isNaN(p[1])
+            && Math.abs(p[0]) <= 90 && Math.abs(p[1]) <= 180 && !(p[0] == 0 && p[1] == 0);
+    }
+
+    // ------------------------------------------------------------ distanze e direzioni
+    public static double distance(double la1, double lo1, double la2, double lo2) {
+        double r = 6371008.8, p1 = Math.toRadians(la1), p2 = Math.toRadians(la2);
+        double dp = p2 - p1, dl = Math.toRadians(lo2 - lo1);
+        double a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Rotta iniziale in gradi da nord (0..360). */
+    public static double bearing(double la1, double lo1, double la2, double lo2) {
+        double p1 = Math.toRadians(la1), p2 = Math.toRadians(la2), dl = Math.toRadians(lo2 - lo1);
+        double y = Math.sin(dl) * Math.cos(p2);
+        double x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    public static String formatDistance(double m) {
+        if (m < 1000) return String.format(Locale.ITALY, "%.0f m", m);
+        if (m < 10000) return String.format(Locale.ITALY, "%.2f km", m / 1000);
+        return String.format(Locale.ITALY, "%.1f km", m / 1000);
+    }
+
+    private static final String[] CARD = {"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+        "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"};
+
+    /** Punto cardinale italiano (16 settori). */
+    public static String cardinal(double deg) {
+        return CARD[(int) Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+    }
+}
+"""
+
+SHARE_UTIL = r"""package com.offlinegps.map.util;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
+import android.widget.Toast;
+import androidx.core.content.FileProvider;
+import java.io.File;
+
+/** Condivisione di file dell'app (GPX, immagini QR) tramite FileProvider. */
+public final class ShareUtil {
+    private ShareUtil() {}
+
+    public static Uri uriFor(Activity a, File f) {
+        return FileProvider.getUriForFile(a, a.getPackageName() + ".files", f);
+    }
+
+    public static void shareFile(Activity a, File f, String mime, String title) {
+        try {
+            Intent i = new Intent(Intent.ACTION_SEND);
+            i.setType(mime);
+            i.putExtra(Intent.EXTRA_STREAM, uriFor(a, f));
+            i.putExtra(Intent.EXTRA_SUBJECT, f.getName());
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            a.startActivity(Intent.createChooser(i, title));
+        } catch (Exception e) {
+            Toast.makeText(a, "Impossibile condividere: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    public static void shareText(Activity a, String text, String title) {
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_TEXT, text);
+        a.startActivity(Intent.createChooser(i, title));
+    }
+}
+"""
+
+QR_MAKER = r"""package com.offlinegps.map.util;
+
+import com.google.zxing.BarcodeFormat;
+import com.google.zxing.EncodeHintType;
+import com.google.zxing.WriterException;
+import com.google.zxing.common.BitMatrix;
+import com.google.zxing.qrcode.QRCodeWriter;
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import java.util.EnumMap;
+import java.util.Map;
+
+/**
+ * Codice QR standard (leggibile da qualsiasi fotocamera), generato offline
+ * con ZXing. Correzione d'errore M (15%): resta leggibile con schermo
+ * graffiato o riflessi. Bordo bianco di 4 moduli come da norma.
+ */
+public final class QrMaker {
+    private QrMaker() {}
+
+    /** Matrice dei moduli, bordo incluso: true = nero. */
+    public static boolean[][] encode(String text) throws WriterException {
+        Map<EncodeHintType, Object> hints = new EnumMap<>(EncodeHintType.class);
+        hints.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.M);
+        hints.put(EncodeHintType.CHARACTER_SET, "UTF-8");
+        hints.put(EncodeHintType.MARGIN, 4);
+        BitMatrix m = new QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints);
+        boolean[][] out = new boolean[m.getHeight()][m.getWidth()];
+        for (int y = 0; y < m.getHeight(); y++)
+            for (int x = 0; x < m.getWidth(); x++) out[y][x] = m.get(x, y);
+        return out;
+    }
+}
+"""
+
+TOOL_KIT = r"""package com.offlinegps.map.ui;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.location.Location;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.gps.GpsTrackingService;
+import java.util.Locale;
+
+/** Piccoli aiuti comuni agli strumenti v5.0. */
+final class ToolKit {
+    private ToolKit() {}
+
+    /**
+     * Posizione da usare: quella GPS se c'e', altrimenti l'ultima salvata
+     * (cosi' sole, tramonto e luna funzionano anche al chiuso). {lat, lon, fresco 1/0}
+     */
+    static double[] where(Context c) {
+        Location l = GpsTrackingService.getLastLocation();
+        if (l != null) {
+            SharedPreferences p = c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE);
+            p.edit().putFloat(AppConfig.PREF_LAST_LAT, (float) l.getLatitude())
+                .putFloat(AppConfig.PREF_LAST_LON, (float) l.getLongitude()).apply();
+            return new double[]{l.getLatitude(), l.getLongitude(), 1};
+        }
+        SharedPreferences p = c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE);
+        if (!p.contains(AppConfig.PREF_LAST_LAT)) return null;
+        return new double[]{p.getFloat(AppConfig.PREF_LAST_LAT, 0), p.getFloat(AppConfig.PREF_LAST_LON, 0), 0};
+    }
+
+    /** "2 h 05 min", "45 min", "meno di 1 min". */
+    static String span(long ms) {
+        long min = Math.max(0, ms) / 60_000;
+        if (min < 1) return "meno di 1 min";
+        if (min < 60) return min + " min";
+        return String.format(Locale.ITALY, "%d h %02d min", min / 60, min % 60);
+    }
+
+    /** Avvia il navigatore verso un punto (profilo: car, bike, foot). */
+    static void navigate(Activity a, double lat, double lon, String name, String profile) {
+        Intent i = new Intent(a, NavigationActivity.class);
+        i.putExtra(NavigationActivity.EXTRA_DEST_LAT, lat);
+        i.putExtra(NavigationActivity.EXTRA_DEST_LON, lon);
+        i.putExtra(NavigationActivity.EXTRA_DEST_NAME, name);
+        i.putExtra(NavigationActivity.EXTRA_PROFILE, profile);
+        a.startActivity(i);
+    }
+
+    /** Mostra un punto sulla mappa con un'etichetta. */
+    static void showOnMap(Activity a, double lat, double lon, String label) {
+        Intent i = new Intent(a, MapActivity.class);
+        i.putExtra(MapActivity.EXTRA_FOCUS_LAT, lat);
+        i.putExtra(MapActivity.EXTRA_FOCUS_LON, lon);
+        i.putExtra(MapActivity.EXTRA_FOCUS_LABEL, label);
+        a.startActivity(i);
+    }
+
+    static String hhmm(long ms) {
+        return android.text.format.DateFormat.format("HH:mm", ms).toString();
+    }
+}
+"""
+
+TARGET_GUIDE = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.location.Location;
+import com.offlinegps.map.sky.HeadingSensor;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.Locale;
+
+/**
+ * Collega posizione GPS, sensore di direzione (Nord vero) e GuideCompassView
+ * per guidare a piedi verso un punto: freccia, distanza, rotta, tempo.
+ */
+final class TargetGuide implements HeadingSensor.Listener {
+    private final HeadingSensor sensor;
+    private final GuideCompassView view;
+    private boolean declinationSet;
+
+    TargetGuide(Context c, GuideCompassView v) {
+        sensor = new HeadingSensor(c);
+        view = v;
+    }
+
+    void start() { if (sensor.available()) sensor.start(this); }
+    void stop() { sensor.stop(); }
+
+    @Override public void onHeading(float deg) { if (view != null) view.setHeading(deg); }
+
+    /** Aggiorna la guida; ritorna la distanza in metri (o -1 senza posizione). */
+    double update(double tLat, double tLon, Location me) {
+        if (view == null) return -1;
+        if (me == null) {
+            view.setTarget(Float.NaN, "--", "in attesa del GPS");
+            return -1;
+        }
+        if (!declinationSet) {
+            sensor.setLocation(me.getLatitude(), me.getLongitude(), me.hasAltitude() ? me.getAltitude() : 0);
+            declinationSet = true;
+        }
+        double d = GeoFormat.distance(me.getLatitude(), me.getLongitude(), tLat, tLon);
+        float b = (float) GeoFormat.bearing(me.getLatitude(), me.getLongitude(), tLat, tLon);
+        String sub = d < Math.max(10, me.getAccuracy())
+            ? "SEI ARRIVATO"
+            : String.format(Locale.ITALY, "%.0f° %s  ·  %s a piedi", b, GeoFormat.cardinal(b), ToolKit.span((long) (d / 1.2 * 1000)));
+        view.setTarget(d < Math.max(10, me.getAccuracy()) ? Float.NaN : b, GeoFormat.formatDistance(d), sub);
+        return d;
+    }
+}
+"""
+
+SUN_PATH_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import com.offlinegps.map.util.SunCalc;
+import java.util.Calendar;
+
+/**
+ * Il percorso del Sole nelle 24 ore: curva dell'altezza sull'orizzonte,
+ * fasce del crepuscolo (civile, nautico, astronomico), fascia dell'ora
+ * d'oro, alba/tramonto segnati e il Sole "adesso" che si muove sulla curva.
+ */
+public class SunPathView extends View {
+    private static final int SAMPLES = 145;           // ogni 10 minuti
+    private final float dp;
+    private final Paint pCurve = new Paint(Paint.ANTI_ALIAS_FLAG), pGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pFill = new Paint(Paint.ANTI_ALIAS_FLAG), pBand = new Paint();
+    private final Paint pLine = new Paint(Paint.ANTI_ALIAS_FLAG), pText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pSun = new Paint(Paint.ANTI_ALIAS_FLAG), pHalo = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final float[] alt = new float[SAMPLES];
+    private long dayStart = 0, dayMs = 86_400_000L, now = -1;
+    private double lat = Double.NaN, lon;
+    private long sunrise = Long.MIN_VALUE, sunset = Long.MIN_VALUE;
+    private float maxAlt = 30, minAlt = -20;
+    private final Path path = new Path();
+    private final RectF rc = new RectF();
+
+    public SunPathView(Context c) { this(c, null); }
+    public SunPathView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pCurve.setStyle(Paint.Style.STROKE);
+        pCurve.setStrokeWidth(3 * dp);
+        pCurve.setStrokeCap(Paint.Cap.ROUND);
+        pGlow.setStyle(Paint.Style.STROKE);
+        pGlow.setStrokeWidth(9 * dp);
+        pGlow.setStrokeCap(Paint.Cap.ROUND);
+        pLine.setStyle(Paint.Style.STROKE);
+        pLine.setStrokeWidth(1 * dp);
+        pText.setColor(0xFF8FB3D0);
+        pText.setTextSize(10 * dp);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pSun.setColor(0xFFFFE57F);
+        pHalo.setStyle(Paint.Style.FILL);
+    }
+
+    /** Giorno da mostrare (qualsiasi istante del giorno, ora locale) e luogo. */
+    public void setDay(long anyMsInDay, double lat, double lon) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(anyMsInDay);
+        cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0);
+        dayStart = cal.getTimeInMillis();
+        cal.add(Calendar.DAY_OF_MONTH, 1);
+        dayMs = cal.getTimeInMillis() - dayStart;           // 23 o 25 ore nei giorni del cambio d'ora
+        this.lat = lat; this.lon = lon;
+        float mx = -90, mn = 90;
+        for (int i = 0; i < SAMPLES; i++) {
+            long t = dayStart + dayMs * i / (SAMPLES - 1);
+            alt[i] = (float) SunCalc.position(t, lat, lon)[0];
+            mx = Math.max(mx, alt[i]); mn = Math.min(mn, alt[i]);
+        }
+        maxAlt = Math.max(20, mx + 8);
+        minAlt = Math.min(-20, mn - 4);
+        SunCalc.Times tm = SunCalc.times(dayStart + dayMs / 2, lat, lon);
+        sunrise = tm.sunrise[0]; sunset = tm.sunrise[1];
+        invalidate();
+    }
+
+    public void setNow(long ms) { now = ms; invalidate(); }
+
+    private float x(long t, float l, float w) { return l + w * (t - dayStart) / (float) dayMs; }
+    private float y(float a, float top, float h) { return top + h * (maxAlt - a) / (maxAlt - minAlt); }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        if (Double.isNaN(lat)) return;
+        float l = 8 * dp, r = getWidth() - 8 * dp, top = 10 * dp, bottom = getHeight() - 20 * dp;
+        float w = r - l, h = bottom - top;
+        float yH = y(0, top, h);
+
+        // fasce: ora d'oro, crepuscolo civile, nautico, astronomico
+        bandRect(c, l, r, y(6, top, h), yH, 0x22FFB300);
+        bandRect(c, l, r, yH, y(-6, top, h), 0x2A3D7BFF);
+        bandRect(c, l, r, y(-6, top, h), y(-12, top, h), 0x1E2A4FB8);
+        bandRect(c, l, r, y(-12, top, h), y(-18, top, h), 0x14182C66);
+
+        // ore
+        pLine.setColor(0x221E3A5A);
+        for (int hr = 0; hr <= 24; hr += 3) {
+            float xx = l + w * hr / 24f;
+            c.drawLine(xx, top, xx, bottom, pLine);
+            String s = (hr < 10 ? "0" : "") + hr;
+            if (hr < 24) c.drawText(s, xx + 2 * dp, bottom + 14 * dp, pText);
+        }
+        // orizzonte
+        pLine.setColor(0x88E8F4FD);
+        c.drawLine(l, yH, r, yH, pLine);
+
+        // curva
+        path.reset();
+        for (int i = 0; i < SAMPLES; i++) {
+            float xx = l + w * i / (SAMPLES - 1), yy = y(alt[i], top, h);
+            if (i == 0) path.moveTo(xx, yy); else path.lineTo(xx, yy);
+        }
+        // area di luce sotto la curva (solo sopra l'orizzonte)
+        c.save();
+        c.clipRect(l, top, r, yH);
+        Path fill = new Path(path);
+        fill.lineTo(r, yH); fill.lineTo(l, yH); fill.close();
+        pFill.setShader(new LinearGradient(0, top, 0, yH, 0x66FFB300, 0x08FFB300, Shader.TileMode.CLAMP));
+        c.drawPath(fill, pFill);
+        pGlow.setColor(0x44FFB300);
+        c.drawPath(path, pGlow);
+        pCurve.setColor(0xFFFFC94D);
+        c.drawPath(path, pCurve);
+        c.restore();
+        c.save();
+        c.clipRect(l, yH, r, bottom + 2 * dp);
+        pCurve.setColor(0xFF4F7FD9);
+        c.drawPath(path, pCurve);
+        c.restore();
+
+        // alba e tramonto
+        pText.setTextAlign(Paint.Align.CENTER);
+        for (long t : new long[]{sunrise, sunset}) {
+            if (t == Long.MIN_VALUE || t < dayStart || t > dayStart + dayMs) continue;
+            float xx = x(t, l, w);
+            pHalo.setShader(null);
+            pHalo.setColor(0xFFFF8A3D);
+            c.drawCircle(xx, yH, 3.5f * dp, pHalo);
+            pText.setColor(0xFFFFB37A);
+            c.drawText(android.text.format.DateFormat.format("HH:mm", t).toString(), xx, yH + 15 * dp, pText);
+        }
+        pText.setTextAlign(Paint.Align.LEFT);
+        pText.setColor(0xFF8FB3D0);
+
+        // adesso
+        if (now >= dayStart && now <= dayStart + dayMs) {
+            float xx = x(now, l, w);
+            float a = (float) SunCalc.position(now, lat, lon)[0];
+            float yy = y(a, top, h);
+            pLine.setColor(0x6600E5FF);
+            pLine.setPathEffect(new DashPathEffect(new float[]{4 * dp, 4 * dp}, 0));
+            c.drawLine(xx, top, xx, bottom, pLine);
+            pLine.setPathEffect(null);
+            boolean up = a > -0.833f;
+            int core = up ? 0xFFFFE57F : 0xFF9DB8FF;
+            pHalo.setShader(new RadialGradient(xx, yy, 18 * dp, (core & 0x00FFFFFF) | 0x88000000,
+                core & 0x00FFFFFF, Shader.TileMode.CLAMP));
+            c.drawCircle(xx, yy, 18 * dp, pHalo);
+            pSun.setColor(core);
+            c.drawCircle(xx, yy, 6 * dp, pSun);
+        }
+    }
+
+    private void bandRect(Canvas c, float l, float r, float y1, float y2, int color) {
+        pBand.setColor(color);
+        rc.set(l, Math.min(y1, y2), r, Math.max(y1, y2));
+        c.drawRect(rc, pBand);
+    }
+}
+"""
+
+GUIDE_COMPASS_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+
+/**
+ * Bussola-guida verso un punto: il quadrante gira con il telefono (Nord
+ * vero), la grande freccia indica dove andare e diventa verde quando sei
+ * allineato. Al centro distanza e indicazione. Senza sensore di direzione
+ * il quadrante resta con il Nord in alto.
+ */
+public class GuideCompassView extends View {
+    private final float dp;
+    private final Paint pRing = new Paint(Paint.ANTI_ALIAS_FLAG), pTick = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pCard = new Paint(Paint.ANTI_ALIAS_FLAG), pArrow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pBig = new Paint(Paint.ANTI_ALIAS_FLAG), pSmall = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pGlow = new Paint(Paint.ANTI_ALIAS_FLAG), pDisc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path arrow = new Path();
+    private float heading = 0, shownHeading = 0, bearing = Float.NaN, shownRel = 0;
+    private boolean hasHeading = false, headingShown = false, targetShown = false;
+    private String big = "--", small = "";
+    private int accent = 0xFF00E5FF;
+
+    public GuideCompassView(Context c) { this(c, null); }
+    public GuideCompassView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pRing.setStyle(Paint.Style.STROKE);
+        pTick.setStyle(Paint.Style.STROKE);
+        pTick.setStrokeCap(Paint.Cap.ROUND);
+        pCard.setTextAlign(Paint.Align.CENTER);
+        pCard.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pBig.setTextAlign(Paint.Align.CENTER);
+        pBig.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pBig.setColor(0xFFE8F4FD);
+        pSmall.setTextAlign(Paint.Align.CENTER);
+        pSmall.setColor(0xFF8FB3D0);
+        pGlow.setStyle(Paint.Style.STROKE);
+    }
+
+    /** Direzione del telefono (gradi dal Nord vero). */
+    public void setHeading(float deg) {
+        hasHeading = true;
+        heading = deg;
+        invalidate();
+    }
+
+    /** Direzione del punto (gradi dal Nord) oppure NaN se sconosciuta. */
+    public void setTarget(float bearingDeg, String bigText, String smallText) {
+        bearing = bearingDeg;
+        big = bigText == null ? "" : bigText;
+        small = smallText == null ? "" : smallText;
+        invalidate();
+    }
+
+    public void setAccent(int color) { accent = color; invalidate(); }
+
+    /** Differenza target-telefono in [-180, 180]; NaN se non calcolabile. */
+    public float relative() {
+        if (Float.isNaN(bearing)) return Float.NaN;
+        float rel = bearing - (hasHeading ? heading : 0);
+        return ((rel % 360) + 540) % 360 - 180;
+    }
+
+    private static float approach(float from, float to) {
+        float d = ((to - from) % 360 + 540) % 360 - 180;
+        return Math.abs(d) < 0.5f ? to : from + d * 0.25f;
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f;
+        float r = Math.min(cx, cy) - 6 * dp;
+        if (r <= 10) return;
+        // movimento morbido verso i valori nuovi
+        // la prima volta si parte gia' orientati (niente giro di assestamento)
+        if (!headingShown && hasHeading) { shownHeading = heading; headingShown = true; }
+        else shownHeading = approach(shownHeading, hasHeading ? heading : 0);
+        float rel = relative();
+        if (!Float.isNaN(rel)) {
+            if (!targetShown) { shownRel = rel; targetShown = true; }
+            else shownRel = approach(shownRel, rel);
+        }
+        boolean aligned = !Float.isNaN(rel) && hasHeading && Math.abs(rel) <= 12;
+        int col = aligned ? 0xFF00FF88 : accent;
+
+        // disco e anelli
+        pDisc.setShader(new RadialGradient(cx, cy, r, 0xFF101C30, 0xFF060B16, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r, pDisc);
+        pGlow.setStrokeWidth(10 * dp);
+        pGlow.setColor((col & 0x00FFFFFF) | 0x22000000);
+        c.drawCircle(cx, cy, r - 5 * dp, pGlow);
+        pRing.setStrokeWidth(1.5f * dp);
+        pRing.setColor((col & 0x00FFFFFF) | 0x99000000);
+        c.drawCircle(cx, cy, r - 1 * dp, pRing);
+        pRing.setColor(0x331E3A5A);
+        c.drawCircle(cx, cy, r * 0.62f, pRing);
+
+        // quadrante solidale con la Terra
+        c.save();
+        c.rotate(-shownHeading, cx, cy);
+        for (int d = 0; d < 360; d += 5) {
+            boolean major = d % 30 == 0;
+            pTick.setStrokeWidth((major ? 2 : 1) * dp);
+            pTick.setColor(d == 0 ? 0xFFFF3D71 : (major ? 0xCCE8F4FD : 0x555A7A99));
+            float len = (major ? 12 : 6) * dp;
+            double a = Math.toRadians(d);
+            float sx = (float) Math.sin(a), sy = (float) -Math.cos(a);
+            c.drawLine(cx + sx * (r - 4 * dp), cy + sy * (r - 4 * dp),
+                cx + sx * (r - 4 * dp - len), cy + sy * (r - 4 * dp - len), pTick);
+        }
+        pCard.setTextSize(15 * dp);
+        String[] names = {"N", "E", "S", "O"};
+        for (int i = 0; i < 4; i++) {
+            double a = Math.toRadians(i * 90);
+            float tx = cx + (float) Math.sin(a) * (r - 30 * dp), ty = cy - (float) Math.cos(a) * (r - 30 * dp);
+            c.save();
+            c.rotate(shownHeading, tx, ty);              // lettere sempre dritte
+            pCard.setColor(i == 0 ? 0xFFFF3D71 : 0xFFCFE3F5);
+            c.drawText(names[i], tx, ty + 5 * dp, pCard);
+            c.restore();
+        }
+        // segno del punto sul bordo
+        if (!Float.isNaN(bearing)) {
+            double a = Math.toRadians(bearing);
+            float mx = cx + (float) Math.sin(a) * (r - 4 * dp), my = cy - (float) Math.cos(a) * (r - 4 * dp);
+            pArrow.setStyle(Paint.Style.FILL);
+            pArrow.setColor(col);
+            c.drawCircle(mx, my, 6 * dp, pArrow);
+        }
+        c.restore();
+
+        // indice del telefono (in alto)
+        pTick.setStrokeWidth(3 * dp);
+        pTick.setColor(0xFFE8F4FD);
+        c.drawLine(cx, cy - r - 2 * dp, cx, cy - r + 10 * dp, pTick);
+
+        // grande freccia verso il punto
+        if (!Float.isNaN(rel)) {
+            c.save();
+            c.rotate(shownRel, cx, cy);
+            float L = r * 0.56f, W = r * 0.20f;
+            arrow.reset();
+            arrow.moveTo(cx, cy - L);
+            arrow.lineTo(cx + W, cy - L + W * 1.25f);
+            arrow.lineTo(cx + W * 0.38f, cy - L + W * 1.05f);
+            arrow.lineTo(cx + W * 0.38f, cy - L * 0.42f);
+            arrow.lineTo(cx - W * 0.38f, cy - L * 0.42f);
+            arrow.lineTo(cx - W * 0.38f, cy - L + W * 1.05f);
+            arrow.lineTo(cx - W, cy - L + W * 1.25f);
+            arrow.close();
+            pArrow.setStyle(Paint.Style.FILL);
+            pArrow.setShader(new LinearGradient(cx, cy - L, cx, cy - L * 0.42f, col,
+                (col & 0x00FFFFFF) | 0x55000000, Shader.TileMode.CLAMP));
+            c.drawPath(arrow, pArrow);
+            pArrow.setShader(null);
+            c.restore();
+        }
+
+        // testi al centro
+        pBig.setTextSize(r * 0.22f);
+        c.drawText(big, cx, cy + r * 0.16f, pBig);
+        pSmall.setTextSize(Math.max(11 * dp, r * 0.085f));
+        pSmall.setColor(aligned ? 0xFF00FF88 : 0xFF8FB3D0);
+        String sub = aligned ? "DRITTO DAVANTI" : small;
+        c.drawText(sub, cx, cy + r * 0.32f, pSmall);
+        if (!hasHeading) {
+            pSmall.setColor(0xFF5A7A99);
+            c.drawText("bussola non disponibile: Nord in alto", cx, cy + r * 0.46f, pSmall);
+        }
+
+        if (Math.abs(((shownHeading - (hasHeading ? heading : 0)) % 360 + 540) % 360 - 180) > 0.5f
+                || (!Float.isNaN(rel) && Math.abs(((shownRel - rel) % 360 + 540) % 360 - 180) > 0.5f))
+            postInvalidateOnAnimation();
+    }
+}
+"""
+
+TRACK_PROFILE_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import java.util.Locale;
+
+/** Profilo altimetrico della traccia: quota (m) in funzione della distanza (km). */
+public class TrackProfileView extends View {
+    private final float dp;
+    private final Paint pLine = new Paint(Paint.ANTI_ALIAS_FLAG), pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pGrid = new Paint(), pText = new Paint(Paint.ANTI_ALIAS_FLAG), pDot = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float[] dist = new float[0], alt = new float[0];
+    private final Path path = new Path();
+
+    public TrackProfileView(Context c) { this(c, null); }
+    public TrackProfileView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pLine.setStyle(Paint.Style.STROKE);
+        pLine.setStrokeWidth(2.5f * dp);
+        pLine.setStrokeJoin(Paint.Join.ROUND);
+        pLine.setColor(0xFF00FF88);
+        pGrid.setColor(0x221E3A5A);
+        pGrid.setStrokeWidth(1 * dp);
+        pText.setColor(0xFF8FB3D0);
+        pText.setTextSize(10 * dp);
+        pDot.setColor(0xFF00FF88);
+    }
+
+    /** distanze progressive (m) e quote (m), stessa lunghezza. */
+    public void setData(float[] distM, float[] altM) {
+        dist = distM == null ? new float[0] : distM;
+        alt = altM == null ? new float[0] : altM;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float l = 34 * dp, r = getWidth() - 10 * dp, top = 10 * dp, bottom = getHeight() - 18 * dp;
+        int n = Math.min(dist.length, alt.length);
+        if (n < 2 || dist[n - 1] <= 0) {
+            pText.setTextAlign(Paint.Align.CENTER);
+            c.drawText("Il profilo comparira' dopo i primi metri", getWidth() / 2f, getHeight() / 2f, pText);
+            pText.setTextAlign(Paint.Align.LEFT);
+            return;
+        }
+        float mn = Float.MAX_VALUE, mx = -Float.MAX_VALUE;
+        for (int i = 0; i < n; i++) { mn = Math.min(mn, alt[i]); mx = Math.max(mx, alt[i]); }
+        if (mx - mn < 20) { float mid = (mx + mn) / 2; mn = mid - 10; mx = mid + 10; }
+        float pad = (mx - mn) * 0.12f; mn -= pad; mx += pad;
+        float total = dist[n - 1];
+        for (int g = 0; g <= 3; g++) {
+            float yy = top + (bottom - top) * g / 3f;
+            c.drawLine(l, yy, r, yy, pGrid);
+            float v = mx - (mx - mn) * g / 3f;
+            c.drawText(String.format(Locale.ITALY, "%.0f", v), 2 * dp, yy + 4 * dp, pText);
+        }
+        path.reset();
+        float lastX = l, lastY = bottom;
+        for (int i = 0; i < n; i++) {
+            float xx = l + (r - l) * dist[i] / total;
+            float yy = bottom - (bottom - top) * (alt[i] - mn) / (mx - mn);
+            if (i == 0) path.moveTo(xx, yy); else path.lineTo(xx, yy);
+            lastX = xx; lastY = yy;
+        }
+        Path fill = new Path(path);
+        fill.lineTo(lastX, bottom); fill.lineTo(l, bottom); fill.close();
+        pFill.setShader(new LinearGradient(0, top, 0, bottom, 0x5500FF88, 0x0500FF88, Shader.TileMode.CLAMP));
+        c.drawPath(fill, pFill);
+        c.drawPath(path, pLine);
+        c.drawCircle(lastX, lastY, 4.5f * dp, pDot);
+        pText.setTextAlign(Paint.Align.RIGHT);
+        c.drawText(total < 1000 ? String.format(Locale.ITALY, "%.0f m", total)
+            : String.format(Locale.ITALY, "%.1f km", total / 1000f), r, getHeight() - 3 * dp, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+        c.drawText("0", l, getHeight() - 3 * dp, pText);
+    }
+}
+"""
+
+FIRECAMP_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.widget.CheckBox;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.SunCalc;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/**
+ * Fuoco & bivacco (v5.0): pianifica la sera al campo partendo dal calcolo
+ * astronomico (tramonto, buio, alba, Luna), con controlli di sicurezza
+ * prima di accendere, i tipi di fuoco e come spegnerlo davvero.
+ */
+public class FireCampActivity extends AppCompatActivity {
+    private static final String[] CHECKS = {
+        "Il fuoco e' consentito qui oggi (nessun divieto regionale, comunale, di parco o area protetta)",
+        "Vento debole: nessuna raffica che porti scintille",
+        "Focolare esistente o cerchio di pietre asciutte (no pietre di fiume: possono spaccarsi col calore)",
+        "Terreno pulito per 3 m attorno: niente foglie, aghi, erba secca",
+        "Almeno 5 m da tende, alberi, rami bassi e radici affioranti",
+        "Acqua o terra pronta per spegnere",
+        "Solo legna morta gia' caduta a terra",
+        "Qualcuno resta SEMPRE vicino al fuoco",
+    };
+    private static final String[][] LAYS = {
+        {"TEPEE", "A capanna: esca al centro e legnetti appoggiati a cono. Si accende in fretta e fa una fiamma alta: "
+            + "ottimo per partire e per bollire l'acqua, ma consuma molta legna."},
+        {"CATASTA", "Strati incrociati come una casetta di tronchi attorno a un piccolo tepee. Fa una brace stabile e "
+            + "regolare: il migliore per cucinare."},
+        {"STELLA", "Ciocchi disposti a raggiera con le punte al centro: li spingi dentro man mano che bruciano. "
+            + "Consuma poca legna e dura tutta la notte con poca sorveglianza."},
+        {"RIPARO", "Un ceppo grosso dal lato del vento e i legnetti appoggiati sopra in obliquo: l'esca resta protetta "
+            + "dal vento durante l'accensione."},
+        {"DAKOTA", "Due buche collegate da un tunnel sotterraneo: fiamma bassa, poco fumo e ottima resa anche col vento. "
+            + "Scava solo dove e' consentito e alla fine richiudi tutto com'era."},
+    };
+
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextView tvBig, tvBigLabel, tvPlan, tvTent, tvMoon, tvCheckState, tvLay;
+    private LinearLayout checklist, layChips;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 30_000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_firecamp);
+        tvBig = findViewById(R.id.tv_fire_big);
+        tvBigLabel = findViewById(R.id.tv_fire_big_label);
+        tvPlan = findViewById(R.id.tv_fire_plan);
+        tvTent = findViewById(R.id.tv_fire_tent);
+        tvMoon = findViewById(R.id.tv_fire_moon);
+        tvCheckState = findViewById(R.id.tv_fire_check_state);
+        tvLay = findViewById(R.id.tv_fire_lay);
+        checklist = findViewById(R.id.fire_checklist);
+        layChips = findViewById(R.id.fire_lay_chips);
+        View back = findViewById(R.id.btn_fire_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        buildChecklist();
+        buildLays();
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(tick); h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
+
+    // ------------------------------------------------------------ pianificazione della sera
+    private void refresh() {
+        double[] w = ToolKit.where(this);
+        if (w == null) {
+            set(tvBig, "--");
+            set(tvBigLabel, "serve una posizione (anche vecchia)");
+            set(tvPlan, "Apri la mappa una volta all'aperto: poi tutto funziona anche senza segnale.");
+            return;
+        }
+        double lat = w[0], lon = w[1];
+        long now = System.currentTimeMillis();
+        SunCalc.Times t = SunCalc.times(now, lat, lon);
+        long sunset = t.sunrise[1], dark = t.civil[1];
+        if (sunset == Long.MIN_VALUE) {
+            set(tvBig, t.noonAltitude > 0 ? "luce" : "buio");
+            set(tvBigLabel, t.noonAltitude > 0 ? "sole di mezzanotte: non fa buio" : "notte polare");
+            set(tvPlan, "");
+        } else if (now < sunset) {
+            long wood = sunset - 60 * 60_000L;
+            set(tvBig, ToolKit.span(sunset - now));
+            set(tvBigLabel, "al tramonto (" + ToolKit.hhmm(sunset) + ")");
+            set(tvPlan, (now < wood ? "• Raccogli la legna entro le " + ToolKit.hhmm(wood) + " (tra " + ToolKit.span(wood - now) + ")\n"
+                    : "• Legna: e' ora! Meno di un'ora di sole\n")
+                + "• Accendi prima del tramonto, con la luce\n"
+                + "• Buio pratico alle " + ToolKit.hhmm(dark) + ": frontale a portata di mano");
+        } else if (now < dark) {
+            set(tvBig, ToolKit.span(dark - now));
+            set(tvBigLabel, "al buio (" + ToolKit.hhmm(dark) + ")");
+            set(tvPlan, "• Il sole e' tramontato: niente piu' giri per la legna lontano dal campo\n• Prepara la frontale adesso");
+        } else {
+            SunCalc.Times tom = SunCalc.times(now + 86_400_000L, lat, lon);
+            long rise = now < t.sunrise[0] ? t.sunrise[0] : tom.sunrise[0];
+            set(tvBig, rise == Long.MIN_VALUE ? "--" : ToolKit.span(rise - now));
+            set(tvBigLabel, "all'alba" + (rise == Long.MIN_VALUE ? "" : " (" + ToolKit.hhmm(rise) + ")"));
+            set(tvPlan, "• Notte: tieni il fuoco piccolo e sorvegliato\n• Prima di dormire spegnilo DEL TUTTO (vedi sotto)");
+        }
+
+        // orientamento della tenda: alba di domani (o di oggi se non e' ancora sorto)
+        SunCalc.Times tom = SunCalc.times(now + 86_400_000L, lat, lon);
+        long rise = now < t.sunrise[0] ? t.sunrise[0] : tom.sunrise[0];
+        if (rise != Long.MIN_VALUE) {
+            double az = SunCalc.position(rise, lat, lon)[1];
+            set(tvTent, String.format(Locale.ITALY,
+                "Il sole sorgera' alle %s a %.0f° (%s).\nIngresso della tenda verso %s per il sole del mattino; "
+                + "il lato chiuso verso il vento. Evita letti di torrente, avvallamenti, alberi secchi e creste esposte ai fulmini.",
+                ToolKit.hhmm(rise), az, GeoFormat.cardinal(az), GeoFormat.cardinal(az)));
+        }
+
+        // Luna stanotte: dal tramonto all'alba, ogni 15 minuti
+        long from = sunset == Long.MIN_VALUE ? now : Math.max(now, sunset);
+        long to = rise == Long.MIN_VALUE ? from + 12 * 3_600_000L : rise;
+        double best = -90; long bestAt = from;
+        for (long x = from; x <= to; x += 15 * 60_000L) {
+            double a = SunCalc.moonPosition(x, lat, lon)[0];
+            if (a > best) { best = a; bestAt = x; }
+        }
+        double[] ill = SunCalc.moonIllumination((from + to) / 2);
+        String phase = SunCalc.moonPhaseName(ill[1]);
+        if (best < 3) set(tvMoon, phase + String.format(Locale.ITALY, " (%.0f%%), ma stanotte resta sotto l'orizzonte: notte molto buia.", ill[0] * 100));
+        else set(tvMoon, String.format(Locale.ITALY, "%s, illuminata al %.0f%%. Piu' alta (%.0f°) verso le %s.%s",
+            phase, ill[0] * 100, best, ToolKit.hhmm(bestAt),
+            ill[0] > 0.6 ? " Notte luminosa: si cammina quasi senza frontale." : ill[0] < 0.25 ? " Poca luce: tieni la frontale pronta." : ""));
+    }
+
+    // ------------------------------------------------------------ controlli di sicurezza
+    private SharedPreferences prefs() { return getSharedPreferences("firecamp", MODE_PRIVATE); }
+
+    private String today() { return new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date()); }
+
+    private void buildChecklist() {
+        if (checklist == null) return;
+        SharedPreferences p = prefs();
+        if (!today().equals(p.getString("day", ""))) p.edit().clear().putString("day", today()).apply();
+        float dp = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < CHECKS.length; i++) {
+            CheckBox cb = new CheckBox(this);
+            cb.setText(CHECKS[i]);
+            cb.setTextColor(0xFFCFE3F5);
+            cb.setTextSize(13.5f);
+            cb.setButtonTintList(ColorStateList.valueOf(0xFFFF6B35));
+            cb.setPadding((int) (6 * dp), (int) (8 * dp), 0, (int) (8 * dp));
+            cb.setChecked(p.getBoolean("c" + i, false));
+            final int idx = i;
+            cb.setOnCheckedChangeListener((b, on) -> {
+                prefs().edit().putBoolean("c" + idx, on).apply();
+                updateCheckState();
+            });
+            checklist.addView(cb);
+        }
+        updateCheckState();
+    }
+
+    private void updateCheckState() {
+        if (tvCheckState == null) return;
+        int n = 0;
+        for (int i = 0; i < CHECKS.length; i++) if (prefs().getBoolean("c" + i, false)) n++;
+        boolean ok = n == CHECKS.length;
+        tvCheckState.setText(ok ? "PRONTO: puoi accendere" : n + " / " + CHECKS.length);
+        tvCheckState.setTextColor(ok ? 0xFF00FF88 : 0xFFFFD600);
+        tvCheckState.setBackgroundResource(ok ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+    }
+
+    // ------------------------------------------------------------ tipi di fuoco
+    private void buildLays() {
+        if (layChips == null) return;
+        float dp = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < LAYS.length; i++) {
+            TextView chip = new TextView(this);
+            chip.setText(LAYS[i][0]);
+            chip.setTextSize(11);
+            chip.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            chip.setGravity(android.view.Gravity.CENTER);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, (int) (34 * dp), 1);
+            if (i < LAYS.length - 1) lp.rightMargin = (int) (6 * dp);
+            final int idx = i;
+            chip.setOnClickListener(v -> selectLay(idx));
+            layChips.addView(chip, lp);
+        }
+        selectLay(0);
+    }
+
+    private void selectLay(int idx) {
+        for (int i = 0; i < layChips.getChildCount(); i++) {
+            TextView c = (TextView) layChips.getChildAt(i);
+            c.setBackgroundResource(i == idx ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            c.setTextColor(i == idx ? 0xFFFF6B35 : 0xFF8FB3D0);
+        }
+        set(tvLay, LAYS[idx][1]);
+    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
@@ -16188,6 +18108,611 @@ LAYOUT_CHAT = (_XML_HEAD +
     '    </LinearLayout>\n'
     '</LinearLayout>')
 
+# ---------------------------------------------------------------- STRUMENTI v5
+# Icone aggiuntive (Material, 24x24, colorate con android:tint)
+V5_TOOL_ICONS = {
+    "ic_v5_moon":      _v4_icon(["M9,2c-1.05,0 -2.05,0.16 -3,0.46 4.06,1.27 7,5.06 7,9.54 0,4.48 -2.94,8.27 -7,9.54 0.95,0.3 1.95,0.46 3,0.46 5.52,0 10,-4.48 10,-10S14.52,2 9,2z"]),
+    "ic_v5_mountain":  _v4_icon(["M14,6l-3.75,5 2.85,3.8 -1.6,1.2C9.81,13.75 7,10 7,10l-6,8h22L14,6z"]),
+    "ic_v5_battery":   _v4_icon(["M15.67,4H14V2h-4v2H8.33C7.6,4 7,4.6 7,5.33v15.33C7,21.4 7.6,22 8.33,22h7.33c0.74,0 1.34,-0.6 1.34,-1.33V5.33C17,4.6 16.4,4 15.67,4z"]),
+    "ic_v5_eye":       _v4_icon(["M12,4.5C7,4.5 2.73,7.61 1,12c1.73,4.39 6,7.5 11,7.5s9.27,-3.11 11,-7.5c-1.73,-4.39 -6,-7.5 -11,-7.5zM12,17c-2.76,0 -5,-2.24 -5,-5s2.24,-5 5,-5 5,2.24 5,5 -2.24,5 -5,5zm0,-8c-1.66,0 -3,1.34 -3,3s1.34,3 3,3 3,-1.34 3,-3 -1.34,-3 -3,-3z"]),
+    "ic_v5_medical":   _v4_icon(["M19,3H5c-1.1,0 -1.99,0.9 -1.99,2L3,19c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V5c0,-1.1 -0.9,-2 -2,-2zm-1,11h-4v4h-4v-4H6v-4h4V6h4v4h4v4z"]),
+    "ic_v5_bell":      _v4_icon(["M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zm6,-6v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"]),
+    "ic_v5_sunset":    _v4_icon(["M2,18h20v2H2z", "M12,8c-3.31,0 -6,2.69 -6,6v2h12v-2c0,-3.31 -2.69,-6 -6,-6z",
+                                 "M11,2h2v4h-2z", "M3.52,6.93l1.41,-1.41 2.83,2.83 -1.41,1.41z", "M16.24,8.35l2.83,-2.83 1.41,1.41 -2.83,2.83z"]),
+    "ic_v5_undo":      _v4_icon(["M12.5,8c-2.65,0 -5.05,0.99 -6.9,2.6L2,7v9h9l-3.62,-3.62c1.39,-1.16 3.16,-1.88 5.12,-1.88 3.54,0 6.55,2.31 7.6,5.5l2.37,-0.78C21.08,11.03 17.15,8 12.5,8z"]),
+    "ic_v5_flare":     _v4_icon(["M7,11H1v2h6v-2zm2.17,-3.24L7.05,5.64 5.64,7.05l2.12,2.12 1.41,-1.41zM13,1h-2v6h2V1zm5.36,6.05l-1.41,-1.41 -2.12,2.12 1.41,1.41 2.12,-2.12zM17,11v2h6v-2h-6zm-5,-2c-1.66,0 -3,1.34 -3,3s1.34,3 3,3 3,-1.34 3,-3 -1.34,-3 -3,-3zm2.83,7.24l2.12,2.12 1.41,-1.41 -2.12,-2.12 -1.41,1.41zm-9.19,0.71l1.41,1.41 2.12,-2.12 -1.41,-1.41 -2.12,2.12zM11,23h2v-6h-2v6z"]),
+    "ic_v5_megaphone": _v4_icon(["M18,11v2h4v-2h-4zm-2,6.61c0.96,0.71 2.21,1.65 3.2,2.39 0.4,-0.53 0.8,-1.07 1.2,-1.6 -0.99,-0.74 -2.24,-1.68 -3.2,-2.4 -0.4,0.54 -0.8,1.08 -1.2,1.61zM20.4,5.6c-0.4,-0.53 -0.8,-1.07 -1.2,-1.6 -0.99,0.74 -2.24,1.68 -3.2,2.4 0.4,0.53 0.8,1.07 1.2,1.6 0.96,-0.72 2.21,-1.65 3.2,-2.4zM4,9c-1.1,0 -2,0.9 -2,2v2c0,1.1 0.9,2 2,2h1v4h2v-4h1l5,3V6L8,9H4zm11.5,3c0,-1.33 -0.58,-2.53 -1.5,-3.35v6.69c0.92,-0.81 1.5,-2.01 1.5,-3.34z"]),
+    "ic_v5_morse":     _v4_icon(["M2,10.5h3v3H2z", "M7,10.5h3v3H7z", "M12,10.5h10v3H12z"]),
+    "ic_v5_compass":   _v4_icon(["M12,10.9c-0.61,0 -1.1,0.49 -1.1,1.1s0.49,1.1 1.1,1.1c0.61,0 1.1,-0.49 1.1,-1.1s-0.49,-1.1 -1.1,-1.1zM12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm2.19,12.19L6,18l3.81,-8.19L18,6l-3.81,8.19z"]),
+    "ic_v5_drop":      _v4_icon(["M12,2c-5.33,4.55 -8,8.48 -8,11.8 0,4.98 3.8,8.2 8,8.2s8,-3.22 8,-8.2c0,-3.32 -2.67,-7.25 -8,-11.8z"]),
+    "ic_v5_checklist": _v4_icon(["M14,10H2v2h12v-2zm0,-4H2v2h12V6zM2,16h8v-2H2v2zm19.5,-4.5L23,13l-6.99,7 -4.51,-4.5L13,14l3.01,3 5.49,-5.5z"]),
+    "ic_v5_book":      _v4_icon(["M21,5c-1.11,-0.35 -2.33,-0.5 -3.5,-0.5 -1.95,0 -4.05,0.4 -5.5,1.5 -1.45,-1.1 -3.55,-1.5 -5.5,-1.5S2.45,4.9 1,6v14.65c0,0.25 0.25,0.5 0.5,0.5 0.1,0 0.15,-0.05 0.25,-0.05C3.1,20.45 5.05,20 6.5,20c1.95,0 4.05,0.4 5.5,1.5 1.35,-0.85 3.8,-1.5 5.5,-1.5 1.65,0 3.35,0.3 4.75,1.05 0.1,0.05 0.15,0.05 0.25,0.05 0.25,0 0.5,-0.25 0.5,-0.5V6c-0.6,-0.45 -1.25,-0.75 -2,-1zm0,13.5c-1.1,-0.35 -2.3,-0.5 -3.5,-0.5 -1.7,0 -4.15,0.65 -5.5,1.5V8c1.35,-0.85 3.8,-1.5 5.5,-1.5 1.2,0 2.4,0.15 3.5,0.5v11.5z"]),
+    "ic_v5_note_pin":  _v4_icon(["M12,2C8.14,2 5,5.14 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.86 -3.14,-7 -7,-7zm-1.56,10H9v-1.44l3.35,-3.34 1.43,1.43L10.44,12zm4.45,-4.45l-0.7,0.7 -1.44,-1.44 0.7,-0.7c0.15,-0.15 0.39,-0.15 0.54,0l0.9,0.9c0.15,0.15 0.15,0.39 0,0.54z"]),
+    "ic_v5_near_me":   _v4_icon(["M21,3L3,10.53v0.98l6.84,2.65L12.48,21h0.98L21,3z"]),
+    "ic_v5_flashlight":_v4_icon(["M6,2h12v3H6z", "M6,7v1l2,3v11h8V11l2,-3V7H6zm6,8.5c-0.83,0 -1.5,-0.67 -1.5,-1.5s0.67,-1.5 1.5,-1.5 1.5,0.67 1.5,1.5 -0.67,1.5 -1.5,1.5z"]),
+    "ic_v5_calc":      _v4_icon(["M19,3H5c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V5c0,-1.1 -0.9,-2 -2,-2zm-5.97,4.06L14.09,6l1.41,1.41L16.91,6l1.06,1.06 -1.41,1.41 1.41,1.41 -1.06,1.06 -1.41,-1.4 -1.41,1.41 -1.06,-1.06 1.41,-1.41 -1.41,-1.42zm-6.78,0.66h5v1.5h-5v-1.5zM11.5,16h-2v2H8v-2H6v-1.5h2v-2h1.5v2h2V16zm6.5,1.25h-5v-1.5h5v1.5zm0,-2.5h-5v-1.5h5v1.5z"]),
+    "ic_v5_notepad":   _v4_icon(["M14,2H6c-1.1,0 -1.99,0.9 -1.99,2L4,20c0,1.1 0.89,2 1.99,2H18c1.1,0 2,-0.9 2,-2V8l-6,-6zm2,16H8v-2h8v2zm0,-4H8v-2h8v2zm-3,-5V3.5L18.5,9H13z"]),
+    "ic_v5_euro":      _v4_icon(["M15,18.5c-2.51,0 -4.68,-1.42 -5.76,-3.5H15l1,-2H8.58c-0.05,-0.33 -0.08,-0.66 -0.08,-1s0.03,-0.67 0.08,-1H15l1,-2H9.24C10.32,6.92 12.5,5.5 15,5.5c1.61,0 3.09,0.59 4.23,1.57L21,5.3C19.41,3.87 17.3,3 15,3c-3.92,0 -7.24,2.51 -8.48,6H3l-1,2h4.06c-0.04,0.33 -0.06,0.66 -0.06,1s0.02,0.67 0.06,1H3l-1,2h4.52c1.24,3.49 4.56,6 8.48,6 2.31,0 4.41,-0.87 6,-2.3l-1.78,-1.77c-1.13,0.98 -2.6,1.57 -4.22,1.57z"]),
+    "ic_v5_qr":        _v4_icon(["M3,11h8V3H3V11zM5,5h4v4H5V5z", "M3,21h8v-8H3V21zM5,15h4v4H5V15z", "M13,3v8h8V3H13zM19,9h-4V5h4V9z",
+                                 "M19,19h2v2h-2z", "M13,13h2v2h-2z", "M15,15h2v2h-2z", "M13,17h2v2h-2z", "M15,19h2v2h-2z",
+                                 "M17,17h2v2h-2z", "M17,13h2v2h-2z", "M19,15h2v2h-2z"]),
+    "ic_v5_timer":     _v4_icon(["M15,1H9v2h6V1zm-4,13h2V8h-2v6zm8.03,-6.61l1.42,-1.42c-0.43,-0.51 -0.9,-0.99 -1.41,-1.41l-1.42,1.42C16.07,4.74 14.12,4 12,4c-4.97,0 -9,4.03 -9,9s4.02,9 9,9 9,-4.03 9,-9c0,-2.12 -0.74,-4.07 -1.97,-5.61zM12,20c-3.87,0 -7,-3.13 -7,-7s3.13,-7 7,-7 7,3.13 7,7 -3.13,7 -7,7z"]),
+    "ic_v5_share":     _v4_icon(["M18,16.08c-0.76,0 -1.44,0.3 -1.96,0.77L8.91,12.7c0.05,-0.23 0.09,-0.46 0.09,-0.7s-0.04,-0.47 -0.09,-0.7l7.05,-4.11c0.54,0.5 1.25,0.81 2.04,0.81 1.66,0 3,-1.34 3,-3s-1.34,-3 -3,-3 -3,1.34 -3,3c0,0.24 0.04,0.47 0.09,0.7L8.04,9.81C7.5,9.31 6.79,9 6,9c-1.66,0 -3,1.34 -3,3s1.34,3 3,3c0.79,0 1.5,-0.31 2.04,-0.81l7.12,4.16c-0.05,0.21 -0.08,0.43 -0.08,0.65 0,1.61 1.31,2.92 2.92,2.92s2.92,-1.31 2.92,-2.92 -1.31,-2.92 -2.92,-2.92z"]),
+    "ic_v5_copy":      _v4_icon(["M16,1H4c-1.1,0 -2,0.9 -2,2v14h2V3h12V1zm3,4H8c-1.1,0 -2,0.9 -2,2v14c0,1.1 0.9,2 2,2h11c1.1,0 2,-0.9 2,-2V7c0,-1.1 -0.9,-2 -2,-2zm0,16H8V7h11v14z"]),
+    "ic_v5_phone":     _v4_icon(["M20.01,15.38c-1.23,0 -2.42,-0.2 -3.53,-0.56 -0.35,-0.12 -0.74,-0.03 -1.01,0.24l-1.57,1.97c-2.83,-1.35 -5.48,-3.9 -6.89,-6.83l1.95,-1.66c0.27,-0.28 0.35,-0.67 0.24,-1.02 -0.37,-1.11 -0.56,-2.3 -0.56,-3.53 0,-0.54 -0.45,-0.99 -0.99,-0.99H4.19C3.65,3 3,3.24 3,3.99 3,13.28 10.73,21 20.01,21c0.71,0 0.99,-0.63 0.99,-1.18v-3.45c0,-0.54 -0.45,-0.99 -0.99,-0.99z"]),
+    "ic_v5_sms":       _v4_icon(["M20,2H4c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zM9,11H7V9h2v2zm4,0h-2V9h2v2zm4,0h-2V9h2v2z"]),
+    "ic_v5_record":    _v4_icon(["M12,12m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"]),
+    "ic_v5_pause":     _v4_icon(["M6,19h4V5H6v14zm8,-14v14h4V5h-4z"]),
+    "ic_v5_stop":      _v4_icon(["M6,6h12v12H6z"]),
+    "ic_v5_paste":     _v4_icon(["M19,2h-4.18C14.4,0.84 13.3,0 12,0c-1.3,0 -2.4,0.84 -2.82,2H5c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm-7,0c0.55,0 1,0.45 1,1s-0.45,1 -1,1 -1,-0.45 -1,-1 0.45,-1 1,-1zm7,18H5V4h2v3h10V4h2v16z"]),
+    "ic_v5_bookmark":  _v4_icon(["M17,3H7c-1.1,0 -1.99,0.9 -1.99,2L5,21l7,-3 7,3V5c0,-1.1 -0.9,-2 -2,-2z"]),
+    "ic_v5_tent":      _v4_icon(["M12,3L2,21h20L12,3zm0,4.5L18.5,19H14l-2,-4 -2,4H5.5L12,7.5z"]),
+}
+V5_DRAWABLES.update(V5_TOOL_ICONS)
+
+# pulsanti a pillola: pieno (azione principale) e vetro (secondaria)
+def _v5_btn_bg(hexcol, filled):
+    if filled:
+        body = ('    <item>\n        <shape android:shape="rectangle">\n'
+                '            <gradient android:type="linear" android:angle="0"\n'
+                '                android:startColor="#FF' + hexcol + '" android:endColor="#CC' + hexcol + '"/>\n'
+                '            <corners android:radius="16dp"/>\n        </shape>\n    </item>\n'
+                '    <item android:bottom="24dp">\n        <shape android:shape="rectangle">\n'
+                '            <solid android:color="#22FFFFFF"/>\n'
+                '            <corners android:radius="16dp"/>\n        </shape>\n    </item>\n')
+    else:
+        body = ('    <item>\n        <shape android:shape="rectangle">\n'
+                '            <solid android:color="#1A' + hexcol + '"/>\n'
+                '            <stroke android:width="1dp" android:color="#88' + hexcol + '"/>\n'
+                '            <corners android:radius="16dp"/>\n        </shape>\n    </item>\n')
+    return (_XML_HEAD + '<ripple ' + _NS + ' android:color="#55FFFFFF">\n' + body + '</ripple>')
+
+for _name, _hex in V4_ACCENTS.items():
+    V5_DRAWABLES["bg_btn5_" + _name] = _v5_btn_bg(_hex, True)
+    V5_DRAWABLES["bg_btn5_line_" + _name] = _v5_btn_bg(_hex, False)
+V5_DRAWABLES["bg_qr_card"] = _v5_shape('    <solid android:color="#FFFFFFFF"/>\n    <corners android:radius="20dp"/>\n')
+V5_DRAWABLES["bg_mirror_panel"] = _v5_shape('    <solid android:color="#CC050A14"/>\n'
+                                            '    <stroke android:width="1dp" android:color="#3300E5FF"/>\n'
+                                            '    <corners android:radius="22dp"/>\n')
+
+# file condivisibili (GPX, QR) tramite FileProvider
+V5_XML = {
+    "file_paths": (_XML_HEAD +
+        '<paths>\n'
+        '    <external-files-path name="files" path="."/>\n'
+        '    <cache-path name="cache" path="."/>\n'
+        '</paths>\n'),
+}
+
+# ---------------------------------------------------------------- mattoni
+def _t_btn(vid, icon, text, accent, filled=False, end_margin=True, height="54dp", icon_id=None, text_id=None):
+    hexcol = V4_ACCENTS[accent]
+    fg = "#050A14" if filled else "#" + hexcol
+    iid = (' android:id="@+id/' + icon_id + '"') if icon_id else ""
+    tid = (' android:id="@+id/' + text_id + '"') if text_id else ""
+    return ('    <LinearLayout android:id="@+id/' + vid + '" android:layout_width="0dp"\n'
+            '        android:layout_height="' + height + '" android:layout_weight="1" android:orientation="horizontal"\n'
+            '        android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"\n'
+            '        android:background="@drawable/bg_btn5_' + ("" if filled else "line_") + accent + '"\n'
+            '        android:clickable="true" android:focusable="true"' +
+            ('\n        android:layout_marginEnd="10dp"' if end_margin else '') + '>\n'
+            '        <ImageView' + iid + ' android:layout_width="20dp" android:layout_height="20dp"\n'
+            '            android:src="@drawable/' + icon + '" android:tint="' + fg + '"\n'
+            '            android:contentDescription="' + text + '"/>\n'
+            '        <TextView' + tid + ' android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '            android:layout_marginStart="8dp" android:text="' + text + '" android:textColor="' + fg + '"\n'
+            '            android:textSize="13sp" android:textStyle="bold" android:letterSpacing="0.04"\n'
+            '            android:maxLines="1" android:ellipsize="end"/>\n'
+            '    </LinearLayout>\n')
+
+def _t_buttons(*btns, margin="12dp"):
+    return _v4_row(*btns, margin=margin)
+
+def _t_card_open(accent="cyan", vid=None, pad="16dp", margin="12dp", clickable=False):
+    idattr = (' android:id="@+id/' + vid + '"') if vid else ""
+    return ('<LinearLayout' + idattr + ' android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '    android:orientation="vertical" android:padding="' + pad + '" android:layout_marginBottom="' + margin + '"\n'
+            '    android:background="@drawable/bg_tile_' + accent + '"' +
+            (' android:clickable="true" android:focusable="true"' if clickable else '') + '>\n')
+
+def _t_card(inner, **kw):
+    return _t_card_open(**kw) + inner + '</LinearLayout>\n'
+
+def _t_label(text, color="#8FB3D0"):
+    return ('    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '        android:text="' + text + '" android:textColor="' + color + '" android:textSize="11sp"\n'
+            '        android:textStyle="bold" android:letterSpacing="0.14"/>\n')
+
+def _t_text(vid, text, color="#CFE3F5", size="13.5sp", bold=False, mono=False, top="4dp", center=False):
+    idattr = ('android:id="@+id/' + vid + '" ') if vid else ""
+    text = text.replace("\n", "\\n")          # nell'XML un a capo letterale diventerebbe uno spazio
+    return ('    <TextView ' + idattr + 'android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '        android:text="' + text + '" android:textColor="' + color + '" android:textSize="' + size + '"\n'
+            '        android:lineSpacingMultiplier="1.25" android:layout_marginTop="' + top + '"' +
+            (' android:textStyle="bold"' if bold else '') +
+            (' android:fontFamily="monospace"' if mono else '') +
+            (' android:gravity="center"' if center else '') + '/>\n')
+
+def _t_big(vid, text, color, size="44sp", center=False):
+    return ('    <TextView android:id="@+id/' + vid + '" android:layout_width="match_parent"\n'
+            '        android:layout_height="wrap_content" android:text="' + text + '" android:textColor="' + color + '"\n'
+            '        android:textSize="' + size + '" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+            '        android:shadowColor="' + color + '" android:shadowRadius="18" android:includeFontPadding="false"' +
+            (' android:gravity="center"' if center else '') + '/>\n')
+
+def _t_stat(vid, value, label, accent, end_margin=True):
+    hexcol = V4_ACCENTS[accent]
+    return ('    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+            '        android:layout_weight="1" android:orientation="vertical" android:padding="12dp"\n'
+            '        android:background="@drawable/bg_tile_' + accent + '"' +
+            ('\n        android:layout_marginEnd="10dp"' if end_margin else '') + '>\n'
+            '        <TextView android:id="@+id/' + vid + '" android:layout_width="match_parent"\n'
+            '            android:layout_height="30dp" android:text="' + value + '" android:textColor="#' + hexcol + '"\n'
+            '            android:textSize="21sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+            '            android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="11sp"\n'
+            '            android:autoSizeMaxTextSize="21sp" android:gravity="center_vertical"/>\n'
+            '        <TextView android:layout_width="match_parent" android:layout_height="16dp"\n'
+            '            android:text="' + label + '" android:textColor="#8FB3D0" android:textSize="10.5sp"\n'
+            '            android:textStyle="bold" android:letterSpacing="0.06" android:maxLines="1"\n'
+            '            android:autoSizeTextType="uniform" android:autoSizeMinTextSize="7sp"\n'
+            '            android:autoSizeMaxTextSize="10.5sp" android:gravity="center_vertical"/>\n'
+            '    </LinearLayout>\n')
+
+def _t_view(cls, vid, height, margin="12dp"):
+    return ('<com.offlinegps.map.ui.' + cls + ' android:id="@+id/' + vid + '"\n'
+            '    android:layout_width="match_parent" android:layout_height="' + height + '"\n'
+            '    android:layout_marginBottom="' + margin + '"/>\n')
+
+def _t_chips(*chips, margin="12dp"):
+    return ('<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '    android:orientation="horizontal" android:layout_marginBottom="' + margin + '">\n'
+            + "".join(_v4_chip_view(v, t, end_margin=(i < len(chips) - 1)) for i, (v, t) in enumerate(chips))
+            + '</LinearLayout>\n')
+
+def _t_progress(vid, margin="8dp"):
+    return ('    <ProgressBar android:id="@+id/' + vid + '" style="?android:attr/progressBarStyleHorizontal"\n'
+            '        android:layout_width="match_parent" android:layout_height="6dp" android:max="1000"\n'
+            '        android:progress="0" android:progressDrawable="@drawable/bg_progress_neon"\n'
+            '        android:layout_marginTop="' + margin + '"/>\n')
+
+def _t_coord_card(card_id, vid, label, accent, mono=True):
+    return _t_card(_t_label(label) + _t_text(vid, "--", "#E8F4FD", "17sp", bold=True, mono=mono, top="4dp"),
+                   accent=accent, vid=card_id, pad="14dp", margin="10dp", clickable=True)
+
+# ---------------------------------------------------------------- REGISTRA TRACCIA
+LAYOUT_RECORDER = _v4_screen(
+    _v4_header("btn_rec_back", "REGISTRA TRACCIA", "Funziona anche a schermo spento", "#00FF88", "tv_rec_state", "PRONTO")
+    + _t_card(_t_label("TEMPO IN MOVIMENTO")
+              + _t_big("tv_rec_time", "00:00:00", "#00FF88", "50sp")
+              + _t_text("tv_rec_elapsed", "tempo in movimento", "#8FB3D0", "12sp"), accent="green", pad="18dp")
+    + _v4_row(_t_stat("tv_rec_dist", "0 m", "DISTANZA", "cyan"),
+              _t_stat("tv_rec_avg", "0,0", "MEDIA KM/H", "violet"),
+              _t_stat("tv_rec_max", "0,0", "MAX KM/H", "pink", end_margin=False), margin="10dp")
+    + _v4_row(_t_stat("tv_rec_up", "+0", "SALITA M", "green"),
+              _t_stat("tv_rec_down", "-0", "DISCESA M", "orange"),
+              _t_stat("tv_rec_alt", "--", "QUOTA MIN-MAX", "yellow", end_margin=False))
+    + _t_card(_t_label("PROFILO ALTIMETRICO")
+              + '    <com.offlinegps.map.ui.TrackProfileView android:id="@+id/rec_profile"\n'
+                '        android:layout_width="match_parent" android:layout_height="150dp" android:layout_marginTop="8dp"/>\n',
+              accent="cyan", pad="14dp")
+    + _t_buttons(_t_btn("btn_rec_toggle", "ic_v5_record", "AVVIA", "green", filled=True,
+                        icon_id="iv_rec_toggle", text_id="tv_rec_toggle"),
+                 _t_btn("btn_rec_stop", "ic_v5_stop", "TERMINA", "red", end_margin=False))
+    + _t_buttons(_t_btn("btn_rec_export", "ic_v5_share", "ESPORTA GPX DELLA TRACCIA", "cyan", end_margin=False))
+    + _v4_hint(None, "Distanza calcolata dalla velocita' GPS: da fermo non aumenta. Il dislivello e' filtrato dal "
+                     "rumore della quota (prima contava centinaia di metri inesistenti). Il tempo in pausa non conta.")
+    + _v4_section("TRACCE SALVATE")
+    + _t_text("tv_rec_hist_empty", "Nessuna traccia salvata.", "#5A7A99", "13sp", top="0dp")
+    + '<LinearLayout android:id="@+id/rec_history" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n',
+    "rec_column")
+
+# ---------------------------------------------------------------- SOLE & TRAMONTO
+LAYOUT_DAYLIGHT = _v4_screen(
+    _v4_header("btn_day_back", "SOLE &amp; TRAMONTO", "Calcolo astronomico offline, al minuto", "#FFD600", "tv_day_place", "GPS")
+    + _t_card(_t_big("tv_day_big", "--", "#FFC94D", "52sp")
+              + _t_text("tv_day_big_label", "in attesa della posizione", "#E8F4FD", "15sp", bold=True, top="2dp")
+              + _t_text("tv_day_big_sub", "", "#8FB3D0", "12.5sp", top="8dp"), accent="yellow", pad="18dp")
+    + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">\n'
+      '    <ImageView android:id="@+id/btn_day_prev" android:layout_width="40dp" android:layout_height="40dp"\n'
+      '        android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+      '        android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"\n'
+      '        android:contentDescription="Giorno prima"/>\n'
+      '    <TextView android:id="@+id/tv_day_date" android:layout_width="0dp" android:layout_height="40dp"\n'
+      '        android:layout_weight="1" android:gravity="center" android:text="OGGI" android:textColor="#E8F4FD"\n'
+      '        android:textSize="13sp" android:textStyle="bold" android:clickable="true" android:focusable="true"/>\n'
+      '    <ImageView android:id="@+id/btn_day_next" android:layout_width="40dp" android:layout_height="40dp"\n'
+      '        android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD" android:rotation="180"\n'
+      '        android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"\n'
+      '        android:contentDescription="Giorno dopo"/>\n'
+      '</LinearLayout>\n'
+    + _t_card(_t_label("IL SOLE NEL CIELO, ORA PER ORA")
+              + '    <com.offlinegps.map.ui.SunPathView android:id="@+id/sun_path"\n'
+                '        android:layout_width="match_parent" android:layout_height="190dp" android:layout_marginTop="8dp"/>\n',
+              accent="yellow", pad="12dp")
+    + _v4_row(_t_stat("tv_sun_alt", "--", "ALTEZZA", "yellow"),
+              _t_stat("tv_sun_az", "--", "DIREZIONE", "orange"),
+              _t_stat("tv_sun_setdir", "--", "TRAMONTA A", "pink", end_margin=False), margin="10dp")
+    + _v4_row(_t_stat("tv_day_length", "--", "DURATA", "cyan"),
+              _t_stat("tv_day_delta", "--", "VS IERI", "violet"),
+              _t_stat("tv_day_noon", "--", "MEZZOGIORNO", "green", end_margin=False))
+    + _v4_section("LE FASI DEL GIORNO")
+    + _t_card('<LinearLayout android:id="@+id/day_timeline" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="cyan", pad="6dp")
+    + _v4_hint(None, "Regola pratica: a braccio teso, ogni dito fra il sole e l'orizzonte vale circa 15 minuti di "
+                     "sole (alle nostre latitudini). Il buio pratico arriva circa 30 minuti dopo il tramonto: "
+                     "in montagna pianifica la discesa per arrivare prima."),
+    "day_column")
+
+# ---------------------------------------------------------------- NORD DAL SOLE
+LAYOUT_SUNCOMPASS = _v4_screen(
+    _v4_header("btn_sun_back", "NORD DAL SOLE", "Il Nord vero senza bussola magnetica", "#FFD600")
+    + _t_view("GuideCompassView", "sun_dial", "300dp")
+    + _t_card(_t_text("tv_sun_info", "Calcolo la posizione del Sole...", "#E8F4FD", "14sp")
+              + _t_text("tv_sun_detail", "", "#FFD600", "13sp", bold=True, top="8dp"), accent="yellow")
+    + _v4_section("SENZA TELEFONO")
+    + _v4_hint(None, "Bastone e ombra: pianta un bastone dritto, segna la punta dell'ombra, aspetta 15-20 minuti "
+                     "e segna di nuovo. La linea dal primo al secondo segno va da Ovest a Est.")
+    + _v4_hint(None, "Orologio a lancette (emisfero nord): punta la lancetta delle ore verso il sole. Il Sud e' a "
+                     "meta' fra quella lancetta e le 12 (con l'ora legale usa l'1 al posto delle 12)."),
+    "sun_column")
+
+# ---------------------------------------------------------------- FUOCO & BIVACCO
+LAYOUT_FIRECAMP = _v4_screen(
+    _v4_header("btn_fire_back", "FUOCO &amp; BIVACCO", "Pianifica la sera al campo, in sicurezza", "#FF6B35")
+    + _t_card(_t_big("tv_fire_big", "--", "#FF8A3D", "50sp")
+              + _t_text("tv_fire_big_label", "", "#E8F4FD", "15sp", bold=True, top="2dp")
+              + _t_text("tv_fire_plan", "", "#CFE3F5", "13sp", top="10dp"), accent="orange", pad="18dp")
+    + _v4_hint(None, "Ogni Regione stabilisce un periodo di massima pericolosita' per gli incendi boschivi (di solito "
+                     "d'estate): in quel periodo accendere fuochi nei boschi e nelle vicinanze e' vietato e sanzionato. "
+                     "Parchi, aree protette e Comuni possono vietarlo tutto l'anno. Informati prima di partire. "
+                     "Se vedi un incendio chiama subito il 112.", red=True)
+    + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:orientation="horizontal" android:gravity="center_vertical">\n'
+      '    <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+      '        android:text="PRIMA DI ACCENDERE" android:textColor="#00E5FF" android:textSize="12sp"\n'
+      '        android:letterSpacing="0.18" android:textStyle="bold" android:layout_marginTop="10dp"\n'
+      '        android:layout_marginBottom="10dp" android:layout_marginStart="4dp"/>\n'
+      '    <TextView android:id="@+id/tv_fire_check_state" android:layout_width="wrap_content"\n'
+      '        android:layout_height="28dp" android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"\n'
+      '        android:text="0 / 8" android:textColor="#FFD600" android:textSize="11sp" android:textStyle="bold"\n'
+      '        android:background="@drawable/bg_chip_off"/>\n'
+      '</LinearLayout>\n'
+    + _t_card('<LinearLayout android:id="@+id/fire_checklist" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="orange", pad="10dp")
+    + _v4_section("TIPI DI FUOCO")
+    + '<LinearLayout android:id="@+id/fire_lay_chips" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginBottom="10dp"/>\n'
+    + _t_card(_t_text("tv_fire_lay", "", "#E8F4FD", "13.5sp", top="0dp"), accent="orange")
+    + _v4_hint(None, "Prepara TUTTO prima di accendere, almeno il doppio di quanto pensi: esca (corteccia di betulla, "
+                     "erba secca, aghi di pino, lanugine di tifa), poi legnetti spessi come un fiammifero, come una "
+                     "matita, come il pollice e infine come il polso. Aggiungi legna poco per volta: il fuoco respira.")
+    + _v4_section("SPEGNERLO DAVVERO")
+    + _t_card(_t_text(None, "1. Smetti di aggiungere legna 30-60 minuti prima di andare via o dormire.\n"
+                            "2. ANNAFFIA abbondantemente braci e ceneri (senz'acqua: terra o sabbia).\n"
+                            "3. MESCOLA con un bastone, poi annaffia di nuovo.\n"
+                            "4. TOCCA: avvicina il dorso della mano. Se senti calore, ripeti.\n"
+                            "Mai solo coprire di terra: sotto le braci covano per ore e possono riaccendersi col vento.",
+                      "#E8F4FD", "13.5sp", top="0dp"), accent="red")
+    + _v4_section("BIVACCO E NOTTE")
+    + _t_card(_t_label("TENDA E POSIZIONE") + _t_text("tv_fire_tent", "--", "#E8F4FD", "13.5sp"), accent="violet")
+    + _t_card(_t_label("LUNA STANOTTE") + _t_text("tv_fire_moon", "--", "#E8F4FD", "13.5sp"), accent="cyan"),
+    "fire_column")
+
+# ---------------------------------------------------------------- COORDINATE
+LAYOUT_COORDS = _v4_screen(
+    _v4_header("btn_c_back", "COORDINATE", "Tocca un formato per copiarlo", "#00E5FF", "tv_c_acc", "NO GPS")
+    + _t_coord_card("card_c_dec", "tv_c_dec", "DECIMALE (GOOGLE MAPS, WHATSAPP)", "cyan")
+    + _t_coord_card("card_c_dms", "tv_c_dms", "GRADI, PRIMI, SECONDI", "cyan")
+    + _t_coord_card("card_c_ddm", "tv_c_ddm", "GRADI E PRIMI DECIMALI (NAUTICA, GPS)", "violet")
+    + _t_coord_card("card_c_utm", "tv_c_utm", "UTM WGS84 (CARTE TOPOGRAFICHE, SOCCORSO ALPINO)", "green")
+    + _t_coord_card("card_c_mgrs", "tv_c_mgrs", "MGRS (RETICOLO MILITARE E PROTEZIONE CIVILE)", "green")
+    + _t_coord_card("card_c_plus", "tv_c_plus", "PLUS CODE (OPEN LOCATION CODE)", "yellow")
+    + _t_text("tv_c_alt", "", "#8FB3D0", "13sp", top="0dp")
+    + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+    + _t_buttons(_t_btn("btn_c_copy", "ic_v5_copy", "COPIA TUTTO", "cyan"),
+                 _t_btn("btn_c_share", "ic_v5_share", "CONDIVIDI", "cyan", filled=True, end_margin=False)),
+    "coords_column")
+
+# ---------------------------------------------------------------- EMERGENZA
+def _em_value(vid, label, size="30sp", color="#FFFFFF"):
+    return ('    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '        android:text="' + label + '" android:textColor="#FFB3C0" android:textSize="11sp"\n'
+            '        android:textStyle="bold" android:letterSpacing="0.14" android:layout_marginTop="8dp"/>\n'
+            '    <TextView android:id="@+id/' + vid + '" android:layout_width="match_parent"\n'
+            '        android:layout_height="wrap_content" android:text="--" android:textColor="' + color + '"\n'
+            '        android:textSize="' + size + '" android:textStyle="bold" android:fontFamily="monospace"/>\n')
+
+LAYOUT_EMERGENCY = _v4_screen(
+    _v4_header("btn_em_back", "EMERGENZA", "Posizione per i soccorsi", "#FF3D71", "em_time", "--:--")
+    + _t_buttons(_t_btn("btn_em_call", "ic_v5_phone", "CHIAMA 112", "red", filled=True, end_margin=False, height="68dp"))
+    + _t_card(_em_value("em_lat", "LATITUDINE", "38sp")
+              + _em_value("em_lon", "LONGITUDINE", "38sp")
+              + _em_value("em_dms", "GRADI PRIMI SECONDI", "17sp", "#FFE0E6")
+              + _em_value("em_utm", "UTM", "17sp", "#FFE0E6")
+              + _em_value("em_plus", "PLUS CODE", "17sp", "#FFE0E6")
+              + '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                '        android:orientation="horizontal" android:layout_marginTop="10dp">\n'
+                '        <TextView android:id="@+id/em_alt" android:layout_width="0dp" android:layout_weight="1"\n'
+                '            android:layout_height="wrap_content" android:text="-- m" android:textColor="#FFD600"\n'
+                '            android:textSize="20sp" android:textStyle="bold"/>\n'
+                '        <TextView android:id="@+id/em_acc" android:layout_width="wrap_content"\n'
+                '            android:layout_height="wrap_content" android:text="--" android:textColor="#00FF88"\n'
+                '            android:textSize="16sp" android:textStyle="bold"/>\n'
+                '    </LinearLayout>\n', accent="red", pad="18dp")
+    + _t_card(_t_text("em_read", "", "#E8F4FD", "14.5sp", top="0dp"), accent="pink")
+    + _t_buttons(_t_btn("btn_em_sms", "ic_v5_sms", "SMS CONTATTO", "pink"),
+                 _t_btn("btn_em_share", "ic_v5_share", "ALTRE APP", "pink", end_margin=False))
+    + _v4_hint(None, "In Italia l'SMS al 112 e' riservato alle persone sorde registrate: per l'emergenza CHIAMA. "
+                     "Durante la chiamata molti telefoni inviano automaticamente la posizione (AML). "
+                     "Con poco segnale manda un SMS a una persona di fiducia: passa anche dove internet non arriva. "
+                     "Utile anche l'app ufficiale 112 Where ARE U.", red=True),
+    "em_column")
+
+# ---------------------------------------------------------------- ROTTA DI RITORNO
+LAYOUT_BACKTRACK = _v4_screen(
+    _v4_header("btn_bt_back", "ROTTA DI RITORNO", "La freccia ti riporta al punto di partenza", "#00FF88", "tv_bt_state", "NESSUN PUNTO")
+    + _t_view("GuideCompassView", "bt_compass", "310dp")
+    + _t_card(_t_text("tv_bt_info", "", "#E8F4FD", "13.5sp", top="0dp"), accent="green")
+    + _t_buttons(_t_btn("btn_bt_mark", "ic_v4_flag", "FISSA PARTENZA QUI", "green", filled=True, end_margin=False))
+    + _t_buttons(_t_btn("btn_bt_nav", "ic_v5_walk", "NAVIGA A PIEDI", "cyan"),
+                 _t_btn("btn_bt_map", "ic_v5_map2d", "MAPPA", "cyan", end_margin=False)),
+    "bt_column")
+
+# ---------------------------------------------------------------- VAI A COORDINATE
+LAYOUT_GOTOCOORDS = _v4_screen(
+    _v4_header("btn_goto_back", "VAI A COORDINATE", "Incolla una posizione in qualsiasi formato", "#00E5FF")
+    + '<EditText android:id="@+id/et_goto_input" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:minHeight="56dp" android:maxLines="4"\n'
+      '    android:hint="Coordinate, UTM, Plus Code o link..." android:textColor="#E8F4FD"\n'
+      '    android:textColorHint="#5A7A99" android:textSize="15sp" android:background="@drawable/bg_input"\n'
+      '    android:paddingStart="16dp" android:paddingEnd="16dp" android:paddingTop="12dp" android:paddingBottom="12dp"\n'
+      '    android:inputType="textMultiLine|textNoSuggestions" android:layout_marginBottom="10dp"/>\n'
+    + _t_buttons(_t_btn("btn_goto_paste", "ic_v5_paste", "INCOLLA DAGLI APPUNTI", "cyan", end_margin=False))
+    + _t_card(_t_text("tv_goto_result", "", "#8FB3D0", "13.5sp", mono=True, top="0dp"), accent="cyan")
+    + _t_view("GuideCompassView", "goto_compass", "280dp")
+    + _t_buttons(_t_btn("btn_goto_nav", "ic_v4_nav", "NAVIGA", "green", filled=True),
+                 _t_btn("btn_goto_show", "ic_v5_map2d", "MAPPA", "cyan", end_margin=False))
+    + _t_buttons(_t_btn("btn_goto_save", "ic_v5_bookmark", "SALVA COME WAYPOINT", "violet", end_margin=False)),
+    "goto_column")
+
+# ---------------------------------------------------------------- QR POSIZIONE
+LAYOUT_QR = _v4_screen(
+    _v4_header("btn_qr_back", "QR POSIZIONE", "Fatti trovare: chi inquadra vede dove sei", "#00E5FF")
+    + _t_chips(("qr_mode_geo", "APRI IN MAPPE"), ("qr_mode_link", "LINK GOOGLE"), ("qr_mode_text", "TESTO COMPLETO"))
+    + '<FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:padding="18dp" android:background="@drawable/bg_qr_card" android:layout_marginBottom="12dp">\n'
+      '    <ImageView android:id="@+id/iv_qr" android:layout_width="match_parent" android:layout_height="300dp"\n'
+      '        android:scaleType="fitCenter" android:contentDescription="Codice QR della posizione"/>\n'
+      '</FrameLayout>\n'
+    + _t_text("tv_qr_text", "In attesa del GPS...", "#CFE3F5", "13sp", center=True, top="0dp")
+    + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+    + _t_buttons(_t_btn("btn_qr_share", "ic_v5_share", "CONDIVIDI IMMAGINE QR", "cyan", filled=True, end_margin=False)),
+    "qr_column")
+
+# ---------------------------------------------------------------- SEGNALI LUMINOSI
+LAYOUT_MIRROR = (_XML_HEAD +
+    '<FrameLayout ' + _NS + ' android:id="@+id/mirror_root"\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="#FFFFFFFF" android:clickable="true" android:focusable="true">\n'
+    '    <LinearLayout android:id="@+id/mirror_controls" android:layout_width="match_parent"\n'
+    '        android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical"\n'
+    '        android:layout_margin="16dp" android:padding="14dp" android:background="@drawable/bg_mirror_panel">\n'
+    '        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:text="SEGNALI LUMINOSI" android:textColor="#00E5FF" android:textSize="15sp"\n'
+    '            android:textStyle="bold" android:letterSpacing="0.1"/>\n'
+    '        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:text="Tocca lo schermo per nascondere questi comandi. Di giorno uno specchio vero arriva molto piu\' lontano."\n'
+    '            android:textColor="#8FB3D0" android:textSize="11.5sp" android:layout_marginTop="4dp"\n'
+    '            android:layout_marginBottom="10dp"/>\n'
+    + _t_chips(("mir_mode_fixed", "FISSO"), ("mir_mode_blink", "LAMPEGGIO"), ("mir_mode_sos", "SOS MORSE"), ("mir_torch", "+ FLASH"), margin="10dp") +
+    '        <TextView android:id="@+id/btn_mirror_back" android:layout_width="match_parent" android:layout_height="44dp"\n'
+    '            android:gravity="center" android:text="CHIUDI" android:textColor="#E8F4FD" android:textStyle="bold"\n'
+    '            android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"/>\n'
+    '    </LinearLayout>\n'
+    '</FrameLayout>')
+
+# ---------------------------------------------------------------- FISCHIETTO
+LAYOUT_WHISTLE = _v4_screen(
+    _v4_header("btn_whistle_back", "FISCHIETTO SOS", "Suona anche con il volume multimediale a zero", "#FFD600")
+    + _t_chips(("wh_mode_pulse", "PULSATO"), ("wh_mode_sos", "SOS"), ("wh_mode_alpine", "SEGNALE ALPINO"))
+    + '<LinearLayout android:id="@+id/btn_whistle" android:layout_width="220dp" android:layout_height="220dp"\n'
+      '    android:layout_gravity="center_horizontal" android:layout_marginTop="10dp" android:layout_marginBottom="18dp"\n'
+      '    android:orientation="vertical" android:gravity="center" android:background="@drawable/bg_disc_yellow"\n'
+      '    android:clickable="true" android:focusable="true" android:elevation="8dp">\n'
+      '    <ImageView android:layout_width="84dp" android:layout_height="84dp" android:src="@drawable/ic_v5_megaphone"\n'
+      '        android:tint="#FFD600" android:contentDescription="Fischia"/>\n'
+      '    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="TOCCA"\n'
+      '        android:textColor="#FFD600" android:textSize="14sp" android:textStyle="bold" android:letterSpacing="0.2"\n'
+      '        android:layout_marginTop="6dp"/>\n'
+      '</LinearLayout>\n'
+    + _t_text("tv_whistle_state", "Premi per fischiare", "#E8F4FD", "16sp", bold=True, center=True, top="0dp")
+    + '<View android:layout_width="match_parent" android:layout_height="14dp"/>\n'
+    + _t_card(_t_text("tv_whistle_hint", "", "#CFE3F5", "13.5sp", top="0dp"), accent="yellow")
+    + _v4_hint(None, "Un fischio si sente molto piu' lontano della voce e non ti sfinisce. Fra un ciclo e l'altro "
+                     "ascolta: chi ti ha sentito risponde."),
+    "wh_column")
+
+# ---------------------------------------------------------------- TIMER
+LAYOUT_TIMER = _v4_screen(
+    _v4_header("btn_timer_back", "TIMER", "Avviso con suono e vibrazione", "#00FF88")
+    + _t_card(_t_big("tv_timer", "00:00", "#00FF88", "64sp", center=True)
+              + _t_text("tv_timer_end", "", "#8FB3D0", "13sp", center=True)
+              + _t_progress("pb_timer", "12dp"), accent="green", pad="20dp")
+    + _t_chips(("timer_p3", "3 MIN"), ("timer_p5", "5"), ("timer_p10", "10"), ("timer_p15", "15"),
+               ("timer_p30", "30"), ("timer_p60", "60"))
+    + '<EditText android:id="@+id/et_timer_min" android:layout_width="match_parent"\n'
+      '    android:layout_height="52dp" android:inputType="number" android:hint="Altri minuti..."\n'
+      '    android:textColor="#E8F4FD" android:textColorHint="#5A7A99" android:textSize="17sp"\n'
+      '    android:background="@drawable/bg_input" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+      '    android:layout_marginBottom="12dp"/>\n'
+    + _t_buttons(_t_btn("btn_timer_start", "ic_v4_play", "AVVIA", "green", filled=True),
+                 _t_btn("btn_timer_stop", "ic_v5_stop", "FERMA", "orange", end_margin=False)),
+    "timer_column")
+
+# ---------------------------------------------------------------- IDRATAZIONE
+LAYOUT_HYDRATION = _v4_screen(
+    _v4_header("btn_hydra_back", "IDRATAZIONE", "Si azzera da sola ogni giorno", "#00E5FF")
+    + _t_card(_t_big("tv_hydra_ml", "0,00 L", "#00E5FF", "58sp", center=True)
+              + _t_text("tv_hydra_goal", "", "#CFE3F5", "13sp", center=True)
+              + _t_progress("pb_hydra", "12dp")
+              + _t_text("tv_hydra_last", "", "#8FB3D0", "12.5sp", center=True, top="10dp"), accent="cyan", pad="20dp")
+    + _t_buttons(_t_btn("btn_add_250", "ic_v5_drop", "+250 ml", "cyan", filled=True),
+                 _t_btn("btn_add_500", "ic_v5_drop", "+500 ml", "cyan", filled=True),
+                 _t_btn("btn_add_1000", "ic_v5_drop", "+1 L", "cyan", filled=True, end_margin=False))
+    + _t_buttons(_t_btn("btn_hydra_undo", "ic_v5_undo", "ANNULLA", "violet"),
+                 _t_btn("btn_hydra_reset", "ic_v5_close", "AZZERA", "orange", end_margin=False))
+    + _v4_section("OBIETTIVO GIORNALIERO")
+    + _t_chips(("hydra_goal_2", "2 L"), ("hydra_goal_25", "2,5 L"), ("hydra_goal_3", "3 L"), ("hydra_goal_4", "4 L"))
+    + _v4_hint(None, "Bevi poco e spesso: un sorso ogni 15-20 minuti di cammino, di piu' con caldo, quota e fatica. "
+                     "Sete, urina scura e mal di testa sono segnali di disidratazione. Non bere acqua di torrente "
+                     "senza filtrarla o bollirla."),
+    "hydra_column")
+
+# ---------------------------------------------------------------- MENU SOPRAVVIVENZA
+LAYOUT_SURVIVAL = _v4_screen(
+    _v4_header("btn_surv_back", "SOPRAVVIVENZA", "25 strumenti offline per l'outdoor", "#FF3D71")
+    + '<LinearLayout android:id="@+id/card_emergency" android:layout_width="match_parent"\n'
+      '    android:layout_height="96dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
+      '    android:padding="16dp" android:background="@drawable/bg_tile_red" android:elevation="8dp"\n'
+      '    android:clickable="true" android:focusable="true" android:layout_marginBottom="12dp">\n'
+      '    <ImageView android:layout_width="56dp" android:layout_height="56dp" android:padding="12dp"\n'
+      '        android:src="@drawable/ic_v4_sos" android:tint="#FF1744" android:background="@drawable/bg_disc_red"\n'
+      '        android:contentDescription="Emergenza"/>\n'
+      '    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+      '        android:orientation="vertical" android:layout_marginStart="14dp">\n'
+      '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '            android:text="EMERGENZA 112" android:textColor="#FFFFFF" android:textSize="19sp"\n'
+      '            android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"/>\n'
+      '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '            android:text="Posizione per i soccorsi, chiamata, SMS a un contatto" android:textColor="#FFB3C0"\n'
+      '            android:textSize="12sp"/>\n'
+      '    </LinearLayout>\n'
+      '</LinearLayout>\n'
+    + _v4_section("SEGNALARSI E SOCCORSO")
+    + _v4_row(_v4_tile("card_whistle", "ic_v5_megaphone", "Fischietto SOS", "Anche segnale alpino", "yellow", "118dp"),
+              _v4_tile("card_mirror", "ic_v5_flare", "Segnali luminosi", "Schermo, flash, SOS", "cyan", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_coords", "ic_v5_gps", "Coordinate", "UTM, MGRS, Plus Code", "cyan", "118dp"),
+              _v4_tile("card_firstaid", "ic_v5_medical", "Primo soccorso", "Guida rapida offline", "red", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_morse", "ic_v5_morse", "Codice Morse", "Messaggi col flash", "yellow", "118dp"),
+              _v4_tile("card_flashlight", "ic_v5_flashlight", "Torcia", "Flash come lampada", "yellow", "118dp", end_margin=False))
+    + _v4_section("ORIENTAMENTO")
+    + _v4_row(_v4_tile("card_backtrack", "ic_v5_undo", "Rotta di ritorno", "Torna alla partenza", "green", "118dp"),
+              _v4_tile("card_gotocoords", "ic_v5_near_me", "Vai a coordinate", "Qualsiasi formato", "cyan", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_suncompass", "ic_v5_compass", "Nord dal sole", "Anche con la Luna", "yellow", "118dp"),
+              _v4_tile("card_proximity", "ic_v5_bell", "Allarme distanza", "Se ti allontani", "pink", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_geonotes", "ic_v5_note_pin", "Note sul posto", "Appunti sui luoghi", "violet", "118dp"),
+              _v4_tile("card_qr", "ic_v5_qr", "QR posizione", "Fatti trovare", "cyan", "118dp", end_margin=False))
+    + _v4_section("SOLE, METEO E NOTTE")
+    + _v4_row(_v4_tile("card_daylight", "ic_v5_sunset", "Sole &amp; tramonto", "Luce che resta", "orange", "118dp"),
+              _v4_tile("card_fire", "ic_v4_fire", "Fuoco &amp; bivacco", "Sicurezza e notte", "orange", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_altimeter", "ic_v5_mountain", "Altimetro &amp; meteo", "Quota e temporali", "green", "118dp"),
+              _v4_tile("card_moon", "ic_v5_moon", "Fase lunare", "Luce stanotte", "violet", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_nightvision", "ic_v5_eye", "Visione notturna", "Schermo rosso", "red", "118dp"),
+              _v4_tile("card_battery", "ic_v5_battery", "Risparmio batteria", "Dura di piu'", "green", "118dp", end_margin=False))
+    + _v4_section("CAMPO E UTILITA'")
+    + _v4_row(_v4_tile("card_hydration", "ic_v5_drop", "Idratazione", "Acqua di oggi", "cyan", "118dp"),
+              _v4_tile("card_checklist", "ic_v5_checklist", "Checklist zaino", "Non scordare nulla", "green", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_guide", "ic_v5_book", "Guida sopravvivenza", "Regole e segnali", "red", "118dp"),
+              _v4_tile("card_notepad", "ic_v5_notepad", "Blocco note", "Salvato da solo", "violet", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_calc", "ic_v5_calc", "Calcolatrice", "Calcoli offline", "cyan", "118dp"),
+              _v4_tile("card_currency", "ic_v5_euro", "Valute", "Cambi offline", "yellow", "118dp", end_margin=False)),
+    "surv_column")
+
+# ---------------------------------------------------------------- STRUMENTI OUTDOOR (stessi id di prima)
+LAYOUT_TOOLS = _v4_screen(
+    _v4_header("btn_tools_back", "STRUMENTI OUTDOOR", "Sensori, misure e utilita' sul campo", "#FF6B35")
+    + _t_card(_t_label("BUSSOLA E QUOTA")
+              + '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                '        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="10dp">\n'
+                '        <ImageView android:id="@+id/iv_compass_rose" android:layout_width="104dp"\n'
+                '            android:layout_height="104dp" android:src="@drawable/ic_compass_needle"\n'
+                '            android:layout_marginEnd="18dp" android:contentDescription="Bussola"/>\n'
+                '        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+                '            android:layout_weight="1" android:orientation="vertical">\n'
+                '            <TextView android:id="@+id/tv_compass_dir" android:layout_width="wrap_content"\n'
+                '                android:layout_height="wrap_content" android:text="N" android:textColor="#00FF88"\n'
+                '                android:textSize="42sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+                '                android:shadowColor="#00FF88" android:shadowRadius="16" android:includeFontPadding="false"/>\n'
+                '            <TextView android:id="@+id/tv_azimuth" android:layout_width="wrap_content"\n'
+                '                android:layout_height="wrap_content" android:text="0°" android:textColor="#E8F4FD"\n'
+                '                android:textSize="20sp" android:textStyle="bold"/>\n'
+                '            <TextView android:id="@+id/tv_altitude" android:layout_width="wrap_content"\n'
+                '                android:layout_height="wrap_content" android:text="-- m" android:textColor="#FFD600"\n'
+                '                android:textSize="17sp" android:textStyle="bold" android:layout_marginTop="2dp"/>\n'
+                '        </LinearLayout>\n'
+                '    </LinearLayout>\n'
+              + _t_text("tv_tool_coords", "In attesa del GPS...", "#8FB3D0", "13sp", mono=True, top="10dp"),
+              accent="green", pad="16dp")
+    + _t_card(_t_label("DOVE HO PARCHEGGIATO")
+              + _t_text("tv_park_info", "Nessuna auto salvata", "#CFE3F5", "13sp", mono=True, top="6dp")
+              + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+              + _t_buttons(_t_btn("btn_save_parking", "ic_v5_car", "SALVA AUTO", "green", filled=True),
+                           _t_btn("btn_goto_parking", "ic_v4_nav", "PORTAMI LI'", "green", end_margin=False), margin="0dp"),
+              accent="green", pad="16dp")
+    + _t_card(_t_label("EMERGENZA SOS", "#FF8FA3")
+              + '<View android:layout_width="match_parent" android:layout_height="10dp"/>\n'
+              + _t_buttons(_t_btn("btn_sos_message", "ic_v5_sms", "INVIA SOS CON POSIZIONE", "red", filled=True, end_margin=False), margin="10dp")
+              + _t_buttons(_t_btn("btn_sos_torch", "ic_v5_flashlight", "TORCIA SOS (MORSE)", "yellow", end_margin=False), margin="0dp"),
+              accent="red", pad="16dp")
+    + _v4_row(_t_stat("tv_steps", "0 passi", "CONTAPASSI", "cyan"),
+              _t_stat("tv_pressure", "--", "PRESSIONE", "yellow", end_margin=False))
+    + _t_card(_t_label("DISTANZA DA UN PUNTO")
+              + _t_text("tv_dist_info", "Nessun punto marcato", "#E8F4FD", "15sp", bold=True, top="6dp")
+              + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+              + _t_buttons(_t_btn("btn_mark_point", "ic_v4_flag", "MARCA QUESTO PUNTO", "yellow", end_margin=False), margin="0dp"),
+              accent="yellow", pad="16dp")
+    + _v4_row(
+        '    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+        '        android:orientation="vertical" android:gravity="center_horizontal" android:padding="14dp"\n'
+        '        android:background="@drawable/bg_tile_cyan" android:layout_marginEnd="10dp">\n'
+        + _t_label("LIVELLA") +
+        '        <FrameLayout android:layout_width="104dp" android:layout_height="104dp" android:layout_marginTop="8dp"\n'
+        '            android:background="@drawable/bg_round_card">\n'
+        '            <View android:layout_width="38dp" android:layout_height="38dp" android:layout_gravity="center"\n'
+        '                android:background="@drawable/bg_crosshair" android:alpha="0.35"/>\n'
+        '            <View android:id="@+id/view_bubble" android:layout_width="26dp" android:layout_height="26dp"\n'
+        '                android:layout_gravity="center" android:background="@drawable/bg_fab_primary"/>\n'
+        '        </FrameLayout>\n'
+        '        <TextView android:id="@+id/tv_level" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+        '            android:text="X 0.0°  Y 0.0°" android:textColor="#E8F4FD" android:textSize="12sp"\n'
+        '            android:gravity="center" android:layout_marginTop="8dp" android:fontFamily="monospace"/>\n'
+        '    </LinearLayout>\n',
+        '    <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"\n'
+        '        android:orientation="vertical" android:padding="14dp" android:background="@drawable/bg_tile_green">\n'
+        + _t_label("CRONOMETRO") +
+        '        <TextView android:id="@+id/tv_chrono" android:layout_width="match_parent" android:layout_height="0dp"\n'
+        '            android:layout_weight="1" android:gravity="center" android:text="00:00:00" android:textColor="#00FF88"\n'
+        '            android:textSize="26sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+        '            android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="14sp"\n'
+        '            android:autoSizeMaxTextSize="28sp"/>\n'
+        '        <TextView android:id="@+id/btn_chrono_toggle" android:layout_width="match_parent" android:layout_height="38dp"\n'
+        '            android:gravity="center" android:text="AVVIA / PAUSA" android:textColor="#050A14" android:textSize="12sp"\n'
+        '            android:textStyle="bold" android:background="@drawable/bg_btn5_green" android:clickable="true"\n'
+        '            android:focusable="true" android:layout_marginBottom="6dp"/>\n'
+        '        <TextView android:id="@+id/btn_chrono_reset" android:layout_width="match_parent" android:layout_height="34dp"\n'
+        '            android:gravity="center" android:text="AZZERA" android:textColor="#00FF88" android:textSize="12sp"\n'
+        '            android:textStyle="bold" android:background="@drawable/bg_btn5_line_green" android:clickable="true"\n'
+        '            android:focusable="true"/>\n'
+        '    </LinearLayout>\n')
+    + _t_card(_t_label("VELOCITA' DELLA SESSIONE")
+              + _t_text("tv_speed_stats", "Max 0 km/h   Media 0 km/h", "#E8F4FD", "15sp", bold=True, top="6dp")
+              + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+              + _t_buttons(_t_btn("btn_speed_reset", "ic_v5_undo", "AZZERA", "orange", end_margin=False, height="46dp"), margin="0dp"),
+              accent="orange", pad="16dp")
+    + _v4_section("ALTRI STRUMENTI")
+    + _v4_row(_v4_tile("open_recorder", "ic_v5_route", "Registra traccia", "Km, dislivello, GPX", "green", "118dp"),
+              _v4_tile("open_timer", "ic_v5_timer", "Timer", "Suono e vibrazione", "cyan", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("open_pace", "ic_v5_walk", "Tempi di marcia", "Regola di Naismith", "green", "118dp"),
+              _v4_tile("open_slope", "ic_v5_mountain", "Inclinometro", "Pendenza del terreno", "yellow", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("open_area", "ic_v5_layers", "Area terreno", "Cammina sul perimetro", "violet", "118dp"),
+              _v4_tile("open_heat", "ic_v5_sun", "Temp. percepita", "Caldo e vento", "orange", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("open_metal", "ic_v4_radar", "Metal detector", "Magnetometro", "cyan", "118dp"),
+              _v4_tile("open_speedhud", "ic_v5_car", "Tachimetro HUD", "Riflesso sul vetro", "pink", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("open_unitconv", "ic_v5_calc", "Convertitore unita'", "Lunghezze, pesi, gradi", "violet", "118dp", end_margin=False)),
+    "tools_column")
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -16288,6 +18813,18 @@ def build_java_file_map():
         f"{PKG_MAP}/MapEngines.java":            MAP_ENGINES,
         f"{PKG_UI}/Map3DActivity.java":          MAP3D_ACTIVITY,
         f"{PKG_ROOT}/chat/MeshNode.java":        CHAT_MESH_NODE,
+        # v5.0 — strumenti
+        f"{PKG_GPS}/TrackStats.java":            TRACK_STATS,
+        f"{PKG_DATA}/TrackSessionInfo.java":     TRACK_SESSION_INFO,
+        f"{PKG_UTIL}/GeoFormat.java":            GEO_FORMAT,
+        f"{PKG_UTIL}/ShareUtil.java":            SHARE_UTIL,
+        f"{PKG_UTIL}/QrMaker.java":              QR_MAKER,
+        f"{PKG_UI}/ToolKit.java":                TOOL_KIT,
+        f"{PKG_UI}/TargetGuide.java":            TARGET_GUIDE,
+        f"{PKG_UI}/SunPathView.java":            SUN_PATH_VIEW,
+        f"{PKG_UI}/GuideCompassView.java":       GUIDE_COMPASS_VIEW,
+        f"{PKG_UI}/TrackProfileView.java":       TRACK_PROFILE_VIEW,
+        f"{PKG_UI}/FireCampActivity.java":       FIRECAMP_ACTIVITY,
     }
 
 def build_layout_map():
@@ -16350,6 +18887,7 @@ def build_layout_map():
         "item_spinner_dark.xml":       LAYOUT_ITEM_SPINNER_DARK,
         # NUOVI v5.0
         "activity_map3d.xml":          LAYOUT_MAP3D,
+        "activity_firecamp.xml":       LAYOUT_FIRECAMP,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -16430,7 +18968,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v4.0")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.0")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -16502,6 +19040,8 @@ def create_project(java_path):
     # v5.0: icone e grafica di navigatore, mappa 3D, chat e strumenti
     for d_name, d_xml in V5_DRAWABLES.items():
         write_file(res_dir / "drawable" / (d_name + ".xml"), d_xml)
+    for x_name, x_xml in V5_XML.items():
+        write_file(res_dir / "xml" / (x_name + ".xml"), x_xml)
     for density in ("mdpi","hdpi","xhdpi","xxhdpi","xxxhdpi"):
         mip = res_dir / f"mipmap-{density}"
         mip.mkdir(parents=True, exist_ok=True)
@@ -16571,7 +19111,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v4.0.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.0.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -16585,6 +19125,15 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.0 - NAVIGATORE 3D E STRUMENTI:{C.RESET}")
+    print(f"  {C.OK}[NAV]{C.RESET}  Navigatore vero: avanzamento, voce con 'poi...', ricalcolo, auto/bici/piedi")
+    print(f"  {C.OK}[3D]{C.RESET}   Mappa 3D OpenGL: edifici, inclina e ruota, 4 stili (fallback 2D)")
+    print(f"  {C.OK}[NEW]{C.RESET}  Chat mesh Bluetooth: messaggi a piu' salti, conferme di lettura")
+    print(f"  {C.OK}[NEW]{C.RESET}  Fuoco & bivacco, Sole & tramonto col grafico del sole")
+    print(f"  {C.OK}[FIX]{C.RESET}  GPS acceso solo quando serve; traccia anche a schermo spento")
+    print(f"  {C.OK}[FIX]{C.RESET}  UTM/MGRS veri, QR vero, GPX valido, CHIAMA 112, segnale alpino")
+    print(f"  {C.OK}[GUI]{C.RESET}  Menu Sopravvivenza e Strumenti a riquadri, schermate nuove")
 
     print(f"\n{C.BOLD}NOVITA v4.0 - SENTINELLA CIELO:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Scanner Remote ID droni (Bluetooth + Wi-Fi) con radar 3D")
@@ -16631,7 +19180,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v4.0.apk")
+    info("1. Installa OfflineGPS-3D-v5.0.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -16643,7 +19192,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v4.0 - Sentinella Cielo + grafica nuova")
+    print("  OfflineGPS 3D v5.0 - Navigatore 3D + strumenti rifatti")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -16660,7 +19209,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v4.0 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.0 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v3.0 — Builder COMPLETO con NAVIGAZIONE OFFLINE (routing GraphHopper)
+OfflineGPS 3D v4.0 — Builder COMPLETO con NAVIGAZIONE OFFLINE (routing GraphHopper)
+                      + SENTINELLA CIELO (rilevamento passivo droni)
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -16,7 +17,7 @@ STORICO:
        scheda emergenza, altimetro barometrico con avviso temporale,
        risparmio batteria estremo, tema futuristico neon.
 
-NOVITA' v3.0 (questa versione) — GUI 3D AVANZATA + NUOVI STRUMENTI:
+NOVITA' v3.0 — GUI 3D AVANZATA + NUOVI STRUMENTI:
  * HOME RIDISEGNATA: schede "vetro" con bordo luminoso, pulsanti neon 3D
    (bombati, con ombra e luce), griglia 2 colonne, pulsante EMERGENZA rapido.
  * SPLASH 3D: anello neon che ruota attorno al logo mentre il logo gira
@@ -47,6 +48,35 @@ NOVITA' v3.1 — RICERCA VIE E CIVICI COMPLETA (fix "me ne da' poche"):
    e poi il civico 10 di QUELLA via (entro 4 km).
  * Indice V2: quelli vecchi vengono ricostruiti automaticamente al primo
    avvio della ricerca (nessuna azione manuale necessaria).
+
+NOVITA' v4.0 (questa versione) — SENTINELLA CIELO + GRAFICA NUOVA:
+ * SENTINELLA CIELO: rilevamento PASSIVO dei droni vicini.
+     - Scanner REMOTE ID: riceve via Bluetooth (anche long range BT5) e
+       Wi-Fi Beacon i messaggi che i droni UE trasmettono per legge
+       (ASTM F3411 / EN 4709-002): numero di serie, posizione, quota,
+       velocita', classe C0-C6, posizione del pilota, ID operatore.
+     - Radar 3D: piano in prospettiva, fascio rotante, droni con stelo
+       proporzionale alla quota, scia, rotta, vista 2D/3D, nord o rotta in alto.
+     - Avvisi con vibrazione e voce ("drone a 300 metri, direzione nord-est").
+     - Modalita' DEMO con 3 droni simulati (codificati e decodificati dallo
+       stesso parser dei segnali veri).
+ * ASCOLTO DRONI: riconosce il ronzio delle eliche col microfono (FFT,
+   pettine armonico, persistenza e regolarita' su 2-3 s) con spettrogramma
+   a cascata e indicatore neon. Tutto sul telefono, nessuna registrazione.
+   Tarato su segnali sintetici: 0 falsi allarmi su voce, musica, sirene,
+   vento, traffico e ronzio di rete nei test.
+ * SEGNALA AVVISTAMENTO (SkySpot): diario locale con posizione ARROTONDATA
+   a ~1 km, condivisione testo, pulsante 112 (non lo sostituisce).
+ * E' DAVVERO UN DRONE?: 6 domande distinguono drone, aereo, elicottero,
+   satellite, Starlink, Venere, lanterne, meteore. Guida "cosa fare" e
+   consigli per verificare le notizie prima di condividerle.
+ * Solo RILEVAMENTO: niente jamming ne' contromisure (vietati ai privati).
+ * GRAFICA: home nuova con aurora animata e griglia 3D, radar vivo in
+   evidenza, chip di stato, riquadri vetro con icone e ripple; transizioni
+   animate fra schermate; pulsanti con effetto molla ed elementi che
+   entrano in sequenza in TUTTA l'app; tema scuro coerente (anche i
+   dialoghi); percorso sulla mappa con alone luminoso.
+ * Rimosse le librerie VTM inutilizzate (APK piu' leggero, niente jitpack).
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -71,6 +101,7 @@ PKG_UI      = f"{PKG_ROOT}/ui"
 PKG_DATA    = f"{PKG_ROOT}/data"
 PKG_UTIL    = f"{PKG_ROOT}/util"
 PKG_ROUTING = f"{PKG_ROOT}/routing"
+PKG_SKY     = f"{PKG_ROOT}/sky"
 
 BUILD_GRADLE_PROJECT = """
 buildscript {
@@ -91,8 +122,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 46
-        versionName "3.1.0"
+        versionCode 47
+        versionName "4.0.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -176,14 +207,8 @@ dependencies {
     implementation 'org.mapsforge:mapsforge-map-android:0.21.0'
     implementation 'org.mapsforge:mapsforge-themes:0.21.0'
 
-    def vtm_version = "0.28.0"
-    implementation "com.github.mapsforge.vtm:vtm:${vtm_version}"
-    implementation "com.github.mapsforge.vtm:vtm-themes:${vtm_version}"
-    implementation "com.github.mapsforge.vtm:vtm-android:${vtm_version}"
-    runtimeOnly    "com.github.mapsforge.vtm:vtm-android:${vtm_version}:natives-armeabi-v7a"
-    runtimeOnly    "com.github.mapsforge.vtm:vtm-android:${vtm_version}:natives-arm64-v8a"
-    runtimeOnly    "com.github.mapsforge.vtm:vtm-android:${vtm_version}:natives-x86"
-    runtimeOnly    "com.github.mapsforge.vtm:vtm-android:${vtm_version}:natives-x86_64"
+    // v4.0: rimosse le librerie VTM (mai usate dal codice): APK piu' leggero
+    // e niente dipendenza dal repository jitpack, spesso irraggiungibile.
     implementation 'com.caverock:androidsvg:1.4'
 
     def room_version = "2.6.1"
@@ -224,7 +249,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
     }
 }
 rootProject.name = "OfflineGPS 3D"
@@ -284,12 +308,20 @@ MANIFEST = """\
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- v4.0 Sentinella Cielo: ricezione PASSIVA Remote ID + ascolto eliche -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true"/>
     <uses-feature android:name="android.hardware.sensor.compass" android:required="false"/>
     <uses-feature android:name="android.hardware.location.gps" android:required="true"/>
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
+    <uses-feature android:name="android.hardware.wifi" android:required="false"/>
 
     <application
         android:name=".OfflineGpsApp"
@@ -361,6 +393,12 @@ MANIFEST = """\
         <activity android:name=".ui.PaceCalcActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name=".ui.SpeedHudActivity" android:exported="false" android:screenOrientation="portrait"
             android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
+        <!-- v4.0 SENTINELLA CIELO -->
+        <activity android:name=".ui.SkyWatchActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <activity android:name=".ui.AcousticDetectorActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <activity android:name=".ui.SkySpotActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".ui.SightingCheckActivity" android:exported="false" android:screenOrientation="portrait"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
             android:foregroundServiceType="location"/>
     </application>
@@ -411,6 +449,9 @@ public class OfflineGpsApp extends Application {
         try {
             org.mapsforge.map.android.graphics.AndroidGraphicFactory.createInstance(this);
         } catch (Throwable ignored) {}
+
+        // v4.0: effetto molla sui pulsanti + ingresso a cascata in tutte le schermate
+        com.offlinegps.map.ui.UiFx.install(this);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
@@ -921,7 +962,7 @@ public final class MapController {
     private Marker positionMarker;
     private Circle accuracyCircle;
     private Circle pulseCircle;
-    private Polyline trackLine;
+    private Polyline trackLine, trackGlow;
     private final List<LatLong> trackPoints = new ArrayList<>();
     private final List<Marker> waypointMarkers = new ArrayList<>();
     @Nullable private MapFile mapFile;
@@ -1067,12 +1108,33 @@ public final class MapController {
 
     public void addTrackPoint(double lat, double lon) {
         trackPoints.add(new LatLong(lat, lon));
+        refreshTrackLines();
+    }
+
+    /** v4.0: aggiunge molti punti con UN solo ridisegno (prima: uno per punto). */
+    public void addTrackPoints(java.util.List<double[]> pts) {
+        for (double[] p : pts) trackPoints.add(new LatLong(p[0], p[1]));
+        refreshTrackLines();
+    }
+
+    private void refreshTrackLines() {
         if (trackLine == null) {
+            // alone largo e trasparente sotto la linea: effetto neon sulla mappa
+            Paint glow = AndroidGraphicFactory.INSTANCE.createPaint();
+            glow.setColor(0x4400FF88); glow.setStrokeWidth(20f); glow.setStyle(Style.STROKE);
+            glow.setStrokeCap(org.mapsforge.core.graphics.Cap.ROUND);
+            glow.setStrokeJoin(org.mapsforge.core.graphics.Join.ROUND);
+            trackGlow = new Polyline(glow, AndroidGraphicFactory.INSTANCE);
+            mapView.getLayerManager().getLayers().add(trackGlow);
             Paint paint = AndroidGraphicFactory.INSTANCE.createPaint();
             paint.setColor(0xFF00FF88); paint.setStrokeWidth(7f); paint.setStyle(Style.STROKE);
+            paint.setStrokeCap(org.mapsforge.core.graphics.Cap.ROUND);
+            paint.setStrokeJoin(org.mapsforge.core.graphics.Join.ROUND);
             trackLine = new Polyline(paint, AndroidGraphicFactory.INSTANCE);
             mapView.getLayerManager().getLayers().add(trackLine);
         }
+        trackGlow.getLatLongs().clear();
+        trackGlow.getLatLongs().addAll(trackPoints);
         trackLine.getLatLongs().clear();
         trackLine.getLatLongs().addAll(trackPoints);
         mapView.getLayerManager().redrawLayers();
@@ -1080,6 +1142,7 @@ public final class MapController {
 
     public void clearTrack() {
         trackPoints.clear();
+        if (trackGlow != null) trackGlow.getLatLongs().clear();
         if (trackLine != null) { trackLine.getLatLongs().clear(); mapView.getLayerManager().redrawLayers(); }
     }
 
@@ -2727,53 +2790,113 @@ import com.offlinegps.map.AppConfig;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
 import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.sky.SkyState;
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.*;
 
-public class MainActivity extends AppCompatActivity {
+/** HOME v4.0: aurora animata, radar 3D della Sentinella Cielo, chip di stato e riquadri. */
+public class MainActivity extends AppCompatActivity implements SkyState.Listener {
+    private final Handler clock = new Handler(Looper.getMainLooper());
+    private final Runnable clockTick = new Runnable() {
+        @Override public void run() { updateClock(); clock.postDelayed(this, 20_000); }
+    };
+    private SkyRadarView radar;
 
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_main);
-        Button btnMap   = findViewById(R.id.btn_open_map);
-        Button btnDl    = findViewById(R.id.btn_download);
-        Button btnWp    = findViewById(R.id.btn_waypoints);
-        Button btnStat  = findViewById(R.id.btn_stats);
-        Button btnNav   = findViewById(R.id.btn_navigate);
-        Button btnTools = findViewById(R.id.btn_tools);
-        if (btnMap  != null) btnMap.setOnClickListener(v  -> { if (checkGps()) go(MapActivity.class); });
-        if (btnDl   != null) btnDl.setOnClickListener(v   -> go(DownloadActivity.class));
-        if (btnWp   != null) btnWp.setOnClickListener(v   -> go(WaypointsActivity.class));
-        if (btnStat != null) btnStat.setOnClickListener(v -> go(StatsActivity.class));
-        if (btnTools != null) btnTools.setOnClickListener(v -> go(ToolsActivity.class));
-        Button btnSurv = findViewById(R.id.btn_survival);
-        if (btnSurv != null) btnSurv.setOnClickListener(v -> go(SurvivalActivity.class));
-        Button btnChat = findViewById(R.id.btn_chat);
-        if (btnChat != null) btnChat.setOnClickListener(v -> go(ChatActivity.class));
-        Button btnEmerg = findViewById(R.id.btn_emergency);
-        if (btnEmerg != null) btnEmerg.setOnClickListener(v -> go(EmergencyActivity.class));
-        if (btnNav  != null) btnNav.setOnClickListener(v  -> { if (checkGps()) showNavigateDialog(); });
+        go(R.id.btn_open_map,  () -> { if (checkGps()) open(MapActivity.class); });
+        go(R.id.btn_navigate,  () -> { if (checkGps()) showNavigateDialog(); });
+        go(R.id.btn_download,  () -> open(DownloadActivity.class));
+        go(R.id.btn_waypoints, () -> open(WaypointsActivity.class));
+        go(R.id.btn_stats,     () -> open(StatsActivity.class));
+        go(R.id.btn_tools,     () -> open(ToolsActivity.class));
+        go(R.id.btn_survival,  () -> open(SurvivalActivity.class));
+        go(R.id.btn_chat,      () -> open(ChatActivity.class));
+        go(R.id.btn_emergency, () -> open(EmergencyActivity.class));
+        go(R.id.btn_sky_watch, () -> open(SkyWatchActivity.class));
+        go(R.id.btn_home_acoustic, () -> open(AcousticDetectorActivity.class));
+        go(R.id.btn_home_check, () -> open(SightingCheckActivity.class));
+        // i chip di stato portano dove si risolve il problema
+        go(R.id.chip_gps,     () -> { if (!hasGpsPerm()) requestGps(); else open(MapActivity.class); });
+        go(R.id.chip_map,     () -> open(DownloadActivity.class));
+        go(R.id.chip_routing, () -> open(DownloadActivity.class));
+        go(R.id.chip_service, () -> open(TrackRecorderActivity.class));
+        radar = findViewById(R.id.home_radar);
+        if (radar != null) {
+            radar.setCompact(true);
+            radar.setOnTrackTap(t -> open(SkyWatchActivity.class));
+            radar.setOnClickListener(v -> open(SkyWatchActivity.class));
+        }
         updateStatus();
         if (!hasGpsPerm()) requestGps();
     }
 
-    @Override protected void onResume() { super.onResume(); updateStatus(); }
+    private void go(int id, Runnable r) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(x -> r.run());
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        updateStatus();
+        SkyState.get().addListener(this);
+        onSkyChanged();
+        clock.post(clockTick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        SkyState.get().removeListener(this);
+        clock.removeCallbacks(clockTick);
+    }
+
+    @Override public void onSkyChanged() {
+        SkyState st = SkyState.get();
+        if (radar != null) {
+            radar.setData(st.snapshot(), st.userLat, st.userLon);
+            radar.setDemo(st.isDemo());
+            radar.setAcoustic(st.acousticScore);
+        }
+        TextView tv = findViewById(R.id.tv_home_sky);
+        if (tv != null) {
+            int n = st.countReal();
+            tv.setText(n == 0 ? "Cielo libero · tocca per scansionare Remote ID e audio"
+                : n + (n == 1 ? " drone rilevato nelle vicinanze" : " droni rilevati nelle vicinanze"));
+            tv.setTextColor(n == 0 ? 0xFF8FB3D0 : 0xFFFF5C7A);
+        }
+    }
+
+    private void updateClock() {
+        TextView tc = findViewById(R.id.tv_home_clock);
+        if (tc != null) tc.setText(new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date()));
+        TextView tg = findViewById(R.id.tv_home_greet);
+        if (tg != null) {
+            int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+            tg.setText(h < 5 ? "Buona notte" : h < 13 ? "Buongiorno" : h < 18 ? "Buon pomeriggio" : "Buonasera");
+        }
+    }
 
     private void updateStatus() {
-        TextView tv = findViewById(R.id.tv_status);
-        if (tv == null) return;
         boolean gps    = hasGpsPerm();
         boolean gpsSvc = GpsTrackingService.isActive();
         String mapPath = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString(AppConfig.PREF_MAP_FILE, "");
         boolean hasMap = !mapPath.isEmpty() && new File(mapPath).exists();
         File routingDir = new File(getExternalFilesDir(null), "routing");
-        boolean hasRouting = routingDir.exists() && routingDir.listFiles() != null
-            && routingDir.listFiles((d, n) -> n.endsWith(".pbf")).length > 0;
-        tv.setText(
-            (gps    ? "[OK] " : "[X] ") + "Permesso GPS\n" +
-            (hasMap ? "[OK] " : "[!] ") + (hasMap ? "Mappa offline pronta" : "Nessuna mappa - scarica o carica") + "\n" +
-            (hasRouting ? "[OK] " : "[!] ") + (hasRouting ? "Dati routing presenti" : "Nessun dato routing - scarica per navigare") + "\n" +
-            (gpsSvc ? "[OK] " : "[ ] ") + "Servizio GPS");
+        File[] pbf = routingDir.exists() ? routingDir.listFiles((d, n) -> n.endsWith(".pbf")) : null;
+        boolean hasRouting = pbf != null && pbf.length > 0;
+        SkyUi.chip(findViewById(R.id.chip_gps), gps ? SkyUi.CHIP_ON : SkyUi.CHIP_ALERT, gps ? "GPS OK" : "GPS NO");
+        SkyUi.chip(findViewById(R.id.chip_map), hasMap ? SkyUi.CHIP_ON : SkyUi.CHIP_WARN, hasMap ? "MAPPA OK" : "NO MAPPA");
+        SkyUi.chip(findViewById(R.id.chip_routing), hasRouting ? SkyUi.CHIP_ON : SkyUi.CHIP_WARN, hasRouting ? "ROUTING OK" : "NO ROUTING");
+        SkyUi.chip(findViewById(R.id.chip_service), gpsSvc ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, gpsSvc ? "TRACCIA ON" : "TRACCIA OFF");
+        TextView tv = findViewById(R.id.tv_status);
+        if (tv != null) {
+            String hint = !hasMap ? "Scarica o carica una mappa da Download per iniziare."
+                : !hasRouting ? "Per navigare scarica anche i dati ROUTING della tua zona."
+                : "Tutto pronto: mappe e navigazione funzionano senza internet.";
+            tv.setText(hint);
+        }
     }
 
     private void showNavigateDialog() {
@@ -2846,7 +2969,7 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS);
         ActivityCompat.requestPermissions(this, perms.toArray(new String[0]), AppConfig.REQ_GPS_PERM);
     }
-    private void go(Class<?> cls) { startActivity(new Intent(this, cls)); }
+    private void open(Class<?> cls) { startActivity(new Intent(this, cls)); }
 
     @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
         super.onRequestPermissionsResult(req, p, res);
@@ -3667,7 +3790,7 @@ public class NavigationActivity extends AppCompatActivity
 
     private void drawRoute(RoutingEngine.RouteResult result) {
         mapCtrl.clearTrack();
-        for (double[] p : result.points) mapCtrl.addTrackPoint(p[0], p[1]);
+        mapCtrl.addTrackPoints(result.points);
         if (!result.points.isEmpty()) {
             double[] first = result.points.get(0);
             mapCtrl.centerOn(first[0], first[1], true);
@@ -6529,13 +6652,19 @@ public class ChecklistActivity extends AppCompatActivity {
 
 # --- Helper per i layout degli strumenti (header + blocchi riusabili) ---
 def _tool_header(title_text, back_id, color):
+    # v4.0: pillola "indietro" con ripple, titolo luminoso e barretta colorata
     return ('<Button android:id="@+id/' + back_id + '"\n'
-        '    android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-        '    android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"\n'
-        '    android:textSize="13sp" android:layout_marginBottom="16dp"/>\n'
+        '    android:layout_width="wrap_content" android:layout_height="40dp"\n'
+        '    android:text="&#8249;  INDIETRO" android:background="@drawable/bg_pill_back" android:textColor="#E8F4FD"\n'
+        '    android:textSize="12sp" android:textStyle="bold" android:letterSpacing="0.08"\n'
+        '    android:paddingStart="16dp" android:paddingEnd="18dp" android:minWidth="0dp" android:minHeight="0dp"\n'
+        '    android:stateListAnimator="@null" android:layout_marginBottom="18dp"/>\n'
         '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-        '    android:text="' + title_text + '" android:textColor="' + color + '" android:textSize="22sp"\n'
-        '    android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="20dp"/>')
+        '    android:text="' + title_text + '" android:textColor="' + color + '" android:textSize="23sp"\n'
+        '    android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"\n'
+        '    android:shadowColor="' + color + '" android:shadowRadius="16"/>\n'
+        '<View android:layout_width="48dp" android:layout_height="3dp" android:background="' + color + '"\n'
+        '    android:layout_marginTop="6dp" android:layout_marginBottom="20dp"/>')
 
 def _scroll(inner):
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
@@ -8719,13 +8848,29 @@ LAYOUT_SPEEDHUD = """\
 STRINGS_XML = '<resources><string name="app_name">OfflineGPS 3D</string></resources>'
 
 THEMES_XML = """<resources>
-    <style name="Theme.OfflineGPS" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <!-- v4.0: sempre scuro (prima DayNight: col tema chiaro del telefono i
+         dialoghi diventavano bianchi attorno a contenuti scuri) -->
+    <style name="Theme.OfflineGPS" parent="Theme.AppCompat.NoActionBar">
         <item name="colorPrimary">#00E5FF</item>
         <item name="colorPrimaryDark">#050A14</item>
         <item name="colorAccent">#00FF88</item>
         <item name="android:windowBackground">#050A14</item>
         <item name="android:statusBarColor">#050A14</item>
-        <item name="android:navigationBarColor">#0D1421</item>
+        <item name="android:navigationBarColor">#050A14</item>
+        <item name="android:windowAnimationStyle">@style/OfflineGPS.WindowAnim</item>
+        <item name="android:alertDialogTheme">@style/OfflineGPS.Dialog</item>
+    </style>
+    <style name="OfflineGPS.WindowAnim" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/fx_open_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/fx_open_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/fx_close_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/fx_close_exit</item>
+    </style>
+    <style name="OfflineGPS.Dialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorBackground">#101A2B</item>
+        <item name="android:colorAccent">#00E5FF</item>
+        <item name="android:textColorPrimary">#E8F4FD</item>
+        <item name="android:textColorSecondary">#8FB3D0</item>
     </style>
     <style name="Theme.OfflineGPS.Fullscreen" parent="Theme.OfflineGPS">
         <item name="android:windowFullscreen">true</item>
@@ -8767,8 +8912,11 @@ MANEUVER_ICONS = {
 }
 
 def _neon_btn(shadow, grad_start, grad_center, grad_end, stroke):
+    # v4.0: avvolto in un <ripple> -> onda luminosa al tocco su tutti i pulsanti neon
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
-        '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#40FFFFFF">\n'
+        '<item>\n'
+        '<layer-list>\n'
         '    <item android:bottom="3dp">\n'
         '        <shape android:shape="rectangle">\n'
         '            <solid android:color="' + shadow + '"/>\n'
@@ -8790,7 +8938,9 @@ def _neon_btn(shadow, grad_start, grad_center, grad_end, stroke):
         '            <corners android:radius="14dp"/>\n'
         '        </shape>\n'
         '    </item>\n'
-        '</layer-list>')
+        '</layer-list>\n'
+        '</item>\n'
+        '</ripple>')
 
 # ============================================================
 #  DRAWABLE del tema futuristico (glass, neon, FAB, splash 3D)
@@ -8914,10 +9064,28 @@ UI_DRAWABLES = {
     # sfondo schermata con gradiente profondo (effetto profondita')
     "bg_screen_grad":
         '<?xml version="1.0" encoding="utf-8"?>\n'
-        '<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">\n'
-        '    <gradient android:type="linear" android:angle="135"\n'
-        '        android:startColor="#0A1428" android:centerColor="#050A14" android:endColor="#0A1020"/>\n'
-        '</shape>',
+        '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="135"\n'
+        '                android:startColor="#0A1428" android:centerColor="#050A14" android:endColor="#0A1020"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="radial" android:gradientRadius="900"\n'
+        '                android:centerX="0.1" android:centerY="0.0"\n'
+        '                android:startColor="#2200E5FF" android:endColor="#0000E5FF"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="radial" android:gradientRadius="1000"\n'
+        '                android:centerX="1.0" android:centerY="1.0"\n'
+        '                android:startColor="#1A7C4DFF" android:endColor="#007C4DFF"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</layer-list>',
     # pulsanti neon 3D (bombati con ombra, luce in alto e bordo luminoso)
     "bg_btn_neon":         _neon_btn("#05080F", "#0B1424", "#16243A", "#1C2E48", "#3300E5FF"),
     "bg_btn_neon_primary": _neon_btn("#021926", "#06324D", "#0E4A6E", "#12608F", "#6600E5FF"),
@@ -8988,7 +9156,7 @@ LAYOUT_SPLASH = """\
             android:letterSpacing="0.05"/>
 
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Navigazione e sopravvivenza offline" android:textColor="#5A7A99"
+            android:text="Navigazione · Sopravvivenza · Sentinella Cielo" android:textColor="#5A7A99"
             android:textSize="13sp" android:layout_marginTop="8dp"/>
     </LinearLayout>
 
@@ -9000,98 +9168,6 @@ LAYOUT_SPLASH = """\
         android:letterSpacing="0.1"/>
 
 </FrameLayout>"""
-
-# HOME v3.0: header con logo, card stato "vetro", pulsanti neon 3D e griglia 2 colonne
-LAYOUT_MAIN = """\
-<?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="@drawable/bg_screen_grad">
-<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:orientation="vertical" android:padding="22dp">
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:gravity="center_vertical"
-        android:layout_marginBottom="20dp">
-        <ImageView android:layout_width="54dp" android:layout_height="54dp"
-            android:src="@drawable/ic_gps" android:layout_marginEnd="16dp"
-            android:contentDescription="Logo"/>
-        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:orientation="vertical">
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="OfflineGPS 3D" android:textColor="#E8F4FD"
-                android:textSize="28sp" android:textStyle="bold" android:fontFamily="monospace"/>
-            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="v3.0 · Navigazione · Sopravvivenza · Offline"
-                android:textColor="#00E5FF" android:textSize="12sp"/>
-        </LinearLayout>
-    </LinearLayout>
-
-    <TextView android:id="@+id/tv_status"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textColor="#5A7A99" android:textSize="13sp" android:fontFamily="monospace"
-        android:lineSpacingMultiplier="1.6" android:background="@drawable/bg_card_glass"
-        android:padding="16dp" android:layout_marginBottom="20dp"/>
-
-    <Button android:id="@+id/btn_navigate"
-        android:layout_width="match_parent" android:layout_height="62dp"
-        android:text="NAVIGA - Calcola Percorso" android:background="@drawable/bg_btn_neon_green"
-        android:textColor="#00FF88" android:textSize="16sp" android:textStyle="bold"
-        android:elevation="14dp" android:layout_marginBottom="14dp"/>
-
-    <Button android:id="@+id/btn_open_map"
-        android:layout_width="match_parent" android:layout_height="58dp"
-        android:text="APRI MAPPA 3D OFFLINE" android:background="@drawable/bg_btn_neon_primary"
-        android:textColor="#4FE8FF" android:textSize="15sp" android:textStyle="bold"
-        android:elevation="14dp" android:layout_marginBottom="14dp"/>
-
-    <!-- griglia 2 colonne: strumenti / sopravvivenza -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginBottom="14dp">
-        <Button android:id="@+id/btn_tools"
-            android:layout_width="0dp" android:layout_height="72dp" android:layout_weight="1"
-            android:text="STRUMENTI\\nOUTDOOR" android:background="@drawable/bg_btn_neon_yellow"
-            android:textColor="#FFDF4D" android:textSize="13sp" android:textStyle="bold"
-            android:elevation="12dp" android:layout_marginEnd="12dp"/>
-        <Button android:id="@+id/btn_survival"
-            android:layout_width="0dp" android:layout_height="72dp" android:layout_weight="1"
-            android:text="KIT\\nSOPRAVVIVENZA" android:background="@drawable/bg_btn_neon_red"
-            android:textColor="#FF5C7A" android:textSize="13sp" android:textStyle="bold"
-            android:elevation="12dp"/>
-    </LinearLayout>
-
-    <!-- griglia 2 colonne: chat / emergenza -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginBottom="14dp">
-        <Button android:id="@+id/btn_chat"
-            android:layout_width="0dp" android:layout_height="72dp" android:layout_weight="1"
-            android:text="CHAT OFFLINE\\n(Bluetooth)" android:background="@drawable/bg_btn_neon"
-            android:textColor="#4DFFA0" android:textSize="13sp" android:textStyle="bold"
-            android:elevation="12dp" android:layout_marginEnd="12dp"/>
-        <Button android:id="@+id/btn_emergency"
-            android:layout_width="0dp" android:layout_height="72dp" android:layout_weight="1"
-            android:text="EMERGENZA\\nSOS" android:background="@drawable/bg_btn_neon_red"
-            android:textColor="#FF8888" android:textSize="13sp" android:textStyle="bold"
-            android:elevation="12dp"/>
-    </LinearLayout>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginBottom="10dp">
-        <Button android:id="@+id/btn_download"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="Download" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-            android:textSize="13sp" android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_waypoints"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="Waypoint" android:backgroundTint="#141E2E" android:textColor="#00FF88"
-            android:textSize="13sp" android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_stats"
-            android:layout_width="0dp" android:layout_height="52dp" android:layout_weight="1"
-            android:text="Stats" android:backgroundTint="#141E2E" android:textColor="#FF6B35"
-            android:textSize="13sp"/>
-    </LinearLayout>
-
-</LinearLayout></ScrollView>"""
 
 DIALOG_NAVIGATE_COORDS = """\
 <?xml version="1.0" encoding="utf-8"?>
@@ -9727,6 +9803,4223 @@ LAYOUT_STATS = ("""\
     + """    </LinearLayout>
 </LinearLayout></ScrollView>""")
 
+# >>> V4 SENTINELLA CIELO
+# ============================================================
+#  v4.0 SENTINELLA CIELO — rilevamento PASSIVO di droni
+#  (Remote ID Bluetooth/Wi-Fi + firma acustica delle eliche),
+#  segnalazioni anonime, verifica avvistamenti e nuova grafica.
+# ============================================================
+
+SKY_REMOTE_ID_PARSER = r"""package com.offlinegps.map.sky;
+
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Decoder dei messaggi Remote ID (ASTM F3411 / ASD-STAN EN 4709-002): gli
+ * stessi che i droni conformi UE trasmettono via Bluetooth e Wi-Fi.
+ * Ogni messaggio e' lungo 25 byte; il primo byte contiene il tipo (nibble
+ * alto) e la versione del protocollo (nibble basso). I campi multi-byte
+ * sono little-endian. Contiene anche gli encoder usati dalla modalita'
+ * DEMO e dai test.
+ */
+public final class RemoteIdParser {
+    public static final int MSG_SIZE = 25;
+    public static final int PROTO_VERSION = 2;
+    public static final int TYPE_BASIC_ID    = 0x0;
+    public static final int TYPE_LOCATION    = 0x1;
+    public static final int TYPE_AUTH        = 0x2;
+    public static final int TYPE_SELF_ID     = 0x3;
+    public static final int TYPE_SYSTEM      = 0x4;
+    public static final int TYPE_OPERATOR_ID = 0x5;
+    public static final int TYPE_PACK        = 0xF;
+
+    public static final int STATUS_UNDECLARED = 0;
+    public static final int STATUS_GROUND     = 1;
+    public static final int STATUS_AIRBORNE   = 2;
+    public static final int STATUS_EMERGENCY  = 3;
+    public static final int STATUS_RID_FAIL   = 4;
+
+    private RemoteIdParser() {}
+
+    /** Un messaggio decodificato: sono valorizzati solo i campi del suo tipo. */
+    public static final class Message {
+        public int type;
+        // Basic ID
+        public int idType, uaType;
+        public String uasId = "";
+        // Location / Vector
+        public int status, heightType;
+        public float direction = Float.NaN, speed = Float.NaN, vspeed = Float.NaN;
+        public double lat = Double.NaN, lon = Double.NaN;
+        public float altBaro = Float.NaN, altGeo = Float.NaN, height = Float.NaN;
+        public int hAccuracy, vAccuracy;
+        // Self-ID
+        public String text = "";
+        // System
+        public double opLat = Double.NaN, opLon = Double.NaN;
+        public float opAlt = Float.NaN;
+        public int category = -1, classEU = -1, opLocType;
+        // Operator ID
+        public String operatorId = "";
+    }
+
+    /** Decodifica un messaggio singolo o un Message Pack che inizia a off. */
+    public static List<Message> parse(byte[] d, int off) {
+        List<Message> out = new ArrayList<>();
+        if (d == null || off < 0 || d.length - off < 1) return out;
+        int type = (d[off] & 0xF0) >> 4;
+        if (type == TYPE_PACK) {
+            if (d.length - off < 3) return out;
+            int size = d[off + 1] & 0xFF;
+            int count = d[off + 2] & 0xFF;
+            if (size != MSG_SIZE || count > 10) return out;
+            for (int i = 0; i < count; i++) {
+                int mo = off + 3 + i * MSG_SIZE;
+                if (mo + MSG_SIZE > d.length) break;
+                Message m = parseOne(d, mo);
+                if (m != null) out.add(m);
+            }
+        } else {
+            Message m = parseOne(d, off);
+            if (m != null) out.add(m);
+        }
+        return out;
+    }
+
+    static Message parseOne(byte[] d, int o) {
+        if (o < 0 || o + MSG_SIZE > d.length) return null;
+        Message m = new Message();
+        m.type = (d[o] & 0xF0) >> 4;
+        switch (m.type) {
+            case TYPE_BASIC_ID:
+                m.idType = (d[o + 1] & 0xF0) >> 4;
+                m.uaType = d[o + 1] & 0x0F;
+                m.uasId = ascii(d, o + 2, 20);
+                return m;
+            case TYPE_LOCATION: {
+                int flags = d[o + 1] & 0xFF;
+                m.status = (flags & 0xF0) >> 4;
+                m.heightType = (flags >> 2) & 1;
+                boolean ew = ((flags >> 1) & 1) == 1;
+                boolean mult = (flags & 1) == 1;
+                int dir = (d[o + 2] & 0xFF) + (ew ? 180 : 0);
+                m.direction = dir < 360 ? dir : Float.NaN;          // 361 = sconosciuto
+                int sp = d[o + 3] & 0xFF;
+                float speed = mult ? sp * 0.75f + 63.75f : sp * 0.25f;
+                m.speed = speed >= 254f ? Float.NaN : speed;          // 255 m/s = sconosciuto
+                float vs = d[o + 4] * 0.5f;                           // int8 con segno
+                m.vspeed = Math.abs(vs) >= 62f ? Float.NaN : vs;      // 63 m/s = sconosciuto
+                int lat = le32(d, o + 5), lon = le32(d, o + 9);
+                if (lat != 0 || lon != 0) {
+                    m.lat = lat * 1e-7;
+                    m.lon = lon * 1e-7;
+                    if (Math.abs(m.lat) > 90 || Math.abs(m.lon) > 180) {
+                        m.lat = Double.NaN; m.lon = Double.NaN;
+                    }
+                }
+                m.altBaro = alt(le16(d, o + 13));
+                m.altGeo  = alt(le16(d, o + 15));
+                m.height  = alt(le16(d, o + 17));
+                m.hAccuracy = d[o + 19] & 0x0F;
+                m.vAccuracy = (d[o + 19] & 0xF0) >> 4;
+                return m;
+            }
+            case TYPE_SELF_ID:
+                m.text = ascii(d, o + 2, 23);
+                return m;
+            case TYPE_SYSTEM: {
+                m.opLocType = d[o + 1] & 0x03;
+                int lat = le32(d, o + 2), lon = le32(d, o + 6);
+                if (lat != 0 || lon != 0) {
+                    m.opLat = lat * 1e-7;
+                    m.opLon = lon * 1e-7;
+                }
+                m.category = (d[o + 17] & 0xF0) >> 4;
+                m.classEU = d[o + 17] & 0x0F;
+                m.opAlt = alt(le16(d, o + 18));
+                return m;
+            }
+            case TYPE_OPERATOR_ID:
+                m.operatorId = ascii(d, o + 2, 20);
+                return m;
+            case TYPE_AUTH:
+                return m;   // autenticazione: non serve per la visualizzazione
+            default:
+                return null;
+        }
+    }
+
+    // ------------------------------------------------------------ encoder
+    public static byte[] encodeBasicId(int idType, int uaType, String id) {
+        byte[] m = header(TYPE_BASIC_ID);
+        m[1] = (byte) (((idType & 0x0F) << 4) | (uaType & 0x0F));
+        putAscii(m, 2, 20, id);
+        return m;
+    }
+
+    public static byte[] encodeLocation(int status, float dirDeg, float speedMs, float vsMs,
+            double lat, double lon, float altGeo, float height) {
+        byte[] m = header(TYPE_LOCATION);
+        int dir = Math.round(dirDeg) % 360;
+        if (dir < 0) dir += 360;
+        boolean ew = dir >= 180;
+        int spRaw; boolean mult;
+        if (speedMs <= 63.75f) { mult = false; spRaw = Math.round(speedMs / 0.25f); }
+        else if (speedMs < 254.25f) { mult = true; spRaw = Math.round((speedMs - 63.75f) / 0.75f); }
+        else { mult = true; spRaw = 254; }
+        m[1] = (byte) (((status & 0x0F) << 4) | ((ew ? 1 : 0) << 1) | (mult ? 1 : 0));
+        m[2] = (byte) (ew ? dir - 180 : dir);
+        m[3] = (byte) Math.min(254, Math.max(0, spRaw));
+        m[4] = (byte) Math.max(-125, Math.min(125, Math.round(vsMs / 0.5f)));
+        put32(m, 5, (int) Math.round(lat * 1e7));
+        put32(m, 9, (int) Math.round(lon * 1e7));
+        put16(m, 13, altEnc(Float.NaN));
+        put16(m, 15, altEnc(altGeo));
+        put16(m, 17, altEnc(height));
+        m[19] = (byte) ((4 << 4) | 10);   // accuratezza: verticale <10 m, orizzontale <10 m
+        return m;
+    }
+
+    public static byte[] encodeSelfId(String text) {
+        byte[] m = header(TYPE_SELF_ID);
+        putAscii(m, 2, 23, text);
+        return m;
+    }
+
+    public static byte[] encodeSystem(double opLat, double opLon, int category, int classEU) {
+        byte[] m = header(TYPE_SYSTEM);
+        m[1] = (byte) (1 | (1 << 2));     // posizione operatore live GNSS, classificazione UE
+        put32(m, 2, (int) Math.round(opLat * 1e7));
+        put32(m, 6, (int) Math.round(opLon * 1e7));
+        put16(m, 10, 1);
+        m[17] = (byte) (((category & 0x0F) << 4) | (classEU & 0x0F));
+        put16(m, 18, altEnc(Float.NaN));
+        return m;
+    }
+
+    public static byte[] encodeOperatorId(String id) {
+        byte[] m = header(TYPE_OPERATOR_ID);
+        putAscii(m, 2, 20, id);
+        return m;
+    }
+
+    public static byte[] encodePack(byte[]... msgs) {
+        byte[] p = new byte[3 + msgs.length * MSG_SIZE];
+        p[0] = (byte) ((TYPE_PACK << 4) | PROTO_VERSION);
+        p[1] = (byte) MSG_SIZE;
+        p[2] = (byte) msgs.length;
+        for (int i = 0; i < msgs.length; i++) System.arraycopy(msgs[i], 0, p, 3 + i * MSG_SIZE, MSG_SIZE);
+        return p;
+    }
+
+    // ------------------------------------------------------------ etichette
+    public static String uaTypeName(int t) {
+        switch (t) {
+            case 1: return "Aereo ad ala fissa";
+            case 2: return "Multirotore";
+            case 3: return "Autogiro";
+            case 4: return "VTOL ibrido";
+            case 5: return "Ornitottero";
+            case 6: return "Aliante";
+            case 7: return "Aquilone";
+            case 8: return "Pallone libero";
+            case 9: return "Pallone vincolato";
+            case 10: return "Dirigibile";
+            case 11: return "Paracadute";
+            case 12: return "Razzo";
+            case 13: return "Vincolato a motore";
+            case 14: return "Ostacolo a terra";
+            case 15: return "Altro";
+            default: return "Tipo non dichiarato";
+        }
+    }
+
+    public static String statusName(int s) {
+        switch (s) {
+            case STATUS_GROUND: return "A terra";
+            case STATUS_AIRBORNE: return "In volo";
+            case STATUS_EMERGENCY: return "EMERGENZA";
+            case STATUS_RID_FAIL: return "Guasto Remote ID";
+            default: return "Stato non dichiarato";
+        }
+    }
+
+    public static String classLabel(int category, int classEU) {
+        String cat;
+        switch (category) {
+            case 1: cat = "Open"; break;
+            case 2: cat = "Specific"; break;
+            case 3: cat = "Certified"; break;
+            default: cat = "";
+        }
+        String cls = (classEU >= 1 && classEU <= 7) ? "C" + (classEU - 1) : "";
+        if (cat.isEmpty() && cls.isEmpty()) return "";
+        return (cat + " " + cls).trim();
+    }
+
+    // ------------------------------------------------------------ util
+    private static byte[] header(int type) {
+        byte[] m = new byte[MSG_SIZE];
+        m[0] = (byte) ((type << 4) | PROTO_VERSION);
+        return m;
+    }
+
+    private static float alt(int raw) {
+        if (raw == 0) return Float.NaN;          // -1000 m = sconosciuto
+        return raw * 0.5f - 1000f;
+    }
+
+    private static int altEnc(float v) {
+        if (Float.isNaN(v)) return 0;
+        return Math.max(0, Math.min(65535, Math.round((v + 1000f) / 0.5f)));
+    }
+
+    static int le16(byte[] d, int o) {
+        return (d[o] & 0xFF) | ((d[o + 1] & 0xFF) << 8);
+    }
+
+    static int le32(byte[] d, int o) {
+        return (d[o] & 0xFF) | ((d[o + 1] & 0xFF) << 8)
+            | ((d[o + 2] & 0xFF) << 16) | ((d[o + 3] & 0xFF) << 24);
+    }
+
+    private static void put16(byte[] d, int o, int v) {
+        d[o] = (byte) v; d[o + 1] = (byte) (v >> 8);
+    }
+
+    private static void put32(byte[] d, int o, int v) {
+        d[o] = (byte) v; d[o + 1] = (byte) (v >> 8);
+        d[o + 2] = (byte) (v >> 16); d[o + 3] = (byte) (v >> 24);
+    }
+
+    private static void putAscii(byte[] d, int o, int max, String s) {
+        if (s == null) return;
+        byte[] b = s.getBytes(StandardCharsets.US_ASCII);
+        System.arraycopy(b, 0, d, o, Math.min(max, b.length));
+    }
+
+    /** Testo ASCII stampabile fino al primo byte nullo. */
+    static String ascii(byte[] d, int o, int max) {
+        StringBuilder sb = new StringBuilder(max);
+        for (int i = 0; i < max && o + i < d.length; i++) {
+            int c = d[o + i] & 0xFF;
+            if (c == 0) break;
+            if (c >= 0x20 && c < 0x7F) sb.append((char) c);
+        }
+        return sb.toString().trim();
+    }
+}
+"""
+
+SKY_FFT = r"""package com.offlinegps.map.sky;
+
+/** FFT radix-2 iterativa in-place con tabelle precalcolate (nessuna allocazione per frame). */
+public final class Fft {
+    private final int n;
+    private final int[] rev;
+    private final double[] cos, sin;
+
+    public Fft(int n) {
+        if (Integer.bitCount(n) != 1) throw new IllegalArgumentException("n deve essere potenza di 2");
+        this.n = n;
+        rev = new int[n];
+        int bits = Integer.numberOfTrailingZeros(n);
+        for (int i = 0; i < n; i++) rev[i] = Integer.reverse(i) >>> (32 - bits);
+        cos = new double[n / 2];
+        sin = new double[n / 2];
+        for (int i = 0; i < n / 2; i++) {
+            cos[i] = Math.cos(-2 * Math.PI * i / n);
+            sin[i] = Math.sin(-2 * Math.PI * i / n);
+        }
+    }
+
+    public void transform(double[] re, double[] im) {
+        for (int i = 0; i < n; i++) {
+            int j = rev[i];
+            if (j > i) {
+                double t = re[i]; re[i] = re[j]; re[j] = t;
+                t = im[i]; im[i] = im[j]; im[j] = t;
+            }
+        }
+        for (int size = 2; size <= n; size <<= 1) {
+            int half = size >> 1, step = n / size;
+            for (int start = 0; start < n; start += size) {
+                for (int k = 0; k < half; k++) {
+                    double wr = cos[k * step], wi = sin[k * step];
+                    int a = start + k, b = a + half;
+                    double xr = re[b] * wr - im[b] * wi;
+                    double xi = re[b] * wi + im[b] * wr;
+                    re[b] = re[a] - xr; im[b] = im[a] - xi;
+                    re[a] += xr;        im[a] += xi;
+                }
+            }
+        }
+    }
+}
+"""
+
+SKY_ACOUSTIC_ANALYZER = r"""package com.offlinegps.map.sky;
+
+import java.util.Arrays;
+
+/**
+ * Riconoscimento acustico dei droni, interamente on-device e senza modelli.
+ *
+ * Le eliche di un drone producono un tono alla "frequenza di passaggio
+ * pala" (giri/s x numero di pale, tipicamente 100-500 Hz) piu' una serie
+ * ordinata di ARMONICHE (2f, 3f, 4f...), stabile per secondi. Il vento e il
+ * traffico sono rumore senza righe, la voce cambia altezza di continuo, un
+ * bip ha una sola riga, i motori a scoppio e il ronzio di rete hanno la
+ * fondamentale sotto i 70 Hz.
+ *
+ * Per ogni finestra (4096 campioni a 16 kHz = 0,26 s, 3,9 Hz per bin):
+ *  1. due spettri di potenza mediati: BREVE (ultime 4 finestre, ~0,6 s) e
+ *     LUNGO (ultime 16, ~2,2 s). Nel lungo sopravvivono solo le righe
+ *     stabili: quelle che scivolano (voce, sirene) si spalmano;
+ *  2. "prominenza" di ogni bin rispetto al fondo locale (+/-100 Hz);
+ *  3. per ogni fondamentale candidata 70-520 Hz si cercano le prime 10
+ *     armoniche (tolleranza +/-2,5% perche' i 4 motori girano a velocita'
+ *     leggermente diverse) e le posizioni intermedie, che devono essere
+ *     vuote; si tiene il pettine migliore;
+ *  4. veto sub-armonico: se una fondamentale sotto i 70 Hz spiega anche
+ *     righe intermedie e' un motore a scoppio o il ronzio di rete;
+ *  5. punteggio = pettine nello spettro lungo (persistenza) x pettine nello
+ *     spettro breve (presenza adesso), poi smussato nel tempo.
+ * E' un'euristica: tosaerba, scooter e ventole hanno firme simili.
+ */
+public final class AcousticAnalyzer {
+    public static final int SAMPLE_RATE = 16000;
+    public static final int FFT_SIZE = 4096;
+    public static final int HOP = 2048;
+    public static final float DISPLAY_MAX_HZ = 3000f;
+    public static final int DISPLAY_BINS = 256;
+
+    private static final float BIN_HZ = (float) SAMPLE_RATE / FFT_SIZE;
+    private static final float F0_MIN = 70f, F0_MAX = 520f, BAND_MAX = 5000f;
+    private static final int HARMONICS = 10;
+    private static final float TOL = 0.025f;
+    private static final float PROM_CLIP = 20f, PROM_PRESENT = 5.5f, CONTRAST = 3f, LONG_PRESENT = 4f;
+    private static final int SHORT = 4, LONG = 16;
+    private static final float GATE_DB = -80f;      // sotto: microfono muto
+    private static final float SMOOTH = 0.35f;
+    private static final int HISTORY = 24;          // ~3 s di fondamentali
+    private static final float STEADY_DB = 2.5f;    // oscillazione di livello tollerata
+    private static final int OLD_FROM = 6;          // persistenza: finestre da 0,8 a 2 s fa
+
+    public static final class Result {
+        public float score;        // 0..1 probabilita' "firma da drone"
+        public float frameScore;   // armonicita' nello spettro breve
+        public float f0;           // fondamentale stimata (Hz), 0 se nessuna
+        public int harmonics;      // armoniche presenti
+        public float rmsDb;        // livello del segnale (dBFS)
+        public float stability;    // 0..1 continuita' e persistenza della serie armonica
+        public float[] spectrum;   // DISPLAY_BINS valori 0..1 (0-3000 Hz) per lo spettrogramma
+    }
+
+    private final Fft fft = new Fft(FFT_SIZE);
+    private final int half = FFT_SIZE / 2;
+    private final int topBin = Math.min(half - 1, Math.round(BAND_MAX * 1.03f / BIN_HZ) + 30);
+    private final double[] re = new double[FFT_SIZE], im = new double[FFT_SIZE];
+    private final float[] window = new float[FFT_SIZE];
+    private final float[][] pow = new float[LONG][topBin + 1];
+    private final float[] magDb = new float[half];          // finestra corrente (spettrogramma)
+    private final float[] shortDb = new float[topBin + 1], longDb = new float[topBin + 1];
+    private final float[] shortProm = new float[topBin + 1], longProm = new float[topBin + 1];
+    private final double[] prefix = new double[topBin + 2];
+    private final float[] sortBuf;
+    private final float[] histF0 = new float[HISTORY];
+    private int powPos = 0, powCount = 0, histPos = 0;
+    private float smoothed = 0;
+    // risultato dell'ultima ricerca del pettine
+    private float combF0, combProm, combFrame;
+    private int combPresent;
+
+    public AcousticAnalyzer() {
+        for (int i = 0; i < FFT_SIZE; i++)
+            window[i] = (float) (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (FFT_SIZE - 1)));
+        sortBuf = new float[bin(DISPLAY_MAX_HZ) - bin(60f)];
+    }
+
+    private static int bin(float hz) { return Math.round(hz / BIN_HZ); }
+
+    public void reset() {
+        powPos = powCount = histPos = 0;
+        smoothed = 0;
+        for (float[] p : pow) Arrays.fill(p, 0);
+        Arrays.fill(histF0, 0);
+    }
+
+    /** Analizza FFT_SIZE campioni PCM 16 bit (finestra scorrevole, chiamare ogni HOP campioni). */
+    public Result analyze(short[] pcm) {
+        Result r = new Result();
+        double sumSq = 0;
+        for (int i = 0; i < FFT_SIZE; i++) {
+            double s = pcm[i] / 32768.0;
+            sumSq += s * s;
+            re[i] = s * window[i];
+            im[i] = 0;
+        }
+        r.rmsDb = (float) (10 * Math.log10(sumSq / FFT_SIZE + 1e-12));
+        fft.transform(re, im);
+        float[] cur = pow[powPos];
+        for (int k = 0; k < half; k++) {
+            double p = re[k] * re[k] + im[k] * im[k] + 1e-12;
+            if (k <= topBin) cur[k] = (float) p;
+            magDb[k] = (float) (10 * Math.log10(p));
+        }
+        powPos = (powPos + 1) % LONG;
+        if (powCount < LONG) powCount++;
+
+        float inst = 0f, shortF0 = 0f;
+        if (r.rmsDb > GATE_DB && powCount >= SHORT) {
+            averageDb(1, SHORT, shortDb);
+            prominence(shortDb, shortProm);
+            comb(shortProm);
+            float shortFrame = combFrame;
+            shortF0 = combF0;
+            r.frameScore = shortFrame;
+            r.f0 = shortF0;
+            r.harmonics = combPresent;
+            if (powCount >= LONG && shortFrame > 0) {
+                // continuita': la stessa serie armonica nelle finestre precedenti (~3 s).
+                // Un drone suona senza interruzioni; voce e musica cambiano nota
+                int same = 0;
+                for (float f : histF0) if (sameSeries(f, shortF0, 0.10f)) same++;
+                float cont = Math.max(0f, Math.min(1f, (same / (float) HISTORY - 0.5f) / 0.3f));
+                // persistenza: le armoniche di adesso c'erano gia' 1-2 s fa, alla stessa frequenza?
+                averageDb(OLD_FROM, LONG, longDb);
+                prominence(longDb, longProm);
+                int kept = 0;
+                for (int h = 1; h <= 6; h++) {
+                    float fh = shortF0 * h;
+                    if (fh > BAND_MAX) break;
+                    float p = peakNear(longProm, fh, TOL * 1.2f);
+                    float q = Math.max(0f, peakNear(longProm, fh - shortF0 * 0.5f, TOL * 0.6f));
+                    if (p >= LONG_PRESENT && p - q >= CONTRAST) kept++;
+                }
+                float persist = Math.max(0f, Math.min(1f, (kept - 1) / 2f));
+                r.stability = cont * persist * steadiness(shortF0);
+                inst = shortFrame * r.stability;
+            }
+        }
+        histF0[histPos] = shortF0;
+        histPos = (histPos + 1) % HISTORY;
+        smoothed += SMOOTH * (inst - smoothed);
+        r.score = Math.max(0f, Math.min(1f, smoothed * 1.15f));
+
+        // spettro per lo spettrogramma: 0-3000 Hz su 256 righe (massimo per gruppo)
+        int b0 = bin(60f);
+        System.arraycopy(magDb, b0, sortBuf, 0, sortBuf.length);
+        Arrays.sort(sortBuf);
+        float noiseDb = Math.max(sortBuf[sortBuf.length / 2], -40f);
+        float[] disp = new float[DISPLAY_BINS];
+        int maxBin = bin(DISPLAY_MAX_HZ);
+        for (int i = 0; i < DISPLAY_BINS; i++) {
+            int a = i * maxBin / DISPLAY_BINS, b = Math.max(a + 1, (i + 1) * maxBin / DISPLAY_BINS);
+            float m = -200;
+            for (int k = a; k < b && k < half; k++) if (magDb[k] > m) m = magDb[k];
+            // il fondo di rumore resta scuro, le righe delle eliche (20-40 dB sopra) si accendono
+            disp[i] = Math.max(0f, Math.min(1f, (m - noiseDb - 4f) / 36f));
+        }
+        r.spectrum = disp;
+        return r;
+    }
+
+    /** Media in potenza delle finestre da "from" a "to" fa (1 = l'ultima), in dB. */
+    private void averageDb(int from, int to, float[] out) {
+        int n = to - from + 1;
+        for (int k = 0; k <= topBin; k++) {
+            double s = 0;
+            for (int j = from; j <= to; j++) s += pow[(powPos - j + LONG) % LONG][k];
+            out[k] = (float) (10 * Math.log10(s / n));
+        }
+    }
+
+    /** prominenza = livello del bin - media locale (+/-100 Hz, escluso il picco). */
+    private void prominence(float[] db, float[] out) {
+        prefix[0] = 0;
+        for (int k = 0; k <= topBin; k++) prefix[k + 1] = prefix[k] + db[k];
+        final int outer = 26, inner = 4;
+        for (int k = 0; k <= topBin; k++) {
+            int lo = Math.max(0, k - outer), hi = Math.min(topBin, k + outer);
+            int ilo = Math.max(0, k - inner), ihi = Math.min(topBin, k + inner);
+            double sum = (prefix[hi + 1] - prefix[lo]) - (prefix[ihi + 1] - prefix[ilo]);
+            int cnt = (hi - lo + 1) - (ihi - ilo + 1);
+            out[k] = cnt > 0 ? db[k] - (float) (sum / cnt) : 0f;
+        }
+    }
+
+    /** Pettine armonico con "denti negativi": risultato in comb*. */
+    private void comb(float[] prom) {
+        float bestScore = 0, bestF0 = 0, bestProm = 0; int bestPresent = 0;
+        for (float f0 = F0_MIN; f0 <= F0_MAX; f0 *= 1.01f) {
+            float sum = 0; int present = 0, eff = 0;
+            boolean low = false;
+            for (int h = 1; h <= HARMONICS; h++) {
+                float fh = f0 * h;
+                if (fh > BAND_MAX) break;
+                eff++;
+                // le armoniche basse sono le piu' affidabili: pesano di piu'
+                float wgt = 1f / (1f + 0.15f * (h - 1));
+                float p = peakNear(prom, fh, TOL);
+                float q = Math.max(0f, peakNear(prom, fh - f0 * 0.5f, TOL * 0.6f));
+                if (p >= PROM_PRESENT && p - q >= CONTRAST) {
+                    present++;
+                    if (h <= 2) low = true;
+                    sum += wgt * (Math.min(PROM_CLIP, p) - 0.5f * Math.min(PROM_CLIP, q));
+                } else if (q >= PROM_PRESENT) {
+                    sum -= wgt * 0.5f * Math.min(PROM_CLIP, q);
+                }
+            }
+            // serve la fondamentale o la seconda armonica: elimina i pettini "casuali"
+            if (eff < 4 || !low) continue;
+            // le armoniche mancanti penalizzano: cosi' vince la vera fondamentale
+            float score = sum * present / eff;
+            if (score > bestScore) {
+                bestScore = score; bestF0 = f0; bestPresent = present;
+                bestProm = present > 0 ? 1.4f * sum / present : 0;
+            }
+        }
+        // veto sub-armonico: se una fondamentale sotto i 70 Hz spiega le righe
+        // altrettanto bene (motore a scoppio, ronzio di rete) non e' un drone
+        for (int k = 2; k <= 4 && bestPresent > 0; k++) {
+            float sub = bestF0 / k;
+            if (sub >= F0_MIN || sub < 20f) continue;
+            int present = 0, eff = 0;
+            for (int h = 1; h <= HARMONICS; h++) {
+                if (sub * h > BAND_MAX) break;
+                eff++;
+                if (peakNear(prom, sub * h, TOL) >= PROM_PRESENT) present++;
+            }
+            if (eff > 0 && present >= 0.6f * eff) bestPresent = 0;
+        }
+        float frame = 0f;
+        if (bestPresent >= 3) {
+            float count = Math.min(1f, (bestPresent - 2) / 4f);
+            float level = Math.min(1f, 0.45f + bestProm / 18f);
+            frame = count * level;
+        }
+        combF0 = frame > 0 ? bestF0 : 0;
+        combPresent = frame > 0 ? bestPresent : 0;
+        combProm = bestProm;
+        combFrame = frame;
+    }
+
+    /**
+     * Regolarita' del livello delle prime 3 armoniche finestra per finestra
+     * negli ultimi ~2 s: un rotore mantiene il livello, una nota musicale
+     * decade e poi riattacca, la voce va e viene. 1 = costante, 0 = irregolare.
+     */
+    private float steadiness(float f0) {
+        float total = 0; int used = 0;
+        for (int h = 1; h <= 3; h++) {
+            float fh = f0 * h;
+            int c = Math.round(fh / BIN_HZ), w = Math.max(1, Math.round(fh * TOL / BIN_HZ));
+            if (c + w > topBin) break;
+            double mean = 0, sq = 0;
+            for (int j = 1; j <= LONG; j++) {
+                float[] p = pow[(powPos - j + LONG) % LONG];
+                float m = 0;
+                for (int k = Math.max(1, c - w); k <= c + w; k++) if (p[k] > m) m = p[k];
+                double db = 10 * Math.log10(m + 1e-12);
+                mean += db; sq += db * db;
+            }
+            mean /= LONG;
+            total += (float) Math.sqrt(Math.max(0, sq / LONG - mean * mean));
+            used++;
+        }
+        if (used == 0) return 0f;
+        float std = total / used;
+        return Math.max(0f, Math.min(1f, 1f - (std - STEADY_DB) / 3f));
+    }
+
+    /** Stessa serie armonica a meno di un'ottava (f, 2f, f/2) entro la tolleranza. */
+    private static boolean sameSeries(float a, float b, float tol) {
+        if (a <= 0 || b <= 0) return false;
+        float r = a / b;
+        return Math.abs(r - 1f) < tol || Math.abs(r - 2f) < 2 * tol || Math.abs(r - 0.5f) < tol / 2;
+    }
+
+    /** Prominenza massima entro +/-tol (almeno +/-1 bin) attorno a hz. */
+    private float peakNear(float[] prom, float hz, float tol) {
+        int c = Math.round(hz / BIN_HZ);
+        int w = Math.max(1, Math.round(hz * tol / BIN_HZ));
+        float p = -99;
+        for (int k = Math.max(1, c - w); k <= Math.min(topBin, c + w); k++) if (prom[k] > p) p = prom[k];
+        return p;
+    }
+}
+"""
+
+SKY_ACOUSTIC_DETECTOR = r"""package com.offlinegps.map.sky;
+
+import android.Manifest;
+import android.content.Context;
+import android.content.pm.PackageManager;
+import android.media.AudioFormat;
+import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.os.Handler;
+import android.os.Looper;
+
+/**
+ * Ascolto del microfono per il riconoscimento acustico (AcousticAnalyzer).
+ * Tutto resta sul telefono: l'audio non viene salvato ne' inviato.
+ * Usa la sorgente UNPROCESSED o VOICE_RECOGNITION quando possibile, perche'
+ * la riduzione del rumore del microfono "normale" cancellerebbe proprio il
+ * ronzio stabile delle eliche.
+ */
+public final class AcousticDetector {
+    public interface Listener { void onResult(AcousticAnalyzer.Result r); }
+
+    private final Context ctx;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private volatile boolean running;
+    private Thread thread;
+    public volatile String sourceName = "";
+    public volatile String lastError = "";
+
+    public AcousticDetector(Context c) { ctx = c.getApplicationContext(); }
+
+    public boolean hasPermission() {
+        return ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public boolean isRunning() { return running; }
+
+    public boolean start(final Listener listener) {
+        if (running) return true;
+        if (!hasPermission()) { lastError = "Permesso microfono mancante"; return false; }
+        final AudioRecord rec = open();
+        if (rec == null) return false;
+        running = true;
+        thread = new Thread(() -> loop(rec, listener), "acoustic-detector");
+        thread.setPriority(Thread.NORM_PRIORITY - 1);
+        thread.start();
+        return true;
+    }
+
+    private AudioRecord open() {
+        int rate = AcousticAnalyzer.SAMPLE_RATE;
+        int min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        if (min <= 0) { lastError = "Microfono non supporta 16 kHz"; return null; }
+        int buf = Math.max(min, AcousticAnalyzer.FFT_SIZE * 4);
+        boolean unprocessed = false;
+        try {
+            AudioManager am = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+            unprocessed = am != null && "true".equals(am.getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED));
+        } catch (Exception ignored) {}
+        int[] sources = unprocessed
+            ? new int[]{MediaRecorder.AudioSource.UNPROCESSED, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC}
+            : new int[]{MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.MIC};
+        for (int src : sources) {
+            try {
+                AudioRecord r = new AudioRecord(src, rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, buf);
+                if (r.getState() == AudioRecord.STATE_INITIALIZED) {
+                    sourceName = src == MediaRecorder.AudioSource.UNPROCESSED ? "grezzo (senza filtri)"
+                        : src == MediaRecorder.AudioSource.VOICE_RECOGNITION ? "riconoscimento (filtri ridotti)" : "standard";
+                    return r;
+                }
+                r.release();
+            } catch (SecurityException e) {
+                lastError = "Permesso microfono negato";
+                return null;
+            } catch (Exception ignored) {}
+        }
+        lastError = "Impossibile aprire il microfono (in uso da un'altra app?)";
+        return null;
+    }
+
+    private void loop(AudioRecord rec, Listener listener) {
+        AcousticAnalyzer an = new AcousticAnalyzer();
+        short[] window = new short[AcousticAnalyzer.FFT_SIZE];
+        short[] hop = new short[AcousticAnalyzer.HOP];
+        int filled = 0;
+        try {
+            rec.startRecording();
+            while (running) {
+                int got = 0;
+                while (got < hop.length && running) {
+                    int n = rec.read(hop, got, hop.length - got);
+                    if (n < 0) throw new IllegalStateException("errore lettura microfono " + n);
+                    got += n;
+                }
+                if (!running) break;
+                System.arraycopy(window, AcousticAnalyzer.HOP, window, 0, window.length - AcousticAnalyzer.HOP);
+                System.arraycopy(hop, 0, window, window.length - AcousticAnalyzer.HOP, AcousticAnalyzer.HOP);
+                filled = Math.min(window.length, filled + AcousticAnalyzer.HOP);
+                if (filled < window.length) continue;
+                final AcousticAnalyzer.Result r = an.analyze(window);
+                SkyState.get().setAcoustic(r.score, r.f0);
+                main.post(() -> { if (running) listener.onResult(r); });
+            }
+        } catch (Exception e) {
+            lastError = "Microfono: " + e.getMessage();
+        } finally {
+            try { rec.stop(); } catch (Exception ignored) {}
+            rec.release();
+            running = false;
+        }
+    }
+
+    public void stop() {
+        running = false;
+        Thread t = thread;
+        thread = null;
+        if (t != null) {
+            try { t.join(400); } catch (InterruptedException ignored) {}
+        }
+        SkyState.get().setAcoustic(0f, 0f);
+    }
+}
+"""
+
+SKY_DRONE_TRACK = r"""package com.offlinegps.map.sky;
+
+import java.util.ArrayDeque;
+import java.util.Locale;
+
+/** Un drone ricevuto via Remote ID: unisce i vari messaggi (ID, posizione, operatore...). */
+public final class DroneTrack {
+    public static final int SRC_BLE = 1, SRC_WIFI = 2, SRC_DEMO = 4;
+    private static final int TRAIL_MAX = 60;
+
+    public final String key;
+    public String uasId = "", operatorId = "", selfId = "";
+    public int idType, uaType, status, sources, rssi = -127;
+    public int category = -1, classEU = -1;
+    public double lat = Double.NaN, lon = Double.NaN, opLat = Double.NaN, opLon = Double.NaN;
+    public float altGeo = Float.NaN, altBaro = Float.NaN, height = Float.NaN;
+    public float speed = Float.NaN, direction = Float.NaN, vspeed = Float.NaN;
+    public long firstSeen, lastSeen, lastLocation;
+    public int messages;
+    public boolean simulated;
+    /** Ultime posizioni: {lat, lon}. */
+    public final ArrayDeque<double[]> trail = new ArrayDeque<>();
+
+    public DroneTrack(String key, long now) {
+        this.key = key;
+        firstSeen = lastSeen = now;
+    }
+
+    public synchronized void apply(RemoteIdParser.Message m, int src, int rssi, long now) {
+        messages++;
+        sources |= src;
+        lastSeen = now;
+        if (rssi > -127) this.rssi = rssi;
+        switch (m.type) {
+            case RemoteIdParser.TYPE_BASIC_ID:
+                if (!m.uasId.isEmpty()) uasId = m.uasId;
+                idType = m.idType;
+                if (m.uaType != 0) uaType = m.uaType;
+                break;
+            case RemoteIdParser.TYPE_LOCATION:
+                status = m.status;
+                if (!Float.isNaN(m.speed)) speed = m.speed;
+                if (!Float.isNaN(m.direction)) direction = m.direction;
+                if (!Float.isNaN(m.vspeed)) vspeed = m.vspeed;
+                if (!Float.isNaN(m.altGeo)) altGeo = m.altGeo;
+                if (!Float.isNaN(m.altBaro)) altBaro = m.altBaro;
+                if (!Float.isNaN(m.height)) height = m.height;
+                if (validLatLon(m.lat, m.lon)) {
+                    lat = m.lat; lon = m.lon; lastLocation = now;
+                    double[] last = trail.peekLast();
+                    if (last == null || distance(last[0], last[1], lat, lon) > 1.5) {
+                        trail.addLast(new double[]{lat, lon});
+                        while (trail.size() > TRAIL_MAX) trail.removeFirst();
+                    }
+                }
+                break;
+            case RemoteIdParser.TYPE_SELF_ID:
+                if (!m.text.isEmpty()) selfId = m.text;
+                break;
+            case RemoteIdParser.TYPE_SYSTEM:
+                if (validLatLon(m.opLat, m.opLon)) { opLat = m.opLat; opLon = m.opLon; }
+                if (m.category >= 0) category = m.category;
+                if (m.classEU >= 0) classEU = m.classEU;
+                break;
+            case RemoteIdParser.TYPE_OPERATOR_ID:
+                if (!m.operatorId.isEmpty()) operatorId = m.operatorId;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Copia i dati di un altro tracciato (stesso drone visto con un MAC diverso). */
+    public synchronized void absorb(DroneTrack o) {
+        synchronized (o) {
+            if (uasId.isEmpty()) uasId = o.uasId;
+            if (operatorId.isEmpty()) operatorId = o.operatorId;
+            if (selfId.isEmpty()) selfId = o.selfId;
+            if (uaType == 0) uaType = o.uaType;
+            if (category < 0) category = o.category;
+            if (classEU < 0) classEU = o.classEU;
+            if (o.lastLocation > lastLocation && validLatLon(o.lat, o.lon)) {
+                lat = o.lat; lon = o.lon; lastLocation = o.lastLocation;
+                altGeo = o.altGeo; altBaro = o.altBaro; height = o.height;
+                speed = o.speed; direction = o.direction; vspeed = o.vspeed; status = o.status;
+            }
+            if (Double.isNaN(opLat)) { opLat = o.opLat; opLon = o.opLon; }
+            if (trail.isEmpty()) trail.addAll(o.trail);
+            sources |= o.sources;
+            messages += o.messages;
+            firstSeen = Math.min(firstSeen, o.firstSeen);
+            lastSeen = Math.max(lastSeen, o.lastSeen);
+            if (o.rssi > rssi) rssi = o.rssi;
+            simulated |= o.simulated;
+        }
+    }
+
+    public boolean hasPosition() { return validLatLon(lat, lon); }
+    public boolean hasOperator() { return validLatLon(opLat, opLon); }
+
+    public String title() {
+        if (!uasId.isEmpty()) return uasId;
+        return "Drone senza ID (" + key.substring(Math.max(0, key.length() - 5)) + ")";
+    }
+
+    public String typeLabel() {
+        String t = RemoteIdParser.uaTypeName(uaType);
+        String c = RemoteIdParser.classLabel(category, classEU);
+        return c.isEmpty() ? t : t + " · " + c;
+    }
+
+    /** Quota migliore disponibile per la visualizzazione (altezza dal suolo se c'e'). */
+    public float displayAltitude() {
+        if (!Float.isNaN(height)) return height;
+        if (!Float.isNaN(altGeo)) return altGeo;
+        return altBaro;
+    }
+
+    public String sourceLabel() {
+        StringBuilder sb = new StringBuilder();
+        if ((sources & SRC_BLE) != 0) sb.append("Bluetooth");
+        if ((sources & SRC_WIFI) != 0) sb.append(sb.length() > 0 ? " + " : "").append("Wi-Fi");
+        if ((sources & SRC_DEMO) != 0) sb.append(sb.length() > 0 ? " + " : "").append("SIMULAZIONE");
+        return sb.toString();
+    }
+
+    public static boolean validLatLon(double la, double lo) {
+        return !Double.isNaN(la) && !Double.isNaN(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180
+            && !(la == 0 && lo == 0);
+    }
+
+    /** Distanza in metri (haversine). */
+    public static double distance(double la1, double lo1, double la2, double lo2) {
+        double r = 6371000.0, p1 = Math.toRadians(la1), p2 = Math.toRadians(la2);
+        double dp = p2 - p1, dl = Math.toRadians(lo2 - lo1);
+        double a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+        return 2 * r * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Direzione iniziale da 1 a 2 in gradi (0 = nord, senso orario). */
+    public static double bearing(double la1, double lo1, double la2, double lo2) {
+        double p1 = Math.toRadians(la1), p2 = Math.toRadians(la2), dl = Math.toRadians(lo2 - lo1);
+        double y = Math.sin(dl) * Math.cos(p2);
+        double x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+        return (Math.toDegrees(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    public static String formatDistance(double m) {
+        if (Double.isNaN(m)) return "--";
+        return m < 1000 ? String.format(Locale.ITALY, "%.0f m", m) : String.format(Locale.ITALY, "%.2f km", m / 1000);
+    }
+
+    public static String cardinal(double deg) {
+        String[] c = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+        return c[(int) Math.round(((deg % 360) + 360) % 360 / 45.0) % 8];
+    }
+}
+"""
+
+SKY_STATE = r"""package com.offlinegps.map.sky;
+
+import android.os.Handler;
+import android.os.Looper;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+/**
+ * Stato condiviso della SENTINELLA CIELO: i droni ricevuti via Remote ID,
+ * l'ultimo punteggio acustico e la posizione dell'utente. Gli scanner
+ * scrivono da qualsiasi thread; gli ascoltatori vengono avvisati sul
+ * thread principale (al massimo una notifica per frame).
+ */
+public final class SkyState {
+    public interface Listener { void onSkyChanged(); }
+
+    private static final SkyState INSTANCE = new SkyState();
+    public static SkyState get() { return INSTANCE; }
+
+    private final Map<String, DroneTrack> tracks = new LinkedHashMap<>();
+    /** indirizzo radio (MAC/BSSID) -> chiave del tracciato. */
+    private final Map<String, String> alias = new HashMap<>();
+    private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private boolean notifyPending;
+
+    public volatile float acousticScore;
+    public volatile float acousticF0;
+    public volatile long acousticAt;
+    public volatile double userLat = Double.NaN, userLon = Double.NaN;
+    public volatile float heading = Float.NaN;
+    public volatile long packets;
+
+    private SkyState() {}
+
+    // ------------------------------------------------------------ ingresso dati
+    /** Messaggi Remote ID ricevuti da un indirizzo radio. */
+    public void ingest(String radio, List<RemoteIdParser.Message> msgs, int src, int rssi) {
+        if (msgs == null || msgs.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        synchronized (this) {
+            packets++;
+            String key = alias.get(radio);
+            if (key == null) key = "R:" + radio;
+            DroneTrack t = tracks.get(key);
+            if (t == null) {
+                t = new DroneTrack(key, now);
+                t.simulated = (src & DroneTrack.SRC_DEMO) != 0;
+                tracks.put(key, t);
+                alias.put(radio, key);
+            }
+            for (RemoteIdParser.Message m : msgs) {
+                t.apply(m, src, rssi, now);
+                // appena si conosce il numero di serie il tracciato prende quell'identita':
+                // lo stesso drone che cambia MAC o trasmette su BT e Wi-Fi resta uno solo
+                if (m.type == RemoteIdParser.TYPE_BASIC_ID && !m.uasId.isEmpty()) {
+                    String idKey = "ID:" + m.uasId;
+                    if (!idKey.equals(t.key)) {
+                        DroneTrack target = tracks.get(idKey);
+                        if (target == null) {
+                            target = new DroneTrack(idKey, t.firstSeen);
+                            tracks.put(idKey, target);
+                        }
+                        target.absorb(t);
+                        tracks.remove(t.key);
+                        for (Map.Entry<String, String> e : alias.entrySet())
+                            if (e.getValue().equals(t.key)) e.setValue(idKey);
+                        alias.put(radio, idKey);
+                        t = target;
+                    }
+                }
+            }
+        }
+        changed();
+    }
+
+    public void setAcoustic(float score, float f0) {
+        acousticScore = score;
+        acousticF0 = f0;
+        acousticAt = System.currentTimeMillis();
+        changed();
+    }
+
+    public void setUser(double lat, double lon) {
+        userLat = lat; userLon = lon;
+    }
+
+    // ------------------------------------------------------------ lettura
+    /** Copia dei tracciati: prima i piu' vicini con posizione, poi gli altri per recenza. */
+    public synchronized List<DroneTrack> snapshot() {
+        List<DroneTrack> out = new ArrayList<>(tracks.values());
+        final double ula = userLat, ulo = userLon;
+        final boolean hasUser = DroneTrack.validLatLon(ula, ulo);
+        Collections.sort(out, (a, b) -> {
+            if (hasUser && a.hasPosition() && b.hasPosition())
+                return Double.compare(DroneTrack.distance(ula, ulo, a.lat, a.lon),
+                                      DroneTrack.distance(ula, ulo, b.lat, b.lon));
+            if (a.hasPosition() != b.hasPosition()) return a.hasPosition() ? -1 : 1;
+            return Long.compare(b.lastSeen, a.lastSeen);
+        });
+        return out;
+    }
+
+    public synchronized int count() { return tracks.size(); }
+
+    public synchronized int countReal() {
+        int n = 0;
+        for (DroneTrack t : tracks.values()) if (!t.simulated) n++;
+        return n;
+    }
+
+    /** Elimina i droni non piu' sentiti da maxAgeMs. Ritorna quanti ne ha tolti. */
+    public int prune(long maxAgeMs) {
+        long now = System.currentTimeMillis();
+        int removed = 0;
+        synchronized (this) {
+            Iterator<Map.Entry<String, DroneTrack>> it = tracks.entrySet().iterator();
+            while (it.hasNext()) {
+                DroneTrack t = it.next().getValue();
+                if (now - t.lastSeen > maxAgeMs) { it.remove(); removed++; }
+            }
+            if (removed > 0) alias.values().retainAll(tracks.keySet());
+        }
+        if (removed > 0) changed();
+        return removed;
+    }
+
+    public synchronized void clear() {
+        tracks.clear();
+        alias.clear();
+        main.post(this::fire);
+    }
+
+    // ------------------------------------------------------------ ascoltatori
+    public void addListener(Listener l) { listeners.addIfAbsent(l); }
+    public void removeListener(Listener l) { listeners.remove(l); }
+
+    private void changed() {
+        synchronized (this) {
+            if (notifyPending) return;
+            notifyPending = true;
+        }
+        main.post(this::fire);
+    }
+
+    private void fire() {
+        synchronized (this) { notifyPending = false; }
+        for (Listener l : listeners) {
+            try { l.onSkyChanged(); } catch (Exception ignored) {}
+        }
+    }
+
+    // ------------------------------------------------------------ simulazione
+    private Runnable demoTick;
+    private long demoStart;
+
+    public boolean isDemo() { return demoTick != null; }
+
+    /**
+     * Modalita' DEMO: tre droni immaginari attorno alla posizione indicata.
+     * I loro messaggi vengono CODIFICATI in formato Remote ID e poi decodificati
+     * dallo stesso parser usato per i segnali veri, quindi la demo prova anche
+     * tutta la catena di ricezione.
+     */
+    public void startDemo(double lat, double lon) {
+        stopDemo();
+        final double cLat = DroneTrack.validLatLon(lat, lon) ? lat : 41.8902;
+        final double cLon = DroneTrack.validLatLon(lat, lon) ? lon : 12.4922;
+        demoStart = System.currentTimeMillis();
+        demoTick = new Runnable() {
+            @Override public void run() {
+                if (demoTick != this) return;
+                double t = (System.currentTimeMillis() - demoStart) / 1000.0;
+                emitDemo("SIM-DEMO-0001-MULTI", 2, 1, 2, "DEMO Rilievo tetti", "DEMO-OP-ALFA",
+                    cLat, cLon, 260, t, 0.04, 42, 0.12, "B:DE:M0:00:00:01");
+                emitDemo("SIM-DEMO-0002-WING", 1, 2, 3, "DEMO Ispezione linea", "DEMO-OP-BRAVO",
+                    cLat + 0.004, cLon - 0.006, 650, t, -0.04, 95, 0.30, "W:DE:M0:00:00:02");
+                // il terzo trasmette solo posizione (nessun ID): come certi moduli economici
+                double a = t * 0.07;
+                double la = cLat - 0.0022 + 0.0007 * Math.sin(a * 3), lo = cLon + 0.0035 + 0.0009 * Math.cos(a * 2);
+                ingestEncoded("B:DE:M0:00:00:03", DroneTrack.SRC_DEMO, -88,
+                    RemoteIdParser.encodeLocation(RemoteIdParser.STATUS_AIRBORNE, (float) ((a * 57) % 360), 4.5f, 0.5f,
+                        la, lo, 180f, 35f + 10f * (float) Math.sin(a)));
+                main.postDelayed(this, 1000);
+            }
+        };
+        main.post(demoTick);
+    }
+
+    private void emitDemo(String id, int uaType, int category, int classEU, String self, String op,
+                          double cLat, double cLon, double radiusM, double t, double rate,
+                          float height, double wobble, String radio) {
+        double angle = t * rate;
+        double dLat = radiusM / 111320.0, dLon = radiusM / (111320.0 * Math.cos(Math.toRadians(cLat)));
+        double la = cLat + dLat * Math.cos(angle) * (1 + wobble * Math.sin(angle * 3));
+        double lo = cLon + dLon * Math.sin(angle);
+        double la2 = cLat + dLat * Math.cos(angle + 0.01) * (1 + wobble * Math.sin((angle + 0.01) * 3));
+        double lo2 = cLon + dLon * Math.sin(angle + 0.01);
+        float dir = (float) DroneTrack.bearing(la, lo, la2, lo2);
+        if (rate < 0) dir = (dir + 180) % 360;
+        float speed = (float) Math.abs(radiusM * rate);
+        byte[] pack = RemoteIdParser.encodePack(
+            RemoteIdParser.encodeBasicId(1, uaType, id),
+            RemoteIdParser.encodeLocation(RemoteIdParser.STATUS_AIRBORNE, dir, speed, 0f,
+                la, lo, 70f + height, height),
+            RemoteIdParser.encodeSelfId(self),
+            RemoteIdParser.encodeSystem(cLat + dLat * 0.15, cLon - dLon * 0.2, category, classEU),
+            RemoteIdParser.encodeOperatorId(op));
+        ingestEncoded(radio, DroneTrack.SRC_DEMO, -60 - (int) (radiusM / 25), pack);
+    }
+
+    private void ingestEncoded(String radio, int src, int rssi, byte[] data) {
+        ingest(radio, RemoteIdParser.parse(data, 0), src, rssi);
+    }
+
+    public void stopDemo() {
+        if (demoTick == null) return;
+        main.removeCallbacks(demoTick);
+        demoTick = null;
+        synchronized (this) {
+            Iterator<Map.Entry<String, DroneTrack>> it = tracks.entrySet().iterator();
+            while (it.hasNext()) if (it.next().getValue().simulated) it.remove();
+            alias.values().retainAll(tracks.keySet());
+        }
+        changed();
+    }
+}
+"""
+
+SKY_REMOTE_ID_SCANNER = r"""package com.offlinegps.map.sky;
+
+import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanRecord;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.ParcelUuid;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ricevitore PASSIVO di Remote ID: ascolta gli annunci che i droni
+ * trasmettono per legge (Reg. UE 2019/945, ASTM F3411) e non trasmette nulla.
+ *  - Bluetooth: annunci BLE con service data UUID 0xFFFA (legacy 4.x e,
+ *    se il telefono lo supporta, extended/long range 5.x);
+ *  - Wi-Fi Beacon: elemento "vendor specific" con OUI FA:0B:BC tipo 0x0D
+ *    (lettura degli elementi solo da Android 11).
+ * Il Wi-Fi NAN (Aware) non e' supportato.
+ */
+public final class RemoteIdScanner {
+    public static final ParcelUuid RID_UUID = ParcelUuid.fromString("0000fffa-0000-1000-8000-00805f9b34fb");
+    private static final int APP_CODE = 0x0D;
+    private static final long WIFI_PERIOD_MS = 30_000;   // Android limita a 4 scansioni ogni 2 minuti
+
+    private final Context ctx;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private BluetoothLeScanner ble;
+    private ScanCallback bleCallback;
+    private WifiManager wifi;
+    private BroadcastReceiver wifiReceiver;
+    private Runnable wifiTick;
+    public volatile int blePackets, wifiPackets, bleErrors;
+    public volatile String lastError = "";
+    private boolean forceLegacy;
+
+    public RemoteIdScanner(Context c) { ctx = c.getApplicationContext(); }
+
+    // ------------------------------------------------------------ permessi
+    /** Indispensabili per il Bluetooth (il Wi-Fi "dispositivi vicini" e' facoltativo). */
+    public static String[] requiredPermissions() {
+        return Build.VERSION.SDK_INT >= 31
+            ? new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_SCAN}
+            : new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+    }
+
+    /** Tutti quelli da chiedere all'utente. */
+    public static String[] neededPermissions() {
+        List<String> p = new ArrayList<>();
+        p.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        if (Build.VERSION.SDK_INT >= 31) p.add(Manifest.permission.BLUETOOTH_SCAN);
+        if (Build.VERSION.SDK_INT >= 33) p.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        return p.toArray(new String[0]);
+    }
+
+    private boolean granted(String perm) {
+        return ctx.checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    public boolean canScanBle() {
+        return Build.VERSION.SDK_INT >= 31 ? granted(Manifest.permission.BLUETOOTH_SCAN)
+                                           : granted(Manifest.permission.ACCESS_FINE_LOCATION);
+    }
+
+    public boolean canScanWifi() { return granted(Manifest.permission.ACCESS_FINE_LOCATION); }
+
+    public static boolean wifiBeaconSupported() { return Build.VERSION.SDK_INT >= 30; }
+
+    // ------------------------------------------------------------ Bluetooth
+    public boolean isBleRunning() { return bleCallback != null; }
+
+    /** Avvia la scansione BLE. Ritorna false (con lastError) se non e' possibile. */
+    public boolean startBle() {
+        if (bleCallback != null) return true;
+        try {
+            BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
+            BluetoothAdapter ad = bm != null ? bm.getAdapter() : null;
+            if (ad == null) { lastError = "Questo telefono non ha il Bluetooth"; return false; }
+            if (!ad.isEnabled()) { lastError = "Accendi il Bluetooth per ricevere il Remote ID"; return false; }
+            if (!canScanBle()) { lastError = "Permesso Bluetooth/posizione mancante"; return false; }
+            ble = ad.getBluetoothLeScanner();
+            if (ble == null) { lastError = "Scanner Bluetooth LE non disponibile"; return false; }
+
+            ScanSettings.Builder sb = new ScanSettings.Builder()
+                .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY);
+            // Remote ID "long range" usa annunci estesi su PHY Coded (Bluetooth 5)
+            if (!forceLegacy && ad.isLeExtendedAdvertisingSupported()) {
+                sb.setLegacy(false);
+                sb.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED);
+            }
+            List<ScanFilter> filters = new ArrayList<>();
+            filters.add(new ScanFilter.Builder()
+                .setServiceData(RID_UUID, new byte[]{(byte) APP_CODE}, new byte[]{(byte) 0xFF})
+                .build());
+            bleCallback = new ScanCallback() {
+                @Override public void onScanResult(int type, ScanResult r) { handleBle(r); }
+                @Override public void onBatchScanResults(List<ScanResult> rs) { for (ScanResult r : rs) handleBle(r); }
+                @Override public void onScanFailed(int code) {
+                    bleErrors++;
+                    bleCallback = null;
+                    if (code == SCAN_FAILED_FEATURE_UNSUPPORTED && !forceLegacy) {
+                        // il chip non regge la scansione estesa: riprova in modalita' classica
+                        forceLegacy = true;
+                        main.post(RemoteIdScanner.this::startBle);
+                        return;
+                    }
+                    lastError = "Scansione Bluetooth fallita (codice " + code + ")";
+                }
+            };
+            ble.startScan(filters, sb.build(), bleCallback);
+            lastError = "";
+            return true;
+        } catch (SecurityException e) {
+            bleCallback = null;
+            lastError = "Permesso Bluetooth negato";
+            return false;
+        } catch (Exception e) {
+            bleCallback = null;
+            lastError = "Bluetooth: " + e.getMessage();
+            return false;
+        }
+    }
+
+    private void handleBle(ScanResult r) {
+        try {
+            ScanRecord rec = r.getScanRecord();
+            if (rec == null) return;
+            byte[] sd = rec.getServiceData(RID_UUID);
+            // service data = [0x0D app code][contatore][messaggio o message pack]
+            if (sd == null || sd.length < 3 || (sd[0] & 0xFF) != APP_CODE) return;
+            List<RemoteIdParser.Message> msgs = RemoteIdParser.parse(sd, 2);
+            if (msgs.isEmpty()) return;
+            blePackets++;
+            SkyState.get().ingest("B:" + r.getDevice().getAddress(), msgs, DroneTrack.SRC_BLE, r.getRssi());
+        } catch (Exception ignored) {}
+    }
+
+    public void stopBle() {
+        if (ble != null && bleCallback != null) {
+            try { ble.stopScan(bleCallback); } catch (Exception ignored) {}
+        }
+        bleCallback = null;
+    }
+
+    // ------------------------------------------------------------ Wi-Fi Beacon
+    public boolean isWifiRunning() { return wifiReceiver != null; }
+
+    public boolean startWifi() {
+        if (wifiReceiver != null) return true;
+        if (!wifiBeaconSupported()) { lastError = "Wi-Fi Beacon Remote ID richiede Android 11+"; return false; }
+        if (!canScanWifi()) { lastError = "Permesso posizione mancante per il Wi-Fi"; return false; }
+        wifi = (WifiManager) ctx.getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) { lastError = "Wi-Fi non disponibile"; return false; }
+        wifiReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent i) { handleWifi(); }
+        };
+        IntentFilter f = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+        if (Build.VERSION.SDK_INT >= 33) ctx.registerReceiver(wifiReceiver, f, Context.RECEIVER_NOT_EXPORTED);
+        else ctx.registerReceiver(wifiReceiver, f);
+        wifiTick = new Runnable() {
+            @Override public void run() {
+                if (wifiTick != this) return;
+                try { wifi.startScan(); } catch (Exception ignored) {}
+                main.postDelayed(this, WIFI_PERIOD_MS);
+            }
+        };
+        main.post(wifiTick);
+        handleWifi();
+        return true;
+    }
+
+    private void handleWifi() {
+        if (wifi == null || Build.VERSION.SDK_INT < 30) return;
+        try {
+            for (android.net.wifi.ScanResult r : wifi.getScanResults()) {
+                for (android.net.wifi.ScanResult.InformationElement ie : r.getInformationElements()) {
+                    if (ie.getId() != 221) continue;
+                    ByteBuffer bb = ie.getBytes();
+                    byte[] b = new byte[bb.remaining()];
+                    bb.duplicate().get(b);
+                    // [FA 0B BC][0x0D][contatore][message pack]
+                    if (b.length < 5 + 3 || (b[0] & 0xFF) != 0xFA || (b[1] & 0xFF) != 0x0B
+                        || (b[2] & 0xFF) != 0xBC || (b[3] & 0xFF) != APP_CODE) continue;
+                    List<RemoteIdParser.Message> msgs = RemoteIdParser.parse(b, 5);
+                    if (msgs.isEmpty()) continue;
+                    wifiPackets++;
+                    SkyState.get().ingest("W:" + r.BSSID, msgs, DroneTrack.SRC_WIFI, r.level);
+                }
+            }
+        } catch (SecurityException e) {
+            lastError = "Permesso Wi-Fi negato";
+        } catch (Exception ignored) {}
+    }
+
+    public void stopWifi() {
+        if (wifiTick != null) main.removeCallbacks(wifiTick);
+        wifiTick = null;
+        if (wifiReceiver != null) {
+            try { ctx.unregisterReceiver(wifiReceiver); } catch (Exception ignored) {}
+        }
+        wifiReceiver = null;
+    }
+
+    public void stopAll() { stopBle(); stopWifi(); }
+}
+"""
+
+SKY_SPOT_STORE = r"""package com.offlinegps.map.sky;
+
+import android.content.Context;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+/**
+ * Diario locale degli avvistamenti (SkySpot). Resta sul telefono.
+ * La posizione viene ARROTONDATA a una griglia di ~1 km prima di essere
+ * salvata: chi condivide una segnalazione non rivela dove si trova di preciso.
+ */
+public final class SkySpotStore {
+    public static final String[] KINDS = {"Visto", "Sentito", "Luci nel cielo", "Visto e sentito"};
+    public static final String[] HEIGHTS = {"Non so", "Bassa (sotto 50 m)", "Media (50-120 m)", "Alta (oltre 120 m)"};
+    public static final String[] DURATIONS = {"Pochi secondi", "Meno di 1 minuto", "1-5 minuti", "Oltre 5 minuti"};
+    /** Celle per grado della griglia di anonimizzazione: 100 = passo 0,01 gradi = ~1,1 km. */
+    public static final double CELLS_PER_DEGREE = 100.0;
+
+    public static final class Report {
+        public long time;
+        public double lat = Double.NaN, lon = Double.NaN;   // gia' arrotondate
+        public int kind, height, duration, count = 1;
+        public String direction = "", notes = "", remoteId = "";
+        public float acoustic = -1f;
+
+        JSONObject toJson() throws Exception {
+            JSONObject o = new JSONObject();
+            o.put("t", time); o.put("k", kind); o.put("h", height); o.put("d", duration); o.put("n", count);
+            o.put("dir", direction); o.put("note", notes); o.put("rid", remoteId); o.put("ac", acoustic);
+            if (!Double.isNaN(lat)) { o.put("lat", lat); o.put("lon", lon); }
+            return o;
+        }
+
+        static Report fromJson(JSONObject o) {
+            Report r = new Report();
+            r.time = o.optLong("t"); r.kind = o.optInt("k"); r.height = o.optInt("h");
+            r.duration = o.optInt("d"); r.count = o.optInt("n", 1);
+            r.direction = o.optString("dir"); r.notes = o.optString("note"); r.remoteId = o.optString("rid");
+            r.acoustic = (float) o.optDouble("ac", -1);
+            if (o.has("lat")) { r.lat = o.optDouble("lat"); r.lon = o.optDouble("lon"); }
+            return r;
+        }
+
+        public String when() {
+            return new SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY).format(new Date(time));
+        }
+
+        public String where() {
+            if (Double.isNaN(lat)) return "posizione non disponibile";
+            return String.format(Locale.US, "%.2f, %.2f (~1 km)", lat, lon);
+        }
+
+        public String summary() {
+            StringBuilder sb = new StringBuilder();
+            sb.append(safe(KINDS, kind));
+            if (count > 1) sb.append(" · ").append(count).append(" oggetti");
+            if (!direction.isEmpty()) sb.append(" · direzione ").append(direction);
+            sb.append(" · ").append(safe(HEIGHTS, height));
+            return sb.toString();
+        }
+
+        /** Testo da condividere: niente dati personali, posizione approssimata. */
+        public String shareText() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("SEGNALAZIONE AVVISTAMENTO (SkySpot / OfflineGPS 3D)\n");
+            sb.append("Quando: ").append(when()).append('\n');
+            sb.append("Zona: ").append(where()).append('\n');
+            sb.append("Tipo: ").append(safe(KINDS, kind)).append('\n');
+            if (count > 1) sb.append("Numero: ").append(count).append('\n');
+            if (!direction.isEmpty()) sb.append("Direzione: ").append(direction).append('\n');
+            sb.append("Altezza stimata: ").append(safe(HEIGHTS, height)).append('\n');
+            sb.append("Durata: ").append(safe(DURATIONS, duration)).append('\n');
+            if (!remoteId.isEmpty()) sb.append("Remote ID ricevuto: ").append(remoteId).append('\n');
+            if (acoustic >= 0) sb.append(String.format(Locale.ITALY, "Indice acustico: %.0f%%%n", acoustic * 100));
+            if (!notes.isEmpty()) sb.append("Note: ").append(notes).append('\n');
+            sb.append("\nNON sostituisce il 112: in caso di pericolo chiama subito il 112.");
+            return sb.toString();
+        }
+    }
+
+    private static String safe(String[] a, int i) { return a[Math.max(0, Math.min(a.length - 1, i))]; }
+
+    /** Arrotonda alla griglia di ~1 km (il centro della cella). */
+    public static double anonymize(double v) {
+        if (Double.isNaN(v)) return v;
+        return Math.round(v * CELLS_PER_DEGREE) / CELLS_PER_DEGREE;
+    }
+
+    private final File file;
+
+    public SkySpotStore(Context c) { file = new File(c.getFilesDir(), "skyspot_reports.json"); }
+
+    public synchronized List<Report> list() {
+        List<Report> out = new ArrayList<>();
+        try {
+            if (!file.exists()) return out;
+            byte[] b = new byte[(int) file.length()];
+            try (FileInputStream in = new FileInputStream(file)) {
+                int off = 0;
+                while (off < b.length) {
+                    int n = in.read(b, off, b.length - off);
+                    if (n < 0) break;
+                    off += n;
+                }
+            }
+            JSONArray a = new JSONArray(new String(b, StandardCharsets.UTF_8));
+            for (int i = 0; i < a.length(); i++) out.add(Report.fromJson(a.getJSONObject(i)));
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    public synchronized void add(Report r) {
+        r.lat = anonymize(r.lat);
+        r.lon = anonymize(r.lon);
+        List<Report> all = list();
+        all.add(0, r);
+        while (all.size() > 200) all.remove(all.size() - 1);
+        save(all);
+    }
+
+    public synchronized void delete(int index) {
+        List<Report> all = list();
+        if (index >= 0 && index < all.size()) { all.remove(index); save(all); }
+    }
+
+    private void save(List<Report> all) {
+        try {
+            JSONArray a = new JSONArray();
+            for (Report r : all) a.put(r.toJson());
+            File tmp = new File(file.getPath() + ".tmp");
+            try (FileOutputStream out = new FileOutputStream(tmp)) {
+                out.write(a.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            if (!tmp.renameTo(file)) {
+                try (FileOutputStream out = new FileOutputStream(file)) {
+                    out.write(a.toString().getBytes(StandardCharsets.UTF_8));
+                }
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+            }
+        } catch (Exception ignored) {}
+    }
+}
+"""
+
+SKY_HEADING_SENSOR = r"""package com.offlinegps.map.sky;
+
+import android.content.Context;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+
+/**
+ * Direzione verso cui punta il telefono (gradi dal nord VERO, con la
+ * declinazione magnetica del luogo). Funziona sia col telefono in piano sia
+ * tenuto in verticale davanti a se' (come per inquadrare il cielo).
+ */
+public final class HeadingSensor implements SensorEventListener {
+    public interface Listener { void onHeading(float deg); }
+
+    private final SensorManager sm;
+    private final Sensor rotation;
+    private Listener listener;
+    private float declination;
+    private float smooth = Float.NaN;
+    private long lastPost;
+    private final float[] rot = new float[9], remap = new float[9], ori = new float[3];
+
+    public HeadingSensor(Context c) {
+        sm = (SensorManager) c.getSystemService(Context.SENSOR_SERVICE);
+        rotation = sm != null ? sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR) : null;
+    }
+
+    public boolean available() { return rotation != null; }
+
+    public boolean start(Listener l) {
+        listener = l;
+        if (rotation == null) return false;
+        return sm.registerListener(this, rotation, SensorManager.SENSOR_DELAY_UI);
+    }
+
+    public void stop() {
+        if (sm != null) sm.unregisterListener(this);
+        listener = null;
+    }
+
+    public void setLocation(double lat, double lon, double alt) {
+        try {
+            declination = new GeomagneticField((float) lat, (float) lon, (float) alt, System.currentTimeMillis()).getDeclination();
+        } catch (Exception ignored) {}
+    }
+
+    public float current() { return smooth; }
+
+    @Override public void onSensorChanged(SensorEvent e) {
+        SensorManager.getRotationMatrixFromVector(rot, e.values);
+        // telefono in verticale: conta la direzione in cui guarda il retro (la fotocamera)
+        boolean upright = Math.abs(rot[8]) < 0.7f;
+        if (upright) {
+            SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_X, SensorManager.AXIS_Z, remap);
+            SensorManager.getOrientation(remap, ori);
+        } else {
+            SensorManager.getOrientation(rot, ori);
+        }
+        float az = (float) ((Math.toDegrees(ori[0]) + declination + 360) % 360);
+        if (Float.isNaN(smooth)) smooth = az;
+        else {
+            float d = ((az - smooth + 540) % 360) - 180;
+            smooth = (smooth + d * 0.2f + 360) % 360;
+        }
+        long now = System.currentTimeMillis();
+        if (listener != null && now - lastPost > 60) {
+            lastPost = now;
+            listener.onHeading(smooth);
+        }
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) {}
+
+    public static String cardinal(float deg) {
+        String[] c = {"Nord", "Nord-Est", "Est", "Sud-Est", "Sud", "Sud-Ovest", "Ovest", "Nord-Ovest"};
+        return c[(int) Math.round(((deg % 360) + 360) % 360 / 45.0) % 8];
+    }
+}
+"""
+
+UI_FX = r"""package com.offlinegps.map.ui;
+
+import android.animation.ObjectAnimator;
+import android.animation.PropertyValuesHolder;
+import android.animation.StateListAnimator;
+import android.app.Activity;
+import android.app.Application;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
+import android.widget.AbsListView;
+import android.widget.AbsSeekBar;
+import android.widget.EditText;
+import android.widget.ScrollView;
+import java.util.Collections;
+import java.util.Set;
+import java.util.WeakHashMap;
+
+/**
+ * Effetti "vivi" per TUTTA l'app, senza toccare le singole schermate:
+ *  - ogni pulsante/scheda si comprime leggermente quando lo premi e torna
+ *    al suo posto con un piccolo rimbalzo (molla);
+ *  - all'apertura di una schermata a scorrimento gli elementi entrano in
+ *    sequenza dal basso, uno dopo l'altro.
+ * Le schermate con mappa o fotocamera non vengono toccate.
+ */
+public final class UiFx {
+    /** Radici gia' decorate (deboli: non trattengono le Activity chiuse). */
+    private static final Set<View> DONE = Collections.newSetFromMap(new WeakHashMap<View, Boolean>());
+    private UiFx() {}
+
+    public static void install(Application app) {
+        app.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+            @Override public void onActivityResumed(Activity a) {
+                View content = a.findViewById(android.R.id.content);
+                if (!(content instanceof ViewGroup) || ((ViewGroup) content).getChildCount() == 0) return;
+                View root = ((ViewGroup) content).getChildAt(0);
+                if (!DONE.add(root)) return;
+                springTree(root, 0);
+                entrance(root);
+            }
+            @Override public void onActivityCreated(Activity a, Bundle b) {}
+            @Override public void onActivityStarted(Activity a) {}
+            @Override public void onActivityPaused(Activity a) {}
+            @Override public void onActivityStopped(Activity a) {}
+            @Override public void onActivitySaveInstanceState(Activity a, Bundle b) {}
+            @Override public void onActivityDestroyed(Activity a) {}
+        });
+    }
+
+    /** Molla alla pressione su tutti i controlli cliccabili dell'albero. */
+    public static void springTree(View v, int depth) {
+        if (depth > 24 || skip(v)) return;
+        if (v.isClickable() && !(v instanceof EditText) && !(v instanceof AbsSeekBar)
+                && !(v instanceof SkyRadarView)) addSpring(v);
+        if (v instanceof ViewGroup && !(v instanceof AbsListView)) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) springTree(g.getChildAt(i), depth + 1);
+        }
+    }
+
+    public static void addSpring(View v) {
+        StateListAnimator s = new StateListAnimator();
+        ObjectAnimator down = ObjectAnimator.ofPropertyValuesHolder((Object) null,
+            PropertyValuesHolder.ofFloat("scaleX", 0.95f), PropertyValuesHolder.ofFloat("scaleY", 0.95f));
+        down.setDuration(90);
+        down.setInterpolator(new DecelerateInterpolator());
+        ObjectAnimator up = ObjectAnimator.ofPropertyValuesHolder((Object) null,
+            PropertyValuesHolder.ofFloat("scaleX", 1f), PropertyValuesHolder.ofFloat("scaleY", 1f));
+        up.setDuration(340);
+        up.setInterpolator(new OvershootInterpolator(3f));
+        s.addState(new int[]{android.R.attr.state_pressed, android.R.attr.state_enabled}, down);
+        s.addState(new int[0], up);
+        v.setStateListAnimator(s);
+    }
+
+    /**
+     * Ingresso a cascata dei figli della colonna di una schermata a scorrimento
+     * (lo ScrollView puo' essere la radice o stare sopra uno sfondo animato).
+     */
+    public static void entrance(View root) {
+        ScrollView sv = null;
+        if (root instanceof ScrollView) sv = (ScrollView) root;
+        else if (root instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) root;
+            for (int i = 0; i < g.getChildCount() && sv == null; i++)
+                if (g.getChildAt(i) instanceof ScrollView) sv = (ScrollView) g.getChildAt(i);
+        }
+        if (sv == null || sv.getChildCount() == 0 || !(sv.getChildAt(0) instanceof ViewGroup)) return;
+        stagger((ViewGroup) sv.getChildAt(0));
+    }
+
+    public static void stagger(ViewGroup col) {
+        float dy = 28 * col.getResources().getDisplayMetrics().density;
+        int n = Math.min(col.getChildCount(), 14);
+        for (int i = 0; i < n; i++) {
+            View c = col.getChildAt(i);
+            if (c.getVisibility() != View.VISIBLE) continue;
+            c.setAlpha(0f);
+            c.setTranslationY(dy);
+            c.animate().alpha(1f).translationY(0f).setStartDelay(40L * i).setDuration(380)
+                .setInterpolator(new DecelerateInterpolator(2f)).start();
+        }
+    }
+
+    private static boolean skip(View v) {
+        String n = v.getClass().getName();
+        return n.startsWith("org.mapsforge") || n.startsWith("android.view.Surface")
+            || n.startsWith("android.view.Texture") || n.contains("MapView");
+    }
+}
+"""
+
+SKY_UI = r"""package com.offlinegps.map.ui;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import com.offlinegps.map.R;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Piccoli mattoni grafici condivisi dalle schermate della Sentinella Cielo. */
+public final class SkyUi {
+    public static final int CHIP_OFF = 0, CHIP_ON = 1, CHIP_WARN = 2, CHIP_ALERT = 3;
+    private SkyUi() {}
+
+    public static int dp(Context c, float v) {
+        return Math.round(v * c.getResources().getDisplayMetrics().density);
+    }
+
+    /** Stato di un "chip" (spento / attivo / attenzione / allarme). */
+    public static void chip(TextView tv, int state, String text) {
+        if (tv == null) return;
+        tv.setText(text);
+        switch (state) {
+            case CHIP_ON:    tv.setBackgroundResource(R.drawable.bg_chip_on);    tv.setTextColor(0xFF00FF88); break;
+            case CHIP_WARN:  tv.setBackgroundResource(R.drawable.bg_chip_warn);  tv.setTextColor(0xFFFFD600); break;
+            case CHIP_ALERT: tv.setBackgroundResource(R.drawable.bg_chip_alert); tv.setTextColor(0xFFFF5C7A); break;
+            default:         tv.setBackgroundResource(R.drawable.bg_chip_off);   tv.setTextColor(0xFF8FB3D0); break;
+        }
+    }
+
+    /** Scheda "vetro" con barra colorata a sinistra e righe di testo. */
+    public static LinearLayout card(Context c, int accent, String title, String... lines) {
+        LinearLayout outer = new LinearLayout(c);
+        outer.setOrientation(LinearLayout.HORIZONTAL);
+        outer.setBackgroundResource(R.drawable.bg_tile_glass);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(c, 10);
+        outer.setLayoutParams(lp);
+        outer.setClickable(true);
+        outer.setFocusable(true);
+
+        View bar = new View(c);
+        bar.setBackgroundColor(accent);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(dp(c, 4), LinearLayout.LayoutParams.MATCH_PARENT);
+        blp.setMargins(dp(c, 2), dp(c, 10), 0, dp(c, 10));
+        outer.addView(bar, blp);
+
+        LinearLayout col = new LinearLayout(c);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(c, 14), dp(c, 12), dp(c, 14), dp(c, 12));
+        outer.addView(col, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView t = new TextView(c);
+        t.setText(title);
+        t.setTextColor(0xFFE8F4FD);
+        t.setTextSize(15);
+        t.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        col.addView(t);
+        for (String l : lines) {
+            if (l == null || l.isEmpty()) continue;
+            TextView tv = new TextView(c);
+            tv.setText(l);
+            tv.setTextColor(0xFF8FB3D0);
+            tv.setTextSize(12.5f);
+            tv.setPadding(0, dp(c, 3), 0, 0);
+            col.addView(tv);
+        }
+        return outer;
+    }
+
+    /** Etichetta di sezione in maiuscoletto con linea luminosa. */
+    public static TextView section(Context c, String text) {
+        TextView tv = new TextView(c);
+        tv.setText(text);
+        tv.setTextColor(0xFF00E5FF);
+        tv.setTextSize(12);
+        tv.setLetterSpacing(0.18f);
+        tv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        tv.setGravity(Gravity.START);
+        tv.setPadding(dp(c, 4), dp(c, 16), 0, dp(c, 8));
+        return tv;
+    }
+
+    /** Chiede i permessi mancanti fra quelli indicati. Ritorna true se ci sono gia' tutti. */
+    public static boolean ensurePermissions(Activity a, int req, String... perms) {
+        List<String> miss = new ArrayList<>();
+        for (String p : perms)
+            if (a.checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) miss.add(p);
+        if (miss.isEmpty()) return true;
+        a.requestPermissions(miss.toArray(new String[0]), req);
+        return false;
+    }
+
+    public static void share(Activity a, String subject, String text) {
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_SUBJECT, subject);
+        i.putExtra(Intent.EXTRA_TEXT, text);
+        try { a.startActivity(Intent.createChooser(i, "Condividi")); } catch (Exception ignored) {}
+    }
+}
+"""
+
+SKY_RADAR_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.DashPathEffect;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
+import android.graphics.SweepGradient;
+import android.graphics.Typeface;
+import android.os.SystemClock;
+import android.util.AttributeSet;
+import android.view.MotionEvent;
+import android.view.View;
+import com.offlinegps.map.sky.DroneTrack;
+import com.offlinegps.map.sky.RemoteIdParser;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Radar 3D della SENTINELLA CIELO: piano inclinato in prospettiva con anelli
+ * di distanza, fascio rotante e droni che "galleggiano" sopra la loro
+ * posizione a terra con uno stelo proporzionale alla quota.
+ * Centro = la tua posizione. Tocca un drone per i dettagli.
+ */
+public class SkyRadarView extends View {
+    public interface OnTrackTap { void onTrackTap(DroneTrack t); }
+
+    private static final float[] RANGES = {200, 500, 1000, 2000, 5000, 10000, 25000};
+    private static final int COL_CYAN = 0xFF00E5FF, COL_REAL = 0xFFFF3D71, COL_DEMO = 0xFFFFB300,
+        COL_NOID = 0xFFB388FF, COL_OP = 0xFF00FF88;
+
+    private List<DroneTrack> tracks = Collections.emptyList();
+    private double uLat = Double.NaN, uLon = Double.NaN;
+    private float heading = Float.NaN;
+    private boolean headingUp, compact, demo, tilt3d = true;
+    private float acoustic;
+    private float range = 1000, shownRange = 1000;
+    private static final float TILT = 50f;
+    private float tiltNow = TILT;
+    private float acousticPulse;
+    private OnTrackTap tapListener;
+    private boolean running;
+    private final long t0 = SystemClock.uptimeMillis();
+
+    private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint stroke = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint sweep = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint disc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint dash = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix m3d = new Matrix(), shaderM = new Matrix();
+    private final Path path = new Path();
+    private final float[] pt = new float[2];
+    private SweepGradient sweepShader;
+    private RadialGradient discShader;
+    private float lastCx = -1, lastR = -1;
+    private final List<DroneTrack> hitTracks = new ArrayList<>();
+    private final List<float[]> hitPts = new ArrayList<>();
+
+    public SkyRadarView(Context c) { this(c, null); }
+    public SkyRadarView(Context c, AttributeSet a) {
+        super(c, a);
+        stroke.setStyle(Paint.Style.STROKE);
+        dash.setStyle(Paint.Style.STROKE);
+        dash.setPathEffect(new DashPathEffect(new float[]{dp(4), dp(4)}, 0));
+        text.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        setClickable(true);
+        setContentDescription("Radar droni");
+    }
+
+    private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
+
+    // ------------------------------------------------------------ API
+    public void setData(List<DroneTrack> t, double lat, double lon) {
+        tracks = t != null ? t : Collections.<DroneTrack>emptyList();
+        uLat = lat; uLon = lon;
+        float far = 0;
+        if (DroneTrack.validLatLon(lat, lon)) {
+            for (DroneTrack d : tracks) {
+                if (!d.hasPosition()) continue;
+                far = Math.max(far, (float) DroneTrack.distance(lat, lon, d.lat, d.lon));
+                if (d.hasOperator()) far = Math.max(far, (float) DroneTrack.distance(lat, lon, d.opLat, d.opLon));
+            }
+        }
+        range = RANGES[RANGES.length - 1];
+        for (float r : RANGES) if (far * 1.15f <= r) { range = r; break; }
+        invalidate();
+    }
+
+    public void setHeading(float deg) { heading = deg; }
+    public void setHeadingUp(boolean on) { headingUp = on; invalidate(); }
+    public boolean isHeadingUp() { return headingUp; }
+    public void setTilt3d(boolean on) { tilt3d = on; invalidate(); }
+    public boolean isTilt3d() { return tilt3d; }
+    public void setCompact(boolean on) { compact = on; invalidate(); }
+    public void setAcoustic(float a) { acoustic = a; }
+    public void setDemo(boolean on) { demo = on; }
+    public void setOnTrackTap(OnTrackTap l) { tapListener = l; }
+
+    // ------------------------------------------------------------ ciclo animazione
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); running = true; invalidate(); }
+    @Override protected void onDetachedFromWindow() { running = false; super.onDetachedFromWindow(); }
+    @Override protected void onWindowVisibilityChanged(int v) {
+        super.onWindowVisibilityChanged(v);
+        running = v == VISIBLE;
+        if (running) invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        int w = getWidth(), h = getHeight();
+        if (w == 0 || h == 0) return;
+        float t = (SystemClock.uptimeMillis() - t0) / 1000f;
+        shownRange += (range - shownRange) * 0.12f;
+        float targetTilt = tilt3d ? TILT : 0f;
+        tiltNow += (targetTilt - tiltNow) * 0.15f;
+
+        // in 3D il piano si allarga davanti e si stringe dietro: raggio e centro
+        // si spostano gradualmente fra la vista piatta e quella inclinata
+        // (il piano proiettato va da -0,45R a +0,75R attorno al centro: lo si
+        // centra lasciando un po' di spazio sopra per gli steli della quota)
+        float k3 = tiltNow / TILT;
+        float cx = w / 2f;
+        float R = lerp(Math.min(w, h) * 0.44f, Math.min(w * 0.41f, h * 0.6f), k3);
+        float cy = lerp(h / 2f, h * 0.55f - 0.15f * R, k3);
+        if (cx != lastCx || R != lastR) {
+            sweepShader = new SweepGradient(0, 0,
+                new int[]{0x0000E5FF, 0x0000E5FF, 0x4400E5FF, 0xAA00E5FF, 0x0000E5FF},
+                new float[]{0f, 0.70f, 0.95f, 0.999f, 1f});
+            discShader = new RadialGradient(0, 0, R,
+                new int[]{0xFF0B2B3C, 0xFF07182A, 0xFF040C18}, new float[]{0f, 0.65f, 1f}, Shader.TileMode.CLAMP);
+            lastCx = cx; lastR = R;
+        }
+        float rot = headingUp && !Float.isNaN(heading) ? -heading : 0f;
+
+        // ---------------------------------------------------- piano inclinato
+        perspective(R, tiltNow, cx, cy);
+
+        c.save();
+        c.concat(m3d);
+        drawPlane(c, R, t, rot);
+        c.restore();
+
+        // ---------------------------------------------------- droni e operatori
+        hitTracks.clear();
+        hitPts.clear();
+        int noPos = 0;
+        boolean hasUser = DroneTrack.validLatLon(uLat, uLon);
+        long now = System.currentTimeMillis();
+        float sinT = (float) Math.sin(Math.toRadians(tiltNow));
+        for (DroneTrack d : tracks) {
+            if (!d.hasPosition() || !hasUser) { noPos++; continue; }
+            int col = d.simulated ? COL_DEMO : (d.uasId.isEmpty() ? COL_NOID : COL_REAL);
+            if (d.status == RemoteIdParser.STATUS_EMERGENCY && ((int) (t * 4)) % 2 == 0) col = 0xFFFF1744;
+            float age = (now - d.lastSeen) / 1000f;
+            int alpha = age > 15 ? 90 : 255;
+
+            // scia
+            if (d.trail.size() > 1) {
+                int i = 0, n = d.trail.size();
+                float px = 0, py = 0;
+                stroke.setStrokeWidth(dp(2));
+                for (double[] p : d.trail) {
+                    toScreen(p[0], p[1], R, rot);
+                    if (i > 0) {
+                        stroke.setColor(withAlpha(col, (int) (alpha * 0.55f * i / n)));
+                        c.drawLine(px, py, pt[0], pt[1], stroke);
+                    }
+                    px = pt[0]; py = pt[1]; i++;
+                }
+            }
+            // operatore + collegamento tratteggiato
+            toScreen(d.lat, d.lon, R, rot);
+            float gx = pt[0], gy = pt[1];
+            if (d.hasOperator()) {
+                toScreen(d.opLat, d.opLon, R, rot);
+                dash.setColor(withAlpha(COL_OP, alpha / 2));
+                dash.setStrokeWidth(dp(1.2f));
+                c.drawLine(pt[0], pt[1], gx, gy, dash);
+                drawDiamond(c, pt[0], pt[1], dp(compact ? 3.5f : 5), withAlpha(COL_OP, alpha));
+            }
+            // stelo della quota
+            float alt = d.displayAltitude();
+            float stalk = Float.isNaN(alt) ? 0 : Math.min(R * 0.55f, Math.max(0, alt) / shownRange * R * 2.5f) * sinT;
+            float bx = gx, by = gy - stalk;
+            if (stalk > 1) {
+                stroke.setStrokeWidth(dp(1.5f));
+                stroke.setColor(withAlpha(col, alpha / 2));
+                c.drawLine(gx, gy, bx, by, stroke);
+                fill.setColor(withAlpha(col, alpha / 3));
+                c.drawOval(gx - dp(6), gy - dp(2.2f), gx + dp(6), gy + dp(2.2f), fill);
+            }
+            // ping all'ultimo pacchetto
+            float since = (now - d.lastSeen) / 1000f;
+            if (since < 1.2f) {
+                float k = since / 1.2f;
+                stroke.setStrokeWidth(dp(2));
+                stroke.setColor(withAlpha(col, (int) (200 * (1 - k))));
+                c.drawCircle(bx, by, dp(8) + dp(22) * k, stroke);
+            }
+            // bagliore + nucleo
+            float pulse = 1f + 0.15f * (float) Math.sin(t * 5 + d.key.hashCode());
+            fill.setColor(withAlpha(col, alpha / 6));
+            c.drawCircle(bx, by, dp(compact ? 10 : 15) * pulse, fill);
+            fill.setColor(withAlpha(col, alpha / 3));
+            c.drawCircle(bx, by, dp(compact ? 6 : 9), fill);
+            fill.setColor(withAlpha(col, alpha));
+            c.drawCircle(bx, by, dp(compact ? 3 : 4.5f), fill);
+            fill.setColor(withAlpha(0xFFFFFFFF, alpha));
+            c.drawCircle(bx, by, dp(1.6f), fill);
+            // freccia di direzione
+            if (!Float.isNaN(d.direction) && !compact) {
+                double a = Math.toRadians(d.direction + rot);
+                float len = dp(18);
+                stroke.setStrokeWidth(dp(2));
+                stroke.setColor(withAlpha(col, alpha));
+                c.drawLine(bx, by, bx + (float) Math.sin(a) * len, by - (float) Math.cos(a) * len * (1 - 0.5f * sinT), stroke);
+            }
+            if (!compact) {
+                double dist = DroneTrack.distance(uLat, uLon, d.lat, d.lon);
+                String name = d.title();
+                if (name.length() > 16) name = name.substring(0, 15) + "…";
+                text.setTextAlign(Paint.Align.LEFT);
+                text.setTextSize(dp(11));
+                text.setColor(withAlpha(0xFFE8F4FD, alpha));
+                c.drawText(name, bx + dp(12), by - dp(4), text);
+                text.setTextSize(dp(10));
+                text.setColor(withAlpha(col, alpha));
+                String sub = DroneTrack.formatDistance(dist)
+                    + (Float.isNaN(alt) ? "" : String.format(Locale.ITALY, " · %.0f m", alt));
+                c.drawText(sub, bx + dp(12), by + dp(9), text);
+            }
+            hitTracks.add(d);
+            hitPts.add(new float[]{bx, by});
+        }
+
+        // ---------------------------------------------------- sovrimpressioni
+        text.setTextAlign(Paint.Align.CENTER);
+        if (acoustic > 0.25f && !compact) {
+            float k = Math.min(1f, (acoustic - 0.25f) / 0.6f);
+            text.setTextAlign(Paint.Align.LEFT);
+            text.setTextSize(dp(10));
+            text.setColor(blend(0xFFFFD600, 0xFFFF1744, k));
+            c.drawText(String.format(Locale.ITALY, "AUDIO DRONE %.0f%%", acoustic * 100), dp(8), dp(30), text);
+            text.setTextAlign(Paint.Align.CENTER);
+        }
+        if (demo) {
+            text.setTextSize(dp(compact ? 9 : 11));
+            text.setColor(COL_DEMO);
+            c.drawText("SIMULAZIONE", cx, h - dp(compact ? 6 : 10), text);
+        }
+        if (!compact) {
+            text.setTextAlign(Paint.Align.LEFT);
+            text.setTextSize(dp(10));
+            text.setColor(0xFF5A7A99);
+            c.drawText("RAGGIO " + DroneTrack.formatDistance(shownRange), dp(8), dp(16), text);
+            if (noPos > 0) {
+                text.setColor(COL_NOID);
+                c.drawText("+" + noPos + (noPos == 1 ? " segnale" : " segnali") + " senza posizione", dp(8), h - dp(10), text);
+            }
+            if (!hasUser) {
+                text.setTextAlign(Paint.Align.CENTER);
+                text.setColor(0xFFFFD600);
+                c.drawText("In attesa del GPS...", cx, h - dp(26), text);
+            }
+        }
+        if (running) {
+            if (compact) postInvalidateDelayed(33);
+            else postInvalidateOnAnimation();
+        }
+    }
+
+    /** Piano del radar in coordinate centrate (0,0) gia' trasformate dalla prospettiva. */
+    private void drawPlane(Canvas c, float R, float t, float rot) {
+        disc.setShader(discShader);
+        c.drawCircle(0, 0, R, disc);
+        // anelli di distanza
+        stroke.setStrokeWidth(dp(1));
+        for (int i = 1; i <= 4; i++) {
+            stroke.setColor(i == 4 ? 0x8800E5FF : 0x3300E5FF);
+            c.drawCircle(0, 0, R * i / 4f, stroke);
+        }
+        // croce e tacche dei gradi
+        stroke.setColor(0x2200E5FF);
+        c.drawLine(-R, 0, R, 0, stroke);
+        c.drawLine(0, -R, 0, R, stroke);
+        for (int deg = 0; deg < 360; deg += 10) {
+            double a = Math.toRadians(deg + rot);
+            float len = deg % 30 == 0 ? dp(8) : dp(4);
+            float sx = (float) Math.sin(a), sy = (float) -Math.cos(a);
+            stroke.setColor(deg % 90 == 0 ? 0xAA00E5FF : 0x5500E5FF);
+            c.drawLine(sx * R, sy * R, sx * (R - len), sy * (R - len), stroke);
+        }
+        // anello acustico: si accende e pulsa quando il microfono sente eliche
+        if (acoustic > 0.25f) {
+            float k = Math.min(1f, (acoustic - 0.25f) / 0.6f);
+            int col = blend(0xFFFFD600, 0xFFFF1744, k);
+            float pulse2 = 0.5f + 0.5f * (float) Math.sin(t * 5);
+            stroke.setStrokeWidth(dp(6));
+            stroke.setColor(withAlpha(col, (int) (40 + 60 * pulse2)));
+            c.drawCircle(0, 0, R * 1.03f, stroke);
+            stroke.setStrokeWidth(dp(2.5f));
+            stroke.setColor(withAlpha(col, (int) (150 + 100 * pulse2 * k)));
+            c.drawCircle(0, 0, R * 1.03f, stroke);
+        }
+        // fascio rotante
+        float ang = (t * 120f) % 360f;
+        shaderM.setRotate(ang - 90);
+        sweepShader.setLocalMatrix(shaderM);
+        sweep.setShader(sweepShader);
+        c.drawCircle(0, 0, R, sweep);
+        double a = Math.toRadians(ang);
+        stroke.setStrokeWidth(dp(2));
+        stroke.setColor(0xCC00E5FF);
+        c.drawLine(0, 0, (float) Math.sin(a) * R, (float) -Math.cos(a) * R, stroke);
+        // punti cardinali
+        text.setTextAlign(Paint.Align.CENTER);
+        text.setTextSize(dp(compact ? 10 : 13));
+        String[] card = {"N", "E", "S", "O"};
+        for (int i = 0; i < 4; i++) {
+            double ca = Math.toRadians(i * 90 + rot);
+            text.setColor(i == 0 ? 0xFFFF1744 : 0xFF8FB3D0);
+            float rr = R + dp(compact ? 9 : 15);
+            c.drawText(card[i], (float) Math.sin(ca) * rr, (float) -Math.cos(ca) * rr + dp(4), text);
+        }
+        // etichette distanza
+        if (!compact) {
+            text.setTextSize(dp(9));
+            text.setColor(0x9900E5FF);
+            for (int i = 1; i <= 3; i++)
+                c.drawText(DroneTrack.formatDistance(shownRange * i / 4f), R * i / 4f * 0.707f + dp(14), -R * i / 4f * 0.707f, text);
+        }
+        // tu: punto centrale pulsante + cono di vista
+        float pulse = (t % 1.6f) / 1.6f;
+        stroke.setColor(withAlpha(COL_CYAN, (int) (180 * (1 - pulse))));
+        stroke.setStrokeWidth(dp(2));
+        c.drawCircle(0, 0, dp(6) + dp(16) * pulse, stroke);
+        if (!Float.isNaN(heading)) {
+            float hd = headingUp ? 0 : heading;
+            path.reset();
+            path.moveTo(0, 0);
+            float cone = R * 0.42f;
+            double l = Math.toRadians(hd - 22), r2 = Math.toRadians(hd + 22);
+            path.lineTo((float) Math.sin(l) * cone, (float) -Math.cos(l) * cone);
+            path.lineTo((float) Math.sin(r2) * cone, (float) -Math.cos(r2) * cone);
+            path.close();
+            fill.setColor(0x2200E5FF);
+            c.drawPath(path, fill);
+        }
+        fill.setColor(COL_CYAN);
+        c.drawCircle(0, 0, dp(5), fill);
+        fill.setColor(0xFFFFFFFF);
+        c.drawCircle(0, 0, dp(2), fill);
+    }
+
+    /**
+     * Prospettiva del piano: rotazione attorno all'asse X di "tilt" gradi vista
+     * da una distanza di 2,8 R. La proiezione di un piano e' un'omografia,
+     * quindi basta mappare i 4 angoli (esatto, nessuna dipendenza da Camera).
+     */
+    private void perspective(float R, float tilt, float cx, float cy) {
+        double t = Math.toRadians(tilt), d = R * 3.2;
+        float[] src = {-R, -R, R, -R, R, R, -R, R};
+        float[] dst = new float[8];
+        for (int i = 0; i < 8; i += 2) {
+            double x = src[i], y = src[i + 1];
+            double z = -y * Math.sin(t);           // il bordo alto si allontana
+            double k = d / (d + z);
+            dst[i] = (float) (cx + x * k);
+            dst[i + 1] = (float) (cy + y * Math.cos(t) * k);
+        }
+        m3d.reset();
+        if (!m3d.setPolyToPoly(src, 0, dst, 0, 4)) { m3d.reset(); m3d.postTranslate(cx, cy); }
+    }
+
+    /** Proietta lat/lon sul piano (prospettiva inclusa): risultato in pt[]. */
+    private void toScreen(double la, double lo, float R, float rot) {
+        double dist = DroneTrack.distance(uLat, uLon, la, lo);
+        double brg = Math.toRadians(DroneTrack.bearing(uLat, uLon, la, lo) + rot);
+        float k = (float) Math.min(1.08, dist / shownRange) * R;
+        pt[0] = (float) Math.sin(brg) * k;
+        pt[1] = (float) -Math.cos(brg) * k;
+        m3d.mapPoints(pt);
+    }
+
+    private void drawDiamond(Canvas c, float x, float y, float s, int col) {
+        path.reset();
+        path.moveTo(x, y - s); path.lineTo(x + s, y); path.lineTo(x, y + s); path.lineTo(x - s, y); path.close();
+        fill.setColor(col);
+        c.drawPath(path, fill);
+    }
+
+    private static float lerp(float a, float b, float k) { return a + (b - a) * k; }
+
+    private static int withAlpha(int col, int a) {
+        return (Math.max(0, Math.min(255, a)) << 24) | (col & 0xFFFFFF);
+    }
+
+    private static int blend(int a, int b, float k) {
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return 0xFF000000 | ((int) (ar + (br - ar) * k) << 16) | ((int) (ag + (bg - ag) * k) << 8) | (int) (ab + (bb - ab) * k);
+    }
+
+    // ------------------------------------------------------------ tocco
+    @Override public boolean onTouchEvent(MotionEvent e) {
+        if (e.getAction() == MotionEvent.ACTION_UP) {
+            DroneTrack best = null;
+            float bestD = dp(30);
+            for (int i = 0; i < hitPts.size(); i++) {
+                float[] p = hitPts.get(i);
+                float d = (float) Math.hypot(p[0] - e.getX(), p[1] - e.getY());
+                if (d < bestD) { bestD = d; best = hitTracks.get(i); }
+            }
+            if (best != null && tapListener != null) {
+                tapListener.onTrackTap(best);
+                return true;
+            }
+            performClick();
+            return true;
+        }
+        return e.getAction() == MotionEvent.ACTION_DOWN || super.onTouchEvent(e);
+    }
+
+    @Override public boolean performClick() { return super.performClick(); }
+}
+"""
+
+SPECTROGRAM_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.RectF;
+import android.util.AttributeSet;
+import android.view.View;
+import java.util.Locale;
+
+/**
+ * Spettrogramma "a cascata": ogni riga e' una finestra audio (la piu' recente
+ * in alto), da sinistra a destra 0-3000 Hz. Le righe verticali luminose sono
+ * le armoniche delle eliche; i marcatori indicano la fondamentale stimata.
+ */
+public class SpectrogramView extends View {
+    private static final int ROWS = 120;
+    private int bins = 256;
+    private float maxHz = 3000f;
+    private Bitmap bmp;
+    private int[] pixels;      // ROWS x bins, riga 0 = la piu' recente
+    private float f0;
+    private final int[] lut = new int[256];
+    private final Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint frame = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect src = new Rect();
+    private final RectF dst = new RectF();
+
+    public SpectrogramView(Context c) { this(c, null); }
+    public SpectrogramView(Context c, AttributeSet a) {
+        super(c, a);
+        // mappa colori neon: nero -> blu notte -> ciano -> verde -> giallo -> bianco
+        int[] stops = {0xFF02040A, 0xFF071A3A, 0xFF0050A0, 0xFF00E5FF, 0xFF00FF88, 0xFFFFD600, 0xFFFFFFFF};
+        for (int i = 0; i < 256; i++) {
+            float x = i / 255f * (stops.length - 1);
+            int k = Math.min(stops.length - 2, (int) x);
+            lut[i] = mix(stops[k], stops[k + 1], x - k);
+        }
+        text.setTextSize(dp(10));
+        text.setColor(0xFF8FB3D0);
+        frame.setStyle(Paint.Style.STROKE);
+        frame.setStrokeWidth(dp(1));
+        frame.setColor(0x4400E5FF);
+        line.setStrokeWidth(dp(1.2f));
+    }
+
+    private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
+
+    public void configure(int displayBins, float displayMaxHz) {
+        bins = displayBins;
+        maxHz = displayMaxHz;
+        bmp = null;
+    }
+
+    /** Aggiunge una riga: valori 0..1 (DISPLAY_BINS). f0 = fondamentale (0 se nessuna). */
+    public void push(float[] spectrum, float fundamental) {
+        if (spectrum == null) return;
+        if (bmp == null) {
+            bmp = Bitmap.createBitmap(bins, ROWS, Bitmap.Config.ARGB_8888);
+            pixels = new int[bins * ROWS];
+            java.util.Arrays.fill(pixels, lut[0]);
+        }
+        // scorre tutto di una riga verso il basso e scrive la nuova in alto
+        System.arraycopy(pixels, 0, pixels, bins, bins * (ROWS - 1));
+        int n = Math.min(bins, spectrum.length);
+        for (int i = 0; i < bins; i++) {
+            float v = i < n ? Math.max(0f, Math.min(1f, spectrum[i])) : 0f;
+            pixels[i] = lut[(int) (Math.pow(v, 0.75) * 255)];
+        }
+        bmp.setPixels(pixels, 0, bins, 0, 0, bins, ROWS);
+        f0 = fundamental;
+        invalidate();
+    }
+
+    public void clear() {
+        if (pixels != null) {
+            java.util.Arrays.fill(pixels, lut[0]);
+            bmp.setPixels(pixels, 0, bins, 0, 0, bins, ROWS);
+        }
+        f0 = 0;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float w = getWidth(), h = getHeight();
+        float axis = dp(16);
+        float ph = h - axis;
+        if (bmp == null) {
+            paint.setColor(lut[0]);
+            c.drawRect(0, 0, w, ph, paint);
+        } else {
+            src.set(0, 0, bins, ROWS);
+            dst.set(0, 0, w, ph);
+            c.drawBitmap(bmp, src, dst, paint);
+        }
+        // armoniche della fondamentale stimata
+        if (f0 > 0) {
+            for (int hN = 1; hN <= 12; hN++) {
+                float hz = f0 * hN;
+                if (hz > maxHz) break;
+                float x = hz / maxHz * w;
+                line.setColor(hN == 1 ? 0xCCFF3D71 : 0x66FF3D71);
+                c.drawLine(x, 0, x, dp(hN == 1 ? 14 : 8), line);
+            }
+            text.setTextAlign(Paint.Align.RIGHT);
+            text.setColor(0xFFFF3D71);
+            c.drawText(String.format(Locale.ITALY, "f0 %.0f Hz", f0), w - dp(6), dp(26), text);
+        }
+        c.drawRect(0, 0, w, ph, frame);
+        // asse delle frequenze
+        text.setColor(0xFF5A7A99);
+        for (int hz = 0; hz <= (int) maxHz; hz += 500) {
+            float x = hz / maxHz * w;
+            text.setTextAlign(hz == 0 ? Paint.Align.LEFT : (hz >= maxHz ? Paint.Align.RIGHT : Paint.Align.CENTER));
+            c.drawText(hz >= 1000 ? (hz / 1000f) + "k" : String.valueOf(hz), x, h - dp(3), text);
+        }
+    }
+
+    private static int mix(int a, int b, float k) {
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return 0xFF000000 | ((int) (ar + (br - ar) * k) << 16) | ((int) (ag + (bg - ag) * k) << 8) | (int) (ab + (bb - ab) * k);
+    }
+}
+"""
+
+NEON_GAUGE_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.graphics.SweepGradient;
+import android.graphics.Typeface;
+import android.util.AttributeSet;
+import android.view.View;
+
+/** Indicatore ad arco neon (0..1) con lancetta luminosa e valore animato. */
+public class NeonGaugeView extends View {
+    private static final float START = 150f, SPAN = 240f;
+    private float target, value;
+    private String label = "", caption = "";
+    private final Paint track = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint arc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint glow = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint tick = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint big = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint small = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF oval = new RectF();
+    private final Matrix rot = new Matrix();
+    private SweepGradient shader;
+    private float lastW = -1;
+
+    public NeonGaugeView(Context c) { this(c, null); }
+    public NeonGaugeView(Context c, AttributeSet a) {
+        super(c, a);
+        for (Paint p : new Paint[]{track, arc, glow, tick}) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+        }
+        track.setColor(0xFF132235);
+        tick.setStrokeWidth(dp(1.5f));
+        big.setTextAlign(Paint.Align.CENTER);
+        big.setColor(0xFFE8F4FD);
+        big.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        small.setTextAlign(Paint.Align.CENTER);
+        small.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+    }
+
+    private float dp(float v) { return v * getResources().getDisplayMetrics().density; }
+
+    public void setValue(float v) { target = Math.max(0f, Math.min(1f, v)); invalidate(); }
+    public void setLabel(String l) { label = l != null ? l : ""; invalidate(); }
+    public void setCaption(String c) { caption = c != null ? c : ""; invalidate(); }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float w = getWidth(), h = getHeight();
+        float size = Math.min(w, h * 1.25f);
+        float sw = size * 0.075f;
+        float r = size / 2f - sw * 1.6f;
+        float cx = w / 2f, cy = h * 0.56f;
+        oval.set(cx - r, cy - r, cx + r, cy + r);
+        if (w != lastW) {
+            shader = new SweepGradient(cx, cy,
+                new int[]{0xFF00FF88, 0xFF00E5FF, 0xFFFFD600, 0xFFFF6B35, 0xFFFF1744, 0xFF00FF88},
+                new float[]{0f, 0.18f, 0.38f, 0.52f, 0.66f, 1f});
+            rot.setRotate(START, cx, cy);
+            shader.setLocalMatrix(rot);
+            lastW = w;
+        }
+        value += (target - value) * 0.18f;
+        if (Math.abs(target - value) > 0.002f) postInvalidateOnAnimation();
+
+        track.setStrokeWidth(sw);
+        c.drawArc(oval, START, SPAN, false, track);
+        for (int i = 0; i <= 10; i++) {
+            double a = Math.toRadians(START + SPAN * i / 10f);
+            float r1 = r - sw, r2 = r - sw - dp(i % 5 == 0 ? 9 : 5);
+            tick.setColor(i % 5 == 0 ? 0xAA8FB3D0 : 0x558FB3D0);
+            c.drawLine(cx + (float) Math.cos(a) * r1, cy + (float) Math.sin(a) * r1,
+                       cx + (float) Math.cos(a) * r2, cy + (float) Math.sin(a) * r2, tick);
+        }
+        float sweep = Math.max(0.5f, SPAN * value);
+        glow.setShader(shader);
+        glow.setStrokeWidth(sw * 2.2f);
+        glow.setAlpha(60);
+        c.drawArc(oval, START, sweep, false, glow);
+        arc.setShader(shader);
+        arc.setStrokeWidth(sw);
+        c.drawArc(oval, START, sweep, false, arc);
+        // punta luminosa
+        double a = Math.toRadians(START + sweep);
+        float px = cx + (float) Math.cos(a) * r, py = cy + (float) Math.sin(a) * r;
+        small.setColor(0x55FFFFFF);
+        c.drawCircle(px, py, sw * 0.9f, small);
+        small.setColor(0xFFFFFFFF);
+        c.drawCircle(px, py, sw * 0.38f, small);
+
+        big.setTextSize(size * 0.2f);
+        c.drawText(Math.round(value * 100) + "%", cx, cy + size * 0.06f, big);
+        small.setTextSize(size * 0.065f);
+        small.setColor(colorFor(value));
+        c.drawText(label, cx, cy + size * 0.17f, small);
+        small.setColor(0xFF5A7A99);
+        small.setTextSize(size * 0.052f);
+        c.drawText(caption, cx, cy + size * 0.27f, small);
+    }
+
+    private static int colorFor(float v) {
+        if (v < 0.3f) return 0xFF00FF88;
+        if (v < 0.5f) return 0xFFFFD600;
+        if (v < 0.7f) return 0xFFFF6B35;
+        return 0xFFFF1744;
+    }
+}
+"""
+
+AURORA_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
+import android.os.SystemClock;
+import android.util.AttributeSet;
+import android.view.View;
+import java.util.Random;
+
+/**
+ * Sfondo animato: aurora di luci al neon che si muovono lentamente, stelle
+ * che pulsano e una griglia prospettica "3D" che scorre verso l'orizzonte.
+ * Si ferma da sola quando la schermata non e' visibile (zero consumo).
+ */
+public class AuroraView extends View {
+    private static final int STARS = 70;
+    private final Paint blob = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint grid = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint star = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix m = new Matrix();
+    private RadialGradient[] shaders;
+    private final int[] colors = {0x3000E5FF, 0x387C4DFF, 0x2200FF88};
+    private final float[] sx = new float[STARS], sy = new float[STARS], sp = new float[STARS];
+    private final long t0 = SystemClock.uptimeMillis();
+    private boolean running, showGrid = true;
+    private float intensity = 1f;
+    private int lastW, lastH;
+
+    public AuroraView(Context c) { this(c, null); }
+    public AuroraView(Context c, AttributeSet a) {
+        super(c, a);
+        Random r = new Random(7);
+        for (int i = 0; i < STARS; i++) { sx[i] = r.nextFloat(); sy[i] = r.nextFloat() * 0.62f; sp[i] = r.nextFloat() * 6.28f; }
+        grid.setStyle(Paint.Style.STROKE);
+        grid.setStrokeWidth(getResources().getDisplayMetrics().density);
+    }
+
+    public void setShowGrid(boolean on) { showGrid = on; invalidate(); }
+    /** 0..1: quanto sono vivaci le luci (le schermate operative la abbassano). */
+    public void setIntensity(float k) { intensity = Math.max(0f, Math.min(1f, k)); invalidate(); }
+
+    @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); running = true; invalidate(); }
+    @Override protected void onDetachedFromWindow() { running = false; super.onDetachedFromWindow(); }
+    @Override protected void onWindowVisibilityChanged(int v) {
+        super.onWindowVisibilityChanged(v);
+        running = v == VISIBLE;
+        if (running) invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        int w = getWidth(), h = getHeight();
+        if (w == 0 || h == 0) return;
+        if (shaders == null || w != lastW || h != lastH) {
+            float rad = Math.max(w, h) * 0.42f;
+            shaders = new RadialGradient[colors.length];
+            for (int i = 0; i < colors.length; i++)
+                shaders[i] = new RadialGradient(0, 0, rad, colors[i], colors[i] & 0x00FFFFFF, Shader.TileMode.CLAMP);
+            lastW = w; lastH = h;
+        }
+        float t = (SystemClock.uptimeMillis() - t0) / 1000f;
+        c.drawColor(0xFF050A14);
+
+        // luci dell'aurora (traslate con una matrice: nessuna allocazione per frame)
+        for (int i = 0; i < shaders.length; i++) {
+            float px = w * (0.5f + 0.42f * (float) Math.sin(t * (0.07f + i * 0.031f) + i * 2.1f));
+            float py = h * (0.22f + 0.18f * (float) Math.cos(t * (0.05f + i * 0.023f) + i * 1.3f));
+            float sc = 0.8f + 0.25f * (float) Math.sin(t * 0.11f + i);
+            m.setScale(sc * 1.4f, sc);
+            m.postTranslate(px, py);
+            shaders[i].setLocalMatrix(m);
+            blob.setShader(shaders[i]);
+            blob.setAlpha((int) (255 * intensity));
+            c.drawRect(0, 0, w, h, blob);
+        }
+
+        // stelle che pulsano
+        float d = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < STARS; i++) {
+            float tw = 0.5f + 0.5f * (float) Math.sin(t * 1.7f + sp[i]);
+            star.setColor(((int) (40 + 150 * tw * intensity) << 24) | 0xE8F4FD);
+            c.drawCircle(sx[i] * w, sy[i] * h, d * (0.6f + 0.9f * tw * (i % 3 == 0 ? 1 : 0.5f)), star);
+        }
+
+        // griglia prospettica in basso (pavimento "3D" che scorre)
+        if (showGrid) {
+            float horizon = h * 0.64f, vx = w / 2f;
+            int lines = 14;
+            for (int i = -lines; i <= lines; i++) {
+                float bx = vx + i * w / 6f;
+                grid.setColor(0x2200E5FF);
+                c.drawLine(vx, horizon, bx, h, grid);
+            }
+            float phase = (t * 0.25f) % 1f;
+            for (int i = 0; i < 12; i++) {
+                float z = (i + phase) / 12f;
+                float y = horizon + (h - horizon) * z * z;
+                grid.setColor(((int) (12 + 70 * z * intensity) << 24) | 0x00E5FF);
+                c.drawLine(0, y, w, y, grid);
+            }
+            grid.setColor(0x5500E5FF);
+            c.drawLine(0, horizon, w, horizon, grid);
+        }
+        if (running) postInvalidateDelayed(33);
+    }
+}
+"""
+
+SKY_WATCH_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.Manifest;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.sky.AcousticDetector;
+import com.offlinegps.map.sky.DroneTrack;
+import com.offlinegps.map.sky.HeadingSensor;
+import com.offlinegps.map.sky.RemoteIdParser;
+import com.offlinegps.map.sky.RemoteIdScanner;
+import com.offlinegps.map.sky.SkyState;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * SENTINELLA CIELO: rilevamento PASSIVO dei droni vicini.
+ *  - riceve il Remote ID (Bluetooth + Wi-Fi) che i droni UE trasmettono;
+ *  - opzionalmente ascolta il ronzio delle eliche col microfono;
+ *  - mostra tutto su un radar 3D centrato su di te, con avvisi a voce.
+ * Non trasmette nulla e non interferisce con nessun drone.
+ */
+public class SkyWatchActivity extends AppCompatActivity implements SkyState.Listener {
+    private static final int REQ_SCAN = 7101, REQ_MIC = 7102;
+    private static final long LOST_MS = 15_000, FORGET_MS = 120_000;
+
+    private SkyRadarView radar;
+    private TextView chipBle, chipWifi, chipMic, chipVoice, tvLive, tvSummary, tvEmpty, tv3d, tvNorth, tvScanLabel;
+    private LinearLayout list;
+    private RemoteIdScanner scanner;
+    private AcousticDetector acoustic;
+    private HeadingSensor heading;
+    private LocationManager lm;
+    private TextToSpeech tts;
+    private boolean ttsReady, voiceOn, wantScan, wantMic, virtualUser, askedScan, askedMic;
+    private long lastRefresh;
+    private final Runnable refreshLater = this::refresh;
+    private double gpsLat = Double.NaN, gpsLon = Double.NaN;
+    private final Set<String> announced = new HashSet<>();
+    private final Map<String, CardHolder> cards = new HashMap<>();
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            SkyState.get().prune(FORGET_MS);
+            refresh();
+            h.postDelayed(this, 1000);
+        }
+    };
+    private final LocationListener locListener = new LocationListener() {
+        @Override public void onLocationChanged(@NonNull Location l) { onFix(l); }
+        @Override public void onStatusChanged(String p, int s, Bundle b) {}
+        @Override public void onProviderEnabled(@NonNull String p) {}
+        @Override public void onProviderDisabled(@NonNull String p) {}
+    };
+
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_sky_watch);
+        radar = findViewById(R.id.sky_radar);
+        chipBle = findViewById(R.id.chip_sky_ble);
+        chipWifi = findViewById(R.id.chip_sky_wifi);
+        chipMic = findViewById(R.id.chip_sky_mic);
+        chipVoice = findViewById(R.id.chip_sky_voice);
+        tvLive = findViewById(R.id.tv_sky_live);
+        tvSummary = findViewById(R.id.tv_sky_summary);
+        tvEmpty = findViewById(R.id.tv_sky_empty);
+        tv3d = findViewById(R.id.tv_sky_3d);
+        tvNorth = findViewById(R.id.tv_sky_north);
+        tvScanLabel = findViewById(R.id.tv_sky_scan_label);
+        list = findViewById(R.id.sky_list);
+        scanner = new RemoteIdScanner(this);
+        acoustic = new AcousticDetector(this);
+        heading = new HeadingSensor(this);
+        lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        voiceOn = getPreferences(MODE_PRIVATE).getBoolean("voice", true);
+
+        radar.setOnTrackTap(this::showDetails);
+        click(R.id.btn_sky_back, v -> finish());
+        click(R.id.btn_sky_scan, v -> toggleScan());
+        click(R.id.btn_sky_demo, v -> toggleDemo());
+        click(R.id.btn_sky_audio, v -> startActivity(new Intent(this, AcousticDetectorActivity.class)));
+        click(R.id.btn_sky_spot, v -> startActivity(new Intent(this, SkySpotActivity.class)));
+        click(R.id.btn_sky_check, v -> startActivity(new Intent(this, SightingCheckActivity.class)));
+        click(R.id.btn_sky_airspace, v -> showAirspace());
+        click(R.id.chip_sky_mic, v -> toggleMic());
+        click(R.id.chip_sky_voice, v -> {
+            voiceOn = !voiceOn;
+            getPreferences(MODE_PRIVATE).edit().putBoolean("voice", voiceOn).apply();
+            if (voiceOn) initTts();
+            refresh();
+        });
+        click(R.id.chip_sky_ble, v -> toggleScan());
+        click(R.id.chip_sky_wifi, v -> {
+            if (!RemoteIdScanner.wifiBeaconSupported())
+                Toast.makeText(this, "Il Remote ID via Wi-Fi Beacon richiede Android 11 o superiore", Toast.LENGTH_LONG).show();
+            else toggleScan();
+        });
+        click(R.id.tv_sky_3d, v -> { radar.setTilt3d(!radar.isTilt3d()); refresh(); });
+        click(R.id.tv_sky_north, v -> { radar.setHeadingUp(!radar.isHeadingUp()); refresh(); });
+        if (voiceOn) initTts();
+        wantScan = true;
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        SkyState.get().addListener(this);
+        startLocation();
+        heading.start(deg -> { SkyState.get().heading = deg; radar.setHeading(deg); });
+        if (wantScan) startScan(false);
+        if (wantMic) startMic(false);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        SkyState.get().removeListener(this);
+        h.removeCallbacks(tick);
+        h.removeCallbacks(refreshLater);
+        scanner.stopAll();
+        acoustic.stop();
+        heading.stop();
+        try { lm.removeUpdates(locListener); } catch (Exception ignored) {}
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        SkyState.get().stopDemo();
+        if (virtualUser) SkyState.get().setUser(Double.NaN, Double.NaN);
+        if (tts != null) { tts.stop(); tts.shutdown(); }
+    }
+
+    /** Molti pacchetti al secondo: ridisegna la lista al massimo ~3 volte al secondo. */
+    @Override public void onSkyChanged() {
+        long wait = 300 - (System.currentTimeMillis() - lastRefresh);
+        h.removeCallbacks(refreshLater);
+        if (wait <= 0) refresh(); else h.postDelayed(refreshLater, wait);
+    }
+
+    // ------------------------------------------------------------ scansione
+    private void toggleScan() {
+        if (scanner.isBleRunning() || scanner.isWifiRunning()) {
+            wantScan = false;
+            scanner.stopAll();
+            refresh();
+        } else {
+            wantScan = true;
+            startScan(true);
+        }
+    }
+
+    private void startScan(boolean interactive) {
+        if (!hasAll(RemoteIdScanner.requiredPermissions())) {
+            // chiede una sola volta per apertura (o quando l'utente preme il pulsante)
+            if (interactive || !askedScan) {
+                askedScan = true;
+                SkyUi.ensurePermissions(this, REQ_SCAN, RemoteIdScanner.neededPermissions());
+            }
+            return;
+        }
+        boolean ble = scanner.startBle();
+        String bleErr = scanner.lastError;
+        boolean wifi = scanner.startWifi();
+        if (!ble && interactive) {
+            if (bleErr.contains("Accendi")) {
+                new AlertDialog.Builder(this)
+                    .setTitle("Bluetooth spento")
+                    .setMessage("Il Remote ID dei droni viaggia soprattutto via Bluetooth. Vuoi accenderlo?")
+                    .setPositiveButton("Impostazioni", (d, w) -> {
+                        try { startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); } catch (Exception ignored) {}
+                    })
+                    .setNegativeButton("Solo Wi-Fi", null)
+                    .show();
+            } else if (!bleErr.isEmpty()) {
+                Toast.makeText(this, bleErr, Toast.LENGTH_LONG).show();
+            }
+        }
+        if (!ble && !wifi && !interactive) wantScan = false;
+        refresh();
+    }
+
+    private void toggleMic() {
+        if (acoustic.isRunning()) { wantMic = false; acoustic.stop(); refresh(); }
+        else { wantMic = true; startMic(true); }
+    }
+
+    private void startMic(boolean interactive) {
+        if (!hasAll(Manifest.permission.RECORD_AUDIO)) {
+            if (interactive || !askedMic) {
+                askedMic = true;
+                SkyUi.ensurePermissions(this, REQ_MIC, Manifest.permission.RECORD_AUDIO);
+            }
+            return;
+        }
+        boolean ok = acoustic.start(r -> {
+            radar.setAcoustic(r.score);
+            refreshSummary();
+        });
+        if (!ok) {
+            wantMic = false;
+            if (interactive) Toast.makeText(this, acoustic.lastError, Toast.LENGTH_LONG).show();
+        }
+        refresh();
+    }
+
+    private void toggleDemo() {
+        SkyState st = SkyState.get();
+        if (st.isDemo()) {
+            st.stopDemo();
+            if (virtualUser) { virtualUser = false; st.setUser(gpsLat, gpsLon); }
+            Toast.makeText(this, "Simulazione terminata", Toast.LENGTH_SHORT).show();
+        } else {
+            double la = gpsLat, lo = gpsLon;
+            if (!DroneTrack.validLatLon(la, lo)) {
+                // nessun GPS: centra la demo su Roma e usa una posizione virtuale
+                la = 41.8902; lo = 12.4922;
+                virtualUser = true;
+                st.setUser(la, lo);
+            }
+            st.startDemo(la, lo);
+            Toast.makeText(this, "SIMULAZIONE: 3 droni immaginari, nessun segnale reale", Toast.LENGTH_LONG).show();
+        }
+        refresh();
+    }
+
+    private boolean hasAll(String... perms) {
+        for (String p : perms) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+        return true;
+    }
+
+    // ------------------------------------------------------------ posizione
+    /** Il permesso di posizione viene chiesto insieme a quelli della scansione. */
+    private void startLocation() {
+        if (!hasAll(Manifest.permission.ACCESS_FINE_LOCATION)) return;
+        try {
+            Location best = null;
+            for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                if (!lm.isProviderEnabled(p)) continue;
+                Location l = lm.getLastKnownLocation(p);
+                if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
+                lm.requestLocationUpdates(p, 2000, 2f, locListener);
+            }
+            if (best != null) onFix(best);
+        } catch (SecurityException ignored) {
+        } catch (Exception ignored) {}
+    }
+
+    private void onFix(Location l) {
+        gpsLat = l.getLatitude();
+        gpsLon = l.getLongitude();
+        heading.setLocation(gpsLat, gpsLon, l.getAltitude());
+        if (!virtualUser) SkyState.get().setUser(gpsLat, gpsLon);
+        refresh();
+    }
+
+    // ------------------------------------------------------------ interfaccia
+    private void refresh() {
+        lastRefresh = System.currentTimeMillis();
+        SkyState st = SkyState.get();
+        List<DroneTrack> tracks = st.snapshot();
+        radar.setData(tracks, st.userLat, st.userLon);
+        radar.setDemo(st.isDemo());
+        if (!acoustic.isRunning()) radar.setAcoustic(0);
+
+        boolean ble = scanner.isBleRunning(), wifi = scanner.isWifiRunning(), mic = acoustic.isRunning();
+        SkyUi.chip(chipBle, ble ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, ble ? "BLUETOOTH ON" : "BLUETOOTH");
+        SkyUi.chip(chipWifi, wifi ? SkyUi.CHIP_ON : (RemoteIdScanner.wifiBeaconSupported() ? SkyUi.CHIP_OFF : SkyUi.CHIP_WARN),
+            wifi ? "WI-FI ON" : "WI-FI");
+        SkyUi.chip(chipMic, mic ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, mic ? "AUDIO ON" : "AUDIO");
+        SkyUi.chip(chipVoice, voiceOn ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, voiceOn ? "VOCE ON" : "VOCE");
+        boolean live = ble || wifi || mic;
+        SkyUi.chip(tvLive, st.isDemo() ? SkyUi.CHIP_WARN : (live ? SkyUi.CHIP_ALERT : SkyUi.CHIP_OFF),
+            st.isDemo() ? "DEMO" : (live ? "● LIVE" : "PAUSA"));
+        SkyUi.chip(tv3d, radar.isTilt3d() ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, radar.isTilt3d() ? "VISTA 3D" : "VISTA 2D");
+        SkyUi.chip(tvNorth, radar.isHeadingUp() ? SkyUi.CHIP_ON : SkyUi.CHIP_OFF, radar.isHeadingUp() ? "ROTTA ▲" : "NORD ▲");
+        if (tvScanLabel != null) tvScanLabel.setText(ble || wifi ? "FERMA SCANSIONE" : "AVVIA SCANSIONE");
+        refreshSummary();
+
+        // schede dei droni: aggiornate SUL POSTO (ricrearle ogni secondo farebbe
+        // perdere i tocchi), riordinate solo se cambia l'ordine
+        long now = System.currentTimeMillis();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < tracks.size(); i++) {
+            DroneTrack d = tracks.get(i);
+            seen.add(d.key);
+            CardHolder ch = cards.get(d.key);
+            if (ch == null) { ch = new CardHolder(); cards.put(d.key, ch); }
+            ch.bind(d, now);
+            if (list.getChildAt(i) != ch.root) {
+                if (ch.root.getParent() != null) list.removeView(ch.root);
+                list.addView(ch.root, Math.min(i, list.getChildCount()));
+            }
+            // avviso dopo 2,5 s: nel frattempo arriva di solito anche il numero di serie
+            if (!d.simulated && now - d.firstSeen > 2500
+                && announced.add(d.uasId.isEmpty() ? d.key : d.uasId)) alert(d);
+        }
+        Iterator<Map.Entry<String, CardHolder>> it = cards.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, CardHolder> e = it.next();
+            if (!seen.contains(e.getKey())) { list.removeView(e.getValue().root); it.remove(); }
+        }
+        tvEmpty.setVisibility(tracks.isEmpty() ? View.VISIBLE : View.GONE);
+    }
+
+    private void refreshSummary() {
+        SkyState st = SkyState.get();
+        int real = st.countReal(), all = st.count();
+        StringBuilder sb = new StringBuilder();
+        if (all == 0) sb.append("Nessun drone con Remote ID nel raggio di ricezione");
+        else {
+            sb.append(real).append(real == 1 ? " drone reale" : " droni reali");
+            if (all > real) sb.append(" · ").append(all - real).append(" simulati");
+        }
+        sb.append("\nPacchetti ricevuti: BT ").append(scanner.blePackets).append(" · Wi-Fi ").append(scanner.wifiPackets);
+        if (acoustic.isRunning()) {
+            sb.append(String.format(Locale.ITALY, "\nAudio: firma drone %.0f%%", st.acousticScore * 100));
+            if (st.acousticF0 > 0) sb.append(String.format(Locale.ITALY, " (fondamentale %.0f Hz)", st.acousticF0));
+        }
+        if (virtualUser) sb.append("\nPosizione VIRTUALE (nessun GPS): solo per la simulazione");
+        else if (!DroneTrack.validLatLon(st.userLat, st.userLon)) sb.append("\nIn attesa della posizione GPS...");
+        if (!scanner.lastError.isEmpty() && !scanner.isBleRunning()) sb.append("\n").append(scanner.lastError);
+        tvSummary.setText(sb.toString());
+    }
+
+    /** Scheda di un drone: costruita una volta, poi solo aggiornata. */
+    private final class CardHolder {
+        final LinearLayout root;
+        final View bar;
+        final TextView title;
+        final TextView[] lines = new TextView[6];
+        DroneTrack track;
+
+        CardHolder() {
+            root = SkyUi.card(SkyWatchActivity.this, 0xFFFF3D71, "", "-", "-", "-", "-", "-", "-");
+            bar = root.getChildAt(0);
+            LinearLayout col = (LinearLayout) root.getChildAt(1);
+            title = (TextView) col.getChildAt(0);
+            for (int i = 0; i < lines.length; i++) lines[i] = (TextView) col.getChildAt(i + 1);
+            root.setOnClickListener(v -> { if (track != null) showDetails(track); });
+            UiFx.addSpring(root);
+        }
+
+        void bind(DroneTrack d, long now) {
+            track = d;
+            SkyState st = SkyState.get();
+            int accent = d.simulated ? 0xFFFFB300 : (d.uasId.isEmpty() ? 0xFFB388FF : 0xFFFF3D71);
+            bar.setBackgroundColor(accent);
+            boolean lost = now - d.lastSeen > LOST_MS;
+            String where = "Posizione non trasmessa";
+            if (d.hasPosition() && DroneTrack.validLatLon(st.userLat, st.userLon)) {
+                double dist = DroneTrack.distance(st.userLat, st.userLon, d.lat, d.lon);
+                double brg = DroneTrack.bearing(st.userLat, st.userLon, d.lat, d.lon);
+                where = DroneTrack.formatDistance(dist) + " verso " + DroneTrack.cardinal(brg)
+                    + String.format(Locale.ITALY, " (%.0f°)", brg);
+            } else if (d.hasPosition()) {
+                where = String.format(Locale.US, "%.5f, %.5f", d.lat, d.lon);
+            }
+            String flight = "";
+            float alt = d.displayAltitude();
+            if (!Float.isNaN(alt)) flight += String.format(Locale.ITALY, "Quota %.0f m", alt);
+            if (!Float.isNaN(d.speed)) flight += String.format(Locale.ITALY, "%sVelocita' %.1f m/s (%.0f km/h)",
+                flight.isEmpty() ? "" : " · ", d.speed, d.speed * 3.6f);
+            if (!Float.isNaN(d.direction)) flight += String.format(Locale.ITALY, " · rotta %.0f°", d.direction);
+            String status = RemoteIdParser.statusName(d.status) + " · " + d.sourceLabel()
+                + (d.rssi > -127 ? " · " + d.rssi + " dBm" : "")
+                + " · " + (lost ? "PERSO da " : "") + ((now - d.lastSeen) / 1000) + " s fa";
+            String op = "";
+            if (d.hasOperator() && DroneTrack.validLatLon(st.userLat, st.userLon))
+                op = "Pilota a " + DroneTrack.formatDistance(DroneTrack.distance(st.userLat, st.userLon, d.opLat, d.opLon));
+            if (!d.operatorId.isEmpty()) op += (op.isEmpty() ? "" : " · ") + "Operatore " + d.operatorId;
+            title.setText(d.title() + (d.simulated ? "  [SIMULATO]" : ""));
+            String[] txt = {d.typeLabel(), where, flight, status, op,
+                d.selfId.isEmpty() ? "" : "\u201C" + d.selfId + "\u201D"};
+            for (int i = 0; i < lines.length; i++) {
+                lines[i].setText(txt[i]);
+                lines[i].setVisibility(txt[i].isEmpty() ? View.GONE : View.VISIBLE);
+            }
+            root.setAlpha(lost ? 0.55f : 1f);
+        }
+    }
+
+    private void showDetails(DroneTrack d) {
+        SkyState st = SkyState.get();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Tipo: ").append(d.typeLabel()).append('\n');
+        sb.append("Stato: ").append(RemoteIdParser.statusName(d.status)).append('\n');
+        if (d.hasPosition()) sb.append(String.format(Locale.US, "Posizione: %.6f, %.6f%n", d.lat, d.lon));
+        if (d.hasPosition() && DroneTrack.validLatLon(st.userLat, st.userLon))
+            sb.append("Distanza: ").append(DroneTrack.formatDistance(DroneTrack.distance(st.userLat, st.userLon, d.lat, d.lon)))
+              .append(" verso ").append(DroneTrack.cardinal(DroneTrack.bearing(st.userLat, st.userLon, d.lat, d.lon))).append('\n');
+        if (!Float.isNaN(d.height)) sb.append(String.format(Locale.ITALY, "Altezza dal suolo: %.0f m%n", d.height));
+        if (!Float.isNaN(d.altGeo)) sb.append(String.format(Locale.ITALY, "Quota GPS: %.0f m%n", d.altGeo));
+        if (!Float.isNaN(d.speed)) sb.append(String.format(Locale.ITALY, "Velocita': %.1f m/s%n", d.speed));
+        if (!Float.isNaN(d.vspeed)) sb.append(String.format(Locale.ITALY, "Salita/discesa: %.1f m/s%n", d.vspeed));
+        if (!d.selfId.isEmpty()) sb.append("Descrizione: ").append(d.selfId).append('\n');
+        if (!d.operatorId.isEmpty()) sb.append("ID operatore: ").append(d.operatorId).append('\n');
+        if (d.hasOperator()) sb.append(String.format(Locale.US, "Pilota: %.5f, %.5f%n", d.opLat, d.opLon));
+        sb.append("Ricevuto via: ").append(d.sourceLabel()).append(" (").append(d.messages).append(" messaggi)\n");
+        sb.append("\nIl Remote ID e' pubblico per legge, ma NON avvicinarti al pilota: "
+            + "se il volo ti sembra pericoloso o illecito chiama il 112 e riferisci questi dati.");
+        new AlertDialog.Builder(this)
+            .setTitle(d.title())
+            .setMessage(sb.toString())
+            .setPositiveButton("Segnala", (dlg, w) -> {
+                Intent i = new Intent(this, SkySpotActivity.class);
+                i.putExtra(SkySpotActivity.EXTRA_REMOTE_ID, d.uasId.isEmpty() ? d.key : d.uasId);
+                startActivity(i);
+            })
+            .setNeutralButton("Condividi", (dlg, w) -> SkyUi.share(this, "Drone " + d.title(), d.title() + "\n" + sb))
+            .setNegativeButton("Chiudi", null)
+            .show();
+    }
+
+    private void showAirspace() {
+        new AlertDialog.Builder(this)
+            .setTitle("Spazio aereo e regole")
+            .setMessage("In Italia le zone dove i droni possono o non possono volare (aeroporti, "
+                + "zone rosse, NOTAM temporanei) sono pubblicate da ENAC/ENAV sul portale d-flight.\n\n"
+                + "Dal 2024 i droni di classe C1, C2, C3 e quelli registrati in categoria Specific devono "
+                + "trasmettere il Remote ID: e' quello che questa schermata riceve.\n\n"
+                + "Serve una connessione internet per aprire il portale.")
+            .setPositiveButton("Apri d-flight", (d, w) -> {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.d-flight.it/"))); }
+                catch (Exception e) { Toast.makeText(this, "Nessun browser disponibile", Toast.LENGTH_SHORT).show(); }
+            })
+            .setNegativeButton("Chiudi", null)
+            .show();
+    }
+
+    // ------------------------------------------------------------ avvisi
+    private void initTts() {
+        if (tts != null) return;
+        tts = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                tts.setLanguage(Locale.ITALIAN);
+                ttsReady = true;
+            }
+        });
+    }
+
+    private void alert(DroneTrack d) {
+        try {
+            Vibrator vib = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (vib != null) vib.vibrate(VibrationEffect.createWaveform(new long[]{0, 140, 90, 140}, -1));
+        } catch (Exception ignored) {}
+        if (!voiceOn || !ttsReady) return;
+        SkyState st = SkyState.get();
+        String msg = "Attenzione: rilevato un drone";
+        if (d.hasPosition() && DroneTrack.validLatLon(st.userLat, st.userLon)) {
+            double dist = DroneTrack.distance(st.userLat, st.userLon, d.lat, d.lon);
+            msg += " a " + (dist < 1000 ? Math.round(dist / 10) * 10 + " metri" : String.format(Locale.ITALY, "%.1f chilometri", dist / 1000))
+                + ", direzione " + HeadingSensor.cardinal((float) DroneTrack.bearing(st.userLat, st.userLon, d.lat, d.lon));
+        }
+        tts.speak(msg, TextToSpeech.QUEUE_ADD, null, "sky-" + d.key);
+    }
+
+    @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
+        super.onRequestPermissionsResult(req, p, res);
+        boolean all = res.length > 0;
+        for (int r : res) all &= r == PackageManager.PERMISSION_GRANTED;
+        if (req == REQ_SCAN) {
+            // basta il Bluetooth: il permesso Wi-Fi "dispositivi vicini" e' facoltativo
+            if (hasAll(RemoteIdScanner.requiredPermissions())) { startScan(true); startLocation(); }
+            else {
+                wantScan = false;
+                Toast.makeText(this, "Senza permessi Bluetooth/posizione non posso ricevere il Remote ID", Toast.LENGTH_LONG).show();
+            }
+        } else if (req == REQ_MIC) {
+            if (all) startMic(true);
+            else {
+                wantMic = false;
+                Toast.makeText(this, "Senza microfono il rilevamento acustico non funziona", Toast.LENGTH_LONG).show();
+            }
+        }
+        refresh();
+    }
+}
+"""
+
+ACOUSTIC_DETECTOR_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.Manifest;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.sky.AcousticAnalyzer;
+import com.offlinegps.map.sky.AcousticDetector;
+import java.util.Locale;
+
+/**
+ * ASCOLTO ACUSTICO: riconosce la "firma" sonora delle eliche (fondamentale
+ * 70-520 Hz + armoniche stabili) con un'analisi spettrale fatta sul telefono.
+ * Nessuna registrazione viene salvata o inviata.
+ */
+public class AcousticDetectorActivity extends AppCompatActivity {
+    private static final int REQ_MIC = 7201;
+    private AcousticDetector detector;
+    private NeonGaugeView gauge;
+    private SpectrogramView spectro;
+    private TextView tvVerdict, tvDetails, tvToggle;
+    private float peak;
+    private long lastBuzz;
+    private boolean asked;
+
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_acoustic);
+        detector = new AcousticDetector(this);
+        gauge = findViewById(R.id.ac_gauge);
+        spectro = findViewById(R.id.ac_spectro);
+        tvVerdict = findViewById(R.id.tv_ac_verdict);
+        tvDetails = findViewById(R.id.tv_ac_details);
+        tvToggle = findViewById(R.id.tv_ac_toggle_label);
+        spectro.configure(AcousticAnalyzer.DISPLAY_BINS, AcousticAnalyzer.DISPLAY_MAX_HZ);
+        gauge.setLabel("FIRMA DRONE");
+        gauge.setCaption("tocca AVVIA e punta il telefono verso il cielo");
+        click(R.id.btn_ac_back, v -> finish());
+        click(R.id.btn_ac_toggle, v -> { if (detector.isRunning()) stop(); else start(true); });
+        click(R.id.btn_ac_report, v -> {
+            Intent i = new Intent(this, SkySpotActivity.class);
+            i.putExtra(SkySpotActivity.EXTRA_ACOUSTIC, peak);
+            i.putExtra(SkySpotActivity.EXTRA_KIND, 1);
+            startActivity(i);
+        });
+        render(null);
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        start(false);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        stop();
+    }
+
+    private void start(boolean interactive) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (interactive || !asked) {
+                asked = true;
+                requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+            }
+            return;
+        }
+        if (detector.isRunning()) return;
+        peak = 0;
+        spectro.clear();
+        if (!detector.start(this::render)) {
+            Toast.makeText(this, detector.lastError, Toast.LENGTH_LONG).show();
+            return;
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        gauge.setCaption("microfono " + detector.sourceName);
+        render(null);
+    }
+
+    private void stop() {
+        detector.stop();
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        render(null);
+    }
+
+    private void render(AcousticAnalyzer.Result r) {
+        boolean on = detector.isRunning();
+        if (tvToggle != null) tvToggle.setText(on ? "FERMA ASCOLTO" : "AVVIA ASCOLTO");
+        if (r == null) {
+            gauge.setValue(0);
+            tvVerdict.setText(on ? "IN ASCOLTO..." : "MICROFONO SPENTO");
+            tvVerdict.setTextColor(on ? 0xFF00E5FF : 0xFF5A7A99);
+            tvDetails.setText(on ? "Servono 2-3 secondi di suono continuo per giudicare."
+                : "Tutto avviene sul telefono: l'audio non viene registrato ne' inviato.");
+            return;
+        }
+        spectro.push(r.spectrum, r.f0);
+        gauge.setValue(r.score);
+        peak = Math.max(peak, r.score);
+        String verdict; int col;
+        if (r.rmsDb < -70) { verdict = "SILENZIO"; col = 0xFF5A7A99; }
+        else if (r.score >= 0.5f) { verdict = "FIRMA COMPATIBILE CON UN DRONE"; col = 0xFFFF1744; }
+        else if (r.score >= 0.3f) { verdict = "POSSIBILE DRONE"; col = 0xFFFFD600; }
+        else if (r.frameScore > 0.4f) { verdict = "SUONO ARMONICO (non stabile)"; col = 0xFF00E5FF; }
+        else { verdict = "NESSUNA FIRMA DA ELICHE"; col = 0xFF00FF88; }
+        tvVerdict.setText(verdict);
+        tvVerdict.setTextColor(col);
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format(Locale.ITALY, "Livello: %.0f dBFS", r.rmsDb));
+        if (r.f0 > 0) sb.append(String.format(Locale.ITALY, "  ·  Fondamentale: %.0f Hz  ·  Armoniche: %d", r.f0, r.harmonics));
+        sb.append(String.format(Locale.ITALY, "%nStabilita' della firma: %.0f%%  ·  Picco sessione: %.0f%%",
+            r.stability * 100, peak * 100));
+        tvDetails.setText(sb.toString());
+        if (r.score >= 0.5f && System.currentTimeMillis() - lastBuzz > 4000) {
+            lastBuzz = System.currentTimeMillis();
+            try {
+                Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+                if (v != null) v.vibrate(VibrationEffect.createOneShot(180, VibrationEffect.DEFAULT_AMPLITUDE));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
+        super.onRequestPermissionsResult(req, p, res);
+        if (req == REQ_MIC) {
+            if (res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED) start(true);
+            else Toast.makeText(this, "Serve il permesso del microfono", Toast.LENGTH_LONG).show();
+        }
+    }
+}
+"""
+
+SKY_SPOT_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.Manifest;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.Uri;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.ArrayAdapter;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.sky.HeadingSensor;
+import com.offlinegps.map.sky.SkySpotStore;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * SKYSPOT: diario degli avvistamenti. La posizione viene arrotondata a ~1 km
+ * prima di salvarla o condividerla. NON e' un canale di emergenza: per i
+ * pericoli c'e' il pulsante che chiama il 112.
+ */
+public class SkySpotActivity extends AppCompatActivity {
+    public static final String EXTRA_REMOTE_ID = "remote_id";
+    public static final String EXTRA_ACOUSTIC = "acoustic";
+    public static final String EXTRA_KIND = "kind";
+    private static final String[] DIRS = {"Non so", "Nord", "Nord-Est", "Est", "Sud-Est", "Sud", "Sud-Ovest", "Ovest", "Nord-Ovest", "Sopra di me"};
+
+    private SkySpotStore store;
+    private Spinner spKind, spDir, spHeight, spDur, spCount;
+    private EditText etNotes;
+    private TextView tvLoc, tvRid;
+    private LinearLayout list;
+    private HeadingSensor heading;
+    private double lat = Double.NaN, lon = Double.NaN;
+    private String remoteId = "";
+    private float acoustic = -1f;
+    private final List<LocationListener> pending = new ArrayList<>();
+
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_skyspot);
+        store = new SkySpotStore(this);
+        heading = new HeadingSensor(this);
+        spKind = findViewById(R.id.sp_spot_kind);
+        spDir = findViewById(R.id.sp_spot_dir);
+        spHeight = findViewById(R.id.sp_spot_height);
+        spDur = findViewById(R.id.sp_spot_duration);
+        spCount = findViewById(R.id.sp_spot_count);
+        etNotes = findViewById(R.id.et_spot_notes);
+        tvLoc = findViewById(R.id.tv_spot_loc);
+        tvRid = findViewById(R.id.tv_spot_rid);
+        list = findViewById(R.id.spot_list);
+        fill(spKind, SkySpotStore.KINDS);
+        fill(spDir, DIRS);
+        fill(spHeight, SkySpotStore.HEIGHTS);
+        fill(spDur, SkySpotStore.DURATIONS);
+        fill(spCount, new String[]{"1", "2", "3", "4", "5", "Piu' di 5"});
+
+        Intent in = getIntent();
+        remoteId = in.getStringExtra(EXTRA_REMOTE_ID) != null ? in.getStringExtra(EXTRA_REMOTE_ID) : "";
+        acoustic = in.getFloatExtra(EXTRA_ACOUSTIC, -1f);
+        int kind = in.getIntExtra(EXTRA_KIND, 0);
+        spKind.setSelection(Math.max(0, Math.min(SkySpotStore.KINDS.length - 1, kind)));
+        StringBuilder extra = new StringBuilder();
+        if (!remoteId.isEmpty()) extra.append("Remote ID allegato: ").append(remoteId);
+        if (acoustic >= 0) extra.append(extra.length() > 0 ? "\n" : "")
+            .append(String.format(Locale.ITALY, "Indice acustico allegato: %.0f%%", acoustic * 100));
+        tvRid.setText(extra.toString());
+        tvRid.setVisibility(extra.length() > 0 ? View.VISIBLE : View.GONE);
+
+        click(R.id.btn_spot_back, v -> finish());
+        click(R.id.btn_spot_112, v -> call112());
+        click(R.id.btn_spot_compass, v -> {
+            float hd = heading.current();
+            if (Float.isNaN(hd)) {
+                Toast.makeText(this, "Bussola non disponibile", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            String c = HeadingSensor.cardinal(hd);
+            for (int i = 0; i < DIRS.length; i++) if (DIRS[i].equals(c)) spDir.setSelection(i);
+            Toast.makeText(this, String.format(Locale.ITALY, "Direzione: %s (%.0f°)", c, hd), Toast.LENGTH_SHORT).show();
+        });
+        click(R.id.btn_spot_save, v -> save());
+        locate();
+        renderList();
+    }
+
+    private void fill(Spinner sp, String[] items) {
+        ArrayAdapter<String> a = new ArrayAdapter<>(this, R.layout.item_spinner_dark, items);
+        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        sp.setAdapter(a);
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() { super.onResume(); heading.start(null); }
+    @Override protected void onPause() { super.onPause(); heading.stop(); }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        for (LocationListener l : pending) {
+            try { lm.removeUpdates(l); } catch (Exception ignored) {}
+        }
+        pending.clear();
+    }
+
+    private void locate() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+                Location best = null;
+                for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                    Location l = lm.getLastKnownLocation(p);
+                    if (l != null && (best == null || l.getTime() > best.getTime())) best = l;
+                }
+                if (best != null) { lat = best.getLatitude(); lon = best.getLongitude(); }
+                else {
+                    // nessuna posizione recente: ne chiede una sola e aggiorna la zona
+                    for (String p : new String[]{LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER}) {
+                        if (!lm.isProviderEnabled(p)) continue;
+                        LocationListener once = new LocationListener() {
+                            @Override public void onLocationChanged(@NonNull Location l) {
+                                lm.removeUpdates(this);
+                                if (!Double.isNaN(lat) || isFinishing()) return;
+                                lat = l.getLatitude(); lon = l.getLongitude();
+                                showZone();
+                            }
+                            @Override public void onStatusChanged(String pr, int st, Bundle b) {}
+                            @Override public void onProviderEnabled(@NonNull String pr) {}
+                            @Override public void onProviderDisabled(@NonNull String pr) {}
+                        };
+                        pending.add(once);
+                        lm.requestLocationUpdates(p, 1000, 0f, once);
+                    }
+                }
+            } catch (SecurityException ignored) {}
+        }
+        showZone();
+    }
+
+    private void showZone() {
+        if (Double.isNaN(lat)) tvLoc.setText("Posizione non disponibile: la segnalazione sara' senza zona");
+        else tvLoc.setText(String.format(Locale.US,
+            "Zona: %.2f, %.2f\nLa posizione esatta NON viene salvata: e' arrotondata a una cella di ~1 km",
+            SkySpotStore.anonymize(lat), SkySpotStore.anonymize(lon)));
+    }
+
+    private void save() {
+        SkySpotStore.Report r = new SkySpotStore.Report();
+        r.time = System.currentTimeMillis();
+        r.lat = lat; r.lon = lon;            // anonimizzate da store.add()
+        r.kind = spKind.getSelectedItemPosition();
+        r.height = spHeight.getSelectedItemPosition();
+        r.duration = spDur.getSelectedItemPosition();
+        r.count = spCount.getSelectedItemPosition() + 1;
+        int d = spDir.getSelectedItemPosition();
+        r.direction = d > 0 ? DIRS[d] : "";
+        r.notes = etNotes.getText().toString().trim();
+        r.remoteId = remoteId;
+        r.acoustic = acoustic;
+        store.add(r);
+        etNotes.setText("");
+        Toast.makeText(this, "Segnalazione salvata sul telefono", Toast.LENGTH_SHORT).show();
+        renderList();
+        List<SkySpotStore.Report> all = store.list();
+        if (!all.isEmpty()) {
+            final SkySpotStore.Report saved = all.get(0);
+            new AlertDialog.Builder(this)
+                .setTitle("Segnalazione salvata")
+                .setMessage("Vuoi condividerla (messaggio, email, gruppo)?\n\nRicorda: NON sostituisce il 112.")
+                .setPositiveButton("Condividi", (dlg, w) -> SkyUi.share(this, "Avvistamento", saved.shareText()))
+                .setNegativeButton("No", null)
+                .show();
+        }
+    }
+
+    private void renderList() {
+        list.removeAllViews();
+        List<SkySpotStore.Report> all = store.list();
+        if (all.isEmpty()) {
+            TextView tv = new TextView(this);
+            tv.setText("Nessuna segnalazione salvata.");
+            tv.setTextColor(0xFF5A7A99);
+            tv.setPadding(SkyUi.dp(this, 6), SkyUi.dp(this, 6), 0, SkyUi.dp(this, 6));
+            list.addView(tv);
+            return;
+        }
+        for (int i = 0; i < all.size(); i++) {
+            final int idx = i;
+            final SkySpotStore.Report r = all.get(i);
+            View card = SkyUi.card(this, 0xFF00E5FF, r.when(), r.summary(), "Zona " + r.where(),
+                r.notes.isEmpty() ? "" : "Note: " + r.notes);
+            card.setOnClickListener(v -> new AlertDialog.Builder(this)
+                .setTitle(r.when())
+                .setMessage(r.shareText())
+                .setPositiveButton("Condividi", (dlg, w) -> SkyUi.share(this, "Avvistamento", r.shareText()))
+                .setNeutralButton("Elimina", (dlg, w) -> { store.delete(idx); renderList(); })
+                .setNegativeButton("Chiudi", null)
+                .show());
+            UiFx.addSpring(card);
+            list.addView(card);
+        }
+    }
+
+    private void call112() {
+        // apre il tastierino col numero gia' scritto: la chiamata la fa l'utente
+        try { startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:112"))); }
+        catch (Exception e) { Toast.makeText(this, "Componi 112", Toast.LENGTH_LONG).show(); }
+    }
+}
+"""
+
+SIGHTING_CHECK_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.LinearLayout;
+import android.widget.Spinner;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import java.util.Arrays;
+import java.util.Locale;
+
+/**
+ * "E' DAVVERO UN DRONE?": sei domande su luce, movimento, rumore e durata
+ * stimano se si tratta di un drone o (molto piu' spesso) di un aereo, un
+ * satellite, un pianeta, una lanterna... Serve a evitare falsi allarmi.
+ */
+public class SightingCheckActivity extends AppCompatActivity {
+    static final String[] NAMES = {"Drone", "Aereo di linea", "Elicottero", "Satellite / Stazione Spaziale",
+        "Treno di satelliti Starlink", "Stella o pianeta (es. Venere)", "Lanterna cinese / palloncino",
+        "Uccello o insetto vicino", "Meteora (stella cadente)"};
+    static final String[] WHY = {
+        "Ronzio acuto, si ferma a mezz'aria, cambia direzione e quota. Prova lo scanner Remote ID e l'ascolto acustico.",
+        "Luci che lampeggiano con ritmo regolare (rossa a sinistra, verde a destra, strobo bianco), rotta dritta, rombo basso che arriva in ritardo.",
+        "Battito ritmico delle pale (flap-flap), puo' restare fermo, luci lampeggianti, vola basso.",
+        "Punto bianco fisso che attraversa il cielo in 2-6 minuti senza rumore, poco dopo il tramonto o prima dell'alba. La Stazione Spaziale e' piu' luminosa di ogni stella.",
+        "Fila ordinata di punti luminosi che avanzano in linea: satelliti lanciati da pochi giorni.",
+        "Resta 'fermo' per ore (si sposta solo con la rotazione della Terra). Venere e' il punto piu' luminoso al tramonto o all'alba; vicino all'orizzonte le stelle scintillano e sembrano cambiare colore.",
+        "Luce arancione tremolante che sale lentamente spinta dal vento e poi si spegne.",
+        "Vicino e veloce, battito d'ali: di giorno con il sole controluce sembra un oggetto scuro che vola.",
+        "Striscia luminosa velocissima che dura un istante.",
+    };
+    static final String[][] QUESTIONS = {
+        {"Cosa hai notato?", "Una luce", "Un oggetto con una forma", "Solo un rumore", "Piu' luci in fila"},
+        {"Com'e' la luce?", "Nessuna luce / e' giorno", "Fissa, bianca", "Lampeggia regolare (rosso/verde/bianco)",
+            "Scintilla e cambia colore", "Arancione tremolante"},
+        {"Come si muove?", "E' ferma", "Lenta e costante in linea retta", "Velocissima in linea retta",
+            "Si ferma, gira, sale e scende", "Sale piano portata dal vento"},
+        {"Che rumore fa?", "Nessun rumore", "Ronzio acuto (zanzara/sciame)", "Rombo basso e lontano",
+            "Battito ritmico (flap-flap)", "Non so / troppo rumore intorno"},
+        {"Quanto dura?", "Pochi secondi", "Alcuni minuti, poi sparisce", "Ore, quasi nello stesso punto", "Non so"},
+        {"Quando?", "Di giorno", "Al tramonto o all'alba", "Di notte"},
+    };
+    /** Punti per [domanda][risposta][candidato]. */
+    static final int[][][] SCORE = {
+        {   {1, 2, 1, 3, 0, 3, 2, 0, 2}, {3, 1, 2, 0, 0, 0, 0, 3, 0},
+            {3, 1, 2, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 6, 0, 2, 0, 0} },
+        {   {1, 1, 1, 0, 0, 0, 0, 2, 0}, {1, 0, 0, 3, 2, 3, 0, 0, 1}, {2, 4, 3, 0, 0, 0, 0, 0, 0},
+            {1, 0, 0, 0, 0, 5, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 5, 0, 0} },
+        {   {2, 0, 1, 0, 0, 4, 1, 0, 0}, {0, 3, 0, 4, 2, 0, 1, 0, 0}, {0, 1, 0, 0, 0, 0, 0, 1, 5},
+            {5, 0, 2, 0, 0, 0, 0, 2, 0}, {0, 0, 0, 0, 0, 0, 5, 0, 0} },
+        {   {-1, 1, 0, 3, 3, 3, 2, 1, 2}, {6, 0, 0, 0, 0, 0, 0, 1, 0}, {0, 4, 1, 0, 0, 0, 0, 0, 0},
+            {-1, 0, 9, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0, 0} },
+        {   {0, 0, 0, 0, 0, 0, 0, 1, 4}, {2, 2, 1, 3, 2, 0, 2, 0, 0}, {0, 0, 0, 0, 0, 5, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0} },
+        {   {2, 1, 1, -3, -3, -3, -1, 2, -2}, {0, 0, 0, 2, 3, 2, 0, 0, 0}, {0, 0, 0, 1, 0, 1, 1, 0, 1} },
+    };
+    private static final int[] SPINNERS = {R.id.sp_chk_q1, R.id.sp_chk_q2, R.id.sp_chk_q3,
+        R.id.sp_chk_q4, R.id.sp_chk_q5, R.id.sp_chk_q6};
+
+    private final Spinner[] sp = new Spinner[SPINNERS.length];
+    private LinearLayout results;
+
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_sighting_check);
+        results = findViewById(R.id.chk_results);
+        AdapterView.OnItemSelectedListener l = new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View v, int pos, long id) { evaluate(); }
+            @Override public void onNothingSelected(AdapterView<?> p) {}
+        };
+        for (int q = 0; q < SPINNERS.length; q++) {
+            sp[q] = findViewById(SPINNERS[q]);
+            ArrayAdapter<String> a = new ArrayAdapter<>(this, R.layout.item_spinner_dark,
+                Arrays.copyOfRange(QUESTIONS[q], 1, QUESTIONS[q].length));
+            a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            sp[q].setAdapter(a);
+            sp[q].setOnItemSelectedListener(l);
+        }
+        View back = findViewById(R.id.btn_chk_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        View sky = findViewById(R.id.btn_chk_sky);
+        if (sky != null) sky.setOnClickListener(v -> startActivity(new Intent(this, SkyWatchActivity.class)));
+        evaluate();
+    }
+
+    /** Probabilita' (softmax dei punteggi) per ogni candidato. */
+    static double[] probabilities(int[] answers) {
+        double[] s = new double[NAMES.length];
+        for (int q = 0; q < answers.length && q < SCORE.length; q++) {
+            int a = Math.max(0, Math.min(SCORE[q].length - 1, answers[q]));
+            for (int c = 0; c < NAMES.length; c++) s[c] += SCORE[q][a][c];
+        }
+        double max = Double.NEGATIVE_INFINITY, sum = 0;
+        for (double v : s) max = Math.max(max, v);
+        double[] p = new double[s.length];
+        for (int c = 0; c < s.length; c++) { p[c] = Math.exp((s[c] - max) / 2.0); sum += p[c]; }
+        for (int c = 0; c < s.length; c++) p[c] /= sum;
+        return p;
+    }
+
+    private void evaluate() {
+        int[] ans = new int[sp.length];
+        for (int q = 0; q < sp.length; q++) ans[q] = sp[q] != null ? Math.max(0, sp[q].getSelectedItemPosition()) : 0;
+        double[] p = probabilities(ans);
+        Integer[] order = new Integer[p.length];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        Arrays.sort(order, (a, b) -> Double.compare(p[b], p[a]));
+        results.removeAllViews();
+        for (int k = 0; k < 3; k++) {
+            int c = order[k];
+            int accent = c == 0 ? 0xFFFF3D71 : (k == 0 ? 0xFF00FF88 : 0xFF00E5FF);
+            results.addView(SkyUi.card(this, accent,
+                String.format(Locale.ITALY, "%d. %s  —  %.0f%%", k + 1, NAMES[c], p[c] * 100), WHY[c]));
+        }
+    }
+}
+"""
+
+# ------------------------------------------------------------------
+#  GRAFICA v4.0 — palette, icone, sfondi "vetro" con ripple, chip,
+#  animazioni di transizione e layout delle nuove schermate.
+# ------------------------------------------------------------------
+V4_ACCENTS = {
+    "cyan":   "00E5FF",
+    "green":  "00FF88",
+    "yellow": "FFD600",
+    "red":    "FF1744",
+    "pink":   "FF3D71",
+    "violet": "B388FF",
+    "orange": "FF6B35",
+}
+
+_XML_HEAD = '<?xml version="1.0" encoding="utf-8"?>\n'
+_NS = 'xmlns:android="http://schemas.android.com/apk/res/android"'
+
+def _v4_tile_bg(hexcol, radius="22dp"):
+    """Riquadro vetro: gradiente profondo + alone colorato in alto + bordo + riflesso, con ripple."""
+    return (_XML_HEAD +
+        '<ripple ' + _NS + ' android:color="#40' + hexcol + '">\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="315"\n'
+        '                android:startColor="#1A2740" android:endColor="#0A1220"/>\n'
+        '            <corners android:radius="' + radius + '"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="radial" android:gradientRadius="320"\n'
+        '                android:centerX="0.1" android:centerY="0.0"\n'
+        '                android:startColor="#30' + hexcol + '" android:endColor="#00' + hexcol + '"/>\n'
+        '            <corners android:radius="' + radius + '"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item android:bottom="40dp" android:left="1dp" android:right="1dp" android:top="1dp">\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="270"\n'
+        '                android:startColor="#14FFFFFF" android:endColor="#00FFFFFF"/>\n'
+        '            <corners android:radius="' + radius + '"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#00000000"/>\n'
+        '            <stroke android:width="1dp" android:color="#55' + hexcol + '"/>\n'
+        '            <corners android:radius="' + radius + '"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</ripple>')
+
+def _v4_disc(hexcol):
+    return (_XML_HEAD +
+        '<shape ' + _NS + ' android:shape="oval">\n'
+        '    <solid android:color="#22' + hexcol + '"/>\n'
+        '    <stroke android:width="1dp" android:color="#66' + hexcol + '"/>\n'
+        '</shape>')
+
+def _v4_chip(fill, stroke):
+    return (_XML_HEAD +
+        '<shape ' + _NS + ' android:shape="rectangle">\n'
+        '    <solid android:color="' + fill + '"/>\n'
+        '    <stroke android:width="1dp" android:color="' + stroke + '"/>\n'
+        '    <corners android:radius="14dp"/>\n'
+        '</shape>')
+
+def _v4_icon(paths, stroke_paths=""):
+    """Icona vettoriale bianca 24x24 (colorata poi con android:tint)."""
+    body = "".join('    <path android:fillColor="#FFFFFFFF" android:pathData="' + p + '"/>\n' for p in paths)
+    if stroke_paths:
+        body += ('    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" '
+                 'android:strokeLineCap="round" android:fillColor="#00000000" android:pathData="' + stroke_paths + '"/>\n')
+    return (_XML_HEAD +
+        '<vector ' + _NS + '\n'
+        '    android:width="24dp" android:height="24dp"\n'
+        '    android:viewportWidth="24" android:viewportHeight="24">\n' + body + '</vector>')
+
+V4_ICONS = {
+    "ic_v4_nav":      _v4_icon(["M12,2L4.5,20.29l0.71,0.71L12,18l6.79,3 0.71,-0.71z"]),
+    "ic_v4_map":      _v4_icon(["M20.5,3l-0.16,0.03L15,5.1 9,3 3.36,4.9c-0.21,0.07 -0.36,0.25 -0.36,0.48V20.5c0,0.28 0.22,0.5 0.5,0.5l0.16,-0.03L9,18.9l6,2.1 5.64,-1.9c0.21,-0.07 0.36,-0.25 0.36,-0.48V3.5c0,-0.28 -0.22,-0.5 -0.5,-0.5zM15,19l-6,-2.11V5l6,2.11V19z"]),
+    "ic_v4_tools":    _v4_icon(["M22.7,19l-9.1,-9.1c0.9,-2.3 0.4,-5 -1.5,-6.9 -2,-2 -5,-2.4 -7.4,-1.3L9,6 6,9 1.6,4.7C0.4,7.1 0.9,10.1 2.9,12.1c1.9,1.9 4.6,2.4 6.9,1.5l9.1,9.1c0.4,0.4 1,0.4 1.4,0l2.3,-2.3c0.5,-0.4 0.5,-1.1 0.1,-1.4z"]),
+    "ic_v4_fire":     _v4_icon(["M13.5,0.67s0.74,2.65 0.74,4.8c0,2.06 -1.35,3.73 -3.41,3.73 -2.07,0 -3.63,-1.67 -3.63,-3.73l0.03,-0.36C5.21,7.51 4,10.62 4,14c0,4.42 3.58,8 8,8s8,-3.58 8,-8C20,8.61 17.41,3.8 13.5,0.67zM11.71,19c-1.78,0 -3.22,-1.4 -3.22,-3.14 0,-1.62 1.05,-2.76 2.81,-3.12 1.77,-0.36 3.6,-1.21 4.62,-2.58 0.39,1.29 0.59,2.65 0.59,4.04 0,2.65 -2.15,4.8 -4.8,4.8z"]),
+    "ic_v4_chat":     _v4_icon(["M20,2H4c-1.1,0 -1.99,0.9 -1.99,2L2,22l4,-4h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zM6,9h12v2H6V9zm8,5H6v-2h8v2zm4,-6H6V6h12v2z"]),
+    "ic_v4_sos":      _v4_icon(["M1,21h22L12,2 1,21zm12,-3h-2v-2h2v2zm0,-4h-2v-4h2v4z"]),
+    "ic_v4_download": _v4_icon(["M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z"]),
+    "ic_v4_pin":      _v4_icon(["M12,2C8.13,2 5,5.13 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.87 -3.13,-7 -7,-7zm0,9.5c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5 2.5,1.12 2.5,2.5 -1.12,2.5 -2.5,2.5z"]),
+    "ic_v4_stats":    _v4_icon(["M5,9.2h3V19H5zM10.6,5h2.8v14h-2.8zm5.6,8H19v6h-2.8z"]),
+    "ic_v4_radar":    _v4_icon(["M12,10.2a1.8,1.8 0 1,0 0.01,0z"],
+                               "M12,3a9,9 0 1,0 9,9 M12,7a5,5 0 1,0 5,5 M12,12L19,5"),
+    "ic_v4_mic":      _v4_icon(["M12,14c1.66,0 2.99,-1.34 2.99,-3L15,5c0,-1.66 -1.34,-3 -3,-3S9,3.34 9,5v6c0,1.66 1.34,3 3,3zm5.3,-3c0,3 -2.54,5.1 -5.3,5.1S6.7,14 6.7,11H5c0,3.41 2.72,6.23 6,6.72V21h2v-3.28c3.28,-0.48 6,-3.3 6,-6.72h-1.7z"]),
+    "ic_v4_flag":     _v4_icon(["M14.4,6L14,4H5v17h2v-7h5.6l0.4,2h7V6z"]),
+    "ic_v4_help":     _v4_icon(["M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm1,17h-2v-2h2v2zm2.07,-7.75l-0.9,0.92C13.45,12.9 13,13.5 13,15h-2v-0.5c0,-1.1 0.45,-2.1 1.17,-2.83l1.24,-1.26c0.37,-0.36 0.59,-0.86 0.59,-1.41 0,-1.1 -0.9,-2 -2,-2s-2,0.9 -2,2H8c0,-2.21 1.79,-4 4,-4s4,1.79 4,4c0,0.88 -0.36,1.68 -0.93,2.25z"]),
+    "ic_v4_shield":   _v4_icon(["M12,1L3,5v6c0,5.55 3.84,10.74 9,12 5.16,-1.26 9,-6.45 9,-12V5l-9,-4z"]),
+    "ic_v4_drone":    _v4_icon(["M6,3.2a2.8,2.8 0 1,0 0.01,0z", "M18,3.2a2.8,2.8 0 1,0 0.01,0z",
+                                "M6,15.2a2.8,2.8 0 1,0 0.01,0z", "M18,15.2a2.8,2.8 0 1,0 0.01,0z",
+                                "M9.5,9.5h5v5h-5z"],
+                               "M6,6L18,18 M18,6L6,18"),
+    "ic_v4_play":     _v4_icon(["M8,5v14l11,-7z"]),
+    "ic_v4_back":     _v4_icon(["M15.41,7.41L14,6l-6,6 6,6 1.41,-1.41L10.83,12z"]),
+    "ic_v4_globe":    _v4_icon(["M12,2C6.48,2 2,6.48 2,12s4.48,10 10,10 10,-4.48 10,-10S17.52,2 12,2zm-1,17.93c-3.95,-0.49 -7,-3.85 -7,-7.93 0,-0.62 0.08,-1.21 0.21,-1.79L9,15v1c0,1.1 0.9,2 2,2v1.93zm6.9,-2.54c-0.26,-0.81 -1,-1.39 -1.9,-1.39h-1v-3c0,-0.55 -0.45,-1 -1,-1H8v-2h2c0.55,0 1,-0.45 1,-1V7h2c1.1,0 2,-0.9 2,-2v-0.41c2.93,1.19 5,4.06 5,7.41 0,2.08 -0.8,3.97 -2.1,5.39z"]),
+}
+
+V4_DRAWABLES = {}
+for _name, _hex in V4_ACCENTS.items():
+    V4_DRAWABLES["bg_tile_" + _name] = _v4_tile_bg(_hex)
+    V4_DRAWABLES["bg_disc_" + _name] = _v4_disc(_hex)
+V4_DRAWABLES.update({
+    # scheda vetro neutra (liste, schede droni, segnalazioni)
+    "bg_tile_glass": _v4_tile_bg("8FB3D0", "18dp"),
+    # scheda "olografica" del radar (bordo ciano luminoso)
+    "bg_card_holo":
+        _XML_HEAD +
+        '<layer-list ' + _NS + '>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="linear" android:angle="300"\n'
+        '                android:startColor="#0F2238" android:endColor="#060D1A"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <gradient android:type="radial" android:gradientRadius="420"\n'
+        '                android:centerX="0.75" android:centerY="0.5"\n'
+        '                android:startColor="#2200E5FF" android:endColor="#0000E5FF"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#00000000"/>\n'
+        '            <stroke android:width="1.5dp" android:color="#7700E5FF"/>\n'
+        '            <corners android:radius="26dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</layer-list>',
+    # riquadro informativo (testi di stato e avvertenze)
+    "bg_hint":
+        _XML_HEAD +
+        '<shape ' + _NS + ' android:shape="rectangle">\n'
+        '    <solid android:color="#B30B1424"/>\n'
+        '    <stroke android:width="1dp" android:color="#2200E5FF"/>\n'
+        '    <corners android:radius="16dp"/>\n'
+        '</shape>',
+    "bg_hint_red":
+        _XML_HEAD +
+        '<shape ' + _NS + ' android:shape="rectangle">\n'
+        '    <solid android:color="#B31F0812"/>\n'
+        '    <stroke android:width="1dp" android:color="#88FF1744"/>\n'
+        '    <corners android:radius="16dp"/>\n'
+        '</shape>',
+    # campo di testo / menu a tendina
+    "bg_input":
+        _XML_HEAD +
+        '<shape ' + _NS + ' android:shape="rectangle">\n'
+        '    <solid android:color="#0F1A2B"/>\n'
+        '    <stroke android:width="1dp" android:color="#4400E5FF"/>\n'
+        '    <corners android:radius="14dp"/>\n'
+        '</shape>',
+    # pulsante "indietro" a pillola
+    "bg_pill_back":
+        _XML_HEAD +
+        '<ripple ' + _NS + ' android:color="#4000E5FF">\n'
+        '    <item>\n'
+        '        <shape android:shape="rectangle">\n'
+        '            <solid android:color="#1AFFFFFF"/>\n'
+        '            <stroke android:width="1dp" android:color="#33FFFFFF"/>\n'
+        '            <corners android:radius="22dp"/>\n'
+        '        </shape>\n'
+        '    </item>\n'
+        '</ripple>',
+    "bg_chip_on":    _v4_chip("#1A00FF88", "#6600FF88"),
+    "bg_chip_warn":  _v4_chip("#1AFFD600", "#66FFD600"),
+    "bg_chip_alert": _v4_chip("#22FF1744", "#99FF1744"),
+    "bg_chip_off":   _v4_chip("#12FFFFFF", "#33FFFFFF"),
+    "bg_chip_violet": _v4_chip("#26B388FF", "#88B388FF"),
+})
+V4_DRAWABLES.update(V4_ICONS)
+
+# Transizioni fra schermate: la nuova scivola da destra ingrandendosi,
+# la vecchia arretra e si scurisce (effetto profondita').
+def _v4_anim(fx, tx, fa, ta, fs, ts, interp="decelerate_cubic", dur=300):
+    return (_XML_HEAD +
+        '<set ' + _NS + '\n'
+        '    android:interpolator="@android:interpolator/' + interp + '"\n'
+        '    android:duration="' + str(dur) + '" android:shareInterpolator="true">\n'
+        '    <translate android:fromXDelta="' + fx + '" android:toXDelta="' + tx + '"/>\n'
+        '    <alpha android:fromAlpha="' + fa + '" android:toAlpha="' + ta + '"/>\n'
+        '    <scale android:fromXScale="' + fs + '" android:toXScale="' + ts + '"\n'
+        '        android:fromYScale="' + fs + '" android:toYScale="' + ts + '"\n'
+        '        android:pivotX="50%" android:pivotY="50%"/>\n'
+        '</set>')
+
+V4_ANIMS = {
+    "fx_open_enter":  _v4_anim("12%", "0%", "0.0", "1.0", "0.94", "1.0"),
+    "fx_open_exit":   _v4_anim("0%", "-6%", "1.0", "0.35", "1.0", "0.94"),
+    "fx_close_enter": _v4_anim("-6%", "0%", "0.35", "1.0", "0.94", "1.0"),
+    "fx_close_exit":  _v4_anim("0%", "12%", "1.0", "0.0", "1.0", "0.94", "accelerate_cubic", 260),
+}
+
+# ---------------------------------------------------------------- mattoni layout
+def _v4_header(back_id, title_text, subtitle, accent="#00E5FF", right_chip_id=None, right_text=""):
+    right = ""
+    if right_chip_id:
+        right = ('        <TextView android:id="@+id/' + right_chip_id + '"\n'
+                 '            android:layout_width="wrap_content" android:layout_height="30dp"\n'
+                 '            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp"\n'
+                 '            android:text="' + right_text + '" android:textSize="11sp" android:textStyle="bold"\n'
+                 '            android:textColor="#8FB3D0" android:background="@drawable/bg_chip_off"\n'
+                 '            android:clickable="true" android:focusable="true"/>\n')
+    return ('    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '        android:orientation="horizontal" android:gravity="center_vertical"\n'
+            '        android:layout_marginBottom="14dp">\n'
+            '        <ImageView android:id="@+id/' + back_id + '"\n'
+            '            android:layout_width="44dp" android:layout_height="44dp" android:padding="10dp"\n'
+            '            android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+            '            android:background="@drawable/bg_pill_back" android:clickable="true"\n'
+            '            android:focusable="true" android:contentDescription="Indietro"/>\n'
+            '        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+            '            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">\n'
+            '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '                android:text="' + title_text + '" android:textColor="' + accent + '"\n'
+            '                android:textSize="20sp" android:textStyle="bold" android:letterSpacing="0.06"\n'
+            '                android:fontFamily="sans-serif-condensed"\n'
+            '                android:shadowColor="' + accent + '" android:shadowRadius="14"/>\n'
+            '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '                android:text="' + subtitle + '" android:textColor="#5A7A99" android:textSize="11.5sp"/>\n'
+            '        </LinearLayout>\n' + right +
+            '    </LinearLayout>\n')
+
+def _v4_tile(vid, icon, title_text, sub, accent, height="112dp", end_margin=True, title_id=None):
+    hexcol = V4_ACCENTS[accent]
+    tid = (' android:id="@+id/' + title_id + '"') if title_id else ""
+    sub_xml = ""
+    if sub:
+        sub_xml = ('        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                   '            android:text="' + sub + '" android:textColor="#8FB3D0" android:textSize="11sp"\n'
+                   '            android:maxLines="2" android:ellipsize="end" android:layout_marginTop="2dp"/>\n')
+    return ('    <LinearLayout android:id="@+id/' + vid + '"\n'
+            '        android:layout_width="0dp" android:layout_height="' + height + '" android:layout_weight="1"\n'
+            '        android:orientation="vertical" android:gravity="center_vertical" android:padding="14dp"\n'
+            '        android:background="@drawable/bg_tile_' + accent + '" android:elevation="6dp"\n'
+            '        android:clickable="true" android:focusable="true"' +
+            ('\n        android:layout_marginEnd="12dp"' if end_margin else '') + '>\n'
+            '        <ImageView android:layout_width="36dp" android:layout_height="36dp" android:padding="7dp"\n'
+            '            android:src="@drawable/' + icon + '" android:tint="#' + hexcol + '"\n'
+            '            android:background="@drawable/bg_disc_' + accent + '" android:contentDescription="' + title_text + '"/>\n'
+            '        <TextView' + tid + ' android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '            android:text="' + title_text + '" android:textColor="#E8F4FD" android:textSize="14sp"\n'
+            '            android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+            '            android:letterSpacing="0.03" android:layout_marginTop="10dp" android:maxLines="1"\n'
+            '            android:ellipsize="end"/>\n' + sub_xml +
+            '    </LinearLayout>\n')
+
+def _v4_row(*tiles, margin="12dp"):
+    return ('<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '    android:orientation="horizontal" android:layout_marginBottom="' + margin + '">\n'
+            + "".join(tiles) + '</LinearLayout>\n')
+
+def _v4_section(text):
+    return ('<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '    android:text="' + text + '" android:textColor="#00E5FF" android:textSize="12sp"\n'
+            '    android:letterSpacing="0.18" android:textStyle="bold" android:layout_marginTop="10dp"\n'
+            '    android:layout_marginBottom="10dp" android:layout_marginStart="4dp"/>\n')
+
+def _v4_hint(vid, text, red=False, extra=""):
+    idattr = ('android:id="@+id/' + vid + '" ') if vid else ""
+    return ('<TextView ' + idattr + 'android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '    android:text="' + text + '" android:textColor="' + ("#FFB3C0" if red else "#CFE3F5") + '"\n'
+            '    android:textSize="12.5sp" android:lineSpacingMultiplier="1.3" android:padding="14dp"\n'
+            '    android:background="@drawable/' + ("bg_hint_red" if red else "bg_hint") + '"\n'
+            '    android:layout_marginBottom="12dp"' + extra + '/>\n')
+
+def _v4_chip_view(vid, text, end_margin=True):
+    return ('    <TextView android:id="@+id/' + vid + '"\n'
+            '        android:layout_width="0dp" android:layout_height="32dp" android:layout_weight="1"\n'
+            '        android:gravity="center" android:text="' + text + '" android:textSize="10sp"\n'
+            '        android:textStyle="bold" android:textColor="#8FB3D0" android:maxLines="1"\n'
+            '        android:background="@drawable/bg_chip_off" android:clickable="true" android:focusable="true"'
+            + ('\n        android:layout_marginEnd="6dp"' if end_margin else '') + '/>\n')
+
+def _v4_label(text):
+    return ('<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '    android:text="' + text + '" android:textColor="#8FB3D0" android:textSize="12sp"\n'
+            '    android:layout_marginBottom="6dp" android:layout_marginStart="4dp"/>\n')
+
+def _v4_spinner(vid):
+    return ('<Spinner android:id="@+id/' + vid + '"\n'
+            '    android:layout_width="match_parent" android:layout_height="50dp"\n'
+            '    android:background="@drawable/bg_input" android:popupBackground="#141E2E"\n'
+            '    android:paddingStart="6dp" android:layout_marginBottom="14dp"/>\n')
+
+def _v4_screen(inner, column_id, aurora=True):
+    """Schermata: aurora animata dietro e colonna a scorrimento davanti."""
+    bg = ('    <com.offlinegps.map.ui.AuroraView android:layout_width="match_parent"\n'
+          '        android:layout_height="match_parent"/>\n') if aurora else ""
+    return (_XML_HEAD +
+        '<FrameLayout ' + _NS + '\n'
+        '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+        '    android:background="#050A14">\n' + bg +
+        '<ScrollView android:layout_width="match_parent" android:layout_height="match_parent"\n'
+        '    android:overScrollMode="never">\n'
+        '<LinearLayout android:id="@+id/' + column_id + '"\n'
+        '    android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+        '    android:orientation="vertical" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+        '    android:paddingTop="18dp" android:paddingBottom="28dp">\n'
+        + inner +
+        '</LinearLayout></ScrollView></FrameLayout>')
+
+# ---------------------------------------------------------------- HOME v4.0
+LAYOUT_MAIN = (_XML_HEAD +
+    '<FrameLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="#050A14">\n'
+    '    <com.offlinegps.map.ui.AuroraView android:id="@+id/home_aurora"\n'
+    '        android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '<ScrollView android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:overScrollMode="never">\n'
+    '<LinearLayout android:id="@+id/home_column" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:orientation="vertical"\n'
+    '    android:paddingStart="18dp" android:paddingEnd="18dp" android:paddingTop="22dp"\n'
+    '    android:paddingBottom="28dp">\n'
+    # intestazione: logo con anello, saluto, titolo e orologio
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:gravity="center_vertical">\n'
+    '        <FrameLayout android:layout_width="58dp" android:layout_height="58dp">\n'
+    '            <ImageView android:layout_width="58dp" android:layout_height="58dp"\n'
+    '                android:src="@drawable/ic_splash_ring" android:contentDescription="Anello"/>\n'
+    '            <ImageView android:layout_width="38dp" android:layout_height="38dp"\n'
+    '                android:layout_gravity="center" android:src="@drawable/ic_gps"\n'
+    '                android:contentDescription="Logo"/>\n'
+    '        </FrameLayout>\n'
+    '        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+    '            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="14dp">\n'
+    '            <TextView android:id="@+id/tv_home_greet" android:layout_width="wrap_content"\n'
+    '                android:layout_height="wrap_content" android:text="Ciao"\n'
+    '                android:textColor="#8FB3D0" android:textSize="13sp"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="OfflineGPS 3D" android:textColor="#E8F4FD" android:textSize="27sp"\n'
+    '                android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+    '                android:shadowColor="#00E5FF" android:shadowRadius="18"/>\n'
+    '        </LinearLayout>\n'
+    '        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '            android:orientation="vertical" android:gravity="end">\n'
+    '            <TextView android:id="@+id/tv_home_clock" android:layout_width="wrap_content"\n'
+    '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
+    '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="v4.0 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:letterSpacing="0.12"/>\n'
+    '        </LinearLayout>\n'
+    '    </LinearLayout>\n'
+    # chip di stato
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginTop="16dp">\n'
+    + _v4_chip_view("chip_gps", "GPS")
+    + _v4_chip_view("chip_map", "MAPPA")
+    + _v4_chip_view("chip_routing", "ROUTING")
+    + _v4_chip_view("chip_service", "TRACCIA", end_margin=False) +
+    '    </LinearLayout>\n'
+    # scheda in evidenza: SENTINELLA CIELO con radar 3D vivo
+    '    <FrameLayout android:id="@+id/btn_sky_watch"\n'
+    '        android:layout_width="match_parent" android:layout_height="212dp"\n'
+    '        android:layout_marginTop="16dp" android:background="@drawable/bg_card_holo"\n'
+    '        android:clickable="true" android:focusable="true" android:elevation="10dp">\n'
+    '        <com.offlinegps.map.ui.SkyRadarView android:id="@+id/home_radar"\n'
+    '            android:layout_width="190dp" android:layout_height="match_parent"\n'
+    '            android:layout_gravity="end"/>\n'
+    '        <LinearLayout android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '            android:orientation="vertical" android:padding="18dp">\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="24dp"\n'
+    '                android:gravity="center" android:paddingStart="10dp" android:paddingEnd="10dp"\n'
+    '                android:text="NUOVO · v4.0" android:textColor="#D9C7FF" android:textSize="10sp"\n'
+    '                android:textStyle="bold" android:letterSpacing="0.1"\n'
+    '                android:background="@drawable/bg_chip_violet"/>\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="SENTINELLA\\nCIELO" android:textColor="#E8F4FD" android:textSize="23sp"\n'
+    '                android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+    '                android:layout_marginTop="10dp" android:lineSpacingMultiplier="0.95"\n'
+    '                android:shadowColor="#00E5FF" android:shadowRadius="16"/>\n'
+    '            <TextView android:layout_width="160dp" android:layout_height="wrap_content"\n'
+    '                android:text="Radar droni passivo: Remote ID + ascolto eliche"\n'
+    '                android:textColor="#8FB3D0" android:textSize="12sp" android:layout_marginTop="4dp"/>\n'
+    '            <View android:layout_width="1dp" android:layout_height="0dp" android:layout_weight="1"/>\n'
+    '            <TextView android:id="@+id/tv_home_sky" android:layout_width="170dp"\n'
+    '                android:layout_height="wrap_content" android:text="Tocca per scansionare"\n'
+    '                android:textColor="#8FB3D0" android:textSize="11.5sp" android:textStyle="bold"/>\n'
+    '        </LinearLayout>\n'
+    '    </FrameLayout>\n'
+    # azioni principali
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginTop="14dp">\n'
+    + _v4_tile("btn_navigate", "ic_v4_nav", "NAVIGA", "Percorso offline con voce", "green", "122dp")
+    + _v4_tile("btn_open_map", "ic_v4_map", "MAPPA 3D", "Mappe, tracce, waypoint", "cyan", "122dp", end_margin=False) +
+    '    </LinearLayout>\n'
+    '    <TextView android:id="@+id/tv_status" android:layout_width="match_parent"\n'
+    '        android:layout_height="wrap_content" android:layout_marginTop="12dp"\n'
+    '        android:padding="12dp" android:background="@drawable/bg_hint"\n'
+    '        android:textColor="#8FB3D0" android:textSize="12sp"/>\n'
+    + _v4_section("STRUMENTI E SICUREZZA")
+    + _v4_row(_v4_tile("btn_tools", "ic_v4_tools", "STRUMENTI", "30+ strumenti outdoor", "yellow"),
+              _v4_tile("btn_survival", "ic_v4_fire", "SOPRAVVIVENZA", "Kit completo offline", "orange", end_margin=False))
+    + _v4_row(_v4_tile("btn_emergency", "ic_v4_sos", "EMERGENZA SOS", "112, posizione, segnali", "red"),
+              _v4_tile("btn_chat", "ic_v4_chat", "CHAT OFFLINE", "Bluetooth mesh", "green", end_margin=False))
+    + _v4_row(_v4_tile("btn_home_acoustic", "ic_v4_mic", "ASCOLTO DRONI", "Riconosce le eliche", "pink"),
+              _v4_tile("btn_home_check", "ic_v4_help", "È UN DRONE?", "Aereo, satellite, Venere?", "violet", end_margin=False))
+    + _v4_section("DATI")
+    + _v4_row(_v4_tile("btn_download", "ic_v4_download", "DOWNLOAD", "", "cyan", "96dp"),
+              _v4_tile("btn_waypoints", "ic_v4_pin", "WAYPOINT", "", "green", "96dp"),
+              _v4_tile("btn_stats", "ic_v4_stats", "STATS", "", "orange", "96dp", end_margin=False)) +
+    '    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:gravity="center" android:layout_marginTop="16dp"\n'
+    '        android:text="Creator Maikgost · funziona senza internet"\n'
+    '        android:textColor="#5A7A99" android:textSize="11sp" android:letterSpacing="0.08"/>\n'
+    '</LinearLayout></ScrollView></FrameLayout>')
+
+# ---------------------------------------------------------------- SENTINELLA CIELO
+LAYOUT_SKY_WATCH = _v4_screen(
+    _v4_header("btn_sky_back", "SENTINELLA CIELO", "Rilevamento passivo droni · Remote ID + audio",
+               right_chip_id="tv_sky_live", right_text="PAUSA") +
+    '    <FrameLayout android:layout_width="match_parent" android:layout_height="380dp"\n'
+    '        android:background="@drawable/bg_card_holo" android:padding="4dp">\n'
+    '        <com.offlinegps.map.ui.SkyRadarView android:id="@+id/sky_radar"\n'
+    '            android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '        <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '            android:layout_gravity="top|end" android:orientation="horizontal"\n'
+    '            android:layout_margin="10dp">\n'
+    '            <TextView android:id="@+id/tv_sky_3d" android:layout_width="wrap_content"\n'
+    '                android:layout_height="28dp" android:gravity="center" android:paddingStart="10dp"\n'
+    '                android:paddingEnd="10dp" android:text="VISTA 3D" android:textSize="10sp"\n'
+    '                android:textStyle="bold" android:textColor="#00FF88"\n'
+    '                android:background="@drawable/bg_chip_on" android:clickable="true"\n'
+    '                android:focusable="true" android:layout_marginEnd="6dp"/>\n'
+    '            <TextView android:id="@+id/tv_sky_north" android:layout_width="wrap_content"\n'
+    '                android:layout_height="28dp" android:gravity="center" android:paddingStart="10dp"\n'
+    '                android:paddingEnd="10dp" android:text="NORD" android:textSize="10sp"\n'
+    '                android:textStyle="bold" android:textColor="#8FB3D0"\n'
+    '                android:background="@drawable/bg_chip_off" android:clickable="true"\n'
+    '                android:focusable="true"/>\n'
+    '        </LinearLayout>\n'
+    '    </FrameLayout>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginTop="12dp" android:layout_marginBottom="12dp">\n'
+    + _v4_chip_view("chip_sky_ble", "BLUETOOTH")
+    + _v4_chip_view("chip_sky_wifi", "WI-FI")
+    + _v4_chip_view("chip_sky_mic", "AUDIO")
+    + _v4_chip_view("chip_sky_voice", "VOCE", end_margin=False) +
+    '    </LinearLayout>\n'
+    + _v4_hint("tv_sky_summary", "Avvio...")
+    + _v4_row(_v4_tile("btn_sky_scan", "ic_v4_radar", "AVVIA SCANSIONE", "Remote ID Bluetooth + Wi-Fi", "cyan",
+                       title_id="tv_sky_scan_label"),
+              _v4_tile("btn_sky_demo", "ic_v4_play", "DEMO", "3 droni simulati", "yellow", end_margin=False))
+    + _v4_row(_v4_tile("btn_sky_audio", "ic_v4_mic", "ASCOLTO", "Spettrogramma eliche", "pink"),
+              _v4_tile("btn_sky_spot", "ic_v4_flag", "SEGNALA", "Zona anonima ~1 km", "cyan", end_margin=False))
+    + _v4_row(_v4_tile("btn_sky_check", "ic_v4_help", "È UN DRONE?", "Aereo? Satellite? Venere?", "violet"),
+              _v4_tile("btn_sky_airspace", "ic_v4_globe", "SPAZIO AEREO", "Zone d-flight e regole", "green", end_margin=False))
+    + _v4_section("DRONI RILEVATI") +
+    '<LinearLayout android:id="@+id/sky_list" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _v4_hint("tv_sky_empty", "Nessun drone in vista. Molti droni economici o costruiti prima del 2024 "
+               "NON trasmettono il Remote ID: per quelli usa anche l\'ascolto acustico.")
+    + _v4_hint(None, "SOLO RILEVAMENTO PASSIVO. L\'app riceve i segnali che i droni trasmettono per legge "
+               "(Remote ID, Reg. UE 2019/945) e ascolta il loro rumore: non trasmette, non disturba e non "
+               "blocca nulla. Disturbare le frequenze (jamming) o abbattere un drone e\' vietato ai privati. "
+               "In caso di pericolo chiama il 112.", red=True),
+    "sky_column")
+
+# ---------------------------------------------------------------- ASCOLTO ACUSTICO
+LAYOUT_ACOUSTIC = _v4_screen(
+    _v4_header("btn_ac_back", "ASCOLTO DRONI", "Analisi spettrale delle eliche, sul telefono", "#FF3D71") +
+    '    <FrameLayout android:layout_width="match_parent" android:layout_height="250dp"\n'
+    '        android:background="@drawable/bg_card_holo">\n'
+    '        <com.offlinegps.map.ui.NeonGaugeView android:id="@+id/ac_gauge"\n'
+    '            android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '    </FrameLayout>\n'
+    '<TextView android:id="@+id/tv_ac_verdict" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:gravity="center" android:layout_marginTop="14dp"\n'
+    '    android:text="MICROFONO SPENTO" android:textColor="#5A7A99" android:textSize="19sp"\n'
+    '    android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"/>\n'
+    '<TextView android:id="@+id/tv_ac_details" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:gravity="center" android:layout_marginTop="4dp"\n'
+    '    android:layout_marginBottom="6dp" android:textColor="#8FB3D0" android:textSize="12sp"/>\n'
+    + _v4_section("SPETTROGRAMMA 0-3 kHz") +
+    '    <FrameLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:background="@drawable/bg_tile_glass" android:padding="8dp"\n'
+    '        android:layout_marginBottom="12dp">\n'
+    '        <com.offlinegps.map.ui.SpectrogramView android:id="@+id/ac_spectro"\n'
+    '            android:layout_width="match_parent" android:layout_height="230dp"/>\n'
+    '    </FrameLayout>\n'
+    + _v4_row(_v4_tile("btn_ac_toggle", "ic_v4_mic", "AVVIA ASCOLTO", "Nessuna registrazione salvata", "green",
+                       title_id="tv_ac_toggle_label"),
+              _v4_tile("btn_ac_report", "ic_v4_flag", "SEGNALA", "Allega il punteggio", "cyan", end_margin=False))
+    + _v4_hint(None, "COME FUNZIONA\\nLe eliche producono un tono (frequenza di passaggio delle pale, 70-520 Hz) "
+               "con armoniche ordinate e stabili per secondi. L\'analisi cerca questa scala di righe nello "
+               "spettro e controlla che resti ferma nel tempo: voce, musica, vento e traffico vengono scartati."
+               "\\n\\nLIMITI: portata tipica 50-150 m in un posto tranquillo; tosaerba, ventole e scooter possono "
+               "ingannarla; il vento forte copre il segnale. E\' un indizio, non una prova."),
+    "ac_column")
+
+# ---------------------------------------------------------------- SKYSPOT
+LAYOUT_SKYSPOT = _v4_screen(
+    _v4_header("btn_spot_back", "SEGNALA AVVISTAMENTO", "Diario anonimo · resta sul telefono") +
+    _v4_hint(None, "NON sostituisce il 112. Se c\'e\' un pericolo per persone, aerei o infrastrutture "
+             "chiama subito il numero di emergenza.", red=True)
+    + _v4_row(_v4_tile("btn_spot_112", "ic_v4_sos", "CHIAMA 112", "Apre il tastierino", "red", "96dp",
+                       end_margin=False))
+    + _v4_hint("tv_spot_rid", "", extra='\n    android:visibility="gone"')
+    + _v4_label("Cosa hai notato") + _v4_spinner("sp_spot_kind")
+    + _v4_label("Quanti oggetti") + _v4_spinner("sp_spot_count")
+    + _v4_label("Direzione") +
+    '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '    android:orientation="horizontal">\n'
+    '    <Spinner android:id="@+id/sp_spot_dir" android:layout_width="0dp" android:layout_height="50dp"\n'
+    '        android:layout_weight="1" android:background="@drawable/bg_input"\n'
+    '        android:popupBackground="#141E2E" android:paddingStart="6dp" android:layout_marginBottom="14dp"/>\n'
+    '    <TextView android:id="@+id/btn_spot_compass" android:layout_width="wrap_content"\n'
+    '        android:layout_height="50dp" android:gravity="center" android:paddingStart="14dp"\n'
+    '        android:paddingEnd="14dp" android:layout_marginStart="8dp" android:text="USA BUSSOLA"\n'
+    '        android:textColor="#00E5FF" android:textSize="12sp" android:textStyle="bold"\n'
+    '        android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"/>\n'
+    '</LinearLayout>\n'
+    + _v4_label("Altezza stimata") + _v4_spinner("sp_spot_height")
+    + _v4_label("Durata") + _v4_spinner("sp_spot_duration")
+    + _v4_label("Note (colore luci, forma, rumore, rotta...)") +
+    '<EditText android:id="@+id/et_spot_notes" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:minHeight="90dp" android:gravity="top|start"\n'
+    '    android:padding="12dp" android:background="@drawable/bg_input" android:textColor="#E8F4FD"\n'
+    '    android:textColorHint="#5A7A99" android:hint="Facoltativo" android:inputType="textMultiLine|textCapSentences"\n'
+    '    android:layout_marginBottom="14dp"/>\n'
+    + _v4_hint("tv_spot_loc", "Posizione...")
+    + _v4_row(_v4_tile("btn_spot_save", "ic_v4_flag", "SALVA SEGNALAZIONE", "Puoi condividerla dopo", "green",
+                       "96dp", end_margin=False))
+    + _v4_section("LE TUE SEGNALAZIONI") +
+    '<LinearLayout android:id="@+id/spot_list" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:orientation="vertical"/>\n',
+    "spot_column")
+
+# ---------------------------------------------------------------- E' UN DRONE?
+SIGHTING_QUESTIONS = ["Cosa hai notato?", "Com\'e\' la luce?", "Come si muove?",
+                      "Che rumore fa?", "Quanto dura?", "Quando?"]
+LAYOUT_SIGHTING_CHECK = _v4_screen(
+    _v4_header("btn_chk_back", "È DAVVERO UN DRONE?", "6 domande per evitare i falsi allarmi", "#B388FF")
+    + "".join(_v4_label(str(i + 1) + ". " + q) + _v4_spinner("sp_chk_q" + str(i + 1))
+              for i, q in enumerate(SIGHTING_QUESTIONS))
+    + _v4_section("RISULTATO PIU\' PROBABILE") +
+    '<LinearLayout android:id="@+id/chk_results" android:layout_width="match_parent"\n'
+    '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _v4_row(_v4_tile("btn_chk_sky", "ic_v4_radar", "APRI LA SENTINELLA", "Cerca Remote ID e ronzio eliche",
+                       "cyan", "96dp", end_margin=False))
+    + _v4_section("COSA FARE SE VEDI UN DRONE")
+    + _v4_hint(None, "1. Mantieni la calma: la maggior parte degli avvistamenti notturni sono aerei, "
+               "satelliti o pianeti.\\n"
+               "2. NON tentare di abbattere, disturbare o catturare il drone: e\' pericoloso e vietato.\\n"
+               "3. Annota ora, direzione, altezza stimata, colori delle luci e rumore. Se puoi farlo in "
+               "sicurezza, fai un video.\\n"
+               "4. Se sorvola aeroporti, infrastrutture, eventi affollati o ti sembra minaccioso: chiama il 112 "
+               "e descrivi quello che vedi.\\n"
+               "5. Se un drone cade: non toccarlo (le batterie al litio possono incendiarsi), allontana le "
+               "persone e chiama il 112.\\n"
+               "6. Drone che riprende casa tua: annota tutto e segnala alla Polizia Locale o al 112.\\n"
+               "7. Non avvicinarti al pilota, anche se il Remote ID ne mostra la posizione.")
+    + _v4_section("NOTIZIE E ALLARMI")
+    + _v4_hint(None, "Prima di condividere notizie su droni ostili o minacce, controlla la fonte: agenzie di "
+               "stampa, siti istituzionali (Ministero della Difesa, Protezione Civile, ENAC). Le voci non "
+               "verificate creano panico e intasano il 112. Questa app non riceve allerte ufficiali: "
+               "per quelle segui IT-alert e la Protezione Civile."),
+    "chk_column")
+
+LAYOUT_ITEM_SPINNER_DARK = (_XML_HEAD +
+    '<TextView ' + _NS + ' android:id="@android:id/text1"\n'
+    '    android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '    android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="12dp"\n'
+    '    android:paddingBottom="12dp" android:textColor="#E8F4FD" android:textSize="14sp"\n'
+    '    android:maxLines="1" android:ellipsize="end"/>')
+
+# <<< V4 SENTINELLA CIELO
+
 # ============================================================
 #  FILE MAP + FUNZIONI BUILDER (multipiattaforma v3.0)
 # ============================================================
@@ -9796,6 +14089,26 @@ def build_java_file_map():
         f"{PKG_UI}/FirstAidActivity.java":       FIRST_AID_ACTIVITY,
         f"{PKG_UI}/PaceCalcActivity.java":       PACE_CALC_ACTIVITY,
         f"{PKG_UI}/SpeedHudActivity.java":       SPEED_HUD_ACTIVITY,
+        # NUOVI v4.0 — SENTINELLA CIELO + grafica
+        f"{PKG_SKY}/RemoteIdParser.java":        SKY_REMOTE_ID_PARSER,
+        f"{PKG_SKY}/Fft.java":                   SKY_FFT,
+        f"{PKG_SKY}/AcousticAnalyzer.java":      SKY_ACOUSTIC_ANALYZER,
+        f"{PKG_SKY}/AcousticDetector.java":      SKY_ACOUSTIC_DETECTOR,
+        f"{PKG_SKY}/DroneTrack.java":            SKY_DRONE_TRACK,
+        f"{PKG_SKY}/SkyState.java":              SKY_STATE,
+        f"{PKG_SKY}/RemoteIdScanner.java":       SKY_REMOTE_ID_SCANNER,
+        f"{PKG_SKY}/SkySpotStore.java":          SKY_SPOT_STORE,
+        f"{PKG_SKY}/HeadingSensor.java":         SKY_HEADING_SENSOR,
+        f"{PKG_UI}/UiFx.java":                   UI_FX,
+        f"{PKG_UI}/SkyUi.java":                  SKY_UI,
+        f"{PKG_UI}/SkyRadarView.java":           SKY_RADAR_VIEW,
+        f"{PKG_UI}/SpectrogramView.java":        SPECTROGRAM_VIEW,
+        f"{PKG_UI}/NeonGaugeView.java":          NEON_GAUGE_VIEW,
+        f"{PKG_UI}/AuroraView.java":             AURORA_VIEW,
+        f"{PKG_UI}/SkyWatchActivity.java":       SKY_WATCH_ACTIVITY,
+        f"{PKG_UI}/AcousticDetectorActivity.java": ACOUSTIC_DETECTOR_ACTIVITY,
+        f"{PKG_UI}/SkySpotActivity.java":        SKY_SPOT_ACTIVITY,
+        f"{PKG_UI}/SightingCheckActivity.java":  SIGHTING_CHECK_ACTIVITY,
     }
 
 def build_layout_map():
@@ -9850,6 +14163,12 @@ def build_layout_map():
         "dialog_navigate_coords.xml":  DIALOG_NAVIGATE_COORDS,
         "activity_address_search.xml": LAYOUT_ADDRESS_SEARCH,
         "item_address_result.xml":     LAYOUT_ITEM_ADDRESS_RESULT,
+        # NUOVI v4.0
+        "activity_sky_watch.xml":      LAYOUT_SKY_WATCH,
+        "activity_acoustic.xml":       LAYOUT_ACOUSTIC,
+        "activity_skyspot.xml":        LAYOUT_SKYSPOT,
+        "activity_sighting_check.xml": LAYOUT_SIGHTING_CHECK,
+        "item_spinner_dark.xml":       LAYOUT_ITEM_SPINNER_DARK,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -9930,7 +14249,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v3.1")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v4.0")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -9994,6 +14313,11 @@ def create_project(java_path):
         write_file(res_dir / "drawable" / (icon_name + ".xml"), icon_xml)
     for d_name, d_xml in UI_DRAWABLES.items():
         write_file(res_dir / "drawable" / (d_name + ".xml"), d_xml)
+    # v4.0: riquadri vetro, chip, icone vettoriali e transizioni animate
+    for d_name, d_xml in V4_DRAWABLES.items():
+        write_file(res_dir / "drawable" / (d_name + ".xml"), d_xml)
+    for a_name, a_xml in V4_ANIMS.items():
+        write_file(res_dir / "anim" / (a_name + ".xml"), a_xml)
     for density in ("mdpi","hdpi","xhdpi","xxhdpi","xxxhdpi"):
         mip = res_dir / f"mipmap-{density}"
         mip.mkdir(parents=True, exist_ok=True)
@@ -10063,7 +14387,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v3.1.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v4.0.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -10077,6 +14401,18 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v4.0 - SENTINELLA CIELO:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Scanner Remote ID droni (Bluetooth + Wi-Fi) con radar 3D")
+    print(f"  {C.OK}[NEW]{C.RESET}  Avvisi a voce e vibrazione quando arriva un drone")
+    print(f"  {C.OK}[NEW]{C.RESET}  Ascolto droni: riconosce le eliche dal suono (spettrogramma)")
+    print(f"  {C.OK}[NEW]{C.RESET}  Segnala avvistamento con posizione anonima (~1 km)")
+    print(f"  {C.OK}[NEW]{C.RESET}  'E' davvero un drone?' + guida cosa fare + verifica notizie")
+    print(f"  {C.OK}[NEW]{C.RESET}  Modalita' DEMO con droni simulati")
+    print(f"  {C.OK}[GUI]{C.RESET}  Home nuova: aurora animata, griglia 3D, radar vivo, riquadri vetro")
+    print(f"  {C.OK}[GUI]{C.RESET}  Transizioni animate, pulsanti a molla e ripple in tutta l'app")
+    print(f"  {C.OK}[GUI]{C.RESET}  Tema scuro coerente (anche i dialoghi), percorso con alone neon")
+    info("Solo rilevamento passivo: niente jamming/contromisure. Non sostituisce il 112.")
 
     print(f"\n{C.BOLD}NOVITA v3.0:{C.RESET}")
     print(f"  {C.OK}[GUI]{C.RESET}  Home ridisegnata: card vetro + pulsanti neon 3D + griglia")
@@ -10111,7 +14447,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v3.1.apk")
+    info("1. Installa OfflineGPS-3D-v4.0.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -10123,7 +14459,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v3.1 - ricerca vie+civici completa")
+    print("  OfflineGPS 3D v4.0 - Sentinella Cielo + grafica nuova")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -10140,7 +14476,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v3.1 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v4.0 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

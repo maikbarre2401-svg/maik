@@ -131,6 +131,8 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        // sorgenti in UTF-8 anche su Windows (simboli come ° · ✓ nei testi)
+        encoding 'UTF-8'
     }
 
     buildFeatures { buildConfig true }
@@ -7533,47 +7535,89 @@ LAYOUT_QR = _scroll(_tool_header("QR POSIZIONE", "btn_qr_back", "#00E5FF")
 CHAT_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 import com.offlinegps.map.R;
-import java.io.InputStream;
-import java.io.OutputStream;
+import com.offlinegps.map.chat.MeshNode;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.sky.DroneTrack;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
-/** Chat di testo tra due telefoni via Bluetooth, senza internet. */
-public class ChatActivity extends AppCompatActivity {
+/**
+ * CHAT MESH OFFLINE via Bluetooth. Ogni telefono e' insieme "server" (accetta
+ * fino a 7 vicini) e "client" (si collega a chi trova): i messaggi rimbalzano
+ * di telefono in telefono fino a 7 salti. Senza accoppiamento (RFCOMM
+ * insicuro), con conferme di lettura, invio della posizione e SOS.
+ */
+public class ChatActivity extends AppCompatActivity implements MeshNode.Listener {
     private static final UUID APP_UUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
-    private static final String NAME = "OfflineGPSChat";
+    private static final String SERVICE = "OfflineGPSMesh";
+    private static final int REQ_BT = 7301, MAX_PEERS = 7, HISTORY_MAX = 300;
 
     private BluetoothAdapter adapter;
-    private BluetoothSocket socket;
-    private OutputStream outStream;
-    private Thread serverThread, clientThread, readThread;
+    private MeshNode node;
+    private volatile boolean running;
     private BluetoothServerSocket serverSocket;
+    private final List<BluetoothSocket> sockets = Collections.synchronizedList(new ArrayList<>());
+    private final Set<String> connected = Collections.synchronizedSet(new HashSet<>());
+    /** indirizzo Bluetooth -> {collegamento mesh, socket} per poter ricollegare chi cade. */
+    private final Map<String, Object[]> byAddr = Collections.synchronizedMap(new HashMap<>());
     private final Handler ui = new Handler(Looper.getMainLooper());
 
     private LinearLayout msgBox;
     private ScrollView scroll;
     private EditText etMsg;
-    private TextView tvStatus;
-    private boolean connected = false;
-    private String myName = "Io";
+    private TextView tvStatus, tvPeers, tvMe;
+    private final Map<String, TextView> ackViews = new HashMap<>();
+    private final List<String> history = new ArrayList<>();
+    private File historyFile;
+    private BroadcastReceiver discoveryReceiver;
+    private ArrayAdapter<String> foundAdapter;
+    private final List<BluetoothDevice> found = new ArrayList<>();
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
@@ -7582,264 +7626,465 @@ public class ChatActivity extends AppCompatActivity {
         scroll = findViewById(R.id.chat_scroll);
         etMsg = findViewById(R.id.chat_input);
         tvStatus = findViewById(R.id.chat_status);
+        tvPeers = findViewById(R.id.tv_chat_peers);
+        tvMe = findViewById(R.id.tv_chat_me);
+        historyFile = new File(getFilesDir(), "chat_mesh_history.txt");
 
-        View back = findViewById(R.id.btn_chat_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View host = findViewById(R.id.btn_chat_host);
-        if (host != null) host.setOnClickListener(v -> startHost());
-        View join = findViewById(R.id.btn_chat_join);
-        if (join != null) join.setOnClickListener(v -> startJoin());
-        View send = findViewById(R.id.btn_chat_send);
-        if (send != null) send.setOnClickListener(v -> sendMsg());
+        node = new MeshNode(myName());
+        node.setListener(this);
+        click(R.id.btn_chat_back, v -> finish());
+        click(R.id.btn_chat_send, v -> sendText());
+        click(R.id.btn_chat_visible, v -> makeVisible());
+        click(R.id.btn_chat_search, v -> searchAndConnect());
+        click(R.id.btn_chat_pos, v -> sendPosition());
+        click(R.id.btn_chat_sos, v -> confirmSos());
+        click(R.id.tv_chat_me, v -> editName());
+        updateMe();
+        loadHistory();
 
-        adapter = BluetoothAdapter.getDefaultAdapter();
-        if (adapter == null) { setStatus("Bluetooth non supportato"); return; }
-        ensurePerms();
+        BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        adapter = bm != null ? bm.getAdapter() : null;
+        if (adapter == null) { setStatus("Questo telefono non ha il Bluetooth"); return; }
+        if (ensurePerms()) startServer();
     }
 
-    private void ensurePerms() {
-        java.util.List<String> need = new java.util.ArrayList<>();
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED)
-                need.add(Manifest.permission.BLUETOOTH_CONNECT);
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED)
-                need.add(Manifest.permission.BLUETOOTH_SCAN);
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    // ------------------------------------------------------------ nome
+    private String myName() {
+        SharedPreferences p = getPreferences(MODE_PRIVATE);
+        String n = p.getString("nick", "");
+        if (n.isEmpty()) {
+            n = (Build.MODEL != null ? Build.MODEL : "Telefono").replaceAll("[^A-Za-z0-9 ]", "").trim();
+            if (n.length() > 14) n = n.substring(0, 14);
+            n += "-" + Integer.toString((int) (Math.random() * 900) + 100);
+            p.edit().putString("nick", n).apply();
         }
-        if (!need.isEmpty())
-            ActivityCompat.requestPermissions(this, need.toArray(new String[0]), 42);
+        return n;
     }
 
-    private boolean hasConnectPerm() {
-        return android.os.Build.VERSION.SDK_INT < 31 ||
-            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+    private void editName() {
+        final EditText et = new EditText(this);
+        et.setText(node.name());
+        et.setTextColor(0xFFE8F4FD);
+        new AlertDialog.Builder(this)
+            .setTitle("Il tuo nome nella chat")
+            .setView(et)
+            .setPositiveButton("Salva", (d, w) -> {
+                String n = et.getText().toString().replace("|", " ").trim();
+                if (n.isEmpty()) return;
+                if (n.length() > 24) n = n.substring(0, 24);
+                getPreferences(MODE_PRIVATE).edit().putString("nick", n).apply();
+                node.setName(n);
+                updateMe();
+            })
+            .setNegativeButton("Annulla", null).show();
     }
 
-    // ----- HOST: mette il telefono in ascolto -----
-    private void startHost() {
-        if (!hasConnectPerm()) { ensurePerms(); return; }
-        if (!adapter.isEnabled()) { Toast.makeText(this, "Attiva il Bluetooth", Toast.LENGTH_LONG).show(); return; }
-        setStatus("In attesa di connessione... (l'altro deve premere ENTRA)");
-        myName = "Host";
-        serverThread = new Thread(() -> {
+    private void updateMe() {
+        if (tvMe != null) tvMe.setText("Tu: " + node.name() + "  ·  tocca per cambiare");
+    }
+
+    // ------------------------------------------------------------ permessi
+    private String[] neededPerms() {
+        List<String> p = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 31) {
+            p.add(Manifest.permission.BLUETOOTH_CONNECT);
+            p.add(Manifest.permission.BLUETOOTH_SCAN);
+            p.add(Manifest.permission.BLUETOOTH_ADVERTISE);
+        } else {
+            p.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        return p.toArray(new String[0]);
+    }
+
+    private boolean hasPerms() {
+        for (String p : neededPerms()) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+        return true;
+    }
+
+    private boolean ensurePerms() {
+        if (hasPerms()) return true;
+        requestPermissions(neededPerms(), REQ_BT);
+        return false;
+    }
+
+    @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
+        super.onRequestPermissionsResult(req, p, res);
+        if (req == REQ_BT) {
+            if (hasPerms()) startServer();
+            else setStatus("Servono i permessi Bluetooth per la chat offline");
+        }
+    }
+
+    // ------------------------------------------------------------ Bluetooth
+    /** In ascolto: accetta fino a 7 vicini (senza accoppiamento). */
+    private void startServer() {
+        if (running || adapter == null) return;
+        if (!adapter.isEnabled()) {
+            setStatus("Accendi il Bluetooth per usare la chat");
+            try { startActivity(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)); } catch (Exception ignored) {}
+            return;
+        }
+        running = true;
+        Thread t = new Thread(() -> {
             try {
-                serverSocket = adapter.listenUsingRfcommWithServiceRecord(NAME, APP_UUID);
-                BluetoothSocket sock = serverSocket.accept();
-                try { serverSocket.close(); } catch (Exception ignored) {}
-                if (sock != null) { socket = sock; onConnected(); }
+                serverSocket = adapter.listenUsingInsecureRfcommWithServiceRecord(SERVICE, APP_UUID);
+                ui.post(() -> setStatus("In ascolto. Premi CERCA per collegarti a chi e' vicino, o VISIBILE per farti trovare."));
+                while (running) {
+                    BluetoothSocket sock = serverSocket.accept();
+                    if (sock == null) continue;
+                    if (node.linkCount() >= MAX_PEERS) { try { sock.close(); } catch (Exception ignored) {} continue; }
+                    attach(sock);
+                }
             } catch (SecurityException se) {
                 ui.post(() -> setStatus("Permesso Bluetooth mancante"));
             } catch (Exception e) {
-                ui.post(() -> setStatus("Errore host: " + e.getMessage()));
+                if (running) ui.post(() -> setStatus("Ascolto interrotto: " + e.getMessage()));
             }
-        });
-        serverThread.start();
+        }, "mesh-server");
+        t.setDaemon(true);
+        t.start();
     }
 
-    // ----- JOIN: si connette a un host gia' accoppiato -----
-    private void startJoin() {
-        if (!hasConnectPerm()) { ensurePerms(); return; }
-        if (!adapter.isEnabled()) { Toast.makeText(this, "Attiva il Bluetooth", Toast.LENGTH_LONG).show(); return; }
+    private void attach(BluetoothSocket sock) {
         try {
-            java.util.Set<BluetoothDevice> paired = adapter.getBondedDevices();
-            if (paired == null || paired.isEmpty()) {
-                Toast.makeText(this, "Prima accoppia i due telefoni nelle impostazioni Bluetooth", Toast.LENGTH_LONG).show();
-                return;
-            }
-            final java.util.List<BluetoothDevice> list = new java.util.ArrayList<>(paired);
-            String[] labels = new String[list.size()];
-            for (int i = 0; i < list.size(); i++) labels[i] = safeName(list.get(i));
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Scegli il telefono host")
-                .setItems(labels, (d, w) -> connectTo(list.get(w)))
-                .show();
-        } catch (SecurityException se) { ensurePerms(); }
+            String addr = sock.getRemoteDevice().getAddress();
+            if (!connected.add(addr)) { sock.close(); return; }
+            sockets.add(sock);
+            MeshNode.Link link = node.addLink(sock.getInputStream(), sock.getOutputStream(), deviceName(sock.getRemoteDevice()));
+            byAddr.put(addr, new Object[]{link, sock});
+            ui.post(() -> vibrate(60));
+        } catch (Exception e) {
+            try { sock.close(); } catch (Exception ignored) {}
+        }
     }
 
-    private String safeName(BluetoothDevice d) {
-        try { return d.getName() + " (" + d.getAddress() + ")"; }
+    private String deviceName(BluetoothDevice d) {
+        try { String n = d.getName(); return n != null ? n : d.getAddress(); }
         catch (SecurityException e) { return d.getAddress(); }
     }
 
-    private void connectTo(BluetoothDevice dev) {
-        setStatus("Connessione in corso...");
-        myName = "Guest";
-        clientThread = new Thread(() -> {
-            try {
-                BluetoothSocket sock = dev.createRfcommSocketToServiceRecord(APP_UUID);
-                adapter.cancelDiscovery();
-                sock.connect();
-                socket = sock;
-                onConnected();
-            } catch (SecurityException se) {
-                ui.post(() -> setStatus("Permesso Bluetooth mancante"));
-            } catch (Exception e) {
-                ui.post(() -> setStatus("Connessione fallita: " + e.getMessage()));
-            }
-        });
-        clientThread.start();
-    }
-
-    private void onConnected() {
-        connected = true;
-        try { outStream = socket.getOutputStream(); } catch (Exception ignored) {}
-        ui.post(() -> { setStatus("CONNESSO! Potete scrivervi."); addMsg("Sistema", "Connessione stabilita."); });
-        readThread = new Thread(() -> {
-            try {
-                InputStream in = socket.getInputStream();
-                java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(in, "UTF-8"));
-                String line;
-                // ogni messaggio termina con \n: cosi' non si spezza ne' si unisce
-                while ((line = reader.readLine()) != null) {
-                    final String raw = line;
-                    if (!raw.isEmpty()) handleIncoming(raw);
-                }
-            } catch (Exception e) {
-                ui.post(() -> setStatus("Disconnesso"));
-            }
-        });
-        readThread.start();
-    }
-
-    // formato pacchetto mesh: ID|TTL|mittente|testo
-    private void handleIncoming(String raw) {
+    private void makeVisible() {
+        if (!ensurePerms()) return;
         try {
-            String[] parts = raw.split("\\|", 4);
-            if (parts.length < 4) { ui.post(() -> addMsg("Altro", raw)); return; }
-            String id = parts[0];
-            int ttl;
-            try { ttl = Integer.parseInt(parts[1]); } catch (Exception e) { ttl = 0; }
-            String sender = parts[2];
-            String text = parts[3];
-            // gia' visto? ignora (evita che il messaggio giri all'infinito)
-            synchronized (seenIds) {
-                if (seenIds.contains(id)) return;
-                seenIds.add(id);
-                if (seenIds.size() > 500) seenIds.clear();
+            Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+            i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+            startActivity(i);
+            startServer();
+        } catch (Exception e) { Toast.makeText(this, "Impossibile rendersi visibili", Toast.LENGTH_SHORT).show(); }
+    }
+
+    /** Cerca i telefoni vicini (e mostra subito quelli gia' accoppiati), poi si collega. */
+    private void searchAndConnect() {
+        if (adapter == null || !ensurePerms()) return;
+        if (!adapter.isEnabled()) { startServer(); return; }
+        startServer();
+        found.clear();
+        foundAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
+        try {
+            for (BluetoothDevice d : adapter.getBondedDevices()) addFound(d, "accoppiato");
+        } catch (SecurityException ignored) {}
+        discoveryReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context c, Intent i) {
+                if (BluetoothDevice.ACTION_FOUND.equals(i.getAction())) {
+                    BluetoothDevice d = i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    if (d != null) addFound(d, "vicino");
+                } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(i.getAction())) {
+                    setStatus("Ricerca finita: " + found.size() + " telefoni trovati");
+                }
             }
-            ui.post(() -> addMsg(sender, text));
-            // RIMBALZO: se il messaggio ha ancora "vita" (TTL>0), lo inoltro
-            if (ttl > 0) {
-                String relay = id + "|" + (ttl - 1) + "|" + sender + "|" + text;
-                rawSend(relay);
-            }
-        } catch (Exception e) {
-            ui.post(() -> addMsg("Altro", raw));
+        };
+        IntentFilter f = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+        f.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(discoveryReceiver, f, Context.RECEIVER_EXPORTED);
+        else registerReceiver(discoveryReceiver, f);
+        try {
+            adapter.cancelDiscovery();
+            adapter.startDiscovery();
+            setStatus("Ricerca dei telefoni vicini (12 s)... chi vuoi trovare deve premere VISIBILE");
+        } catch (SecurityException e) { setStatus("Permesso di ricerca Bluetooth mancante"); }
+        new AlertDialog.Builder(this)
+            .setTitle("Collegati a...")
+            .setAdapter(foundAdapter, (d, w) -> connectTo(found.get(w)))
+            .setNegativeButton("Chiudi", null)
+            .setOnDismissListener(d -> stopDiscovery())
+            .show();
+    }
+
+    private void addFound(BluetoothDevice d, String tag) {
+        for (BluetoothDevice x : found) if (x.getAddress().equals(d.getAddress())) return;
+        found.add(d);
+        if (foundAdapter != null) {
+            foundAdapter.add(deviceName(d) + "  (" + tag + ")" + (connected.contains(d.getAddress()) ? "  · gia' collegato" : ""));
+            foundAdapter.notifyDataSetChanged();
         }
     }
 
-    private void sendMsg() {
-        if (!connected || outStream == null) { Toast.makeText(this, "Non sei connesso", Toast.LENGTH_SHORT).show(); return; }
+    private void stopDiscovery() {
+        try { if (adapter != null) adapter.cancelDiscovery(); } catch (SecurityException ignored) {}
+        if (discoveryReceiver != null) {
+            try { unregisterReceiver(discoveryReceiver); } catch (Exception ignored) {}
+            discoveryReceiver = null;
+        }
+    }
+
+    private void connectTo(BluetoothDevice dev) {
+        if (connected.contains(dev.getAddress())) { Toast.makeText(this, "Gia' collegato", Toast.LENGTH_SHORT).show(); return; }
+        stopDiscovery();
+        setStatus("Collegamento a " + deviceName(dev) + "...");
+        Thread t = new Thread(() -> {
+            BluetoothSocket sock = null;
+            try {
+                sock = dev.createInsecureRfcommSocketToServiceRecord(APP_UUID);
+                sock.connect();
+            } catch (Exception first) {
+                try { if (sock != null) sock.close(); } catch (Exception ignored) {}
+                try {
+                    // alcuni telefoni accettano solo la connessione "sicura" (con accoppiamento)
+                    sock = dev.createRfcommSocketToServiceRecord(APP_UUID);
+                    sock.connect();
+                } catch (Exception e) {
+                    try { if (sock != null) sock.close(); } catch (Exception ignored) {}
+                    ui.post(() -> setStatus("Collegamento fallito: l'altro telefono deve avere la chat aperta"));
+                    return;
+                }
+            }
+            attach(sock);
+        }, "mesh-client");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    // ------------------------------------------------------------ invio
+    private void sendText() {
         String text = etMsg.getText().toString().trim();
         if (text.isEmpty()) return;
-        // crea un pacchetto mesh con ID unico e TTL (numero di rimbalzi max)
-        String id = Long.toHexString(System.currentTimeMillis())
-            + Integer.toHexString((int)(Math.random()*65536));
-        synchronized (seenIds) { seenIds.add(id); }
-        final String packet = id + "|7|" + myName + "|" + text;
-        final String shown = text;
+        if (node.linkCount() == 0) Toast.makeText(this, "Nessun vicino collegato: il messaggio resta solo qui", Toast.LENGTH_SHORT).show();
+        etMsg.setText("");
+        final String t = text;
+        new Thread(() -> { MeshNode.Msg m = node.sendText(t); ui.post(() -> show(m, true)); }).start();
+    }
+
+    @Nullable private Location myLocation() {
+        Location l = GpsTrackingService.getLastLocation();
+        if (l != null) return l;
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) return null;
+        try {
+            LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+            Location best = null;
+            for (String p : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
+                Location x = lm.getLastKnownLocation(p);
+                if (x != null && (best == null || x.getTime() > best.getTime())) best = x;
+            }
+            return best;
+        } catch (SecurityException e) { return null; }
+    }
+
+    private void sendPosition() {
+        Location l = myLocation();
+        if (l == null) { Toast.makeText(this, "Posizione GPS non ancora disponibile", Toast.LENGTH_LONG).show(); return; }
         new Thread(() -> {
-            rawSend(packet);
-            ui.post(() -> { addMsg("Io", shown); etMsg.setText(""); });
+            MeshNode.Msg m = node.sendPosition(l.getLatitude(), l.getLongitude(), l.getAccuracy(), "La mia posizione");
+            ui.post(() -> show(m, true));
         }).start();
     }
 
-    private void rawSend(String packet) {
-        try {
-            if (outStream != null) {
-                // \n delimita la fine del messaggio (vedi readLine in ricezione)
-                outStream.write((packet + "\n").getBytes("UTF-8"));
-                outStream.flush();
-            }
-        } catch (Exception e) { ui.post(() -> setStatus("Invio fallito")); }
+    private void confirmSos() {
+        new AlertDialog.Builder(this)
+            .setTitle("Inviare SOS?")
+            .setMessage("Tutti i telefoni della rete riceveranno un allarme con la tua posizione.\n"
+                + "Se puoi, chiama anche il 112: questa chat NON raggiunge i soccorsi da sola.")
+            .setPositiveButton("INVIA SOS", (d, w) -> {
+                Location l = myLocation();
+                double la = l != null ? l.getLatitude() : Double.NaN, lo = l != null ? l.getLongitude() : Double.NaN;
+                float acc = l != null ? l.getAccuracy() : 0f;
+                new Thread(() -> {
+                    MeshNode.Msg m = node.sendSos(la, lo, acc, "Ho bisogno di aiuto!");
+                    ui.post(() -> show(m, true));
+                }).start();
+            })
+            .setNegativeButton("Annulla", null).show();
     }
 
-    private final java.util.Set<String> seenIds =
-        java.util.Collections.synchronizedSet(new java.util.HashSet<>());
+    // ------------------------------------------------------------ ricezione
+    @Override public void onMessage(MeshNode.Msg m) {
+        ui.post(() -> {
+            show(m, true);
+            if (MeshNode.SOS.equals(m.type)) {
+                vibrateSos();
+                Toast.makeText(this, "SOS da " + m.from + "!", Toast.LENGTH_LONG).show();
+            } else vibrate(40);
+        });
+    }
 
-    private void addMsg(String who, String text) {
-        if (msgBox == null) return;
-        TextView tv = new TextView(this);
-        boolean me = who.equals("Io");
-        boolean sys = who.equals("Sistema");
-        tv.setText(sys ? text : (who + ": " + text));
-        tv.setTextColor(sys ? 0xFF5A7A99 : (me ? 0xFF00FF88 : 0xFF00E5FF));
-        tv.setTextSize(16);
-        tv.setPadding(16, 10, 16, 10);
+    @Override public void onAck(MeshNode.Msg mine, String by) {
+        ui.post(() -> {
+            TextView tv = ackViews.get(mine.id);
+            if (tv != null) tv.setText(ackText(mine));
+        });
+    }
+
+    @Override public void onPeersChanged(List<String> names) {
+        // chi e' caduto torna ricollegabile
+        synchronized (byAddr) {
+            List<String> dead = new ArrayList<>();
+            for (Map.Entry<String, Object[]> e : byAddr.entrySet())
+                if (!((MeshNode.Link) e.getValue()[0]).isAlive()) dead.add(e.getKey());
+            for (String a : dead) {
+                Object[] v = byAddr.remove(a);
+                connected.remove(a);
+                try { ((BluetoothSocket) v[1]).close(); } catch (Exception ignored) {}
+                sockets.remove(v[1]);
+            }
+        }
+        ui.post(() -> {
+            if (tvPeers != null) {
+                tvPeers.setText(names.size() + (names.size() == 1 ? " VICINO" : " VICINI"));
+                SkyUi.chip(tvPeers, names.isEmpty() ? SkyUi.CHIP_OFF : SkyUi.CHIP_ON, tvPeers.getText().toString());
+            }
+            setStatus(names.isEmpty() ? "Nessun vicino collegato" : "Collegato a: " + String.join(", ", names));
+        });
+    }
+
+    // ------------------------------------------------------------ bolle
+    private String ackText(MeshNode.Msg m) {
+        String t = new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(m.time));
+        if (!m.mine) return t;
+        if (m.ackedBy.isEmpty()) return t + "  ✓ inviato";
+        return t + "  ✓✓ letto da " + String.join(", ", m.ackedBy);
+    }
+
+    /** Aggiunge la bolla del messaggio (e la salva nella cronologia). */
+    private void show(MeshNode.Msg m, boolean save) {
+        if (msgBox == null || m == null) return;
+        if (save) saveHistory(m);
+        boolean sos = MeshNode.SOS.equals(m.type), pos = MeshNode.POS.equals(m.type);
+        LinearLayout b = new LinearLayout(this);
+        b.setOrientation(LinearLayout.VERTICAL);
+        b.setBackgroundResource(sos ? R.drawable.bg_bubble_sos : m.mine ? R.drawable.bg_bubble_me : R.drawable.bg_bubble_other);
+        int p = SkyUi.dp(this, 12);
+        b.setPadding(p, SkyUi.dp(this, 8), p, SkyUi.dp(this, 8));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.gravity = me ? android.view.Gravity.END : android.view.Gravity.START;
-        lp.bottomMargin = 8;
-        tv.setLayoutParams(lp);
-        tv.setBackgroundColor(0xFF0D1421);
-        msgBox.addView(tv);
+        lp.gravity = m.mine ? Gravity.END : Gravity.START;
+        lp.bottomMargin = SkyUi.dp(this, 8);
+        lp.setMarginStart(m.mine ? SkyUi.dp(this, 48) : 0);
+        lp.setMarginEnd(m.mine ? 0 : SkyUi.dp(this, 48));
+        b.setLayoutParams(lp);
+
+        if (!m.mine) b.addView(label(m.from, sos ? 0xFFFFFFFF : 0xFF00E5FF, 12, true));
+        if (sos) b.addView(label("SOS — " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text), 0xFFFFFFFF, 17, true));
+        else if (pos) b.addView(label("Posizione condivisa" + (m.text.isEmpty() ? "" : ": " + m.text), 0xFFE8F4FD, 15, true));
+        else b.addView(label(m.text, 0xFFE8F4FD, 15, false));
+
+        if (m.hasPosition()) {
+            Location me = myLocation();
+            String where = String.format(Locale.US, "%.5f, %.5f (±%.0f m)", m.lat, m.lon, m.acc);
+            if (me != null && !m.mine) {
+                double d = DroneTrack.distance(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
+                double brg = DroneTrack.bearing(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
+                where = DroneTrack.formatDistance(d) + " verso " + DroneTrack.cardinal(brg) + "  ·  " + where;
+            }
+            b.addView(label(where, sos ? 0xFFFFE0E6 : 0xFF8FB3D0, 12, false));
+            if (!m.mine) {
+                TextView nav = label("NAVIGA FIN LI'  ›", sos ? 0xFFFFFFFF : 0xFF00FF88, 13, true);
+                nav.setPadding(0, SkyUi.dp(this, 6), 0, 0);
+                final double la = m.lat, lo = m.lon;
+                final String who = m.from;
+                nav.setOnClickListener(v -> {
+                    Intent i = new Intent(this, NavigationActivity.class);
+                    i.putExtra(NavigationActivity.EXTRA_DEST_LAT, la);
+                    i.putExtra(NavigationActivity.EXTRA_DEST_LON, lo);
+                    i.putExtra(NavigationActivity.EXTRA_DEST_NAME, who);
+                    i.putExtra(NavigationActivity.EXTRA_PROFILE, RoutingEngine.PROFILE_FOOT);
+                    startActivity(i);
+                });
+                b.addView(nav);
+            }
+        } else if (sos) {
+            b.addView(label("Posizione non disponibile", 0xFFFFE0E6, 12, false));
+        }
+        TextView meta = label(ackText(m), m.mine ? 0xFFB3FFE0 : 0xFF5A7A99, 10, false);
+        meta.setGravity(Gravity.END);
+        b.addView(meta);
+        if (m.mine) ackViews.put(m.id, meta);
+        msgBox.addView(b);
+        b.setAlpha(0f);
+        b.setTranslationY(SkyUi.dp(this, 12));
+        b.animate().alpha(1f).translationY(0).setDuration(220).start();
         if (scroll != null) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private TextView label(String s, int color, float size, boolean bold) {
+        TextView tv = new TextView(this);
+        tv.setText(s);
+        tv.setTextColor(color);
+        tv.setTextSize(size);
+        if (bold) tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        return tv;
     }
 
     private void setStatus(String s) { if (tvStatus != null) tvStatus.setText(s); }
 
+    private void vibrate(long ms) {
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception ignored) {}
+    }
+
+    private void vibrateSos() {
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.vibrate(VibrationEffect.createWaveform(new long[]{0, 200, 120, 200, 120, 200, 400, 600}, -1));
+        } catch (Exception ignored) {}
+    }
+
+    // ------------------------------------------------------------ cronologia
+    private void saveHistory(MeshNode.Msg m) {
+        history.add((m.mine ? "M" : "R") + m.toLine());
+        while (history.size() > HISTORY_MAX) history.remove(0);
+        try (FileOutputStream out = new FileOutputStream(historyFile)) {
+            out.write(String.join("\n", history).getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {}
+    }
+
+    private void loadHistory() {
+        try {
+            if (!historyFile.exists()) return;
+            for (String line : Files.readAllLines(historyFile.toPath(), StandardCharsets.UTF_8)) {
+                if (line.length() < 2) continue;
+                MeshNode.Msg m = MeshNode.Msg.fromLine(line.substring(1));
+                if (m == null) continue;
+                m.mine = line.charAt(0) == 'M';
+                history.add(line);
+                show(m, false);
+            }
+            if (!history.isEmpty()) {
+                TextView sep = label("— messaggi precedenti —", 0xFF5A7A99, 11, false);
+                sep.setGravity(Gravity.CENTER);
+                msgBox.addView(sep, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+        } catch (Exception ignored) {}
+    }
+
     @Override protected void onDestroy() {
         super.onDestroy();
-        connected = false;
-        try { if (socket != null) socket.close(); } catch (Exception ignored) {}
+        running = false;
+        stopDiscovery();
+        node.closeAll();
         try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
-        if (serverThread != null) serverThread.interrupt();
-        if (clientThread != null) clientThread.interrupt();
-        if (readThread != null) readThread.interrupt();
+        synchronized (sockets) {
+            for (BluetoothSocket s : sockets) { try { s.close(); } catch (Exception ignored) {} }
+        }
     }
 }
 """
-
-LAYOUT_CHAT = """\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="12dp" android:background="#050A14">
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">
-        <Button android:id="@+id/btn_chat_back" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="&lt; Indietro" android:backgroundTint="#141E2E"
-            android:textColor="#00E5FF" android:textSize="13sp" android:layout_marginEnd="10dp"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="CHAT OFFLINE" android:textColor="#00FF88" android:textSize="18sp"
-            android:textStyle="bold" android:fontFamily="monospace"/>
-    </LinearLayout>
-
-    <TextView android:id="@+id/chat_status" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:text="Non connesso. Un telefono fa OSPITA, l'altro ENTRA."
-        android:textColor="#FFD600" android:textSize="13sp" android:background="#0D1421"
-        android:padding="12dp" android:layout_marginBottom="10dp"/>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginBottom="10dp">
-        <Button android:id="@+id/btn_chat_host" android:layout_width="0dp" android:layout_height="48dp"
-            android:layout_weight="1" android:text="OSPITA" android:backgroundTint="#00FF88"
-            android:textColor="#050A14" android:textStyle="bold" android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_chat_join" android:layout_width="0dp" android:layout_height="48dp"
-            android:layout_weight="1" android:text="ENTRA" android:backgroundTint="#00E5FF"
-            android:textColor="#050A14" android:textStyle="bold"/>
-    </LinearLayout>
-
-    <ScrollView android:id="@+id/chat_scroll" android:layout_width="match_parent"
-        android:layout_height="0dp" android:layout_weight="1" android:background="#0A0E1A"
-        android:padding="8dp">
-        <LinearLayout android:id="@+id/chat_messages" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical"/>
-    </ScrollView>
-
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:layout_marginTop="10dp">
-        <EditText android:id="@+id/chat_input" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:hint="Scrivi un messaggio..." android:textColor="#E8F4FD"
-            android:textColorHint="#5A7A99" android:background="#0D1421" android:padding="12dp"
-            android:layout_marginEnd="8dp"/>
-        <Button android:id="@+id/btn_chat_send" android:layout_width="wrap_content"
-            android:layout_height="wrap_content" android:text="INVIA" android:backgroundTint="#00FF88"
-            android:textColor="#050A14" android:textStyle="bold"/>
-    </LinearLayout>
-
-</LinearLayout>"""
 
 EMERGENCY_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -15207,6 +15452,280 @@ public class Map3DActivity extends AppCompatActivity implements GpsTrackingServi
 }
 """
 
+CHAT_MESH_NODE = r"""package com.offlinegps.map.chat;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+/**
+ * Nodo della chat MESH offline. Ogni telefono e' collegato ad altri (via
+ * Bluetooth) e INOLTRA i messaggi a tutti i collegamenti tranne quello da cui
+ * sono arrivati: A - B - C, il messaggio di A arriva a C passando da B.
+ *  - ogni messaggio ha un ID: chi lo ha gia' visto lo ignora (niente giri infiniti);
+ *  - TTL = numero massimo di salti (7);
+ *  - conferme di consegna (ACK): chi riceve risponde, il mittente conta chi l'ha letto;
+ *  - tipi: TXT testo, POS posizione, SOS emergenza con posizione, HELLO nome del vicino.
+ * Indipendente dal Bluetooth: lavora su qualsiasi coppia di stream (testato
+ * sul computer con stream in memoria).
+ */
+public final class MeshNode {
+    public static final String TXT = "TXT", POS = "POS", SOS = "SOS", ACK = "ACK", HELLO = "HELLO";
+    public static final int DEFAULT_TTL = 7;
+    private static final String VERSION = "m5";
+    private static final int SEEN_MAX = 2000;
+
+    public static final class Msg {
+        public String id = "", type = TXT, from = "", text = "", ackOf = "";
+        public int ttl = DEFAULT_TTL;
+        public long time;
+        public double lat = Double.NaN, lon = Double.NaN;
+        public float acc;
+        public boolean mine;
+        /** Nomi di chi ha confermato la ricezione (solo per i messaggi propri). */
+        public final List<String> ackedBy = new CopyOnWriteArrayList<>();
+
+        public boolean hasPosition() { return !Double.isNaN(lat) && !Double.isNaN(lon); }
+
+        /** Una riga di testo: campi separati da '|', il testo per ultimo. */
+        public String toLine() {
+            return VERSION + "|" + id + "|" + ttl + "|" + type + "|" + esc(from) + "|" + time + "|"
+                + (hasPosition() ? String.format(Locale.US, "%.6f|%.6f|%.0f", lat, lon, acc) : "||") + "|"
+                + ackOf + "|" + esc(text);
+        }
+
+        public static Msg fromLine(String line) {
+            if (line == null) return null;
+            String[] f = line.split("\\|", 11);
+            Msg m = new Msg();
+            if (f.length == 11 && VERSION.equals(f[0])) {
+                m.id = f[1];
+                m.ttl = parseInt(f[2], 0);
+                m.type = f[3];
+                m.from = unesc(f[4]);
+                m.time = parseLong(f[5], System.currentTimeMillis());
+                if (!f[6].isEmpty() && !f[7].isEmpty()) {
+                    m.lat = parseDouble(f[6]); m.lon = parseDouble(f[7]);
+                    m.acc = (float) parseDouble(f[8]);
+                }
+                m.ackOf = f[9];
+                m.text = unesc(f[10]);
+                return m.id.isEmpty() ? null : m;
+            }
+            // formato della vecchia chat v2.9: ID|TTL|mittente|testo
+            String[] o = line.split("\\|", 4);
+            if (o.length == 4) {
+                m.id = o[0]; m.ttl = parseInt(o[1], 0); m.from = o[2]; m.text = o[3];
+                m.time = System.currentTimeMillis();
+                return m;
+            }
+            return null;
+        }
+    }
+
+    public interface Listener {
+        void onMessage(Msg m);
+        void onAck(Msg mine, String by);
+        void onPeersChanged(List<String> names);
+    }
+
+    /** Un collegamento con un vicino (un socket Bluetooth). */
+    public final class Link {
+        final String label;
+        final OutputStream out;
+        volatile String peerName = "";
+        volatile boolean alive = true;
+        final Object writeLock = new Object();
+
+        Link(String label, OutputStream out) { this.label = label; this.out = out; }
+
+        boolean send(String line) {
+            if (!alive) return false;
+            try {
+                synchronized (writeLock) {
+                    out.write((line + "\n").getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                }
+                return true;
+            } catch (Exception e) {
+                drop(this);
+                return false;
+            }
+        }
+
+        public String name() { return peerName.isEmpty() ? label : peerName; }
+        public boolean isAlive() { return alive; }
+    }
+
+    private final List<Link> links = new CopyOnWriteArrayList<>();
+    private final Map<String, Boolean> seen = Collections.synchronizedMap(new LinkedHashMap<String, Boolean>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Boolean> e) { return size() > SEEN_MAX; }
+    });
+    private final Map<String, Msg> mine = Collections.synchronizedMap(new LinkedHashMap<String, Msg>() {
+        @Override protected boolean removeEldestEntry(Map.Entry<String, Msg> e) { return size() > 300; }
+    });
+    private final Random rnd = new Random();
+    private volatile String myName;
+    private volatile Listener listener;
+
+    public MeshNode(String name) { myName = name; }
+
+    public void setName(String name) {
+        myName = name;
+        for (Link l : links) sendHello(l);
+    }
+
+    public String name() { return myName; }
+    public void setListener(Listener l) { listener = l; }
+
+    public List<String> peers() {
+        List<String> n = new ArrayList<>();
+        for (Link l : links) if (l.alive) n.add(l.name());
+        return n;
+    }
+
+    /** Aggiunge un collegamento e avvia la lettura su un thread dedicato. */
+    public Link addLink(final InputStream in, OutputStream out, String label) {
+        final Link link = new Link(label, out);
+        links.add(link);
+        Thread t = new Thread(() -> {
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line;
+                while (link.alive && (line = r.readLine()) != null) {
+                    if (!line.isEmpty()) onLine(link, line);
+                }
+            } catch (Exception ignored) {
+            } finally {
+                drop(link);
+            }
+        }, "mesh-" + label);
+        t.setDaemon(true);
+        t.start();
+        sendHello(link);
+        firePeers();
+        return link;
+    }
+
+    private void sendHello(Link l) {
+        Msg h = new Msg();
+        h.id = newId(); h.type = HELLO; h.from = myName; h.ttl = 0; h.time = System.currentTimeMillis();
+        l.send(h.toLine());
+    }
+
+    private void drop(Link l) {
+        if (!l.alive) return;
+        l.alive = false;
+        links.remove(l);
+        try { l.out.close(); } catch (Exception ignored) {}
+        firePeers();
+    }
+
+    public void closeAll() {
+        for (Link l : links) drop(l);
+    }
+
+    // ------------------------------------------------------------ invio
+    public Msg sendText(String text) { return send(TXT, text, Double.NaN, Double.NaN, 0f); }
+
+    public Msg sendPosition(double lat, double lon, float acc, String note) { return send(POS, note, lat, lon, acc); }
+
+    public Msg sendSos(double lat, double lon, float acc, String text) { return send(SOS, text, lat, lon, acc); }
+
+    private Msg send(String type, String text, double lat, double lon, float acc) {
+        Msg m = new Msg();
+        m.id = newId(); m.type = type; m.from = myName; m.text = text == null ? "" : text;
+        m.time = System.currentTimeMillis(); m.lat = lat; m.lon = lon; m.acc = acc; m.mine = true;
+        seen.put(m.id, Boolean.TRUE);
+        mine.put(m.id, m);
+        broadcast(m.toLine(), null);
+        return m;
+    }
+
+    public int linkCount() { return links.size(); }
+
+    private void broadcast(String line, Link except) {
+        for (Link l : links) if (l != except) l.send(line);
+    }
+
+    // ------------------------------------------------------------ ricezione
+    private void onLine(Link from, String line) {
+        Msg m = Msg.fromLine(line);
+        if (m == null) return;
+        if (HELLO.equals(m.type)) {
+            from.peerName = m.from;
+            firePeers();
+            return;
+        }
+        if (seen.put(m.id, Boolean.TRUE) != null) return;      // gia' visto
+        Listener l = listener;
+        if (ACK.equals(m.type)) {
+            Msg orig = mine.get(m.ackOf);
+            if (orig != null) {
+                if (!orig.ackedBy.contains(m.from)) orig.ackedBy.add(m.from);
+                if (l != null) l.onAck(orig, m.from);
+            }
+        } else {
+            if (l != null) l.onMessage(m);
+            // conferma di consegna verso il mittente (viaggia per la rete come gli altri)
+            Msg ack = new Msg();
+            ack.id = newId(); ack.type = ACK; ack.from = myName; ack.ackOf = m.id;
+            ack.time = System.currentTimeMillis();
+            seen.put(ack.id, Boolean.TRUE);
+            broadcast(ack.toLine(), null);
+        }
+        // inoltro a tutti gli altri vicini
+        // (il messaggio consegnato allo schermo non va toccato: si inoltra una copia)
+        if (m.ttl > 0) {
+            int ttl = m.ttl;
+            m.ttl = ttl - 1;
+            String relay = m.toLine();
+            m.ttl = ttl;
+            broadcast(relay, from);
+        }
+    }
+
+    private void firePeers() {
+        Listener l = listener;
+        if (l != null) l.onPeersChanged(peers());
+    }
+
+    private String newId() {
+        return Long.toString(System.currentTimeMillis(), 36) + Integer.toString(rnd.nextInt(1 << 30), 36);
+    }
+
+    private static String esc(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\n", "\\n").replace("|", "\\p").replace("\r", "");
+    }
+
+    private static String unesc(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(++i);
+                sb.append(n == 'n' ? '\n' : n == 'p' ? '|' : n);
+            } else sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    private static int parseInt(String s, int d) { try { return Integer.parseInt(s); } catch (Exception e) { return d; } }
+    private static long parseLong(String s, long d) { try { return Long.parseLong(s); } catch (Exception e) { return d; } }
+    private static double parseDouble(String s) { try { return Double.parseDouble(s); } catch (Exception e) { return Double.NaN; } }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -15582,6 +16101,93 @@ LAYOUT_MAP3D = (_XML_HEAD +
     '        android:background="@drawable/bg_chip_off"/>\n'
     '</FrameLayout>')
 
+# ---------------------------------------------------------------- CHAT MESH v5
+def _v5_bubble(start, end, stroke, mine):
+    br = "4dp" if mine else "18dp"
+    bl = "18dp" if mine else "4dp"
+    return _v5_shape('    <gradient android:type="linear" android:angle="315"\n'
+                     '        android:startColor="' + start + '" android:endColor="' + end + '"/>\n'
+                     '    <stroke android:width="1dp" android:color="' + stroke + '"/>\n'
+                     '    <corners android:topLeftRadius="18dp" android:topRightRadius="18dp"\n'
+                     '        android:bottomLeftRadius="' + bl + '" android:bottomRightRadius="' + br + '"/>\n')
+
+V5_DRAWABLES.update({
+    "bg_bubble_me":    _v5_bubble("#E6007A5E", "#E6005A70", "#6600FF88", True),
+    "bg_bubble_other": _v5_bubble("#E6142238", "#E60D1626", "#3300E5FF", False),
+    "bg_bubble_sos":   _v5_bubble("#F2E0002A", "#F28A0018", "#FFFF5C7A", False),
+})
+
+def _v5_action(vid, icon, text, accent, end_margin=True):
+    hexcol = V4_ACCENTS[accent]
+    return ('    <LinearLayout android:id="@+id/' + vid + '" android:layout_width="0dp"\n'
+            '        android:layout_height="64dp" android:layout_weight="1" android:orientation="vertical"\n'
+            '        android:gravity="center" android:background="@drawable/bg_tile_' + accent + '"\n'
+            '        android:clickable="true" android:focusable="true"' +
+            ('\n        android:layout_marginEnd="8dp"' if end_margin else '') + '>\n'
+            '        <ImageView android:layout_width="22dp" android:layout_height="22dp"\n'
+            '            android:src="@drawable/' + icon + '" android:tint="#' + hexcol + '"\n'
+            '            android:contentDescription="' + text + '"/>\n'
+            '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '            android:text="' + text + '" android:textColor="#E8F4FD" android:textSize="11sp"\n'
+            '            android:textStyle="bold" android:layout_marginTop="4dp"/>\n'
+            '    </LinearLayout>\n')
+
+LAYOUT_CHAT = (_XML_HEAD +
+    '<LinearLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:orientation="vertical" android:paddingStart="12dp" android:paddingEnd="12dp"\n'
+    '    android:paddingTop="14dp" android:paddingBottom="10dp" android:background="@drawable/bg_screen_grad">\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:gravity="center_vertical">\n'
+    '        <ImageView android:id="@+id/btn_chat_back" android:layout_width="44dp" android:layout_height="44dp"\n'
+    '            android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+    '            android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"\n'
+    '            android:contentDescription="Indietro"/>\n'
+    '        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
+    '            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="CHAT MESH OFFLINE" android:textColor="#00FF88" android:textSize="19sp"\n'
+    '                android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"\n'
+    '                android:shadowColor="#00FF88" android:shadowRadius="12"/>\n'
+    '            <TextView android:id="@+id/tv_chat_me" android:layout_width="wrap_content"\n'
+    '                android:layout_height="wrap_content" android:text="Tu" android:textColor="#8FB3D0"\n'
+    '                android:textSize="11.5sp" android:clickable="true" android:focusable="true"/>\n'
+    '        </LinearLayout>\n'
+    '        <TextView android:id="@+id/tv_chat_peers" android:layout_width="wrap_content"\n'
+    '            android:layout_height="30dp" android:gravity="center" android:paddingStart="12dp"\n'
+    '            android:paddingEnd="12dp" android:text="0 VICINI" android:textColor="#8FB3D0"\n'
+    '            android:textSize="11sp" android:textStyle="bold" android:background="@drawable/bg_chip_off"/>\n'
+    '    </LinearLayout>\n'
+    '    <TextView android:id="@+id/chat_status" android:layout_width="match_parent"\n'
+    '        android:layout_height="wrap_content" android:layout_marginTop="10dp" android:padding="10dp"\n'
+    '        android:text="Avvio del Bluetooth..." android:textColor="#CFE3F5" android:textSize="12sp"\n'
+    '        android:background="@drawable/bg_hint"/>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginTop="10dp" android:layout_marginBottom="10dp">\n'
+    + _v5_action("btn_chat_search", "ic_v5_bluetooth", "CERCA", "cyan")
+    + _v5_action("btn_chat_visible", "ic_v4_radar", "VISIBILE", "violet")
+    + _v5_action("btn_chat_pos", "ic_v4_pin", "POSIZIONE", "green")
+    + _v5_action("btn_chat_sos", "ic_v4_sos", "SOS", "red", end_margin=False) +
+    '    </LinearLayout>\n'
+    '    <ScrollView android:id="@+id/chat_scroll" android:layout_width="match_parent"\n'
+    '        android:layout_height="0dp" android:layout_weight="1" android:overScrollMode="never">\n'
+    '        <LinearLayout android:id="@+id/chat_messages" android:layout_width="match_parent"\n'
+    '            android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="4dp"/>\n'
+    '    </ScrollView>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">\n'
+    '        <EditText android:id="@+id/chat_input" android:layout_width="0dp" android:layout_height="wrap_content"\n'
+    '            android:layout_weight="1" android:minHeight="48dp" android:maxLines="4"\n'
+    '            android:hint="Scrivi un messaggio..." android:textColor="#E8F4FD" android:textColorHint="#5A7A99"\n'
+    '            android:background="@drawable/bg_input" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+    '            android:inputType="textMultiLine|textCapSentences"/>\n'
+    '        <ImageButton android:id="@+id/btn_chat_send" android:layout_width="50dp" android:layout_height="50dp"\n'
+    '            android:layout_marginStart="8dp" android:padding="13dp" android:src="@drawable/ic_v5_send"\n'
+    '            android:tint="#00FF88" android:scaleType="fitCenter" android:background="@drawable/bg_fab_glass"\n'
+    '            android:contentDescription="Invia"/>\n'
+    '    </LinearLayout>\n'
+    '</LinearLayout>')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -15681,6 +16287,7 @@ def build_java_file_map():
         f"{PKG_MAP}/MapsforgeEngine.java":       MAPSFORGE_ENGINE,
         f"{PKG_MAP}/MapEngines.java":            MAP_ENGINES,
         f"{PKG_UI}/Map3DActivity.java":          MAP3D_ACTIVITY,
+        f"{PKG_ROOT}/chat/MeshNode.java":        CHAT_MESH_NODE,
     }
 
 def build_layout_map():
@@ -15906,7 +16513,7 @@ def create_project(java_path):
     java_esc = str(java_path).replace("\\", "\\\\")
     sdk = find_android_sdk()
     write_file(PROJECT_DIR / "gradle.properties",
-        f"org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m\n"
+        f"org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8\n"
         f"android.useAndroidX=true\nandroid.enableJetifier=true\n"
         f"org.gradle.java.home={java_esc}\norg.gradle.parallel=true\n"
         f"org.gradle.configuration-cache=false\n"

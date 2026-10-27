@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.0 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
-                      + STRUMENTI OUTDOOR RIFATTI + CHAT MESH + SENTINELLA CIELO
+OfflineGPS 3D v5.1 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+                      + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -78,7 +78,7 @@ NOVITA' v4.0 — SENTINELLA CIELO + GRAFICA NUOVA:
    dialoghi); percorso sulla mappa con alone luminoso.
  * Rimosse le librerie VTM inutilizzate (APK piu' leggero, niente jitpack).
 
-NOVITA' v5.0 (questa versione) — NAVIGATORE 3D + MAPPA 3D VERA + STRUMENTI RIFATTI:
+NOVITA' v5.0 — NAVIGATORE 3D + MAPPA 3D VERA + STRUMENTI RIFATTI:
  * NAVIGATORE CHE NAVIGA DAVVERO: segue l'avanzamento sul percorso (posizione
    agganciata alla strada, distanza alla manovra, tempo e ora di arrivo
    reali), voce a 3 livelli con "poi...", ricalcolo fuori percorso, profili
@@ -112,6 +112,27 @@ NOVITA' v5.0 (questa versione) — NAVIGATORE 3D + MAPPA 3D VERA + STRUMENTI RIF
  * GRAFICA: menu Sopravvivenza e Strumenti a riquadri con icone, schermate
    degli strumenti nuove (vetro, neon, riquadri statistici).
  * Compilazione con encoding UTF-8 (accenti corretti anche su Windows).
+
+NOVITA' v5.1 (questa versione) — NAVIGATORE E CHAT PIU' AVANZATI:
+ * LIMITI DI VELOCITA': cartello del limite della strada in cui sei (dai
+   dati OpenStreetMap), avviso a voce "tra poco limite di 30" prima di
+   arrivarci, tachimetro rosso e avviso se superi il limite oltre la
+   tolleranza degli autovelox (5%, minimo 5 km/h). Nome della via in basso.
+ * PERCORSI ALTERNATIVI: alla partenza fino a 3 percorsi con tempo,
+   distanza, pedaggio e autostrada ("Piu' veloce", "Piu' breve", "Senza
+   pedaggi"), disegnati sulla mappa; tocchi quello che preferisci.
+   La rete stradale si ricostruisce una volta sola (servono limiti e pedaggi).
+ * CHAT OFFLINE IN BACKGROUND: resta accesa chiudendo la schermata o con lo
+   schermo spento (notifica con SPEGNI), notifiche dei messaggi in arrivo,
+   allarme per gli SOS.
+ * GRUPPI CIFRATI: nome del gruppo + password -> chiave AES-256 (PBKDF2);
+   i messaggi del gruppo sono cifrati e autenticati, gli altri telefoni li
+   fanno passare senza leggerli. Codice del gruppo da confrontare a voce.
+   L'SOS resta sempre in chiaro, leggibile da chiunque.
+ * RADAR DEL GRUPPO: ognuno puo' condividere la posizione ogni 30 s sulla
+   rete mesh; il radar mostra i compagni con distanza, direzione, batteria,
+   velocita' e da quanto non si aggiornano. Navigazione o bussola verso un
+   compagno; compagni visibili anche sulla mappa 3D.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -157,8 +178,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 48
-        versionName "5.0.0"
+        versionCode 49
+        versionName "5.1.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -346,6 +367,7 @@ MANIFEST = """\
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
@@ -453,6 +475,10 @@ MANIFEST = """\
             android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
         <!-- v5.0 STRUMENTI -->
         <activity android:name=".ui.FireCampActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <!-- v5.1 RADAR DEL GRUPPO + chat mesh in background -->
+        <activity android:name=".ui.TeamActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <service android:name=".chat.MeshService" android:exported="false"
+            android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
             android:foregroundServiceType="location"/>
         <!-- v5.0: condivisione di tracce GPX e immagini QR -->
@@ -894,7 +920,7 @@ public class GpsTrackingService extends Service {
         "CoordsToolActivity", "DaylightToolActivity", "BacktrackActivity", "AreaToolActivity",
         "TrackRecorderActivity", "GeoNotesActivity", "GotoCoordsActivity", "QrPositionActivity",
         "ChatActivity", "EmergencyActivity", "SpeedHudActivity", "SunCompassActivity",
-        "AltimeterActivity", "FireCampActivity", "PaceCalcActivity", "MoonPhaseActivity"));
+        "AltimeterActivity", "FireCampActivity", "PaceCalcActivity", "MoonPhaseActivity", "TeamActivity"));
 
     public static void installAuto(Application app) {
         sAppCtx = app;
@@ -1583,6 +1609,8 @@ import com.graphhopper.util.InstructionList;
 import com.graphhopper.util.PointList;
 import com.graphhopper.util.Translation;
 import com.graphhopper.util.TranslationMap;
+import com.graphhopper.util.Parameters;
+import com.graphhopper.util.details.PathDetail;
 import com.graphhopper.util.shapes.GHPoint;
 import java.io.File;
 import java.util.*;
@@ -1639,14 +1667,14 @@ public final class RoutingEngine {
 
         sBuilding.set(true);
         try {
-            // v5.0: la rete contiene auto + bici + piedi. Una rete vecchia (solo auto)
-            // non ha il marcatore: viene cancellata e ricostruita automaticamente.
+            // v5.1: la rete contiene auto + bici + piedi, limiti di velocita' e pedaggi.
+            // Una rete vecchia non ha il marcatore: viene ricostruita automaticamente.
             File marker = new File(graphFolder, PROFILES_MARKER);
             boolean alreadyBuilt = graphFolder.exists()
                 && new File(graphFolder, "properties").exists() && marker.exists();
             if (graphFolder.exists() && !alreadyBuilt) {
                 if (listener != null) listener.onProgress(
-                    "Aggiornamento rete stradale per bici e piedi (una volta sola)...", -1);
+                    "Aggiornamento rete stradale: limiti di velocita', pedaggi, bici e piedi (una volta sola)...", -1);
                 deleteRecursive(graphFolder);
             }
 
@@ -1683,23 +1711,7 @@ public final class RoutingEngine {
             GraphHopper gh = new GraphHopper();
             gh.setOSMFile(pbfFile.getAbsolutePath());
             gh.setGraphHopperLocation(graphFolder.getAbsolutePath());
-
-            // GraphHopper 6.2: sistema "classico" senza custom model ne Janino.
-            // SENZA Contraction Hierarchies (CH): la CH e' la fase piu' pesante e
-            // su telefono richiede molti minuti per ogni profilo. Senza CH i tre
-            // profili costano poco in piu' (qualche bit per strada) e il calcolo
-            // del singolo percorso resta veloce su distanze normali.
-            // v5.0: bici e piedi sono profili VERI (prima si usava sempre l'auto:
-            // niente sentieri/zone pedonali e tempi da auto anche a piedi).
-            gh.setProfiles(
-                new Profile(PROFILE_CAR).setVehicle("car").setWeighting("fastest").setTurnCosts(false),
-                new Profile(PROFILE_BIKE).setVehicle("bike").setWeighting("fastest").setTurnCosts(false),
-                new Profile(PROFILE_FOOT).setVehicle("foot").setWeighting("fastest").setTurnCosts(false)
-            );
-            // NIENTE setCHProfiles -> usa l'algoritmo "flessibile" (nessuna
-            // preparazione pesante).
-            gh.setMinNetworkSize(200);
-            gh.setElevationProvider(com.graphhopper.reader.dem.ElevationProvider.NOOP);
+            configure(gh);
 
             try {
                 gh.importOrLoad();
@@ -1733,7 +1745,48 @@ public final class RoutingEngine {
         }
     }
 
-    private static final String PROFILES_MARKER = "ogps_profiles_car_bike_foot";
+    private static final String PROFILES_MARKER = "ogps_graph_v51_limiti_pedaggi";
+
+    /**
+     * Configurazione della rete (la stessa usata dai test sul computer).
+     * GraphHopper 6.2 "classico", senza custom model ne' Janino, e SENZA
+     * Contraction Hierarchies: la CH su telefono richiede molti minuti per
+     * profilo; senza, il calcolo del singolo percorso resta veloce.
+     * Profili VERI per auto, bici e piedi. Valori salvati per ogni strada:
+     * limite di velocita' (max_speed) e tipo di strada (road_class) sono di
+     * serie, il pedaggio (toll) e' aggiunto qui.
+     */
+    public static void configure(GraphHopper gh) {
+        gh.setProfiles(
+            new Profile(PROFILE_CAR).setVehicle("car").setWeighting("fastest").setTurnCosts(false),
+            new Profile(PROFILE_BIKE).setVehicle("bike").setWeighting("fastest").setTurnCosts(false),
+            new Profile(PROFILE_FOOT).setVehicle("foot").setWeighting("fastest").setTurnCosts(false)
+        );
+        gh.setEncodedValuesString("toll");
+        gh.setMinNetworkSize(200);
+        gh.setElevationProvider(com.graphhopper.reader.dem.ElevationProvider.NOOP);
+    }
+
+    /** Dettagli chiesti per ogni percorso (indici riferiti ai punti della linea). */
+    static final List<String> DETAILS = Arrays.asList("max_speed", "street_name", "toll", "road_class");
+
+    /** Richiesta di percorso; alternatives = fino a 3 percorsi diversi. */
+    public static GHRequest request(double fromLat, double fromLon, double toLat, double toLon,
+                                    String profile, boolean alternatives) {
+        GHRequest req = new GHRequest(new GHPoint(fromLat, fromLon), new GHPoint(toLat, toLon));
+        req.setProfile(profile);
+        // Rete costruita SENZA CH: algoritmo flessibile (altrimenti cerca la CH e fallisce)
+        req.putHint("ch.disable", true);
+        req.setLocale(Locale.ITALIAN);
+        req.setPathDetails(DETAILS);
+        if (alternatives) {
+            req.setAlgorithm(Parameters.Algorithms.ALT_ROUTE);
+            req.putHint("alternative_route.max_paths", 3);
+            req.putHint("alternative_route.max_weight_factor", 1.5);
+            req.putHint("alternative_route.max_share_factor", 0.6);
+        }
+        return req;
+    }
 
     private static boolean deleteRecursive(File f) {
         if (f.isDirectory()) {
@@ -1755,13 +1808,7 @@ public final class RoutingEngine {
         if (hopper == null) { lastError = "Rete stradale non caricata"; return null; }
         String useProfile = PROFILE_BIKE.equals(profile) || PROFILE_FOOT.equals(profile)
             ? profile : PROFILE_CAR;
-        GHRequest req = new GHRequest(
-            new GHPoint(fromLat, fromLon), new GHPoint(toLat, toLon));
-        req.setProfile(useProfile);
-        // Rete costruita SENZA CH: disabilitiamo CH nella richiesta cosi' usa
-        // l'algoritmo flessibile (altrimenti GraphHopper cerca la CH e fallisce).
-        req.putHint("ch.disable", true);
-        req.setLocale(Locale.ITALIAN);
+        GHRequest req = request(fromLat, fromLon, toLat, toLon, useProfile, false);
         GHResponse rsp;
         try {
             rsp = hopper.route(req);
@@ -1787,6 +1834,35 @@ public final class RoutingEngine {
         return RouteResult.from(path, translationMap.getWithFallBack(Locale.ITALIAN), useProfile);
     }
 
+    /**
+     * Fino a 3 percorsi diversi (il primo e' il migliore). Piu' lento del
+     * percorso singolo: si usa solo alla partenza, mai nei ricalcoli.
+     * Se le alternative non riescono torna almeno il percorso principale.
+     */
+    @WorkerThread
+    @NonNull
+    public List<RouteResult> routeAlternatives(double fromLat, double fromLon, double toLat, double toLon,
+            @NonNull String profile) {
+        List<RouteResult> out = new ArrayList<>();
+        if (hopper == null) return out;
+        String useProfile = PROFILE_BIKE.equals(profile) || PROFILE_FOOT.equals(profile) ? profile : PROFILE_CAR;
+        try {
+            GHResponse rsp = hopper.route(request(fromLat, fromLon, toLat, toLon, useProfile, true));
+            if (!rsp.hasErrors()) {
+                Translation tr = translationMap.getWithFallBack(Locale.ITALIAN);
+                for (ResponsePath p : rsp.getAll()) out.add(RouteResult.from(p, tr, useProfile));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "alternative non disponibili", e);
+        }
+        if (out.isEmpty()) {
+            RouteResult r = route(fromLat, fromLon, toLat, toLon, profile);
+            if (r != null) out.add(r);
+        }
+        RouteResult.label(out);
+        return out;
+    }
+
     public void close() {
         if (hopper != null) { hopper.close(); hopper = null; loadedRegionTag = null; }
     }
@@ -1797,12 +1873,42 @@ public final class RoutingEngine {
         public final double distanceMeters;
         public final long timeMillis;
         public final String profile;
+        /** Per ogni tratto i -> i+1 della linea: limite km/h (NaN = non noto) e nome della via. */
+        public float[] segMaxSpeed = new float[0];
+        public String[] segStreet = new String[0];
+        /** Metri a pedaggio, su autostrada/superstrada, e vie principali ("via A1 e SS1"). */
+        public double tollMeters, motorwayMeters;
+        public String summary = "";
+        /** Etichetta fra le alternative: "Piu' veloce", "Piu' breve", ... */
+        public String label = "";
 
         public RouteResult(List<double[]> points, List<NavStep> steps,
                 double distanceMeters, long timeMillis, String profile) {
             this.points = points; this.steps = steps;
             this.distanceMeters = distanceMeters; this.timeMillis = timeMillis;
             this.profile = profile;
+        }
+
+        /** Etichette delle alternative (la prima e' la piu' veloce). */
+        static void label(List<RouteResult> list) {
+            if (list.isEmpty()) return;
+            RouteResult fastest = list.get(0), shortest = list.get(0);
+            for (RouteResult r : list) {
+                if (r.timeMillis < fastest.timeMillis) fastest = r;
+                if (r.distanceMeters < shortest.distanceMeters) shortest = r;
+            }
+            for (RouteResult r : list) {
+                List<String> tags = new ArrayList<>();
+                if (r == fastest) tags.add("Piu' veloce");
+                // "piu' breve" solo se lo e' davvero (almeno il 3% in meno)
+                if (r == shortest && r != fastest && r.distanceMeters < fastest.distanceMeters * 0.97) tags.add("Piu' breve");
+                if (r.tollMeters < 100 && list.size() > 1) {
+                    boolean othersToll = false;
+                    for (RouteResult o : list) if (o.tollMeters >= 100) othersToll = true;
+                    if (othersToll) tags.add("Senza pedaggi");
+                }
+                r.label = tags.isEmpty() ? "Alternativa" : String.join(" · ", tags);
+            }
         }
 
         static RouteResult from(ResponsePath path, Translation tr, String profile) {
@@ -1831,7 +1937,56 @@ public final class RoutingEngine {
                     idx += ip != null ? ip.size() : 0;
                 }
             }
-            return new RouteResult(pts, steps, path.getDistance(), path.getTime(), profile);
+            RouteResult r = new RouteResult(pts, steps, path.getDistance(), path.getTime(), profile);
+            r.readDetails(path.getPathDetails());
+            return r;
+        }
+
+        /** Limiti, nomi delle vie, pedaggi e autostrade dai dettagli di GraphHopper. */
+        void readDetails(@Nullable Map<String, List<PathDetail>> details) {
+            int segs = Math.max(0, points.size() - 1);
+            segMaxSpeed = new float[segs];
+            Arrays.fill(segMaxSpeed, Float.NaN);
+            segStreet = new String[segs];
+            if (details == null || segs == 0) return;
+            double[] len = new double[segs];
+            for (int i = 0; i < segs; i++)
+                len[i] = NavCore.dist(points.get(i)[0], points.get(i)[1], points.get(i + 1)[0], points.get(i + 1)[1]);
+            for (PathDetail d : details.getOrDefault("max_speed", Collections.emptyList())) {
+                Object v = d.getValue();
+                if (!(v instanceof Number)) continue;
+                double kmh = ((Number) v).doubleValue();
+                if (Double.isInfinite(kmh) || Double.isNaN(kmh) || kmh <= 0 || kmh > 150) continue;
+                for (int i = Math.max(0, d.getFirst()); i < Math.min(segs, d.getLast()); i++) segMaxSpeed[i] = (float) kmh;
+            }
+            Map<String, Double> byStreet = new HashMap<>();
+            for (PathDetail d : details.getOrDefault("street_name", Collections.emptyList())) {
+                String name = d.getValue() == null ? "" : String.valueOf(d.getValue()).trim();
+                double m = 0;
+                for (int i = Math.max(0, d.getFirst()); i < Math.min(segs, d.getLast()); i++) {
+                    segStreet[i] = name.isEmpty() ? null : name;
+                    m += len[i];
+                }
+                if (!name.isEmpty()) byStreet.merge(name, m, Double::sum);
+            }
+            for (PathDetail d : details.getOrDefault("toll", Collections.emptyList())) {
+                String v = String.valueOf(d.getValue()).toLowerCase(Locale.ROOT);
+                if (v.equals("missing") || v.equals("no") || v.equals("null")) continue;
+                for (int i = Math.max(0, d.getFirst()); i < Math.min(segs, d.getLast()); i++) tollMeters += len[i];
+            }
+            for (PathDetail d : details.getOrDefault("road_class", Collections.emptyList())) {
+                String v = String.valueOf(d.getValue()).toLowerCase(Locale.ROOT);
+                if (!v.equals("motorway") && !v.equals("trunk")) continue;
+                for (int i = Math.max(0, d.getFirst()); i < Math.min(segs, d.getLast()); i++) motorwayMeters += len[i];
+            }
+            // le due vie piu' lunghe del percorso, nell'ordine in cui si incontrano
+            List<Map.Entry<String, Double>> top = new ArrayList<>(byStreet.entrySet());
+            top.sort((x, y) -> Double.compare(y.getValue(), x.getValue()));
+            List<String> names = new ArrayList<>();
+            for (int i = 0; i < Math.min(2, top.size()); i++) names.add(top.get(i).getKey());
+            List<String> ordered = new ArrayList<>();
+            for (String st : segStreet) if (st != null && names.contains(st) && !ordered.contains(st)) ordered.add(st);
+            summary = ordered.isEmpty() ? "" : "via " + String.join(" e ", ordered);
         }
     }
 
@@ -3848,6 +4003,18 @@ public class NavigationActivity extends AppCompatActivity
     private ProgressBar pbBuild, pbProgress;
     private RecyclerView rvSteps;
     private View overlayBuild, panelThen, btnRecenter;
+    // v5.1: limite di velocita', via corrente, percorsi alternativi
+    private TextView tvLimit, tvStreet;
+    private View limitSign, speedBubble, panelRoutes;
+    private LinearLayout routesList;
+    private List<RoutingEngine.RouteResult> alternatives = new ArrayList<>();
+    private int speedingCount = 0;
+    private boolean speedingShown = false;
+    private long lastSpeedWarnAt = 0;
+    private float lastLimitAnnounced = Float.NaN;
+    /** Nuovo tragitto (es. cambio auto/bici/piedi): annuncio e alternative come alla partenza. */
+    private boolean freshRoute = false;
+    private final Runnable hideRoutes = () -> { if (panelRoutes != null) panelRoutes.setVisibility(View.GONE); };
     private ImageButton btnProfileCar, btnProfileBike, btnProfileFoot, btn3d, btnVoice;
 
     private double destLat, destLon;
@@ -3908,6 +4075,12 @@ public class NavigationActivity extends AppCompatActivity
         btnProfileFoot = findViewById(R.id.btn_nav_profile_foot);
         btn3d          = findViewById(R.id.btn_nav_3d);
         btnVoice       = findViewById(R.id.btn_nav_voice);
+        tvLimit        = findViewById(R.id.tv_nav_limit);
+        tvStreet       = findViewById(R.id.tv_nav_street);
+        limitSign      = findViewById(R.id.nav_limit_sign);
+        speedBubble    = findViewById(R.id.nav_speed_bubble);
+        panelRoutes    = findViewById(R.id.panel_nav_routes);
+        routesList     = findViewById(R.id.nav_routes_list);
 
         SharedPreferences prefs = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
         tilt3d = prefs.getBoolean("nav_3d", true);
@@ -3934,6 +4107,7 @@ public class NavigationActivity extends AppCompatActivity
         click(R.id.btn_nav_recenter, v -> setFollowing(true));
         click(R.id.btn_nav_overview, v -> showOverview());
         click(R.id.btn_nav_steps, v -> toggleSteps());
+        click(R.id.btn_nav_routes, v -> toggleRoutes());
         click(R.id.btn_nav_3d, v -> toggle3d());
         click(R.id.btn_nav_voice, v -> toggleVoice());
         setupProfileButtons();
@@ -4050,6 +4224,7 @@ public class NavigationActivity extends AppCompatActivity
 
     private void toggleSteps() {
         if (rvSteps == null) return;
+        if (panelRoutes != null) panelRoutes.setVisibility(View.GONE);
         rvSteps.setVisibility(rvSteps.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
     }
 
@@ -4059,7 +4234,7 @@ public class NavigationActivity extends AppCompatActivity
             String newProfile = RoutingEngine.PROFILE_CAR;
             if (v == btnProfileBike) newProfile = RoutingEngine.PROFILE_BIKE;
             else if (v == btnProfileFoot) newProfile = RoutingEngine.PROFILE_FOOT;
-            if (!newProfile.equals(profile)) { profile = newProfile; highlightProfile(); recalcRoute(); }
+            if (!newProfile.equals(profile)) { profile = newProfile; freshRoute = true; highlightProfile(); recalcRoute(); }
         };
         if (btnProfileCar  != null) btnProfileCar.setOnClickListener(l);
         if (btnProfileBike != null) btnProfileBike.setOnClickListener(l);
@@ -4168,21 +4343,118 @@ public class NavigationActivity extends AppCompatActivity
                     Toast.makeText(this, why, Toast.LENGTH_LONG).show();
                     return;
                 }
-                boolean first = currentRoute == null || nav == null;
-                currentRoute = result;
-                nav = new NavCore(result.points, result.steps);
-                announced.clear();
-                engine.setRoute(result.points);
-                stepsAdapter.submit(result.steps);
+                boolean first = currentRoute == null || nav == null || freshRoute;
+                freshRoute = false;
+                useRoute(result);
+                // un ricalcolo cambia il percorso: le vecchie alternative non valgono piu'
+                alternatives = new ArrayList<>();
+                engine.setAlternatives(new ArrayList<>());
+                if (panelRoutes != null) panelRoutes.setVisibility(View.GONE);
                 if (first) {
                     speak(String.format(Locale.ITALIAN, "Percorso calcolato: %s, circa %s.",
                         spokenDistance(result.distanceMeters), spokenTime(result.timeMillis)));
+                    findAlternatives(fLat, fLon);
                 }
                 Location l2 = GpsTrackingService.getLastLocation();
                 if (l2 != null) onProgress(l2);
                 fetchWeatherForDestination();
             });
         });
+    }
+
+    private void useRoute(RoutingEngine.RouteResult r) {
+        currentRoute = r;
+        nav = new NavCore(r);
+        announced.clear();
+        lastLimitAnnounced = Float.NaN;
+        engine.setRoute(r.points);
+        stepsAdapter.submit(r.steps);
+    }
+
+    // ------------------------------------------------------------ percorsi alternativi
+    /** Alla partenza cerca fino a 3 percorsi (solo tragitti fino a ~150 km: oltre e' troppo lento). */
+    private void findAlternatives(double fLat, double fLon) {
+        if (NavCore.dist(fLat, fLon, destLat, destLon) > 150_000) return;
+        final String prof = profile;
+        routingExec.execute(() -> {
+            List<RoutingEngine.RouteResult> list = RoutingEngine.getInstance().routeAlternatives(fLat, fLon, destLat, destLon, prof);
+            mainHandler.post(() -> {
+                if (isFinishing() || list.size() < 2 || !prof.equals(profile)) return;
+                alternatives = list;
+                // il percorso in uso diventa il primo (il piu' veloce) dell'elenco
+                useRoute(list.get(0));
+                showAlternatives(0);
+                mainHandler.removeCallbacks(hideRoutes);
+                mainHandler.postDelayed(hideRoutes, 25_000);
+                speak("Ho trovato " + list.size() + " percorsi. Tocca quello che preferisci.");
+                Location l2 = GpsTrackingService.getLastLocation();
+                if (l2 != null) onProgress(l2);
+            });
+        });
+    }
+
+    private void toggleRoutes() {
+        if (alternatives.size() < 2) {
+            Toast.makeText(this, "Nessun percorso alternativo per questo tragitto", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean show = panelRoutes != null && panelRoutes.getVisibility() != View.VISIBLE;
+        mainHandler.removeCallbacks(hideRoutes);
+        if (show) showAlternatives(alternatives.indexOf(currentRoute));
+        else if (panelRoutes != null) panelRoutes.setVisibility(View.GONE);
+    }
+
+    /** Elenco dei percorsi con tempo, distanza, pedaggi; gli altri disegnati in grigio. */
+    private void showAlternatives(int selected) {
+        if (routesList == null || panelRoutes == null) return;
+        if (rvSteps != null) rvSteps.setVisibility(View.GONE);
+        routesList.removeAllViews();
+        List<List<double[]>> others = new ArrayList<>();
+        float dp = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < alternatives.size(); i++) {
+            RoutingEngine.RouteResult r = alternatives.get(i);
+            if (i != selected) others.add(r.points);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setBackgroundResource(i == selected ? R.drawable.bg_route_row_on : R.drawable.bg_route_row);
+            int pad = (int) (12 * dp);
+            row.setPadding(pad, (int) (9 * dp), pad, (int) (9 * dp));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (8 * dp);
+            TextView t1 = new TextView(this);
+            long extra = r.timeMillis - alternatives.get(0).timeMillis;
+            t1.setText(formatEta(r.timeMillis) + "   " + RoutingEngine.NavStep.formatMeters(r.distanceMeters)
+                + (i > 0 && extra > 30_000 ? "   (+" + formatEta(extra) + ")" : ""));
+            t1.setTextColor(i == selected ? 0xFF00FF88 : 0xFFE8F4FD);
+            t1.setTextSize(17);
+            t1.setTypeface(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD));
+            TextView t2 = new TextView(this);
+            String tags = r.label + (r.tollMeters >= 100 ? "  ·  pedaggio" : "")
+                + (r.motorwayMeters >= 1000 ? "  ·  autostrada" : "") + (r.summary.isEmpty() ? "" : "  ·  " + r.summary);
+            t2.setText(tags);
+            t2.setTextColor(0xFF8FB3D0);
+            t2.setTextSize(12);
+            t2.setMaxLines(2);
+            row.addView(t1);
+            row.addView(t2);
+            final int idx = i;
+            row.setOnClickListener(v -> chooseRoute(idx));
+            routesList.addView(row, lp);
+        }
+        engine.setAlternatives(others);
+        panelRoutes.setVisibility(View.VISIBLE);
+    }
+
+    private void chooseRoute(int i) {
+        if (i < 0 || i >= alternatives.size()) return;
+        mainHandler.removeCallbacks(hideRoutes);
+        RoutingEngine.RouteResult r = alternatives.get(i);
+        useRoute(r);
+        showAlternatives(i);
+        mainHandler.postDelayed(hideRoutes, 2500);
+        speak("Percorso scelto: " + spokenTime(r.timeMillis) + (r.tollMeters >= 100 ? ", con pedaggio" : ", senza pedaggi"));
+        Location l2 = GpsTrackingService.getLastLocation();
+        if (l2 != null) onProgress(l2);
     }
 
     private void fetchWeatherForDestination() {
@@ -4229,7 +4501,38 @@ public class NavigationActivity extends AppCompatActivity
             recalcRoute();
         }
         renderProgress(p);
+        renderLimit(p);
         announce(p);
+    }
+
+    /** Cartello del limite, via in cui sei, avviso se vai troppo forte (solo in auto). */
+    private void renderLimit(NavCore.Progress p) {
+        boolean car = RoutingEngine.PROFILE_CAR.equals(profile);
+        if (tvStreet != null) {
+            boolean has = p.street != null && !p.street.isEmpty() && !p.arrived;
+            tvStreet.setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) tvStreet.setText(p.street);
+        }
+        boolean hasLimit = car && !Float.isNaN(p.speedLimitKmh) && !p.arrived;
+        if (limitSign != null) limitSign.setVisibility(hasLimit ? View.VISIBLE : View.GONE);
+        if (hasLimit && tvLimit != null) tvLimit.setText(String.valueOf(Math.round(p.speedLimitKmh)));
+        // un limite piu' basso in arrivo: un solo annuncio
+        if (car && !Float.isNaN(p.nextLimitKmh) && p.nextLimitInM < 250 && p.nextLimitKmh != lastLimitAnnounced) {
+            lastLimitAnnounced = p.nextLimitKmh;
+            speak("Tra poco limite di " + Math.round(p.nextLimitKmh));
+        }
+        float kmh = speedMs * 3.6f;
+        boolean over = hasLimit && NavCore.speeding(kmh, p.speedLimitKmh);
+        speedingCount = over ? speedingCount + 1 : 0;
+        boolean show = speedingCount >= 3;               // ~3 secondi di fila, non un picco del GPS
+        if (show != speedingShown && speedBubble != null) {
+            speedingShown = show;
+            speedBubble.setBackgroundResource(show ? R.drawable.bg_speed_bubble_alert : R.drawable.bg_speed_bubble);
+        }
+        if (show && System.currentTimeMillis() - lastSpeedWarnAt > 60_000) {
+            lastSpeedWarnAt = System.currentTimeMillis();
+            speak("Attenzione, il limite e' " + Math.round(p.speedLimitKmh));
+        }
     }
 
     private void renderProgress(NavCore.Progress p) {
@@ -5404,6 +5707,8 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_firstaid, FirstAidActivity.class);
         // NUOVO v5.0
         wire(R.id.card_fire, FireCampActivity.class);
+        // NUOVO v5.1
+        wire(R.id.card_team, TeamActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -7594,6 +7899,8 @@ import java.util.concurrent.Executors;
  * punto, mappa, navigatore o salvataggio come waypoint.
  */
 public class GotoCoordsActivity extends AppCompatActivity {
+    /** Testo da precompilare (es. la posizione di un compagno dal radar del gruppo). */
+    public static final String EXTRA_TEXT = "goto_text";
     private final Handler h = new Handler(Looper.getMainLooper());
     private EditText input;
     private TextView tvResult;
@@ -7625,6 +7932,8 @@ public class GotoCoordsActivity extends AppCompatActivity {
             @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
             @Override public void afterTextChanged(Editable e) { parse(); }
         });
+        String pre = getIntent().getStringExtra(EXTRA_TEXT);
+        if (pre != null && input != null) input.setText(pre);
         parse();
     }
 
@@ -8156,22 +8465,18 @@ import android.app.AlertDialog;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
-import android.bluetooth.BluetoothServerSocket;
-import android.bluetooth.BluetoothSocket;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.ArrayAdapter;
@@ -8184,54 +8489,36 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.chat.MeshHub;
 import com.offlinegps.map.chat.MeshNode;
 import com.offlinegps.map.gps.GpsTrackingService;
 import com.offlinegps.map.routing.RoutingEngine;
-import com.offlinegps.map.sky.DroneTrack;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
+import com.offlinegps.map.util.GeoFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
 
 /**
- * CHAT MESH OFFLINE via Bluetooth. Ogni telefono e' insieme "server" (accetta
- * fino a 7 vicini) e "client" (si collega a chi trova): i messaggi rimbalzano
- * di telefono in telefono fino a 7 salti. Senza accoppiamento (RFCOMM
- * insicuro), con conferme di lettura, invio della posizione e SOS.
+ * CHAT MESH OFFLINE via Bluetooth (v5.1). La rete vive in MeshHub: questa
+ * schermata la mostra e la comanda. Chiudendola la chat resta accesa in
+ * background (notifica con SPEGNI); i messaggi arrivano anche a schermo
+ * spento. GRUPPO CIFRATO con password, RADAR del gruppo, posizione e SOS.
  */
-public class ChatActivity extends AppCompatActivity implements MeshNode.Listener {
-    private static final UUID APP_UUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
-    private static final String SERVICE = "OfflineGPSMesh";
-    private static final int REQ_BT = 7301, MAX_PEERS = 7, HISTORY_MAX = 300;
+public class ChatActivity extends AppCompatActivity implements MeshHub.Listener {
+    private static final int REQ_BT = 7301;
 
+    private MeshHub hub;
     private BluetoothAdapter adapter;
-    private MeshNode node;
-    private volatile boolean running;
-    private BluetoothServerSocket serverSocket;
-    private final List<BluetoothSocket> sockets = Collections.synchronizedList(new ArrayList<>());
-    private final Set<String> connected = Collections.synchronizedSet(new HashSet<>());
-    /** indirizzo Bluetooth -> {collegamento mesh, socket} per poter ricollegare chi cade. */
-    private final Map<String, Object[]> byAddr = Collections.synchronizedMap(new HashMap<>());
-    private final Handler ui = new Handler(Looper.getMainLooper());
-
     private LinearLayout msgBox;
     private ScrollView scroll;
     private EditText etMsg;
-    private TextView tvStatus, tvPeers, tvMe;
+    private TextView tvStatus, tvPeers, tvMe, tvGroup;
     private final Map<String, TextView> ackViews = new HashMap<>();
-    private final List<String> history = new ArrayList<>();
-    private File historyFile;
+    private final Map<String, MeshNode.Msg> shownMine = new HashMap<>();
     private BroadcastReceiver discoveryReceiver;
     private ArrayAdapter<String> foundAdapter;
     private final List<BluetoothDevice> found = new ArrayList<>();
@@ -8245,10 +8532,11 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         tvStatus = findViewById(R.id.chat_status);
         tvPeers = findViewById(R.id.tv_chat_peers);
         tvMe = findViewById(R.id.tv_chat_me);
-        historyFile = new File(getFilesDir(), "chat_mesh_history.txt");
+        tvGroup = findViewById(R.id.tv_chat_group);
+        hub = MeshHub.get(this);
+        BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        adapter = bm != null ? bm.getAdapter() : null;
 
-        node = new MeshNode(myName());
-        node.setListener(this);
         click(R.id.btn_chat_back, v -> finish());
         click(R.id.btn_chat_send, v -> sendText());
         click(R.id.btn_chat_visible, v -> makeVisible());
@@ -8256,13 +8544,30 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         click(R.id.btn_chat_pos, v -> sendPosition());
         click(R.id.btn_chat_sos, v -> confirmSos());
         click(R.id.tv_chat_me, v -> editName());
-        updateMe();
-        loadHistory();
+        click(R.id.btn_chat_group, v -> groupDialog());
+        click(R.id.tv_chat_group, v -> groupDialog());
+        click(R.id.btn_chat_team, v -> startActivity(new Intent(this, TeamActivity.class)));
+        click(R.id.btn_chat_power, v -> confirmPowerOff());
 
-        BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        adapter = bm != null ? bm.getAdapter() : null;
-        if (adapter == null) { setStatus("Questo telefono non ha il Bluetooth"); return; }
-        if (ensurePerms()) startServer();
+        for (MeshNode.Msg m : hub.history()) show(m, false);
+        if (msgBox != null && msgBox.getChildCount() > 0) {
+            TextView sep = label("— messaggi precedenti —", 0xFF5A7A99, 11, false);
+            sep.setGravity(Gravity.CENTER);
+            msgBox.addView(sep, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+        updateMe();
+        updateGroup();
+        onPeers(hub.peers());
+        setStatus(hub.status());
+        if (!hub.hasBluetooth()) { setStatus("Questo telefono non ha il Bluetooth"); return; }
+        if (ensurePerms()) requireOn();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        // tornando dalla richiesta "accendi il Bluetooth" la chat parte da sola
+        if (hub.hasBluetooth() && hasBtPerms() && hub.isBluetoothOn() && !hub.isRunning()) hub.start();
     }
 
     private void click(int id, View.OnClickListener l) {
@@ -8270,39 +8575,100 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         if (v != null) v.setOnClickListener(l);
     }
 
-    // ------------------------------------------------------------ nome
-    private String myName() {
-        SharedPreferences p = getPreferences(MODE_PRIVATE);
-        String n = p.getString("nick", "");
-        if (n.isEmpty()) {
-            n = (Build.MODEL != null ? Build.MODEL : "Telefono").replaceAll("[^A-Za-z0-9 ]", "").trim();
-            if (n.length() > 14) n = n.substring(0, 14);
-            n += "-" + Integer.toString((int) (Math.random() * 900) + 100);
-            p.edit().putString("nick", n).apply();
-        }
-        return n;
+    @Override protected void onStart() {
+        super.onStart();
+        hub.addListener(this);
+        hub.setScreenVisible(true);
+        onPeers(hub.peers());
     }
 
+    @Override protected void onStop() {
+        super.onStop();
+        hub.removeListener(this);
+        hub.setScreenVisible(false);
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        stopDiscovery();
+    }
+
+    // ------------------------------------------------------------ nome e gruppo
     private void editName() {
         final EditText et = new EditText(this);
-        et.setText(node.name());
-        et.setTextColor(0xFFE8F4FD);
+        et.setText(hub.nickname());
         new AlertDialog.Builder(this)
             .setTitle("Il tuo nome nella chat")
             .setView(et)
-            .setPositiveButton("Salva", (d, w) -> {
-                String n = et.getText().toString().replace("|", " ").trim();
-                if (n.isEmpty()) return;
-                if (n.length() > 24) n = n.substring(0, 24);
-                getPreferences(MODE_PRIVATE).edit().putString("nick", n).apply();
-                node.setName(n);
-                updateMe();
-            })
+            .setPositiveButton("Salva", (d, w) -> { hub.setNickname(et.getText().toString()); updateMe(); })
             .setNegativeButton("Annulla", null).show();
     }
 
     private void updateMe() {
-        if (tvMe != null) tvMe.setText("Tu: " + node.name() + "  ·  tocca per cambiare");
+        if (tvMe != null) tvMe.setText("Tu: " + hub.nickname() + "  ·  tocca per cambiare");
+    }
+
+    private void updateGroup() {
+        if (tvGroup == null) return;
+        if (hub.inGroup()) {
+            tvGroup.setText("GRUPPO " + hub.groupName().toUpperCase(Locale.ITALY) + "  ·  cifrato  ·  codice " + hub.groupCode());
+            tvGroup.setTextColor(0xFF00FF88);
+            tvGroup.setBackgroundResource(R.drawable.bg_chip_on);
+        } else {
+            tvGroup.setText("Chat aperta: senza gruppo i messaggi non sono cifrati");
+            tvGroup.setTextColor(0xFFFFD600);
+            tvGroup.setBackgroundResource(R.drawable.bg_chip_off);
+        }
+    }
+
+    private void groupDialog() {
+        float dp = getResources().getDisplayMetrics().density;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int p = (int) (20 * dp);
+        box.setPadding(p, (int) (8 * dp), p, 0);
+        TextView info = new TextView(this);
+        info.setText("Tutti i telefoni con lo STESSO nome di gruppo e la STESSA password leggono i messaggi; "
+            + "gli altri li fanno solo passare, senza poterli leggere. Controllate a voce che il codice "
+            + "del gruppo sia uguale su tutti i telefoni. L'SOS resta sempre leggibile da chiunque.");
+        info.setTextColor(0xFFCFE3F5);
+        final EditText name = new EditText(this);
+        name.setHint("Nome del gruppo (es. Montagna)");
+        name.setText(hub.groupName());
+        final EditText pw = new EditText(this);
+        pw.setHint("Password (almeno 6 caratteri)");
+        pw.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        box.addView(info);
+        box.addView(name);
+        box.addView(pw);
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+            .setTitle(hub.inGroup() ? "Gruppo cifrato (codice " + hub.groupCode() + ")" : "Gruppo cifrato")
+            .setView(box)
+            .setPositiveButton("ENTRA", (d, w) -> {
+                String n = name.getText().toString().trim(), k = pw.getText().toString();
+                if (n.isEmpty() || k.length() < 6) {
+                    Toast.makeText(this, "Servono un nome e una password di almeno 6 caratteri", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                setStatus("Calcolo della chiave del gruppo...");
+                hub.joinGroup(n, k, () -> {
+                    updateGroup();
+                    Toast.makeText(this, "Gruppo attivo. Codice: " + hub.groupCode(), Toast.LENGTH_LONG).show();
+                });
+            })
+            .setNegativeButton("Annulla", null);
+        if (hub.inGroup()) b.setNeutralButton("ESCI DAL GRUPPO", (d, w) -> { hub.leaveGroup(); updateGroup(); });
+        b.show();
+    }
+
+    private void confirmPowerOff() {
+        if (!hub.isRunning()) { finish(); return; }
+        new AlertDialog.Builder(this)
+            .setTitle("Spegnere la chat?")
+            .setMessage("Chiudendo solo la schermata la chat resta accesa in background e ricevi i messaggi. "
+                + "Spegnendola si chiudono i collegamenti e si risparmia batteria.")
+            .setPositiveButton("SPEGNI", (d, w) -> { hub.stop(); finish(); })
+            .setNegativeButton("Lascia accesa", null).show();
     }
 
     // ------------------------------------------------------------ permessi
@@ -8315,16 +8681,19 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         } else {
             p.add(Manifest.permission.ACCESS_FINE_LOCATION);
         }
+        if (Build.VERSION.SDK_INT >= 33) p.add(Manifest.permission.POST_NOTIFICATIONS);
         return p.toArray(new String[0]);
     }
 
-    private boolean hasPerms() {
-        for (String p : neededPerms()) if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) return false;
+    private boolean hasBtPerms() {
+        for (String p : neededPerms())
+            if (!p.equals(Manifest.permission.POST_NOTIFICATIONS) && checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED)
+                return false;
         return true;
     }
 
     private boolean ensurePerms() {
-        if (hasPerms()) return true;
+        if (hasBtPerms()) return true;
         requestPermissions(neededPerms(), REQ_BT);
         return false;
     }
@@ -8332,74 +8701,33 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
     @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
         super.onRequestPermissionsResult(req, p, res);
         if (req == REQ_BT) {
-            if (hasPerms()) startServer();
+            if (hasBtPerms()) requireOn();
             else setStatus("Servono i permessi Bluetooth per la chat offline");
         }
     }
 
     // ------------------------------------------------------------ Bluetooth
-    /** In ascolto: accetta fino a 7 vicini (senza accoppiamento). */
-    private void startServer() {
-        if (running || adapter == null) return;
-        if (!adapter.isEnabled()) {
-            setStatus("Accendi il Bluetooth per usare la chat");
+    private void requireOn() {
+        if (!hub.isBluetoothOn()) {
             try { startActivity(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)); } catch (Exception ignored) {}
-            return;
-        }
-        running = true;
-        Thread t = new Thread(() -> {
-            try {
-                serverSocket = adapter.listenUsingInsecureRfcommWithServiceRecord(SERVICE, APP_UUID);
-                ui.post(() -> setStatus("In ascolto. Premi CERCA per collegarti a chi e' vicino, o VISIBILE per farti trovare."));
-                while (running) {
-                    BluetoothSocket sock = serverSocket.accept();
-                    if (sock == null) continue;
-                    if (node.linkCount() >= MAX_PEERS) { try { sock.close(); } catch (Exception ignored) {} continue; }
-                    attach(sock);
-                }
-            } catch (SecurityException se) {
-                ui.post(() -> setStatus("Permesso Bluetooth mancante"));
-            } catch (Exception e) {
-                if (running) ui.post(() -> setStatus("Ascolto interrotto: " + e.getMessage()));
-            }
-        }, "mesh-server");
-        t.setDaemon(true);
-        t.start();
-    }
-
-    private void attach(BluetoothSocket sock) {
-        try {
-            String addr = sock.getRemoteDevice().getAddress();
-            if (!connected.add(addr)) { sock.close(); return; }
-            sockets.add(sock);
-            MeshNode.Link link = node.addLink(sock.getInputStream(), sock.getOutputStream(), deviceName(sock.getRemoteDevice()));
-            byAddr.put(addr, new Object[]{link, sock});
-            ui.post(() -> vibrate(60));
-        } catch (Exception e) {
-            try { sock.close(); } catch (Exception ignored) {}
-        }
-    }
-
-    private String deviceName(BluetoothDevice d) {
-        try { String n = d.getName(); return n != null ? n : d.getAddress(); }
-        catch (SecurityException e) { return d.getAddress(); }
+        } else hub.start();
     }
 
     private void makeVisible() {
         if (!ensurePerms()) return;
+        requireOn();
         try {
             Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
             i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
             startActivity(i);
-            startServer();
         } catch (Exception e) { Toast.makeText(this, "Impossibile rendersi visibili", Toast.LENGTH_SHORT).show(); }
     }
 
     /** Cerca i telefoni vicini (e mostra subito quelli gia' accoppiati), poi si collega. */
     private void searchAndConnect() {
         if (adapter == null || !ensurePerms()) return;
-        if (!adapter.isEnabled()) { startServer(); return; }
-        startServer();
+        requireOn();
+        if (!hub.isBluetoothOn()) return;
         found.clear();
         foundAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
         try {
@@ -8426,7 +8754,7 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         } catch (SecurityException e) { setStatus("Permesso di ricerca Bluetooth mancante"); }
         new AlertDialog.Builder(this)
             .setTitle("Collegati a...")
-            .setAdapter(foundAdapter, (d, w) -> connectTo(found.get(w)))
+            .setAdapter(foundAdapter, (d, w) -> { stopDiscovery(); hub.connectTo(found.get(w)); })
             .setNegativeButton("Chiudi", null)
             .setOnDismissListener(d -> stopDiscovery())
             .show();
@@ -8436,7 +8764,7 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         for (BluetoothDevice x : found) if (x.getAddress().equals(d.getAddress())) return;
         found.add(d);
         if (foundAdapter != null) {
-            foundAdapter.add(deviceName(d) + "  (" + tag + ")" + (connected.contains(d.getAddress()) ? "  · gia' collegato" : ""));
+            foundAdapter.add(MeshHub.deviceName(d) + "  (" + tag + ")" + (hub.isConnected(d.getAddress()) ? "  · gia' collegato" : ""));
             foundAdapter.notifyDataSetChanged();
         }
     }
@@ -8449,41 +8777,13 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         }
     }
 
-    private void connectTo(BluetoothDevice dev) {
-        if (connected.contains(dev.getAddress())) { Toast.makeText(this, "Gia' collegato", Toast.LENGTH_SHORT).show(); return; }
-        stopDiscovery();
-        setStatus("Collegamento a " + deviceName(dev) + "...");
-        Thread t = new Thread(() -> {
-            BluetoothSocket sock = null;
-            try {
-                sock = dev.createInsecureRfcommSocketToServiceRecord(APP_UUID);
-                sock.connect();
-            } catch (Exception first) {
-                try { if (sock != null) sock.close(); } catch (Exception ignored) {}
-                try {
-                    // alcuni telefoni accettano solo la connessione "sicura" (con accoppiamento)
-                    sock = dev.createRfcommSocketToServiceRecord(APP_UUID);
-                    sock.connect();
-                } catch (Exception e) {
-                    try { if (sock != null) sock.close(); } catch (Exception ignored) {}
-                    ui.post(() -> setStatus("Collegamento fallito: l'altro telefono deve avere la chat aperta"));
-                    return;
-                }
-            }
-            attach(sock);
-        }, "mesh-client");
-        t.setDaemon(true);
-        t.start();
-    }
-
     // ------------------------------------------------------------ invio
     private void sendText() {
         String text = etMsg.getText().toString().trim();
         if (text.isEmpty()) return;
-        if (node.linkCount() == 0) Toast.makeText(this, "Nessun vicino collegato: il messaggio resta solo qui", Toast.LENGTH_SHORT).show();
+        if (hub.peers().isEmpty()) Toast.makeText(this, "Nessun vicino collegato: il messaggio resta solo qui", Toast.LENGTH_SHORT).show();
         etMsg.setText("");
-        final String t = text;
-        new Thread(() -> { MeshNode.Msg m = node.sendText(t); ui.post(() -> show(m, true)); }).start();
+        hub.sendText(text);
     }
 
     @Nullable private Location myLocation() {
@@ -8504,81 +8804,56 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
     private void sendPosition() {
         Location l = myLocation();
         if (l == null) { Toast.makeText(this, "Posizione GPS non ancora disponibile", Toast.LENGTH_LONG).show(); return; }
-        new Thread(() -> {
-            MeshNode.Msg m = node.sendPosition(l.getLatitude(), l.getLongitude(), l.getAccuracy(), "La mia posizione");
-            ui.post(() -> show(m, true));
-        }).start();
+        hub.sendPosition(l, "La mia posizione");
     }
 
     private void confirmSos() {
         new AlertDialog.Builder(this)
             .setTitle("Inviare SOS?")
-            .setMessage("Tutti i telefoni della rete riceveranno un allarme con la tua posizione.\n"
+            .setMessage("Tutti i telefoni della rete riceveranno un allarme con la tua posizione, anche quelli "
+                + "fuori dal tuo gruppo: l'SOS viaggia in chiaro perche' chiunque possa aiutarti.\n"
                 + "Se puoi, chiama anche il 112: questa chat NON raggiunge i soccorsi da sola.")
-            .setPositiveButton("INVIA SOS", (d, w) -> {
-                Location l = myLocation();
-                double la = l != null ? l.getLatitude() : Double.NaN, lo = l != null ? l.getLongitude() : Double.NaN;
-                float acc = l != null ? l.getAccuracy() : 0f;
-                new Thread(() -> {
-                    MeshNode.Msg m = node.sendSos(la, lo, acc, "Ho bisogno di aiuto!");
-                    ui.post(() -> show(m, true));
-                }).start();
-            })
+            .setPositiveButton("INVIA SOS", (d, w) -> hub.sendSos(myLocation(), "Ho bisogno di aiuto!"))
             .setNegativeButton("Annulla", null).show();
     }
 
-    // ------------------------------------------------------------ ricezione
+    // ------------------------------------------------------------ eventi della rete (MeshHub.Listener)
     @Override public void onMessage(MeshNode.Msg m) {
-        ui.post(() -> {
-            show(m, true);
-            if (MeshNode.SOS.equals(m.type)) {
-                vibrateSos();
-                Toast.makeText(this, "SOS da " + m.from + "!", Toast.LENGTH_LONG).show();
-            } else vibrate(40);
-        });
+        show(m, true);
+        if (m.mine) return;
+        if (MeshNode.SOS.equals(m.type)) {
+            vibrate(new long[]{0, 200, 120, 200, 120, 200, 400, 600});
+            Toast.makeText(this, "SOS da " + m.from + "!", Toast.LENGTH_LONG).show();
+        } else vibrate(new long[]{0, 40});
     }
 
     @Override public void onAck(MeshNode.Msg mine, String by) {
-        ui.post(() -> {
-            TextView tv = ackViews.get(mine.id);
-            if (tv != null) tv.setText(ackText(mine));
-        });
+        TextView tv = ackViews.get(mine.id);
+        MeshNode.Msg shown = shownMine.get(mine.id);
+        if (shown != null && shown != mine && !shown.ackedBy.contains(by)) shown.ackedBy.add(by);
+        if (tv != null) tv.setText(ackText(shown != null ? shown : mine));
     }
 
-    @Override public void onPeersChanged(List<String> names) {
-        // chi e' caduto torna ricollegabile
-        synchronized (byAddr) {
-            List<String> dead = new ArrayList<>();
-            for (Map.Entry<String, Object[]> e : byAddr.entrySet())
-                if (!((MeshNode.Link) e.getValue()[0]).isAlive()) dead.add(e.getKey());
-            for (String a : dead) {
-                Object[] v = byAddr.remove(a);
-                connected.remove(a);
-                try { ((BluetoothSocket) v[1]).close(); } catch (Exception ignored) {}
-                sockets.remove(v[1]);
-            }
+    @Override public void onPeers(List<String> names) {
+        if (tvPeers != null) {
+            tvPeers.setText(names.size() + (names.size() == 1 ? " VICINO" : " VICINI"));
+            SkyUi.chip(tvPeers, names.isEmpty() ? SkyUi.CHIP_OFF : SkyUi.CHIP_ON, tvPeers.getText().toString());
         }
-        ui.post(() -> {
-            if (tvPeers != null) {
-                tvPeers.setText(names.size() + (names.size() == 1 ? " VICINO" : " VICINI"));
-                SkyUi.chip(tvPeers, names.isEmpty() ? SkyUi.CHIP_OFF : SkyUi.CHIP_ON, tvPeers.getText().toString());
-            }
-            setStatus(names.isEmpty() ? "Nessun vicino collegato" : "Collegato a: " + String.join(", ", names));
-        });
     }
+
+    @Override public void onStatus(String status) { setStatus(status); }
 
     // ------------------------------------------------------------ bolle
     private String ackText(MeshNode.Msg m) {
-        String t = new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(m.time));
+        String t = new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(m.time)) + (m.secure ? "  🔒" : "");
         if (!m.mine) return t;
         if (m.ackedBy.isEmpty()) return t + "  ✓ inviato";
         return t + "  ✓✓ letto da " + String.join(", ", m.ackedBy);
     }
 
-    /** Aggiunge la bolla del messaggio (e la salva nella cronologia). */
-    private void show(MeshNode.Msg m, boolean save) {
+    /** Aggiunge la bolla del messaggio. */
+    private void show(MeshNode.Msg m, boolean animate) {
         if (msgBox == null || m == null) return;
-        if (save) saveHistory(m);
         boolean sos = MeshNode.SOS.equals(m.type), pos = MeshNode.POS.equals(m.type);
         LinearLayout b = new LinearLayout(this);
         b.setOrientation(LinearLayout.VERTICAL);
@@ -8602,9 +8877,9 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
             Location me = myLocation();
             String where = String.format(Locale.US, "%.5f, %.5f (±%.0f m)", m.lat, m.lon, m.acc);
             if (me != null && !m.mine) {
-                double d = DroneTrack.distance(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
-                double brg = DroneTrack.bearing(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
-                where = DroneTrack.formatDistance(d) + " verso " + DroneTrack.cardinal(brg) + "  ·  " + where;
+                double d = GeoFormat.distance(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
+                double brg = GeoFormat.bearing(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
+                where = GeoFormat.formatDistance(d) + " verso " + GeoFormat.cardinal(brg) + "  ·  " + where;
             }
             b.addView(label(where, sos ? 0xFFFFE0E6 : 0xFF8FB3D0, 12, false));
             if (!m.mine) {
@@ -8612,14 +8887,7 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
                 nav.setPadding(0, SkyUi.dp(this, 6), 0, 0);
                 final double la = m.lat, lo = m.lon;
                 final String who = m.from;
-                nav.setOnClickListener(v -> {
-                    Intent i = new Intent(this, NavigationActivity.class);
-                    i.putExtra(NavigationActivity.EXTRA_DEST_LAT, la);
-                    i.putExtra(NavigationActivity.EXTRA_DEST_LON, lo);
-                    i.putExtra(NavigationActivity.EXTRA_DEST_NAME, who);
-                    i.putExtra(NavigationActivity.EXTRA_PROFILE, RoutingEngine.PROFILE_FOOT);
-                    startActivity(i);
-                });
+                nav.setOnClickListener(v -> ToolKit.navigate(this, la, lo, who, RoutingEngine.PROFILE_FOOT));
                 b.addView(nav);
             }
         } else if (sos) {
@@ -8628,11 +8896,13 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
         TextView meta = label(ackText(m), m.mine ? 0xFFB3FFE0 : 0xFF5A7A99, 10, false);
         meta.setGravity(Gravity.END);
         b.addView(meta);
-        if (m.mine) ackViews.put(m.id, meta);
+        if (m.mine) { ackViews.put(m.id, meta); shownMine.put(m.id, m); }
         msgBox.addView(b);
-        b.setAlpha(0f);
-        b.setTranslationY(SkyUi.dp(this, 12));
-        b.animate().alpha(1f).translationY(0).setDuration(220).start();
+        if (animate) {
+            b.setAlpha(0f);
+            b.setTranslationY(SkyUi.dp(this, 12));
+            b.animate().alpha(1f).translationY(0).setDuration(220).start();
+        }
         if (scroll != null) scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
@@ -8647,58 +8917,11 @@ public class ChatActivity extends AppCompatActivity implements MeshNode.Listener
 
     private void setStatus(String s) { if (tvStatus != null) tvStatus.setText(s); }
 
-    private void vibrate(long ms) {
+    private void vibrate(long[] pattern) {
         try {
             Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-            if (v != null) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+            if (v != null) v.vibrate(VibrationEffect.createWaveform(pattern, -1));
         } catch (Exception ignored) {}
-    }
-
-    private void vibrateSos() {
-        try {
-            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-            if (v != null) v.vibrate(VibrationEffect.createWaveform(new long[]{0, 200, 120, 200, 120, 200, 400, 600}, -1));
-        } catch (Exception ignored) {}
-    }
-
-    // ------------------------------------------------------------ cronologia
-    private void saveHistory(MeshNode.Msg m) {
-        history.add((m.mine ? "M" : "R") + m.toLine());
-        while (history.size() > HISTORY_MAX) history.remove(0);
-        try (FileOutputStream out = new FileOutputStream(historyFile)) {
-            out.write(String.join("\n", history).getBytes(StandardCharsets.UTF_8));
-        } catch (Exception ignored) {}
-    }
-
-    private void loadHistory() {
-        try {
-            if (!historyFile.exists()) return;
-            for (String line : Files.readAllLines(historyFile.toPath(), StandardCharsets.UTF_8)) {
-                if (line.length() < 2) continue;
-                MeshNode.Msg m = MeshNode.Msg.fromLine(line.substring(1));
-                if (m == null) continue;
-                m.mine = line.charAt(0) == 'M';
-                history.add(line);
-                show(m, false);
-            }
-            if (!history.isEmpty()) {
-                TextView sep = label("— messaggi precedenti —", 0xFF5A7A99, 11, false);
-                sep.setGravity(Gravity.CENTER);
-                msgBox.addView(sep, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT));
-            }
-        } catch (Exception ignored) {}
-    }
-
-    @Override protected void onDestroy() {
-        super.onDestroy();
-        running = false;
-        stopDiscovery();
-        node.closeAll();
-        try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
-        synchronized (sockets) {
-            for (BluetoothSocket s : sockets) { try { s.close(); } catch (Exception ignored) {} }
-        }
     }
 }
 """
@@ -14938,7 +15161,9 @@ import java.util.List;
  *  - distanza REALE alla prossima manovra e alla destinazione;
  *  - tempo residuo dai tempi dei singoli tratti (autostrada != centro citta');
  *  - fuori percorso solo dopo piu' letture consecutive (il GPS "salta");
- *  - direzione della strada nel punto agganciato (per ruotare la mappa).
+ *  - direzione della strada nel punto agganciato (per ruotare la mappa);
+ *  - v5.1: limite di velocita' e nome della via dove sei, e il prossimo
+ *    limite piu' basso in arrivo (per avvisare prima).
  * Nessuna dipendenza da Android: e' testato sul computer.
  */
 public final class NavCore {
@@ -14953,6 +15178,10 @@ public final class NavCore {
         public float routeBearing;       // direzione della strada (gradi)
         public boolean offRoute, arrived;
         public float fraction;           // 0..1 avanzamento totale
+        public float speedLimitKmh = Float.NaN;    // limite dove sei (NaN = non noto)
+        public String street;                      // via dove sei (null = senza nome)
+        public float nextLimitKmh = Float.NaN;     // limite piu' basso entro 400 m
+        public double nextLimitInM;                // ...a questa distanza
     }
 
     private static final double ARRIVE_M = 25.0;
@@ -14965,6 +15194,15 @@ public final class NavCore {
     private int badFixes = 0;
     private int lastNext = 0;
     private boolean arrived;
+    private float[] segMax = new float[0];
+    private String[] segStreet = new String[0];
+
+    /** Con limiti di velocita' e nomi delle vie del percorso. */
+    public NavCore(RoutingEngine.RouteResult r) {
+        this(r.points, r.steps);
+        if (r.segMaxSpeed != null) segMax = r.segMaxSpeed;
+        if (r.segStreet != null) segStreet = r.segStreet;
+    }
 
     public NavCore(List<double[]> pts, List<RoutingEngine.NavStep> steps) {
         int n = pts.size();
@@ -15012,6 +15250,16 @@ public final class NavCore {
         p.offRouteM = dist(la, lo, p.snappedLat, p.snappedLon);
         p.routeBearing = (float) bearing(lat[best], lon[best], lat[best + 1], lon[best + 1]);
         lastSeg = best;
+        if (best < segMax.length) p.speedLimitKmh = segMax[best];
+        if (best < segStreet.length) p.street = segStreet[best];
+        for (int j = best + 1; j < segMax.length && cum[j] - p.alongM <= 400; j++) {
+            float lim = segMax[j];
+            if (!Float.isNaN(lim) && (Float.isNaN(p.speedLimitKmh) || lim < p.speedLimitKmh)) {
+                p.nextLimitKmh = lim;
+                p.nextLimitInM = cum[j] - p.alongM;
+                break;
+            }
+        }
 
         // 2) prossima manovra = la prima che sta ancora davanti
         int next = steps.size() - 1;
@@ -15084,6 +15332,16 @@ public final class NavCore {
      * {lontano, vicino, adesso}. A piedi 120/40/12, in citta' 400/120/30,
      * in strada veloce 1000/350/60.
      */
+    /**
+     * Eccesso di velocita' oltre la tolleranza degli autovelox italiani
+     * (5%, minimo 5 km/h): cosi' l'avviso non scatta per un tachimetro pignolo.
+     */
+    public static boolean speeding(float speedKmh, float limitKmh) {
+        if (Float.isNaN(limitKmh) || limitKmh <= 0) return false;
+        float tol = Math.max(5f, limitKmh * 0.05f);
+        return speedKmh > limitKmh + tol;
+    }
+
     public static double[] announceDistances(float speedMs, String profile) {
         if (RoutingEngine.PROFILE_FOOT.equals(profile) || speedMs < 2.5f) return new double[]{120, 40, 12};
         if (RoutingEngine.PROFILE_BIKE.equals(profile) || speedMs < 9f) return new double[]{250, 80, 20};
@@ -15276,9 +15534,13 @@ public interface MapEngine {
 
     void setUserPosition(double lat, double lon, float accuracy, float bearing);
     void setRoute(List<double[]> pts);
+    /** Percorsi alternativi (grigi, sotto quello scelto); lista vuota = nessuno. */
+    void setAlternatives(List<List<double[]>> routes);
     void setTrack(List<double[]> pts);
     void setDestination(double lat, double lon);
     void setPoints(List<double[]> pts);          // waypoint {lat, lon}
+    /** Compagni del radar del gruppo: posizioni e nomi (stessa lunghezza). */
+    void setTeam(List<double[]> pts, List<String> names);
 
     /** Inquadratura: zoom (livello), rotazione (gradi, 0 = nord su), inclinazione (gradi). */
     void moveTo(double lat, double lon, double zoom, float bearing, float tilt, boolean animate);
@@ -15362,7 +15624,11 @@ public final class VtmEngine implements MapEngine {
     private BuildingLayer buildings;
     private LabelLayer labels;
     private PathLayer routeGlow, routeLine, trackLine;
-    private ItemizedLayer pointsLayer, destLayer;
+    private final List<PathLayer> altLines = new ArrayList<>();
+    private List<List<double[]>> altRoutes = new ArrayList<>();
+    private ItemizedLayer pointsLayer, destLayer, teamLayer;
+    private List<double[]> teamPts = new ArrayList<>();
+    private List<String> teamNames = new ArrayList<>();
     private LocationTextureLayer userLayer;
     private MapScaleBarLayer scaleBar;
     private volatile float userBearing = Float.NaN;
@@ -15432,6 +15698,13 @@ public final class VtmEngine implements MapEngine {
         routeLine = new PathLayer(map, new LineStyle(0xFF00E5FF, w, org.oscim.backend.canvas.Paint.Cap.ROUND));
         trackLine = new PathLayer(map, new LineStyle(0xFF00FF88, w * 0.7f, org.oscim.backend.canvas.Paint.Cap.ROUND));
         map.layers().add(trackLine);
+        altLines.clear();
+        for (int i = 0; i < 2; i++) {
+            PathLayer alt = new PathLayer(map, new LineStyle(0xCC6E87A6, w * 0.9f, org.oscim.backend.canvas.Paint.Cap.ROUND));
+            altLines.add(alt);
+            map.layers().add(alt);
+        }
+        applyAlternatives();
         map.layers().add(routeGlow);
         map.layers().add(routeLine);
         if (tiles != null) {
@@ -15440,8 +15713,11 @@ public final class VtmEngine implements MapEngine {
         }
         pointsLayer = new ItemizedLayer(map, symbol(pin(0xFF00FF88, 30), MarkerSymbol.HotspotPlace.BOTTOM_CENTER, true));
         destLayer = new ItemizedLayer(map, symbol(pin(0xFFFF3D71, 42), MarkerSymbol.HotspotPlace.BOTTOM_CENTER, true));
+        teamLayer = new ItemizedLayer(map, symbol(pin(0xFFB388FF, 34), MarkerSymbol.HotspotPlace.CENTER, true));
         map.layers().add(pointsLayer);
+        map.layers().add(teamLayer);
         map.layers().add(destLayer);
+        applyTeam();
 
         userLayer = new LocationTextureLayer(map);
         userLayer.locationRenderer.setBitmapArrow(new AndroidBitmap(arrow()));
@@ -15479,6 +15755,17 @@ public final class VtmEngine implements MapEngine {
         map.updateMap(true);
     }
 
+    @Override public void setAlternatives(List<List<double[]>> routes) {
+        altRoutes = routes == null ? new ArrayList<>() : new ArrayList<>(routes);
+        applyAlternatives();
+        map.updateMap(true);
+    }
+
+    private void applyAlternatives() {
+        for (int i = 0; i < altLines.size(); i++)
+            altLines.get(i).setPoints(i < altRoutes.size() ? geo(altRoutes.get(i)) : new ArrayList<>());
+    }
+
     @Override public void setTrack(List<double[]> pts) {
         if (trackLine == null) return;
         trackLine.setPoints(geo(pts));
@@ -15500,6 +15787,48 @@ public final class VtmEngine implements MapEngine {
         if (pts != null) for (double[] p : pts) items.add(new MarkerItem("", "", new GeoPoint(p[0], p[1])));
         pointsLayer.addItems(items);
         map.updateMap(true);
+    }
+
+    @Override public void setTeam(List<double[]> pts, List<String> names) {
+        teamPts = pts == null ? new ArrayList<>() : new ArrayList<>(pts);
+        teamNames = names == null ? new ArrayList<>() : new ArrayList<>(names);
+        applyTeam();
+        map.updateMap(true);
+    }
+
+    /** Un segnaposto viola con l'iniziale per ogni compagno. */
+    private void applyTeam() {
+        if (teamLayer == null) return;
+        teamLayer.removeAllItems();
+        List<MarkerInterface> items = new ArrayList<>();
+        for (int i = 0; i < teamPts.size(); i++) {
+            String n = i < teamNames.size() ? teamNames.get(i) : "?";
+            MarkerItem it = new MarkerItem(n, "", new GeoPoint(teamPts.get(i)[0], teamPts.get(i)[1]));
+            it.setMarker(symbol(badge(n), MarkerSymbol.HotspotPlace.CENTER, true));
+            items.add(it);
+        }
+        teamLayer.addItems(items);
+    }
+
+    /** Disco viola con alone e l'iniziale del compagno. */
+    private android.graphics.Bitmap badge(String name) {
+        int s = Math.round(34 * density);
+        android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(s, s, android.graphics.Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float r = s / 2f;
+        p.setShader(new RadialGradient(r, r, r, 0x88B388FF, 0x00B388FF, Shader.TileMode.CLAMP));
+        c.drawCircle(r, r, r, p);
+        p.setShader(null);
+        p.setColor(0xFFB388FF);
+        c.drawCircle(r, r, r * 0.62f, p);
+        p.setColor(0xFF050A14);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(r * 0.8f);
+        p.setFakeBoldText(true);
+        String init = name == null || name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(java.util.Locale.ITALY);
+        c.drawText(init, r, r + r * 0.28f, p);
+        return b;
     }
 
     // ------------------------------------------------------------ inquadratura
@@ -15743,6 +16072,12 @@ public final class MapsforgeEngine implements MapEngine {
 
     @Override public void setTrack(List<double[]> pts) { /* la linea e' usata dal percorso */ }
 
+    /** In 2D i compagni stanno nel radar del gruppo (i segnaposto 2D sono quelli dei waypoint). */
+    @Override public void setTeam(List<double[]> pts, List<String> names) {}
+
+    /** In 2D le alternative non si disegnano (una sola linea): restano nell'elenco. */
+    @Override public void setAlternatives(List<List<double[]>> routes) {}
+
     @Override public void setDestination(double lat, double lon) {
         if (!Double.isNaN(lat) && !Double.isNaN(lon)) ctrl.setDestinationMarker(lat, lon);
     }
@@ -15892,12 +16227,26 @@ public class Map3DActivity extends AppCompatActivity implements GpsTrackingServi
     private boolean follow = false, buildings = true, centeredOnce = false;
     private final Handler h = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private long teamAt = 0;
+    private int teamShown = 0;
     private final Runnable hud = new Runnable() {
         @Override public void run() {
             if (engine == null) return;
             if (ivCompass != null) ivCompass.setRotation(-engine.bearing());
             if (tvInfo != null) tvInfo.setText(String.format(Locale.ITALY, "%s · %s · zoom %.0f · %.0f°",
-                engine.is3d() ? "3D" : "2D", THEME_NAMES[theme], engine.zoom(), engine.tilt()));
+                engine.is3d() ? "3D" : "2D", THEME_NAMES[theme], engine.zoom(), engine.tilt())
+                + (teamShown > 0 ? " · " + teamShown + (teamShown == 1 ? " compagno" : " compagni") : ""));
+            // compagni del radar del gruppo (ogni 2 s)
+            if (System.currentTimeMillis() - teamAt > 2000) {
+                teamAt = System.currentTimeMillis();
+                java.util.List<com.offlinegps.map.chat.MeshHub.Member> team =
+                    com.offlinegps.map.chat.MeshHub.get(Map3DActivity.this).team();
+                java.util.List<double[]> pts = new java.util.ArrayList<>();
+                java.util.List<String> names = new java.util.ArrayList<>();
+                for (com.offlinegps.map.chat.MeshHub.Member m : team) { pts.add(new double[]{m.lat, m.lon}); names.add(m.name); }
+                if (team.size() != teamShown || !team.isEmpty()) engine.setTeam(pts, names);
+                teamShown = team.size();
+            }
             h.postDelayed(this, 150);
         }
     };
@@ -16117,12 +16466,19 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  - ogni messaggio ha un ID: chi lo ha gia' visto lo ignora (niente giri infiniti);
  *  - TTL = numero massimo di salti (7);
  *  - conferme di consegna (ACK): chi riceve risponde, il mittente conta chi l'ha letto;
- *  - tipi: TXT testo, POS posizione, SOS emergenza con posizione, HELLO nome del vicino.
+ *  - tipi: TXT testo, POS posizione, SOS emergenza con posizione, HELLO nome del vicino,
+ *    BCN posizione periodica per il radar del gruppo (non compare in chat);
+ *  - v5.1 GRUPPI CIFRATI: con una chiave di gruppo i messaggi viaggiano dentro
+ *    una "busta" (tipo X) cifrata con AES-GCM. Chi non e' del gruppo la
+ *    inoltra lo stesso ma non la legge. L'SOS parte sempre in chiaro: in
+ *    emergenza deve poterlo leggere chiunque sia vicino.
  * Indipendente dal Bluetooth: lavora su qualsiasi coppia di stream (testato
  * sul computer con stream in memoria).
  */
 public final class MeshNode {
-    public static final String TXT = "TXT", POS = "POS", SOS = "SOS", ACK = "ACK", HELLO = "HELLO";
+    public static final String TXT = "TXT", POS = "POS", SOS = "SOS", ACK = "ACK", HELLO = "HELLO",
+        BCN = "BCN", SEALED = "X";
+    public static final int BEACON_TTL = 4;
     public static final int DEFAULT_TTL = 7;
     private static final String VERSION = "m5";
     private static final int SEEN_MAX = 2000;
@@ -16134,6 +16490,8 @@ public final class MeshNode {
         public double lat = Double.NaN, lon = Double.NaN;
         public float acc;
         public boolean mine;
+        /** Arrivato (o partito) cifrato con la chiave del gruppo. */
+        public boolean secure;
         /** Nomi di chi ha confermato la ricezione (solo per i messaggi propri). */
         public final List<String> ackedBy = new CopyOnWriteArrayList<>();
 
@@ -16179,6 +16537,8 @@ public final class MeshNode {
         void onMessage(Msg m);
         void onAck(Msg mine, String by);
         void onPeersChanged(List<String> names);
+        /** Posizione di un compagno per il radar del gruppo. */
+        default void onBeacon(Msg m) {}
     }
 
     /** Un collegamento con un vicino (un socket Bluetooth). */
@@ -16219,6 +16579,8 @@ public final class MeshNode {
     private final Random rnd = new Random();
     private volatile String myName;
     private volatile Listener listener;
+    private volatile MeshCrypto crypto;
+    private volatile int foreign;
 
     public MeshNode(String name) { myName = name; }
 
@@ -16228,6 +16590,12 @@ public final class MeshNode {
     }
 
     public String name() { return myName; }
+
+    /** Chiave del gruppo (null = chat aperta a tutti). */
+    public void setCrypto(MeshCrypto c) { crypto = c; }
+    public MeshCrypto crypto() { return crypto; }
+    /** Messaggi cifrati di ALTRI gruppi passati da qui (inoltrati, non letti). */
+    public int foreignCount() { return foreign; }
     public void setListener(Listener l) { listener = l; }
 
     public List<String> peers() {
@@ -16283,14 +16651,45 @@ public final class MeshNode {
 
     public Msg sendSos(double lat, double lon, float acc, String text) { return send(SOS, text, lat, lon, acc); }
 
+    /** Posizione per il radar del gruppo: batteria % e velocita' m/s viaggiano nel testo. */
+    public Msg sendBeacon(double lat, double lon, float acc, int battery, float speedMs) {
+        return send(BCN, String.format(Locale.US, "bat=%d;spd=%.1f", battery, speedMs), lat, lon, acc);
+    }
+
+    /** Batteria (%) di un messaggio BCN, -1 se non presente. */
+    public static int beaconBattery(Msg m) { return (int) beaconField(m, "bat", -1); }
+    public static float beaconSpeed(Msg m) { return (float) beaconField(m, "spd", -1); }
+
+    private static double beaconField(Msg m, String key, double def) {
+        for (String kv : m.text.split(";")) {
+            String[] p = kv.split("=", 2);
+            if (p.length == 2 && p[0].equals(key)) {
+                try { return Double.parseDouble(p[1]); } catch (Exception e) { return def; }
+            }
+        }
+        return def;
+    }
+
     private Msg send(String type, String text, double lat, double lon, float acc) {
         Msg m = new Msg();
         m.id = newId(); m.type = type; m.from = myName; m.text = text == null ? "" : text;
         m.time = System.currentTimeMillis(); m.lat = lat; m.lon = lon; m.acc = acc; m.mine = true;
+        if (BCN.equals(type)) m.ttl = BEACON_TTL;
         seen.put(m.id, Boolean.TRUE);
-        mine.put(m.id, m);
-        broadcast(m.toLine(), null);
+        if (!BCN.equals(type)) mine.put(m.id, m);
+        m.secure = crypto != null && !SOS.equals(type);
+        broadcast(wire(m), null);
         return m;
+    }
+
+    /** La riga da trasmettere: in chiaro oppure dentro la busta cifrata del gruppo. */
+    private String wire(Msg m) {
+        MeshCrypto c = crypto;
+        if (c == null || SOS.equals(m.type)) return m.toLine();
+        Msg env = new Msg();
+        env.id = m.id; env.ttl = m.ttl; env.type = SEALED; env.time = 0;
+        env.text = c.seal(m.toLine(), m.id);
+        return env.toLine();
     }
 
     public int linkCount() { return links.size(); }
@@ -16310,7 +16709,23 @@ public final class MeshNode {
         }
         if (seen.put(m.id, Boolean.TRUE) != null) return;      // gia' visto
         Listener l = listener;
-        if (ACK.equals(m.type)) {
+        Msg env = m;                                            // cio' che si inoltra
+        if (SEALED.equals(m.type)) {
+            MeshCrypto c = crypto;
+            String plain = c == null ? null : c.open(m.text, m.id);
+            Msg inner = plain == null ? null : Msg.fromLine(plain);
+            if (inner == null || !m.id.equals(inner.id)) {
+                foreign++;                                      // altro gruppo: solo inoltro
+                relay(env, from);
+                return;
+            }
+            inner.secure = true;
+            inner.ttl = m.ttl;
+            m = inner;
+        }
+        if (BCN.equals(m.type)) {
+            if (l != null) l.onBeacon(m);
+        } else if (ACK.equals(m.type)) {
             Msg orig = mine.get(m.ackOf);
             if (orig != null) {
                 if (!orig.ackedBy.contains(m.from)) orig.ackedBy.add(m.from);
@@ -16323,17 +16738,23 @@ public final class MeshNode {
             ack.id = newId(); ack.type = ACK; ack.from = myName; ack.ackOf = m.id;
             ack.time = System.currentTimeMillis();
             seen.put(ack.id, Boolean.TRUE);
-            broadcast(ack.toLine(), null);
+            broadcast(m.secure ? wire(ack) : ack.toLine(), null);
         }
-        // inoltro a tutti gli altri vicini
-        // (il messaggio consegnato allo schermo non va toccato: si inoltra una copia)
-        if (m.ttl > 0) {
-            int ttl = m.ttl;
-            m.ttl = ttl - 1;
-            String relay = m.toLine();
-            m.ttl = ttl;
-            broadcast(relay, from);
-        }
+        relay(env, from);
+    }
+
+    /**
+     * Inoltro a tutti gli altri vicini, con un salto in meno. Si inoltra la riga
+     * cosi' com'e' arrivata (busta cifrata compresa) e una copia, per non
+     * toccare il messaggio consegnato allo schermo.
+     */
+    private void relay(Msg m, Link from) {
+        if (m.ttl <= 0) return;
+        int ttl = m.ttl;
+        m.ttl = ttl - 1;
+        String line = m.toLine();
+        m.ttl = ttl;
+        broadcast(line, from);
     }
 
     private void firePeers() {
@@ -17646,6 +18067,980 @@ public class FireCampActivity extends AppCompatActivity {
 }
 """
 
+CHAT_MESH_CRYPTO = r"""package com.offlinegps.map.chat;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.Locale;
+import javax.crypto.Cipher;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
+import javax.crypto.spec.SecretKeySpec;
+
+/**
+ * Cifratura dei gruppi della chat mesh: chi conosce nome del gruppo e
+ * password legge i messaggi, gli altri telefoni li inoltrano senza poterli
+ * leggere. Chiave a 256 bit ricavata dalla password con PBKDF2 (lento di
+ * proposito, contro chi prova password a caso), messaggi con AES-GCM: cifrati
+ * e autenticati (un messaggio alterato o di un altro gruppo viene scartato).
+ * Solo librerie standard di Java/Android, nessuna rete.
+ */
+public final class MeshCrypto {
+    private static final int ITERATIONS = 20_000, IV_LEN = 12, TAG_BITS = 128;
+    private static final SecureRandom RND = new SecureRandom();
+
+    private final SecretKeySpec key;
+    private final String group;
+    private final String fingerprint;
+
+    private MeshCrypto(byte[] raw, String group) {
+        this.key = new SecretKeySpec(raw, "AES");
+        this.group = group;
+        String fp;
+        try {
+            byte[] h = MessageDigest.getInstance("SHA-256").digest(raw);
+            fp = String.format(Locale.ROOT, "%02X%02X-%02X%02X", h[0], h[1], h[2], h[3]);
+        } catch (Exception e) { fp = "----"; }
+        this.fingerprint = fp;
+    }
+
+    /** Chiave dal nome del gruppo e dalla password (stessi dati = stessa chiave su ogni telefono). */
+    public static MeshCrypto fromPassword(String group, String password) throws Exception {
+        String g = normalize(group);
+        PBEKeySpec spec = new PBEKeySpec(password.toCharArray(),
+            ("ogps-mesh-v1|" + g).getBytes(StandardCharsets.UTF_8), ITERATIONS, 256);
+        byte[] raw = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).getEncoded();
+        return new MeshCrypto(raw, g);
+    }
+
+    /** Ricrea la chiave salvata (cosi' la password non resta memorizzata in chiaro). */
+    public static MeshCrypto fromSaved(String group, String keyB64) {
+        return new MeshCrypto(Base64.getDecoder().decode(keyB64), normalize(group));
+    }
+
+    public String savedKey() { return Base64.getEncoder().encodeToString(key.getEncoded()); }
+    public String group() { return group; }
+    /** Codice breve uguale su tutti i telefoni dello stesso gruppo: per controllare a voce. */
+    public String fingerprint() { return fingerprint; }
+
+    static String normalize(String g) { return g == null ? "" : g.trim().toLowerCase(Locale.ROOT); }
+
+    /** Testo -> base64(iv | cifrato | etichetta). "aad" (l'ID del messaggio) e' autenticato ma non cifrato. */
+    public String seal(String plain, String aad) {
+        try {
+            byte[] iv = new byte[IV_LEN];
+            RND.nextBytes(iv);
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
+            c.updateAAD(aad.getBytes(StandardCharsets.UTF_8));
+            byte[] ct = c.doFinal(plain.getBytes(StandardCharsets.UTF_8));
+            byte[] out = new byte[IV_LEN + ct.length];
+            System.arraycopy(iv, 0, out, 0, IV_LEN);
+            System.arraycopy(ct, 0, out, IV_LEN, ct.length);
+            return Base64.getEncoder().encodeToString(out);
+        } catch (Exception e) {
+            throw new IllegalStateException("cifratura non disponibile", e);
+        }
+    }
+
+    /** null se il messaggio non e' di questo gruppo o e' stato alterato. */
+    public String open(String b64, String aad) {
+        try {
+            byte[] in = Base64.getDecoder().decode(b64);
+            if (in.length <= IV_LEN + TAG_BITS / 8) return null;
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, in, 0, IV_LEN));
+            c.updateAAD(aad.getBytes(StandardCharsets.UTF_8));
+            return new String(c.doFinal(in, IV_LEN, in.length - IV_LEN), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}
+"""
+
+CHAT_MESH_HUB = r"""package com.offlinegps.map.chat;
+
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothServerSocket;
+import android.bluetooth.BluetoothSocket;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.location.Location;
+import android.os.BatteryManager;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import com.offlinegps.map.gps.GpsTrackingService;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * La chat mesh vive QUI, non nella schermata (v5.1): resta collegata anche
+ * chiudendo la chat o spegnendo lo schermo (servizio in primo piano
+ * MeshService), avvisa con una notifica quando arriva un messaggio, tiene la
+ * cronologia, il gruppo cifrato e le posizioni dei compagni per il radar.
+ * Ogni telefono e' insieme "server" (accetta fino a 7 vicini) e "client".
+ */
+public final class MeshHub implements MeshNode.Listener {
+    public static final UUID APP_UUID = UUID.fromString("8ce255c0-200a-11e0-ac64-0800200c9a66");
+    private static final String SERVICE = "OfflineGPSMesh";
+    public static final int MAX_PEERS = 7;
+    private static final int HISTORY_MAX = 300;
+    /** Ogni quanto si manda la propria posizione al gruppo, e dopo quanto un compagno sparisce. */
+    public static final long BEACON_MS = 30_000, MEMBER_TTL_MS = 2 * 3_600_000L;
+
+    public interface Listener {
+        default void onMessage(MeshNode.Msg m) {}
+        default void onAck(MeshNode.Msg mine, String by) {}
+        default void onPeers(List<String> names) {}
+        default void onTeam() {}
+        default void onStatus(String status) {}
+    }
+
+    /** Un compagno sul radar. */
+    public static final class Member {
+        public String name;
+        public double lat, lon;
+        public float acc, speedMs = -1;
+        public int battery = -1;
+        public long time;
+        public boolean secure;
+    }
+
+    private static MeshHub instance;
+
+    public static synchronized MeshHub get(Context c) {
+        if (instance == null) instance = new MeshHub(c.getApplicationContext());
+        return instance;
+    }
+
+    private final Context app;
+    private final SharedPreferences prefs;
+    private final MeshNode node;
+    private final BluetoothAdapter adapter;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+    private final Map<String, Member> team = new ConcurrentHashMap<>();
+    private final List<String> history = new ArrayList<>();
+    private final File historyFile;
+    private volatile boolean running, sharing;
+    private volatile int visibleScreens;
+    private volatile String status = "Chat spenta";
+    private BluetoothServerSocket serverSocket;
+    private final Set<String> connected = Collections.synchronizedSet(new HashSet<>());
+    /** indirizzo Bluetooth -> {collegamento mesh, socket}, per ricollegare chi cade. */
+    private final Map<String, Object[]> byAddr = Collections.synchronizedMap(new HashMap<>());
+
+    private final Runnable beaconTick = new Runnable() {
+        @Override public void run() {
+            if (!sharing) return;
+            sendBeacon();
+            main.postDelayed(this, BEACON_MS);
+        }
+    };
+
+    private MeshHub(Context app) {
+        this.app = app;
+        prefs = app.getSharedPreferences("mesh_chat", Context.MODE_PRIVATE);
+        historyFile = new File(app.getFilesDir(), "chat_mesh_history.txt");
+        node = new MeshNode(nickname());
+        node.setListener(this);
+        String g = prefs.getString("group", ""), k = prefs.getString("gkey", "");
+        if (!g.isEmpty() && !k.isEmpty()) {
+            try { node.setCrypto(MeshCrypto.fromSaved(g, k)); } catch (Exception ignored) {}
+        }
+        BluetoothManager bm = (BluetoothManager) app.getSystemService(Context.BLUETOOTH_SERVICE);
+        adapter = bm != null ? bm.getAdapter() : null;
+        loadHistory();
+    }
+
+    // ------------------------------------------------------------ ascoltatori (schermate)
+    public void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
+    public void removeListener(Listener l) { listeners.remove(l); }
+
+    /** Una schermata della chat e' visibile: niente notifiche per i messaggi. */
+    public void setScreenVisible(boolean visible) {
+        visibleScreens = Math.max(0, visibleScreens + (visible ? 1 : -1));
+    }
+
+    private void fire(java.util.function.Consumer<Listener> f) {
+        main.post(() -> { for (Listener l : listeners) f.accept(l); });
+    }
+
+    private void setStatus(String s) {
+        status = s;
+        fire(l -> l.onStatus(s));
+        MeshService.refresh(app);
+    }
+
+    public String status() { return status; }
+    public boolean hasBluetooth() { return adapter != null; }
+    public boolean isBluetoothOn() {
+        try { return adapter != null && adapter.isEnabled(); } catch (SecurityException e) { return false; }
+    }
+    public boolean isRunning() { return running; }
+    public List<String> peers() { return node.peers(); }
+    public int foreignCount() { return node.foreignCount(); }
+
+    // ------------------------------------------------------------ nome
+    public String nickname() {
+        String n = prefs.getString("nick", "");
+        if (n.isEmpty()) {
+            n = (Build.MODEL != null ? Build.MODEL : "Telefono").replaceAll("[^A-Za-z0-9 ]", "").trim();
+            if (n.length() > 14) n = n.substring(0, 14);
+            n += "-" + ((int) (Math.random() * 900) + 100);
+            prefs.edit().putString("nick", n).apply();
+        }
+        return n;
+    }
+
+    public void setNickname(String n) {
+        n = n.replace("|", " ").trim();
+        if (n.isEmpty()) return;
+        if (n.length() > 24) n = n.substring(0, 24);
+        prefs.edit().putString("nick", n).apply();
+        node.setName(n);
+    }
+
+    // ------------------------------------------------------------ gruppo cifrato
+    public boolean inGroup() { return node.crypto() != null; }
+    public String groupName() { MeshCrypto c = node.crypto(); return c == null ? "" : prefs.getString("group_label", c.group()); }
+    public String groupCode() { MeshCrypto c = node.crypto(); return c == null ? "" : c.fingerprint(); }
+
+    /** Entra in un gruppo (la chiave si calcola in background: ci vuole un attimo). */
+    public void joinGroup(String name, String password, Runnable done) {
+        io.execute(() -> {
+            try {
+                MeshCrypto c = MeshCrypto.fromPassword(name, password);
+                node.setCrypto(c);
+                prefs.edit().putString("group", c.group()).putString("group_label", name.trim())
+                    .putString("gkey", c.savedKey()).apply();
+                setStatus("Gruppo \"" + name.trim() + "\" attivo: messaggi cifrati");
+            } catch (Exception e) {
+                setStatus("Cifratura non disponibile su questo telefono");
+            }
+            if (done != null) main.post(done);
+        });
+    }
+
+    public void leaveGroup() {
+        node.setCrypto(null);
+        prefs.edit().remove("group").remove("group_label").remove("gkey").apply();
+        team.clear();
+        fire(Listener::onTeam);
+        setStatus("Chat aperta: i messaggi non sono cifrati");
+    }
+
+    // ------------------------------------------------------------ avvio e stop
+    /** Avvia l'ascolto Bluetooth e il servizio in primo piano (servono i permessi Bluetooth). */
+    public void start() {
+        if (running || adapter == null) return;
+        if (!isBluetoothOn()) { setStatus("Accendi il Bluetooth per usare la chat"); return; }
+        running = true;
+        MeshService.start(app);
+        Thread t = new Thread(() -> {
+            try {
+                serverSocket = adapter.listenUsingInsecureRfcommWithServiceRecord(SERVICE, APP_UUID);
+                setStatus("In ascolto. CERCA per collegarti a chi e' vicino, VISIBILE per farti trovare.");
+                while (running) {
+                    BluetoothSocket sock = serverSocket.accept();
+                    if (sock == null) continue;
+                    if (node.linkCount() >= MAX_PEERS) { try { sock.close(); } catch (Exception ignored) {} continue; }
+                    attach(sock);
+                }
+            } catch (SecurityException se) {
+                setStatus("Permesso Bluetooth mancante");
+            } catch (Exception e) {
+                if (running) setStatus("Ascolto interrotto: " + e.getMessage());
+            }
+            running = false;
+        }, "mesh-server");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /** Spegne tutto: collegamenti, ascolto, condivisione posizione, servizio. */
+    public void stop() {
+        running = false;
+        setSharing(false);
+        node.closeAll();
+        try { if (serverSocket != null) serverSocket.close(); } catch (Exception ignored) {}
+        synchronized (byAddr) {
+            for (Object[] v : byAddr.values()) { try { ((BluetoothSocket) v[1]).close(); } catch (Exception ignored) {} }
+            byAddr.clear();
+        }
+        connected.clear();
+        MeshService.stop(app);
+        setStatus("Chat spenta");
+        fire(l -> l.onPeers(new ArrayList<>()));
+    }
+
+    public boolean isConnected(String addr) { return connected.contains(addr); }
+
+    public void connectTo(BluetoothDevice dev) {
+        if (connected.contains(dev.getAddress())) return;
+        setStatus("Collegamento a " + deviceName(dev) + "...");
+        Thread t = new Thread(() -> {
+            BluetoothSocket sock = null;
+            try {
+                sock = dev.createInsecureRfcommSocketToServiceRecord(APP_UUID);
+                sock.connect();
+            } catch (Exception first) {
+                try { if (sock != null) sock.close(); } catch (Exception ignored) {}
+                try {
+                    // alcuni telefoni accettano solo la connessione "sicura" (con accoppiamento)
+                    sock = dev.createRfcommSocketToServiceRecord(APP_UUID);
+                    sock.connect();
+                } catch (Exception e) {
+                    try { if (sock != null) sock.close(); } catch (Exception ignored) {}
+                    setStatus("Collegamento fallito: l'altro telefono deve avere la chat accesa");
+                    return;
+                }
+            }
+            attach(sock);
+        }, "mesh-client");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    private void attach(BluetoothSocket sock) {
+        try {
+            String addr = sock.getRemoteDevice().getAddress();
+            if (!connected.add(addr)) { sock.close(); return; }
+            MeshNode.Link link = node.addLink(sock.getInputStream(), sock.getOutputStream(), deviceName(sock.getRemoteDevice()));
+            byAddr.put(addr, new Object[]{link, sock});
+            if (sharing) main.post(this::sendBeacon);          // il nuovo vicino ci vede subito
+        } catch (Exception e) {
+            try { sock.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    public static String deviceName(BluetoothDevice d) {
+        try { String n = d.getName(); return n != null ? n : d.getAddress(); }
+        catch (SecurityException e) { return d.getAddress(); }
+    }
+
+    // ------------------------------------------------------------ invio
+    public void sendText(String text) { io.execute(() -> deliverMine(node.sendText(text))); }
+
+    public void sendPosition(Location l, String note) {
+        io.execute(() -> deliverMine(node.sendPosition(l.getLatitude(), l.getLongitude(), l.getAccuracy(), note)));
+    }
+
+    public void sendSos(Location l, String text) {
+        double la = l != null ? l.getLatitude() : Double.NaN, lo = l != null ? l.getLongitude() : Double.NaN;
+        float acc = l != null ? l.getAccuracy() : 0f;
+        io.execute(() -> deliverMine(node.sendSos(la, lo, acc, text)));
+    }
+
+    private void deliverMine(MeshNode.Msg m) {
+        saveHistory(m);
+        fire(l -> l.onMessage(m));
+    }
+
+    // ------------------------------------------------------------ radar del gruppo
+    public boolean isSharing() { return sharing; }
+
+    /** Condivide la propria posizione ogni 30 s (tiene acceso il GPS anche a schermo spento). */
+    public void setSharing(boolean on) {
+        if (on == sharing) return;
+        sharing = on;
+        main.removeCallbacks(beaconTick);
+        if (on) {
+            GpsTrackingService.acquire(app, "mesh-share");
+            main.post(beaconTick);
+        } else {
+            GpsTrackingService.release(app, "mesh-share");
+        }
+        MeshService.refresh(app);
+    }
+
+    private void sendBeacon() {
+        Location l = GpsTrackingService.getLastLocation();
+        if (l == null || node.linkCount() == 0) return;
+        int bat = -1;
+        try {
+            BatteryManager bm = (BatteryManager) app.getSystemService(Context.BATTERY_SERVICE);
+            if (bm != null) bat = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
+        } catch (Exception ignored) {}
+        final int battery = bat;
+        io.execute(() -> node.sendBeacon(l.getLatitude(), l.getLongitude(), l.getAccuracy(), battery,
+            l.hasSpeed() ? l.getSpeed() : -1f));
+    }
+
+    /** Compagni visti nelle ultime 2 ore, dal piu' recente. */
+    public List<Member> team() {
+        long now = System.currentTimeMillis();
+        List<Member> out = new ArrayList<>();
+        for (Member m : team.values()) if (now - m.time < MEMBER_TTL_MS) out.add(m);
+        out.sort((a, b) -> Long.compare(b.time, a.time));
+        return out;
+    }
+
+    private void updateMember(MeshNode.Msg m, int battery, float speed) {
+        if (!m.hasPosition() || m.from == null || m.from.isEmpty()) return;
+        Member x = team.get(m.from);
+        if (x == null) { x = new Member(); x.name = m.from; team.put(m.from, x); }
+        x.lat = m.lat; x.lon = m.lon; x.acc = m.acc; x.time = System.currentTimeMillis();
+        if (battery >= 0) x.battery = battery;
+        if (speed >= 0) x.speedMs = speed;
+        x.secure = m.secure;
+        fire(Listener::onTeam);
+    }
+
+    // ------------------------------------------------------------ ricezione (MeshNode.Listener)
+    @Override public void onMessage(MeshNode.Msg m) {
+        saveHistory(m);
+        if (m.hasPosition()) updateMember(m, -1, -1);   // POS e SOS aggiornano anche il radar
+        fire(l -> l.onMessage(m));
+        if (visibleScreens == 0 || MeshNode.SOS.equals(m.type)) MeshService.notifyMessage(app, m);
+    }
+
+    @Override public void onAck(MeshNode.Msg mine, String by) {
+        fire(l -> l.onAck(mine, by));
+    }
+
+    @Override public void onBeacon(MeshNode.Msg m) {
+        updateMember(m, MeshNode.beaconBattery(m), MeshNode.beaconSpeed(m));
+    }
+
+    @Override public void onPeersChanged(List<String> names) {
+        // chi e' caduto torna ricollegabile
+        synchronized (byAddr) {
+            List<String> dead = new ArrayList<>();
+            for (Map.Entry<String, Object[]> e : byAddr.entrySet())
+                if (!((MeshNode.Link) e.getValue()[0]).isAlive()) dead.add(e.getKey());
+            for (String a : dead) {
+                Object[] v = byAddr.remove(a);
+                connected.remove(a);
+                try { ((BluetoothSocket) v[1]).close(); } catch (Exception ignored) {}
+            }
+        }
+        fire(l -> l.onPeers(names));
+        if (running) setStatus(names.isEmpty() ? "Nessun vicino collegato" : "Collegato a: " + String.join(", ", names));
+    }
+
+    // ------------------------------------------------------------ cronologia
+    /** Messaggi salvati (i piu' vecchi prima). */
+    public List<MeshNode.Msg> history() {
+        List<MeshNode.Msg> out = new ArrayList<>();
+        synchronized (history) {
+            for (String line : history) {
+                MeshNode.Msg m = MeshNode.Msg.fromLine(line.substring(1));
+                if (m == null) continue;
+                m.mine = line.charAt(0) == 'M' || line.charAt(0) == 'S';
+                m.secure = line.charAt(0) == 'S' || line.charAt(0) == 'T';
+                out.add(m);
+            }
+        }
+        return out;
+    }
+
+    private void saveHistory(MeshNode.Msg m) {
+        // prima lettera: M mio, R ricevuto; S/T le stesse ma arrivate cifrate
+        char k = m.mine ? (m.secure ? 'S' : 'M') : (m.secure ? 'T' : 'R');
+        synchronized (history) {
+            history.add(k + m.toLine());
+            while (history.size() > HISTORY_MAX) history.remove(0);
+            try (FileOutputStream out = new FileOutputStream(historyFile)) {
+                out.write(String.join("\n", history).getBytes(StandardCharsets.UTF_8));
+            } catch (Exception ignored) {}
+        }
+    }
+
+    public void clearHistory() {
+        synchronized (history) {
+            history.clear();
+            historyFile.delete();
+        }
+    }
+
+    private void loadHistory() {
+        try {
+            if (!historyFile.exists()) return;
+            synchronized (history) {
+                for (String line : Files.readAllLines(historyFile.toPath(), StandardCharsets.UTF_8))
+                    if (line.length() >= 2) history.add(line);
+            }
+        } catch (Exception ignored) {}
+    }
+}
+"""
+
+CHAT_MESH_SERVICE = r"""package com.offlinegps.map.chat;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.os.Build;
+import android.os.IBinder;
+import com.offlinegps.map.R;
+import com.offlinegps.map.ui.ChatActivity;
+import java.util.List;
+
+/**
+ * Tiene viva la chat mesh in background (servizio in primo piano di tipo
+ * "dispositivo collegato"): notifica fissa con il numero di vicini e il
+ * pulsante SPEGNI, notifiche per i messaggi in arrivo, allarme per gli SOS.
+ */
+public class MeshService extends Service {
+    static final String CH_STATUS = "mesh_status", CH_MSG = "mesh_msg", CH_SOS = "mesh_sos_v2";
+    static final int ID_STATUS = 1201, ID_MSG = 1202, ID_SOS = 1203;
+    static final String ACTION_STOP = "MESH_STOP";
+    private static volatile boolean alive;
+
+    static void start(Context c) {
+        try {
+            c.startForegroundService(new Intent(c, MeshService.class));
+        } catch (Exception ignored) {}
+    }
+
+    static void stop(Context c) {
+        try { c.stopService(new Intent(c, MeshService.class)); } catch (Exception ignored) {}
+    }
+
+    /** Aggiorna la notifica fissa (vicini, gruppo, posizione condivisa). */
+    static void refresh(Context c) {
+        if (!alive) return;
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm != null) nm.notify(ID_STATUS, status(c));
+    }
+
+    @Override public void onCreate() {
+        super.onCreate();
+        channels(this);
+        alive = true;
+        Notification n = status(this);
+        if (Build.VERSION.SDK_INT >= 29) startForeground(ID_STATUS, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        else startForeground(ID_STATUS, n);
+    }
+
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            MeshHub.get(this).stop();
+            stopSelf();
+        }
+        return START_NOT_STICKY;
+    }
+
+    @Override public void onDestroy() {
+        alive = false;
+        super.onDestroy();
+    }
+
+    @Override public IBinder onBind(Intent i) { return null; }
+
+    static void channels(Context c) {
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        nm.createNotificationChannel(new NotificationChannel(CH_STATUS, "Chat offline attiva", NotificationManager.IMPORTANCE_LOW));
+        nm.createNotificationChannel(new NotificationChannel(CH_MSG, "Messaggi chat offline", NotificationManager.IMPORTANCE_HIGH));
+        NotificationChannel sos = new NotificationChannel(CH_SOS, "SOS dalla chat offline", NotificationManager.IMPORTANCE_HIGH);
+        sos.enableVibration(true);
+        sos.setVibrationPattern(new long[]{0, 200, 120, 200, 120, 200, 400, 600, 200, 600});
+        nm.createNotificationChannel(sos);
+    }
+
+    private static PendingIntent openChat(Context c) {
+        Intent i = new Intent(c, ChatActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        return PendingIntent.getActivity(c, 0, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    private static Notification status(Context c) {
+        MeshHub hub = MeshHub.get(c);
+        List<String> peers = hub.peers();
+        String text = (peers.isEmpty() ? "Nessun vicino" : peers.size() + (peers.size() == 1 ? " vicino: " : " vicini: ")
+                + String.join(", ", peers))
+            + (hub.inGroup() ? "  ·  gruppo " + hub.groupName() : "")
+            + (hub.isSharing() ? "  ·  posizione condivisa" : "");
+        PendingIntent stop = PendingIntent.getService(c, 1, new Intent(c, MeshService.class).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        return new Notification.Builder(c, CH_STATUS)
+            .setSmallIcon(R.drawable.ic_gps)
+            .setContentTitle("Chat offline attiva")
+            .setContentText(text)
+            .setStyle(new Notification.BigTextStyle().bigText(text))
+            .setOngoing(true)
+            .setContentIntent(openChat(c))
+            .addAction(new Notification.Action.Builder(null, "SPEGNI", stop).build())
+            .build();
+    }
+
+    /** Messaggio arrivato con la chat chiusa (o SOS, sempre). */
+    static void notifyMessage(Context c, MeshNode.Msg m) {
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        channels(c);
+        boolean sos = MeshNode.SOS.equals(m.type);
+        String body = sos ? "SOS: " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text)
+            : MeshNode.POS.equals(m.type) ? "Ha condiviso la sua posizione" : m.text;
+        Notification n = new Notification.Builder(c, sos ? CH_SOS : CH_MSG)
+            .setSmallIcon(R.drawable.ic_gps)
+            .setContentTitle(sos ? "SOS da " + m.from + "!" : m.from + (m.secure ? " (gruppo)" : ""))
+            .setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setAutoCancel(true)
+            .setCategory(sos ? Notification.CATEGORY_ALARM : Notification.CATEGORY_MESSAGE)
+            .setContentIntent(openChat(c))
+            .build();
+        try { nm.notify(sos ? ID_SOS : ID_MSG, n); } catch (SecurityException ignored) {}
+    }
+}
+"""
+
+TEAM_RADAR_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.os.SystemClock;
+import android.util.AttributeSet;
+import android.view.View;
+import com.offlinegps.map.chat.MeshHub;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Radar del gruppo: tu al centro, i compagni attorno alla loro distanza e
+ * direzione vere. Scala automatica (100 m ... 50 km), Nord in alto oppure
+ * ruotato come il telefono. Colore = eta' del dato (verde fresco, giallo
+ * qualche minuto, grigio vecchio); batteria scarica segnalata in rosso.
+ */
+public class TeamRadarView extends View {
+    private static final double[] RANGES = {100, 150, 250, 400, 600, 900, 1500, 2500, 4000, 6000, 10000, 20000, 50000};
+    private final float dp;
+    private final Paint pBg = new Paint(Paint.ANTI_ALIAS_FLAG), pRing = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG), pDot = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pSweep = new Paint(Paint.ANTI_ALIAS_FLAG), pName = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path arrow = new Path();
+    private List<MeshHub.Member> members = new ArrayList<>();
+    private double myLat = Double.NaN, myLon;
+    private float heading = Float.NaN;
+    private double range = 500;
+
+    public TeamRadarView(Context c) { this(c, null); }
+    public TeamRadarView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pRing.setStyle(Paint.Style.STROKE);
+        pText.setColor(0xFF5A7A99);
+        pText.setTextSize(10 * dp);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pName.setTextAlign(Paint.Align.CENTER);
+        pName.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+    }
+
+    /** heading = direzione del telefono (NaN = Nord in alto). */
+    public void setData(List<MeshHub.Member> m, double lat, double lon, float heading) {
+        members = m == null ? new ArrayList<>() : m;
+        myLat = lat; myLon = lon; this.heading = heading;
+        double far = 0;
+        if (!Double.isNaN(lat))
+            for (MeshHub.Member x : members) far = Math.max(far, GeoFormat.distance(lat, lon, x.lat, x.lon));
+        range = RANGES[RANGES.length - 1];
+        for (double r : RANGES) if (far * 1.15 <= r) { range = r; break; }
+        invalidate();
+    }
+
+    public void setHeading(float h) { heading = h; invalidate(); }
+
+    private static String fmt(double m) {
+        return m < 1000 ? Math.round(m) + " m" : (m % 1000 == 0 ? Math.round(m / 1000) + " km" : String.format(java.util.Locale.ITALY, "%.1f km", m / 1000));
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f, r = Math.min(cx, cy) - 8 * dp;
+        if (r < 20) return;
+        pBg.setShader(new RadialGradient(cx, cy, r, 0xFF101A33, 0xFF050A14, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r, pBg);
+        // fascio rotante (4 s a giro)
+        float sweep = (SystemClock.uptimeMillis() % 4000) / 4000f * 360f;
+        pSweep.setShader(new SweepGradient(cx, cy, new int[]{0x00B388FF, 0x00B388FF, 0x55B388FF}, new float[]{0f, 0.82f, 1f}));
+        c.save();
+        c.rotate(sweep - 90, cx, cy);
+        c.drawCircle(cx, cy, r, pSweep);
+        c.restore();
+        // anelli e scala
+        for (int i = 1; i <= 3; i++) {
+            float rr = r * i / 3f;
+            pRing.setStrokeWidth((i == 3 ? 1.6f : 1f) * dp);
+            pRing.setColor(i == 3 ? 0xAAB388FF : 0x44B388FF);
+            c.drawCircle(cx, cy, rr, pRing);
+            // etichetta in diagonale (in alto a destra): non copre i compagni sugli assi
+            c.drawText(fmt(Math.round(range * i / 3 / 10.0) * 10), cx + rr * 0.707f + 3 * dp, cy - rr * 0.707f - 3 * dp, pText);
+        }
+        pRing.setColor(0x22B388FF);
+        c.drawLine(cx - r, cy, cx + r, cy, pRing);
+        c.drawLine(cx, cy - r, cx, cy + r, pRing);
+        float rot = Float.isNaN(heading) ? 0 : -heading;
+        // Nord
+        double na = Math.toRadians(rot);
+        pName.setTextSize(14 * dp);
+        pName.setColor(0xFFFF3D71);
+        c.drawText("N", cx + (float) Math.sin(na) * (r - 14 * dp), cy - (float) Math.cos(na) * (r - 14 * dp) + 5 * dp, pName);
+
+        // tu
+        if (Double.isNaN(myLat)) {
+            pName.setColor(0xFF8FB3D0);
+            pName.setTextSize(13 * dp);
+            c.drawText("in attesa della tua posizione", cx, cy + r * 0.5f, pName);
+        }
+        arrow.reset();
+        float s = 11 * dp;
+        arrow.moveTo(cx, cy - s);
+        arrow.lineTo(cx + s * 0.7f, cy + s * 0.75f);
+        arrow.lineTo(cx, cy + s * 0.35f);
+        arrow.lineTo(cx - s * 0.7f, cy + s * 0.75f);
+        arrow.close();
+        pDot.setStyle(Paint.Style.FILL);
+        pDot.setColor(0xFF00E5FF);
+        if (Float.isNaN(heading)) c.drawCircle(cx, cy, 7 * dp, pDot);
+        else c.drawPath(arrow, pDot);
+        float minR = 22 * dp;                         // i compagni non finiscono sopra di te
+
+        // compagni
+        long now = System.currentTimeMillis();
+        if (!Double.isNaN(myLat)) for (MeshHub.Member m : members) {
+            double d = GeoFormat.distance(myLat, myLon, m.lat, m.lon);
+            double b = Math.toRadians(GeoFormat.bearing(myLat, myLon, m.lat, m.lon) + rot);
+            float k = (float) Math.min(1.0, d / range);
+            float rr = Math.max(minR, r * k);
+            float x = cx + (float) Math.sin(b) * rr, y = cy - (float) Math.cos(b) * rr;
+            long age = now - m.time;
+            int col = age < 2 * 60_000 ? 0xFF00FF88 : age < 10 * 60_000 ? 0xFFFFD600 : 0xFF6E87A6;
+            pDot.setShader(new RadialGradient(x, y, 20 * dp, (col & 0x00FFFFFF) | 0x66000000, col & 0x00FFFFFF, Shader.TileMode.CLAMP));
+            c.drawCircle(x, y, 20 * dp, pDot);
+            pDot.setShader(null);
+            pDot.setColor(col);
+            c.drawCircle(x, y, 11 * dp, pDot);
+            pName.setColor(0xFF050A14);
+            pName.setTextSize(12 * dp);
+            String init = m.name.isEmpty() ? "?" : m.name.substring(0, 1).toUpperCase(java.util.Locale.ITALY);
+            c.drawText(init, x, y + 4.2f * dp, pName);
+            pName.setColor(0xFFE8F4FD);
+            pName.setTextSize(11 * dp);
+            String nm = m.name.length() > 12 ? m.name.substring(0, 12) : m.name;
+            // scritte dal lato lontano dal centro: non coprono il tuo segnaposto
+            boolean up = y < cy;
+            c.drawText(nm, x, up ? y - 29 * dp : y + 25 * dp, pName);
+            pName.setColor(m.battery >= 0 && m.battery <= 15 ? 0xFFFF5C7A : 0xFF8FB3D0);
+            pName.setTextSize(10 * dp);
+            c.drawText(fmt(Math.round(d / 10.0) * 10) + (m.battery >= 0 ? "  " + m.battery + "%" : ""), x,
+                up ? y - 17 * dp : y + 37 * dp, pName);
+        }
+        postInvalidateOnAnimation();
+    }
+}
+"""
+
+TEAM_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.location.Location;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.chat.MeshHub;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.sky.HeadingSensor;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Radar del gruppo (v5.1): dove sono i compagni, senza internet. Ogni
+ * telefono che condivide la posizione la manda sulla chat mesh ogni 30 s
+ * (cifrata se siete in un gruppo); i messaggi rimbalzano di telefono in
+ * telefono, quindi si vede anche chi non e' collegato direttamente.
+ */
+public class TeamActivity extends AppCompatActivity implements MeshHub.Listener, HeadingSensor.Listener {
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private MeshHub hub;
+    private TeamRadarView radar;
+    private TextView tvGroup, tvShare, tvShareBtn, tvEmpty;
+    private LinearLayout list;
+    private HeadingSensor heading;
+    private float lastHeading = Float.NaN;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 2000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_team);
+        hub = MeshHub.get(this);
+        radar = findViewById(R.id.team_radar);
+        tvGroup = findViewById(R.id.tv_team_group);
+        tvShare = findViewById(R.id.tv_team_share_info);
+        tvShareBtn = findViewById(R.id.tv_team_share);
+        tvEmpty = findViewById(R.id.tv_team_empty);
+        list = findViewById(R.id.team_list);
+        heading = new HeadingSensor(this);
+        click(R.id.btn_team_back, v -> finish());
+        click(R.id.btn_team_share, v -> toggleShare());
+        click(R.id.btn_team_chat, v -> startActivity(new Intent(this, ChatActivity.class)));
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        hub.addListener(this);
+        if (heading.available()) heading.start(this);
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        hub.removeListener(this);
+        heading.stop();
+        h.removeCallbacks(tick);
+    }
+
+    @Override public void onHeading(float deg) {
+        lastHeading = deg;
+        if (radar != null) radar.setHeading(deg);
+    }
+
+    @Override public void onTeam() { refresh(); }
+    @Override public void onPeers(List<String> names) { refresh(); }
+
+    private void toggleShare() {
+        if (!hub.isRunning()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Chat offline spenta")
+                .setMessage("Per condividere la posizione accendi la chat e collegati ad almeno un compagno.")
+                .setPositiveButton("APRI LA CHAT", (d, w) -> startActivity(new Intent(this, ChatActivity.class)))
+                .setNegativeButton("Annulla", null).show();
+            return;
+        }
+        if (!hub.isSharing() && !hub.inGroup()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Condividere senza gruppo?")
+                .setMessage("Senza un gruppo cifrato la tua posizione e' leggibile da tutti i telefoni della rete "
+                    + "mesh. Per i soli compagni crea un GRUPPO CIFRATO nella chat.")
+                .setPositiveButton("CONDIVIDI LO STESSO", (d, w) -> { hub.setSharing(true); refresh(); })
+                .setNegativeButton("Annulla", null).show();
+            return;
+        }
+        hub.setSharing(!hub.isSharing());
+        refresh();
+    }
+
+    private void refresh() {
+        Location me = GpsTrackingService.getLastLocation();
+        List<MeshHub.Member> team = hub.team();
+        if (radar != null) radar.setData(team, me != null ? me.getLatitude() : Double.NaN,
+            me != null ? me.getLongitude() : 0, lastHeading);
+        if (tvGroup != null) {
+            tvGroup.setText(hub.inGroup() ? hub.groupCode() : "SENZA GRUPPO");
+            tvGroup.setTextColor(hub.inGroup() ? 0xFF00FF88 : 0xFFFFD600);
+        }
+        boolean on = hub.isSharing();
+        if (tvShareBtn != null) tvShareBtn.setText(on ? "SMETTI DI CONDIVIDERE" : "CONDIVIDI LA MIA POSIZIONE");
+        if (tvShare != null) tvShare.setText(!hub.isRunning() ? "La chat offline e' spenta."
+            : (on ? "Stai condividendo la posizione ogni 30 s (anche a schermo spento)." : "Non stai condividendo la posizione.")
+              + "  Vicini collegati: " + hub.peers().size()
+              + (hub.foreignCount() > 0 ? "  ·  messaggi di altri gruppi inoltrati: " + hub.foreignCount() : ""));
+        fillList(team, me);
+    }
+
+    private void fillList(List<MeshHub.Member> team, @Nullable Location me) {
+        if (list == null) return;
+        list.removeAllViews();
+        if (tvEmpty != null) tvEmpty.setVisibility(team.isEmpty() ? View.VISIBLE : View.GONE);
+        float dp = getResources().getDisplayMetrics().density;
+        long now = System.currentTimeMillis();
+        for (MeshHub.Member m : team) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setBackgroundResource(R.drawable.bg_tile_violet);
+            int p = (int) (14 * dp);
+            row.setPadding(p, (int) (11 * dp), p, (int) (11 * dp));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (10 * dp);
+            TextView t1 = new TextView(this);
+            t1.setText(m.name + (m.secure ? "  🔒" : ""));
+            t1.setTextColor(0xFFE8F4FD);
+            t1.setTextSize(15);
+            t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            TextView t2 = new TextView(this);
+            String where = me == null ? "" : GeoFormat.formatDistance(GeoFormat.distance(me.getLatitude(), me.getLongitude(), m.lat, m.lon))
+                + " verso " + GeoFormat.cardinal(GeoFormat.bearing(me.getLatitude(), me.getLongitude(), m.lat, m.lon)) + "  ·  ";
+            t2.setText(where + ToolKit.span(now - m.time) + " fa"
+                + (m.battery >= 0 ? "  ·  batteria " + m.battery + "%" : "")
+                + (m.speedMs >= 0.5f ? String.format(Locale.ITALY, "  ·  %.0f km/h", m.speedMs * 3.6f) : "  ·  fermo"));
+            t2.setTextColor(m.battery >= 0 && m.battery <= 15 ? 0xFFFF8FA3 : 0xFF8FB3D0);
+            t2.setTextSize(12.5f);
+            row.addView(t1);
+            row.addView(t2);
+            row.setOnClickListener(v -> memberActions(m));
+            list.addView(row, lp);
+        }
+    }
+
+    private void memberActions(MeshHub.Member m) {
+        new AlertDialog.Builder(this)
+            .setTitle(m.name)
+            .setItems(new String[]{"Naviga a piedi fin li'", "Bussola verso " + m.name, "Mostra sulla mappa"}, (d, w) -> {
+                if (w == 0) ToolKit.navigate(this, m.lat, m.lon, m.name, RoutingEngine.PROFILE_FOOT);
+                else if (w == 1) {
+                    Intent i = new Intent(this, GotoCoordsActivity.class);
+                    i.putExtra(GotoCoordsActivity.EXTRA_TEXT, GeoFormat.decimal(m.lat, m.lon));
+                    startActivity(i);
+                } else ToolKit.showOnMap(this, m.lat, m.lon, m.name);
+            }).show();
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -17669,6 +19064,7 @@ V5_ICONS = {
     "ic_v5_send":       _v4_icon(["M2.01,21L23,12 2.01,3 2,10l15,2 -15,2z"]),
     "ic_v5_bluetooth":  _v4_icon(["M17.71,7.71L12,2h-1v7.59L6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 11,14.41V22h1l5.71,-5.71 -4.3,-4.29 4.3,-4.29zM13,5.83l1.88,1.88L13,9.59V5.83zm1.88,10.46L13,18.17v-3.76l1.88,1.88z"]),
     "ic_v5_sun":        _v4_icon(["M6.76,4.84l-1.8,-1.79 -1.41,1.41 1.79,1.79 1.42,-1.41zM4,10.5H1v2h3v-2zm9,-9.95h-2V3.5h2V0.55zm7.45,3.91l-1.41,-1.41 -1.79,1.79 1.41,1.41 1.79,-1.79zm-3.21,13.7l1.79,1.8 1.41,-1.41 -1.8,-1.79 -1.4,1.4zM20,10.5v2h3v-2h-3zm-8,-5c-3.31,0 -6,2.69 -6,6s2.69,6 6,6 6,-2.69 6,-6 -2.69,-6 -6,-6zm-1,16.95h2V19.5h-2v2.95zm-7.45,-3.91l1.41,1.41 1.79,-1.8 -1.41,-1.41 -1.79,1.8z"]),
+    "ic_v5_alt_route":  _v4_icon(["M9.78,11.16l-1.42,1.42c-0.68,-0.69 -1.34,-1.58 -1.79,-2.94l1.94,-0.49c0.32,0.89 0.77,1.5 1.27,2.01zM11,6L7,2 3,6h3.02c0.02,0.81 0.08,1.54 0.19,2.17l1.94,-0.49C8.08,7.2 8.03,6.63 8.02,6H11zm10,0l-4,-4 -4,4h2.99c-0.1,3.68 -1.28,4.75 -2.54,5.88 -0.5,0.44 -1.01,0.92 -1.45,1.55 -0.34,-0.49 -0.73,-0.88 -1.13,-1.24L9.46,13.6c0.93,0.85 1.54,1.54 1.54,3.4v5h2v-5c0,-2.02 0.71,-2.66 1.79,-3.63 1.38,-1.24 3.08,-2.78 3.2,-7.37H21z"]),
     "ic_v5_map2d":      _v4_icon(["M20.5,3l-0.16,0.03L15,5.1 9,3 3.36,4.9c-0.21,0.07 -0.36,0.25 -0.36,0.48V20.5c0,0.28 0.22,0.5 0.5,0.5l0.16,-0.03L9,18.9l6,2.1 5.64,-1.9c0.21,-0.07 0.36,-0.25 0.36,-0.48V3.5c0,-0.28 -0.22,-0.5 -0.5,-0.5zM15,19l-6,-2.11V5l6,2.11V19z"]),
 }
 
@@ -17739,6 +19135,17 @@ V5_DRAWABLES.update({
         '</ripple>',
     "bg_speed_bubble": _v5_shape('    <solid android:color="#F20B1424"/>\n'
                                  '    <stroke android:width="3dp" android:color="#AA00E5FF"/>\n', "oval"),
+    # v5.1: velocita' oltre il limite + cartello stradale del limite
+    "bg_speed_bubble_alert": _v5_shape('    <solid android:color="#F2B00020"/>\n'
+                                       '    <stroke android:width="3dp" android:color="#FFFF5C7A"/>\n', "oval"),
+    "bg_limit_sign": _v5_shape('    <solid android:color="#FFFFFFFF"/>\n'
+                               '    <stroke android:width="6dp" android:color="#FFE30613"/>\n', "oval"),
+    "bg_route_row": _v5_shape('    <solid android:color="#1400E5FF"/>\n'
+                              '    <stroke android:width="1dp" android:color="#5500E5FF"/>\n'
+                              '    <corners android:radius="16dp"/>\n'),
+    "bg_route_row_on": _v5_shape('    <solid android:color="#2600FF88"/>\n'
+                                 '    <stroke android:width="2dp" android:color="#FF00FF88"/>\n'
+                                 '    <corners android:radius="16dp"/>\n'),
     "bg_scrim_top": _v5_shape('    <gradient android:type="linear" android:angle="270"\n'
                               '        android:startColor="#CC050A14" android:endColor="#00050A14"/>\n'),
     "bg_scrim_bottom": _v5_shape('    <gradient android:type="linear" android:angle="90"\n'
@@ -17858,6 +19265,7 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '        <TextView android:id="@+id/tv_nav_engine" android:layout_width="wrap_content"\n'
     '            android:layout_height="wrap_content" android:text="3D" android:textColor="#00E5FF"\n'
     '            android:textSize="10sp" android:textStyle="bold" android:layout_marginBottom="8dp"/>\n'
+    + _v5_fab("btn_nav_routes", "ic_v5_alt_route", desc="Percorsi alternativi")
     + _v5_fab("btn_nav_overview", "ic_v5_route", desc="Panoramica")
     + _v5_fab("btn_nav_steps", "ic_v5_list", desc="Elenco manovre") +
     '    </LinearLayout>\n'
@@ -17865,7 +19273,7 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:layout_gravity="bottom" android:orientation="horizontal" android:gravity="bottom"\n'
     '        android:layout_marginBottom="176dp" android:layout_marginStart="14dp" android:layout_marginEnd="14dp">\n'
-    '        <LinearLayout android:layout_width="76dp" android:layout_height="76dp"\n'
+    '        <LinearLayout android:id="@+id/nav_speed_bubble" android:layout_width="76dp" android:layout_height="76dp"\n'
     '            android:orientation="vertical" android:gravity="center"\n'
     '            android:background="@drawable/bg_speed_bubble" android:elevation="8dp">\n'
     '            <TextView android:id="@+id/tv_nav_speed" android:layout_width="wrap_content"\n'
@@ -17874,6 +19282,17 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
     '                android:text="km/h" android:textColor="#8FB3D0" android:textSize="10sp"/>\n'
     '        </LinearLayout>\n'
+    # cartello del limite di velocita' (come quello stradale)
+    '        <FrameLayout android:id="@+id/nav_limit_sign" android:layout_width="62dp" android:layout_height="62dp"\n'
+    '            android:layout_marginStart="10dp" android:background="@drawable/bg_limit_sign"\n'
+    '            android:elevation="8dp" android:visibility="gone">\n'
+    '            <TextView android:id="@+id/tv_nav_limit" android:layout_width="match_parent"\n'
+    '                android:layout_height="match_parent" android:gravity="center" android:text="50"\n'
+    '                android:textColor="#111111" android:textSize="22sp" android:textStyle="bold"\n'
+    '                android:fontFamily="sans-serif-condensed" android:maxLines="1"\n'
+    '                android:autoSizeTextType="uniform" android:autoSizeMinTextSize="12sp"\n'
+    '                android:autoSizeMaxTextSize="22sp" android:padding="9dp"/>\n'
+    '        </FrameLayout>\n'
     '        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>\n'
     '        <LinearLayout android:id="@+id/btn_nav_recenter" android:layout_width="wrap_content"\n'
     '            android:layout_height="48dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
@@ -17892,6 +19311,10 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '        android:orientation="vertical" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
     '        android:paddingTop="14dp" android:paddingBottom="18dp" android:background="@drawable/bg_sheet_v5"\n'
     '        android:elevation="16dp">\n'
+    '        <TextView android:id="@+id/tv_nav_street" android:layout_width="match_parent"\n'
+    '            android:layout_height="wrap_content" android:gravity="center" android:textColor="#E8F4FD"\n'
+    '            android:textSize="14sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"\n'
+    '            android:layout_marginBottom="10dp" android:visibility="gone"/>\n'
     '        <ProgressBar android:id="@+id/pb_nav_progress" style="?android:attr/progressBarStyleHorizontal"\n'
     '            android:layout_width="match_parent" android:layout_height="6dp" android:max="1000"\n'
     '            android:progress="0" android:progressDrawable="@drawable/bg_progress_neon"/>\n'
@@ -17916,6 +19339,16 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '        <androidx.recyclerview.widget.RecyclerView android:id="@+id/rv_nav_steps"\n'
     '            android:layout_width="match_parent" android:layout_height="240dp"\n'
     '            android:layout_marginTop="12dp" android:visibility="gone"/>\n'
+    # percorsi alternativi
+    '        <LinearLayout android:id="@+id/panel_nav_routes" android:layout_width="match_parent"\n'
+    '            android:layout_height="wrap_content" android:orientation="vertical"\n'
+    '            android:layout_marginTop="12dp" android:visibility="gone">\n'
+    '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:text="PERCORSI · tocca per scegliere" android:textColor="#00E5FF" android:textSize="11sp"\n'
+    '                android:textStyle="bold" android:letterSpacing="0.12" android:layout_marginBottom="8dp"/>\n'
+    '            <LinearLayout android:id="@+id/nav_routes_list" android:layout_width="match_parent"\n'
+    '                android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    '        </LinearLayout>\n'
     '    </LinearLayout>\n'
     # costruzione rete
     '    <LinearLayout android:id="@+id/overlay_nav_build" android:layout_width="match_parent"\n'
@@ -18066,7 +19499,7 @@ LAYOUT_CHAT = (_XML_HEAD +
     '        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"\n'
     '            android:layout_weight="1" android:orientation="vertical" android:layout_marginStart="12dp">\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="CHAT MESH OFFLINE" android:textColor="#00FF88" android:textSize="19sp"\n'
+    '                android:text="CHAT OFFLINE" android:textColor="#00FF88" android:textSize="19sp"\n'
     '                android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"\n'
     '                android:shadowColor="#00FF88" android:shadowRadius="12"/>\n'
     '            <TextView android:id="@+id/tv_chat_me" android:layout_width="wrap_content"\n'
@@ -18077,7 +19510,18 @@ LAYOUT_CHAT = (_XML_HEAD +
     '            android:layout_height="30dp" android:gravity="center" android:paddingStart="12dp"\n'
     '            android:paddingEnd="12dp" android:text="0 VICINI" android:textColor="#8FB3D0"\n'
     '            android:textSize="11sp" android:textStyle="bold" android:background="@drawable/bg_chip_off"/>\n'
+    '        <ImageView android:id="@+id/btn_chat_power" android:layout_width="40dp" android:layout_height="40dp"\n'
+    '            android:layout_marginStart="8dp" android:padding="9dp" android:src="@drawable/ic_v5_power"\n'
+    '            android:tint="#FF5C7A" android:background="@drawable/bg_pill_back" android:clickable="true"\n'
+    '            android:focusable="true" android:contentDescription="Spegni la chat"/>\n'
     '    </LinearLayout>\n'
+    # stato del gruppo cifrato
+    '    <TextView android:id="@+id/tv_chat_group" android:layout_width="match_parent"\n'
+    '        android:layout_height="wrap_content" android:layout_marginTop="10dp" android:paddingStart="12dp"\n'
+    '        android:paddingEnd="12dp" android:paddingTop="7dp" android:paddingBottom="7dp"\n'
+    '        android:text="Chat aperta: senza gruppo i messaggi non sono cifrati" android:textColor="#FFD600"\n'
+    '        android:textSize="12sp" android:textStyle="bold" android:background="@drawable/bg_chip_off"\n'
+    '        android:clickable="true" android:focusable="true"/>\n'
     '    <TextView android:id="@+id/chat_status" android:layout_width="match_parent"\n'
     '        android:layout_height="wrap_content" android:layout_marginTop="10dp" android:padding="10dp"\n'
     '        android:text="Avvio del Bluetooth..." android:textColor="#CFE3F5" android:textSize="12sp"\n'
@@ -18088,6 +19532,11 @@ LAYOUT_CHAT = (_XML_HEAD +
     + _v5_action("btn_chat_visible", "ic_v4_radar", "VISIBILE", "violet")
     + _v5_action("btn_chat_pos", "ic_v4_pin", "POSIZIONE", "green")
     + _v5_action("btn_chat_sos", "ic_v4_sos", "SOS", "red", end_margin=False) +
+    '    </LinearLayout>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginBottom="10dp">\n'
+    + _v5_action("btn_chat_group", "ic_v5_lock", "GRUPPO CIFRATO", "yellow")
+    + _v5_action("btn_chat_team", "ic_v4_radar", "RADAR GRUPPO", "violet", end_margin=False) +
     '    </LinearLayout>\n'
     '    <ScrollView android:id="@+id/chat_scroll" android:layout_width="match_parent"\n'
     '        android:layout_height="0dp" android:layout_weight="1" android:overScrollMode="never">\n'
@@ -18146,6 +19595,8 @@ V5_TOOL_ICONS = {
     "ic_v5_stop":      _v4_icon(["M6,6h12v12H6z"]),
     "ic_v5_paste":     _v4_icon(["M19,2h-4.18C14.4,0.84 13.3,0 12,0c-1.3,0 -2.4,0.84 -2.82,2H5c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm-7,0c0.55,0 1,0.45 1,1s-0.45,1 -1,1 -1,-0.45 -1,-1 0.45,-1 1,-1zm7,18H5V4h2v3h10V4h2v16z"]),
     "ic_v5_bookmark":  _v4_icon(["M17,3H7c-1.1,0 -1.99,0.9 -1.99,2L5,21l7,-3 7,3V5c0,-1.1 -0.9,-2 -2,-2z"]),
+    "ic_v5_lock":      _v4_icon(["M18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10c0,-1.1 -0.9,-2 -2,-2zm-6,9c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2zm3.1,-9H8.9V6c0,-1.71 1.39,-3.1 3.1,-3.1 1.71,0 3.1,1.39 3.1,3.1v2z"]),
+    "ic_v5_power":     _v4_icon(["M13,3h-2v10h2V3zm4.83,2.17l-1.42,1.42C17.99,7.86 19,9.81 19,12c0,3.87 -3.13,7 -7,7s-7,-3.13 -7,-7c0,-2.19 1.01,-4.14 2.58,-5.42L6.17,5.17C4.23,6.82 3,9.26 3,12c0,4.97 4.03,9 9,9s9,-4.03 9,-9c0,-2.74 -1.23,-5.18 -3.17,-6.83z"]),
     "ic_v5_tent":      _v4_icon(["M12,3L2,21h20L12,3zm0,4.5L18.5,19H14l-2,-4 -2,4H5.5L12,7.5z"]),
 }
 V5_DRAWABLES.update(V5_TOOL_ICONS)
@@ -18572,7 +20023,7 @@ LAYOUT_HYDRATION = _v4_screen(
 
 # ---------------------------------------------------------------- MENU SOPRAVVIVENZA
 LAYOUT_SURVIVAL = _v4_screen(
-    _v4_header("btn_surv_back", "SOPRAVVIVENZA", "25 strumenti offline per l'outdoor", "#FF3D71")
+    _v4_header("btn_surv_back", "SOPRAVVIVENZA", "26 strumenti offline per l'outdoor", "#FF3D71")
     + '<LinearLayout android:id="@+id/card_emergency" android:layout_width="match_parent"\n'
       '    android:layout_height="96dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
       '    android:padding="16dp" android:background="@drawable/bg_tile_red" android:elevation="8dp"\n'
@@ -18587,6 +20038,23 @@ LAYOUT_SURVIVAL = _v4_screen(
       '            android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"/>\n'
       '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
       '            android:text="Posizione per i soccorsi, chiamata, SMS a un contatto" android:textColor="#FFB3C0"\n'
+      '            android:textSize="12sp"/>\n'
+      '    </LinearLayout>\n'
+      '</LinearLayout>\n'
+    + '<LinearLayout android:id="@+id/card_team" android:layout_width="match_parent"\n'
+      '    android:layout_height="80dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
+      '    android:padding="14dp" android:background="@drawable/bg_tile_violet" android:elevation="6dp"\n'
+      '    android:clickable="true" android:focusable="true" android:layout_marginBottom="12dp">\n'
+      '    <ImageView android:layout_width="48dp" android:layout_height="48dp" android:padding="10dp"\n'
+      '        android:src="@drawable/ic_v4_radar" android:tint="#B388FF" android:background="@drawable/bg_disc_violet"\n'
+      '        android:contentDescription="Radar del gruppo"/>\n'
+      '    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+      '        android:orientation="vertical" android:layout_marginStart="14dp">\n'
+      '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '            android:text="RADAR DEL GRUPPO" android:textColor="#FFFFFF" android:textSize="17sp"\n'
+      '            android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:letterSpacing="0.05"/>\n'
+      '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '            android:text="Dove sono i compagni, senza rete (Bluetooth)" android:textColor="#D9C7FF"\n'
       '            android:textSize="12sp"/>\n'
       '    </LinearLayout>\n'
       '</LinearLayout>\n'
@@ -18713,6 +20181,32 @@ LAYOUT_TOOLS = _v4_screen(
     + _v4_row(_v4_tile("open_unitconv", "ic_v5_calc", "Convertitore unita'", "Lunghezze, pesi, gradi", "violet", "118dp", end_margin=False)),
     "tools_column")
 
+# ---------------------------------------------------------------- RADAR DEL GRUPPO (v5.1)
+LAYOUT_TEAM = _v4_screen(
+    _v4_header("btn_team_back", "RADAR GRUPPO", "Dove sono i compagni, senza internet", "#B388FF", "tv_team_group", "SENZA GRUPPO")
+    + '<com.offlinegps.map.ui.TeamRadarView android:id="@+id/team_radar"\n'
+      '    android:layout_width="match_parent" android:layout_height="340dp" android:layout_marginBottom="12dp"/>\n'
+    + '<LinearLayout android:id="@+id/btn_team_share" android:layout_width="match_parent" android:layout_height="56dp"\n'
+      '    android:orientation="horizontal" android:gravity="center" android:background="@drawable/bg_btn5_violet"\n'
+      '    android:clickable="true" android:focusable="true" android:layout_marginBottom="8dp">\n'
+      '    <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_v4_pin"\n'
+      '        android:tint="#050A14" android:contentDescription="Condividi"/>\n'
+      '    <TextView android:id="@+id/tv_team_share" android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '        android:layout_marginStart="8dp" android:text="CONDIVIDI LA MIA POSIZIONE" android:textColor="#050A14"\n'
+      '        android:textSize="14sp" android:textStyle="bold"/>\n'
+      '</LinearLayout>\n'
+    + _t_text("tv_team_share_info", "", "#8FB3D0", "12.5sp", top="0dp")
+    + _v4_section("COMPAGNI")
+    + _t_text("tv_team_empty", "Nessun compagno ancora visibile. Ognuno deve accendere la chat, collegarsi e "
+              "premere CONDIVIDI LA MIA POSIZIONE.", "#5A7A99", "13sp", top="0dp")
+    + '<LinearLayout android:id="@+id/team_list" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _t_buttons(_t_btn("btn_team_chat", "ic_v4_chat", "APRI LA CHAT", "cyan", end_margin=False))
+    + _v4_hint(None, "Il Bluetooth arriva a circa 10-50 metri fra due telefoni, ma i messaggi rimbalzano: con piu' "
+                     "persone in fila la rete si allunga. In un gruppo cifrato solo i compagni vedono la tua posizione. "
+                     "Condividere tiene acceso il GPS: consuma batteria."),
+    "team_column")
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -18825,6 +20319,12 @@ def build_java_file_map():
         f"{PKG_UI}/GuideCompassView.java":       GUIDE_COMPASS_VIEW,
         f"{PKG_UI}/TrackProfileView.java":       TRACK_PROFILE_VIEW,
         f"{PKG_UI}/FireCampActivity.java":       FIRECAMP_ACTIVITY,
+        # v5.1 — chat in background, gruppi cifrati, radar del gruppo
+        f"{PKG_ROOT}/chat/MeshCrypto.java":      CHAT_MESH_CRYPTO,
+        f"{PKG_ROOT}/chat/MeshHub.java":         CHAT_MESH_HUB,
+        f"{PKG_ROOT}/chat/MeshService.java":     CHAT_MESH_SERVICE,
+        f"{PKG_UI}/TeamRadarView.java":          TEAM_RADAR_VIEW,
+        f"{PKG_UI}/TeamActivity.java":           TEAM_ACTIVITY,
     }
 
 def build_layout_map():
@@ -18888,6 +20388,7 @@ def build_layout_map():
         # NUOVI v5.0
         "activity_map3d.xml":          LAYOUT_MAP3D,
         "activity_firecamp.xml":       LAYOUT_FIRECAMP,
+        "activity_team.xml":           LAYOUT_TEAM,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -18968,7 +20469,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.0")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.1")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -19111,7 +20612,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.0.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.1.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -19125,6 +20626,14 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.1 - NAVIGATORE E CHAT PIU' AVANZATI:{C.RESET}")
+    print(f"  {C.OK}[NAV]{C.RESET}  Limiti di velocita' con cartello, preavviso e avviso eccesso")
+    print(f"  {C.OK}[NAV]{C.RESET}  Fino a 3 percorsi alternativi (pedaggi, autostrada) da scegliere")
+    print(f"  {C.OK}[NEW]{C.RESET}  Chat offline in background con notifiche e SOS")
+    print(f"  {C.OK}[NEW]{C.RESET}  Gruppi cifrati AES-256 con password e codice di controllo")
+    print(f"  {C.OK}[NEW]{C.RESET}  Radar del gruppo: compagni con distanza, direzione e batteria")
+    info("La rete stradale si ricostruisce una volta (limiti e pedaggi): attendi qualche minuto.")
 
     print(f"\n{C.BOLD}NOVITA v5.0 - NAVIGATORE 3D E STRUMENTI:{C.RESET}")
     print(f"  {C.OK}[NAV]{C.RESET}  Navigatore vero: avanzamento, voce con 'poi...', ricalcolo, auto/bici/piedi")
@@ -19180,7 +20689,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.0.apk")
+    info("1. Installa OfflineGPS-3D-v5.1.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -19192,7 +20701,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.0 - Navigatore 3D + strumenti rifatti")
+    print("  OfflineGPS 3D v5.1 - Navigatore 3D, chat cifrata, radar del gruppo")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -19209,7 +20718,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.0 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.1 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

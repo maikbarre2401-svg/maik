@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.1 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.2 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
+                      + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -113,7 +114,7 @@ NOVITA' v5.0 — NAVIGATORE 3D + MAPPA 3D VERA + STRUMENTI RIFATTI:
    degli strumenti nuove (vetro, neon, riquadri statistici).
  * Compilazione con encoding UTF-8 (accenti corretti anche su Windows).
 
-NOVITA' v5.1 (questa versione) — NAVIGATORE E CHAT PIU' AVANZATI:
+NOVITA' v5.1 — NAVIGATORE E CHAT PIU' AVANZATI:
  * LIMITI DI VELOCITA': cartello del limite della strada in cui sei (dai
    dati OpenStreetMap), avviso a voce "tra poco limite di 30" prima di
    arrivarci, tachimetro rosso e avviso se superi il limite oltre la
@@ -133,6 +134,26 @@ NOVITA' v5.1 (questa versione) — NAVIGATORE E CHAT PIU' AVANZATI:
    rete mesh; il radar mostra i compagni con distanza, direzione, batteria,
    velocita' e da quanto non si aggiornano. Navigazione o bussola verso un
    compagno; compagni visibili anche sulla mappa 3D.
+
+NOVITA' v5.2 (questa versione) — ESCURSIONE:
+ * LUOGHI VICINI OFFLINE: dal file della regione (lo stesso del routing)
+   si costruisce una volta un indice di cime (con quota), rifugi e bivacchi,
+   acqua potabile e sorgenti, punti panoramici, ripari e campeggi, ospedali,
+   farmacie e defibrillatori. Elenco per distanza e direzione, filtri,
+   ricerca per nome; tocchi un luogo e ci navighi o lo punti con la bussola.
+ * "CHE MONTAGNA E'?": realta' aumentata con la fotocamera; le cime e i
+   rifugi compaiono nella loro direzione vera (sensore di rotazione +
+   declinazione magnetica) e alla loro altezza apparente (curvatura e
+   rifrazione), con un mirino che dice quale cima hai davanti. Raggio 10-100
+   km, compagni del gruppo visibili. Senza fotocamera o sensore: cielo
+   disegnato e rotazione col dito. Nessun modello del terreno: le cime
+   nascoste da altre montagne compaiono lo stesso.
+ * SEGUI TRACCIA GPX: importi un .gpx (sentieri scaricati, tracce di amici)
+   o scegli una traccia registrata; la mappa mostra il percorso, quanto
+   manca, la salita rimasta, il tempo stimato (regola di Naismith) e il
+   profilo altimetrico con la tua posizione. Avviso a voce se esci dalla
+   traccia (oltre 40 m) con la direzione per rientrare. "Ripercorri al
+   contrario" per tornare indietro sulla traccia appena registrata.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -178,8 +199,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 49
-        versionName "5.1.0"
+        versionCode 50
+        versionName "5.2.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -380,6 +401,9 @@ MANIFEST = """\
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- v4.0 Sentinella Cielo: ricezione PASSIVA Remote ID + ascolto eliche -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- v5.2 "Che montagna e'?": fotocamera per la realta' aumentata (facoltativa) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"/>
@@ -477,6 +501,12 @@ MANIFEST = """\
         <activity android:name=".ui.FireCampActivity" android:exported="false" android:screenOrientation="portrait"/>
         <!-- v5.1 RADAR DEL GRUPPO + chat mesh in background -->
         <activity android:name=".ui.TeamActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <!-- v5.2 ESCURSIONE -->
+        <activity android:name=".ui.PoiActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".ui.PeakArActivity" android:exported="false" android:screenOrientation="portrait"
+            android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
+        <activity android:name=".ui.FollowTrackActivity" android:exported="false" android:screenOrientation="portrait"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -920,7 +950,8 @@ public class GpsTrackingService extends Service {
         "CoordsToolActivity", "DaylightToolActivity", "BacktrackActivity", "AreaToolActivity",
         "TrackRecorderActivity", "GeoNotesActivity", "GotoCoordsActivity", "QrPositionActivity",
         "ChatActivity", "EmergencyActivity", "SpeedHudActivity", "SunCompassActivity",
-        "AltimeterActivity", "FireCampActivity", "PaceCalcActivity", "MoonPhaseActivity", "TeamActivity"));
+        "AltimeterActivity", "FireCampActivity", "PaceCalcActivity", "MoonPhaseActivity", "TeamActivity",
+        "PoiActivity", "PeakArActivity"));
 
     public static void installAuto(Application app) {
         sAppCtx = app;
@@ -5709,6 +5740,10 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_fire, FireCampActivity.class);
         // NUOVO v5.1
         wire(R.id.card_team, TeamActivity.class);
+        // NUOVI v5.2
+        wire(R.id.card_follow, FollowTrackActivity.class);
+        wire(R.id.card_poi, PoiActivity.class);
+        wire(R.id.card_ar, PeakArActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -6980,6 +7015,7 @@ public class SlopeToolActivity extends AppCompatActivity implements SensorEventL
 TRACK_RECORDER_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -7265,11 +7301,30 @@ public class TrackRecorderActivity extends AppCompatActivity {
         }
     }
 
+    /** Apre "Segui traccia" sulla traccia registrata (GPX esportato al volo). */
+    private void follow(long sessionId, boolean reverse) {
+        io.execute(() -> {
+            try {
+                File f = GpxExporter.exportSession(getApplicationContext(), sessionId);
+                runOnUiThread(() -> {
+                    Intent i = new Intent(this, FollowTrackActivity.class);
+                    i.putExtra(FollowTrackActivity.EXTRA_FILE, f.getAbsolutePath());
+                    i.putExtra(FollowTrackActivity.EXTRA_REVERSE, reverse);
+                    startActivity(i);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Errore: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
     private void trackActions(TrackSessionInfo si) {
         new AlertDialog.Builder(this)
             .setTitle("Traccia del " + new SimpleDateFormat("d MMM HH:mm", Locale.ITALY).format(new Date(si.sessionId)))
-            .setItems(new String[]{"Esporta e condividi GPX", "Elimina"}, (d, which) -> {
-                if (which == 0) export(si.sessionId);
+            .setItems(new String[]{"Ripercorri al contrario (torna indietro)", "Ripercorri dall'inizio",
+                "Esporta e condividi GPX", "Elimina"}, (d, which) -> {
+                if (which <= 1) follow(si.sessionId, which == 0);
+                else if (which == 2) export(si.sessionId);
                 else new AlertDialog.Builder(this)
                     .setMessage("Eliminare definitivamente questa traccia?")
                     .setPositiveButton("ELIMINA", (d2, w2) -> io.execute(() -> {
@@ -14915,7 +14970,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.0 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.2 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -17782,6 +17837,8 @@ public class TrackProfileView extends View {
     private final Paint pLine = new Paint(Paint.ANTI_ALIAS_FLAG), pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pGrid = new Paint(), pText = new Paint(Paint.ANTI_ALIAS_FLAG), pDot = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float[] dist = new float[0], alt = new float[0];
+    private float marker = Float.NaN;
+    private final Paint pMark = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
 
     public TrackProfileView(Context c) { this(c, null); }
@@ -17805,6 +17862,9 @@ public class TrackProfileView extends View {
         alt = altM == null ? new float[0] : altM;
         invalidate();
     }
+
+    /** Segna dove sei lungo il profilo (metri dall'inizio), NaN = nessun segno. */
+    public void setMarker(float distM) { marker = distM; invalidate(); }
 
     @Override protected void onDraw(Canvas c) {
         super.onDraw(c);
@@ -17840,7 +17900,23 @@ public class TrackProfileView extends View {
         pFill.setShader(new LinearGradient(0, top, 0, bottom, 0x5500FF88, 0x0500FF88, Shader.TileMode.CLAMP));
         c.drawPath(fill, pFill);
         c.drawPath(path, pLine);
-        c.drawCircle(lastX, lastY, 4.5f * dp, pDot);
+        if (Float.isNaN(marker)) c.drawCircle(lastX, lastY, 4.5f * dp, pDot);
+        else {
+            // posizione attuale: quota interpolata alla distanza percorsa
+            float md = Math.max(0, Math.min(total, marker));
+            int i = 1;
+            while (i < n - 1 && dist[i] < md) i++;
+            float t = dist[i] > dist[i - 1] ? (md - dist[i - 1]) / (dist[i] - dist[i - 1]) : 0;
+            float a = alt[i - 1] + (alt[i] - alt[i - 1]) * Math.max(0, Math.min(1, t));
+            float mx2 = l + (r - l) * md / total, my = bottom - (bottom - top) * (a - mn) / (mx - mn);
+            pMark.setColor(0xFF00E5FF);
+            pMark.setStrokeWidth(1.5f * dp);
+            c.drawLine(mx2, top, mx2, bottom, pMark);
+            pMark.setColor(0x5500E5FF);
+            c.drawCircle(mx2, my, 10 * dp, pMark);
+            pMark.setColor(0xFF00E5FF);
+            c.drawCircle(mx2, my, 5 * dp, pMark);
+        }
         pText.setTextAlign(Paint.Align.RIGHT);
         c.drawText(total < 1000 ? String.format(Locale.ITALY, "%.0f m", total)
             : String.format(Locale.ITALY, "%.1f km", total / 1000f), r, getHeight() - 3 * dp, pText);
@@ -19041,6 +19117,1521 @@ public class TeamActivity extends AppCompatActivity implements MeshHub.Listener,
 }
 """
 
+POI_INDEX = r"""package com.offlinegps.map.routing;
+
+import com.graphhopper.reader.ReaderElement;
+import com.graphhopper.reader.ReaderNode;
+import com.graphhopper.reader.ReaderWay;
+import com.graphhopper.reader.osm.OSMInputFile;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+
+/**
+ * Luoghi utili all'aperto, estratti offline dal file .pbf della regione:
+ * cime (con quota), rifugi e bivacchi, sorgenti e fontanelle, punti
+ * panoramici, ripari, campeggi e i punti per l'emergenza (ospedali,
+ * farmacie, defibrillatori). I rifugi mappati come edificio vengono presi
+ * dal primo nodo del contorno. Indice in un file di testo a parte, costruito
+ * una volta. Nessuna dipendenza da Android: testato sul computer.
+ */
+public final class PoiIndex {
+    public static final String PEAK = "peak", HUT = "hut", WATER = "water", VIEW = "view",
+        SHELTER = "shelter", CAMP = "camp", HOSPITAL = "hospital", PHARMACY = "pharmacy", AED = "aed";
+    private static final String HEADER = "POI1";
+
+    public static final class Poi {
+        public final String type, name;
+        public final double lat, lon;
+        /** Quota in metri (NaN se non nota). */
+        public final double ele;
+
+        public Poi(String type, String name, double lat, double lon, double ele) {
+            this.type = type; this.name = name; this.lat = lat; this.lon = lon; this.ele = ele;
+        }
+    }
+
+    private final List<Poi> pois = new ArrayList<>();
+
+    public List<Poi> all() { return pois; }
+    public int size() { return pois.size(); }
+
+    /** Tipo del luogo dai tag OSM, null se non interessa. */
+    static String classify(java.util.function.Function<String, String> tag) {
+        String natural = tag.apply("natural"), tourism = tag.apply("tourism"), amenity = tag.apply("amenity");
+        String emergency = tag.apply("emergency"), healthcare = tag.apply("healthcare");
+        if ("peak".equals(natural) || "volcano".equals(natural)) return PEAK;
+        if ("alpine_hut".equals(tourism) || "wilderness_hut".equals(tourism)) return HUT;
+        if ("spring".equals(natural) || "drinking_water".equals(amenity) || "water_point".equals(amenity)) return WATER;
+        if ("viewpoint".equals(tourism)) return VIEW;
+        if ("shelter".equals(amenity)) return SHELTER;
+        if ("camp_site".equals(tourism)) return CAMP;
+        if ("hospital".equals(amenity) || "hospital".equals(healthcare)) return HOSPITAL;
+        if ("pharmacy".equals(amenity) || "pharmacy".equals(healthcare)) return PHARMACY;
+        if ("defibrillator".equals(emergency)) return AED;
+        return null;
+    }
+
+    /** Quota da "ele" (accetta "2.912", "2912 m", "2912m", "9554 ft"). */
+    static double parseEle(String s) {
+        if (s == null) return Double.NaN;
+        String t = s.trim().toLowerCase(Locale.ROOT).replace(",", ".");
+        boolean feet = t.endsWith("ft") || t.endsWith("'");
+        t = t.replaceAll("[^0-9.\\-]", "");
+        if (t.isEmpty()) return Double.NaN;
+        try {
+            double v = Double.parseDouble(t);
+            // "2.912" scritto all'italiana (punto delle migliaia) per una cima
+            if (s.trim().matches("\\d\\.\\d{3}")) v *= 1000;
+            if (feet) v *= 0.3048;
+            return v > -500 && v < 9000 ? v : Double.NaN;
+        } catch (NumberFormatException e) { return Double.NaN; }
+    }
+
+    private static String nameOf(java.util.function.Function<String, String> tag, String type) {
+        String n = tag.apply("name");
+        if (n == null || n.isEmpty()) n = tag.apply("name:it");
+        if (n != null && !n.isEmpty()) return n.trim();
+        switch (type) {
+            case WATER: return "spring".equals(tag.apply("natural")) ? "Sorgente" : "Fontanella";
+            case SHELTER: return "Riparo";
+            case AED: return "Defibrillatore (DAE)";
+            case VIEW: return "Punto panoramico";
+            case PHARMACY: return "Farmacia";
+            default: return null;                     // cime e rifugi senza nome: inutili
+        }
+    }
+
+    /** Legge il .pbf (o un .osm) e scrive l'indice. */
+    public static int build(File osmFile, File indexOut) throws Exception {
+        // passata 1: edifici/aree (rifugi, ospedali, campeggi...) -> primo nodo del contorno
+        Map<Long, String[]> wayFirstNode = new HashMap<>();   // nodo -> {tipo, nome, ele}
+        try (OSMInputFile in = new OSMInputFile(osmFile).setWorkerThreads(1).open()) {
+            ReaderElement el;
+            while ((el = in.getNext()) != null) {
+                if (el.getType() != ReaderElement.Type.WAY) continue;
+                ReaderWay w = (ReaderWay) el;
+                java.util.function.Function<String, String> tag = k -> w.getTag(k, null);
+                String type = classify(tag);
+                if (type == null || w.getNodes().size() == 0) continue;
+                String name = nameOf(tag, type);
+                if (name == null) continue;
+                wayFirstNode.put(w.getNodes().get(0), new String[]{type, name, w.getTag("ele", null)});
+            }
+        }
+        // passata 2: nodi
+        List<Poi> out = new ArrayList<>();
+        try (OSMInputFile in = new OSMInputFile(osmFile).setWorkerThreads(1).open()) {
+            ReaderElement el;
+            while ((el = in.getNext()) != null) {
+                if (el.getType() != ReaderElement.Type.NODE) continue;
+                ReaderNode n = (ReaderNode) el;
+                String[] w = wayFirstNode.get(n.getId());
+                if (w != null) out.add(new Poi(w[0], w[1], n.getLat(), n.getLon(), parseEle(w[2])));
+                if (!n.hasTags()) continue;
+                java.util.function.Function<String, String> tag = k -> n.getTag(k, null);
+                String type = classify(tag);
+                if (type == null) continue;
+                String name = nameOf(tag, type);
+                if (name == null) continue;
+                out.add(new Poi(type, name, n.getLat(), n.getLon(), parseEle(n.getTag("ele", null))));
+            }
+        }
+        indexOut.getParentFile().mkdirs();
+        try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(indexOut), StandardCharsets.UTF_8))) {
+            bw.write(HEADER); bw.newLine();
+            for (Poi p : out) {
+                bw.write(p.type + "\t" + p.name.replace("\t", " ").replace("\n", " ") + "\t" + p.lat + "\t" + p.lon + "\t"
+                    + (Double.isNaN(p.ele) ? "" : String.valueOf(Math.round(p.ele))));
+                bw.newLine();
+            }
+        }
+        return out.size();
+    }
+
+    public static PoiIndex load(File index) throws IOException {
+        PoiIndex idx = new PoiIndex();
+        try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(index), StandardCharsets.UTF_8))) {
+            if (!HEADER.equals(br.readLine())) throw new IOException("indice luoghi di un'altra versione");
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] f = line.split("\t", -1);
+                if (f.length < 5) continue;
+                try {
+                    idx.pois.add(new Poi(f[0], f[1], Double.parseDouble(f[2]), Double.parseDouble(f[3]),
+                        f[4].isEmpty() ? Double.NaN : Double.parseDouble(f[4])));
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        return idx;
+    }
+
+    /** I luoghi dei tipi richiesti entro maxM metri, dal piu' vicino. {Poi, distanza}. */
+    public List<Object[]> near(double lat, double lon, double maxM, Set<String> types, String query, int max) {
+        String q = query == null ? "" : OfflineGeocoder.normalize(query);
+        double dLat = maxM / 111_000.0, dLon = maxM / (111_000.0 * Math.max(0.2, Math.cos(Math.toRadians(lat))));
+        List<Object[]> res = new ArrayList<>();
+        for (Poi p : pois) {
+            if (types != null && !types.contains(p.type)) continue;
+            if (Math.abs(p.lat - lat) > dLat || Math.abs(p.lon - lon) > dLon) continue;
+            if (!q.isEmpty() && !OfflineGeocoder.normalize(p.name).contains(q)) continue;
+            double d = NavCore.dist(lat, lon, p.lat, p.lon);
+            if (d <= maxM) res.add(new Object[]{p, d});
+        }
+        res.sort((a, b) -> Double.compare((Double) a[1], (Double) b[1]));
+        return res.size() > max ? new ArrayList<>(res.subList(0, max)) : res;
+    }
+}
+"""
+
+POI_STORE = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.os.Handler;
+import android.os.Looper;
+import com.offlinegps.map.routing.PoiIndex;
+import java.io.File;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Carica (e la prima volta costruisce) l'indice dei luoghi dal file di
+ * routing (.pbf) della zona: lo stesso file scaricato per la navigazione.
+ */
+final class PoiStore {
+    interface Callback {
+        void onProgress(String msg);
+        void onReady(PoiIndex idx, String error);
+    }
+
+    private static final ExecutorService IO = Executors.newSingleThreadExecutor();
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
+    private static volatile PoiIndex cached;
+    private static volatile String cachedTag;
+
+    private PoiStore() {}
+
+    static void get(Context ctx, double lat, double lon, Callback cb) {
+        Context c = ctx.getApplicationContext();
+        IO.execute(() -> {
+            File dir = new File(c.getExternalFilesDir(null), "routing");
+            String tag = Double.isNaN(lat) ? null : RegionMapper.tagFor(lat, lon);
+            File pbf = tag == null ? null : new File(dir, tag + ".osm.pbf");
+            if (pbf == null || !pbf.exists()) {
+                pbf = null;
+                File[] all = dir.exists() ? dir.listFiles((d, n) -> n.endsWith(".pbf")) : null;
+                if (all != null && all.length > 0) {
+                    pbf = all[0];
+                    int dot = pbf.getName().indexOf('.');
+                    tag = dot > 0 ? pbf.getName().substring(0, dot) : "regione";
+                }
+            }
+            if (pbf == null) {
+                MAIN.post(() -> cb.onReady(null, "Serve il file della tua zona: Download -> tab ROUTING. "
+                    + "Lo stesso file serve al navigatore e qui per cime, rifugi e sorgenti."));
+                return;
+            }
+            final String regionTag = tag;
+            if (cached != null && regionTag.equals(cachedTag)) {
+                PoiIndex idx = cached;
+                MAIN.post(() -> cb.onReady(idx, null));
+                return;
+            }
+            File index = new File(dir, regionTag + "-poi.idx");
+            try {
+                try {
+                    if (index.exists()) cached = PoiIndex.load(index);
+                } catch (Exception old) { index.delete(); cached = null; }
+                if (cached == null) {
+                    MAIN.post(() -> cb.onProgress("Estrazione di cime, rifugi, sorgenti e punti utili (solo la prima volta, 1-3 minuti)..."));
+                    PoiIndex.build(pbf, index);
+                    cached = PoiIndex.load(index);
+                }
+                cachedTag = regionTag;
+                PoiIndex idx = cached;
+                MAIN.post(() -> cb.onReady(idx, null));
+            } catch (Throwable e) {
+                index.delete();
+                MAIN.post(() -> cb.onReady(null, "Impossibile leggere il file della zona: " + e.getMessage()));
+            }
+        });
+    }
+}
+"""
+
+POI_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.location.Location;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.PoiIndex;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/**
+ * Luoghi vicini (v5.2), offline dal file della zona: cime con quota e
+ * dislivello da dove sei, rifugi e bivacchi, sorgenti e fontanelle, punti
+ * panoramici, campeggi e ripari, e per l'emergenza ospedali, farmacie e
+ * defibrillatori. Tocca un luogo per navigare, seguire la bussola o vederlo.
+ */
+public class PoiActivity extends AppCompatActivity {
+    private static final String[][] CATS = {
+        {"poi_cat_peak", "CIME", PoiIndex.PEAK, "60000"},
+        {"poi_cat_hut", "RIFUGI", PoiIndex.HUT, "40000"},
+        {"poi_cat_water", "ACQUA", PoiIndex.WATER, "15000"},
+        {"poi_cat_view", "PANORAMI", PoiIndex.VIEW, "30000"},
+        {"poi_cat_camp", "RIPARI", PoiIndex.CAMP + "," + PoiIndex.SHELTER, "30000"},
+        {"poi_cat_help", "SOCCORSO", PoiIndex.HOSPITAL + "," + PoiIndex.PHARMACY + "," + PoiIndex.AED, "40000"},
+    };
+    private static final int[] COLORS = {0xFFFFD600, 0xFFFF6B35, 0xFF00E5FF, 0xFFB388FF, 0xFF00FF88, 0xFFFF3D71};
+
+    private PoiIndex index;
+    private int cat = 0;
+    private TextView tvStatus, tvCount;
+    private EditText search;
+    private LinearLayout list;
+    private final TextView[] chips = new TextView[CATS.length];
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_poi);
+        tvStatus = findViewById(R.id.tv_poi_status);
+        tvCount = findViewById(R.id.tv_poi_count);
+        search = findViewById(R.id.et_poi_search);
+        list = findViewById(R.id.poi_list);
+        int[] ids = {R.id.poi_cat_peak, R.id.poi_cat_hut, R.id.poi_cat_water, R.id.poi_cat_view, R.id.poi_cat_camp, R.id.poi_cat_help};
+        for (int i = 0; i < ids.length; i++) {
+            chips[i] = findViewById(ids[i]);
+            final int k = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> { cat = k; render(); });
+        }
+        click(R.id.btn_poi_back, v -> finish());
+        click(R.id.btn_poi_ar, v -> startActivity(new Intent(this, PeakArActivity.class)));
+        if (search != null) search.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) {}
+            @Override public void afterTextChanged(Editable e) { render(); }
+        });
+        double[] w = ToolKit.where(this);
+        setStatus("Caricamento dei luoghi della zona...");
+        PoiStore.get(this, w == null ? Double.NaN : w[0], w == null ? 0 : w[1], new PoiStore.Callback() {
+            @Override public void onProgress(String msg) { setStatus(msg); }
+            @Override public void onReady(PoiIndex idx, String error) {
+                if (isFinishing()) return;
+                index = idx;
+                if (error != null) setStatus(error);
+                render();
+            }
+        });
+        render();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private void setStatus(String s) {
+        if (tvStatus == null) return;
+        tvStatus.setText(s);
+        tvStatus.setVisibility(s == null || s.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void render() {
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == cat ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == cat ? COLORS[i] : 0xFF8FB3D0);
+        }
+        if (list == null || index == null) return;
+        double[] w = ToolKit.where(this);
+        if (w == null) { setStatus("Serve la tua posizione (anche approssimativa): esci all'aperto qualche secondo."); return; }
+        Location me = GpsTrackingService.getLastLocation();
+        double myAlt = me != null && me.hasAltitude() ? me.getAltitude() : Double.NaN;
+        Set<String> types = new HashSet<>(Arrays.asList(CATS[cat][2].split(",")));
+        double radius = Double.parseDouble(CATS[cat][3]);
+        String q = search == null ? "" : search.getText().toString();
+        List<Object[]> found = index.near(w[0], w[1], q.trim().isEmpty() ? radius : 200_000, types, q, 80);
+        list.removeAllViews();
+        if (tvCount != null) tvCount.setText(found.size() + (found.size() == 1 ? " LUOGO" : " LUOGHI"));
+        setStatus(found.isEmpty() ? "Nessun luogo di questo tipo entro " + Math.round(radius / 1000) + " km nella mappa della zona." : null);
+        float dp = getResources().getDisplayMetrics().density;
+        for (Object[] f : found) {
+            PoiIndex.Poi p = (PoiIndex.Poi) f[0];
+            double d = (Double) f[1];
+            double brg = GeoFormat.bearing(w[0], w[1], p.lat, p.lon);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setBackgroundResource(R.drawable.bg_tile_glass);
+            int pad = (int) (14 * dp);
+            row.setPadding(pad, (int) (11 * dp), pad, (int) (11 * dp));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (9 * dp);
+            View dot = new View(this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(COLORS[cat]);
+            dot.setBackground(g);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams((int) (12 * dp), (int) (12 * dp));
+            dl.rightMargin = (int) (12 * dp);
+            row.addView(dot, dl);
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView t1 = new TextView(this);
+            t1.setText(p.name);
+            t1.setTextColor(0xFFE8F4FD);
+            t1.setTextSize(15);
+            t1.setTypeface(Typeface.DEFAULT_BOLD);
+            TextView t2 = new TextView(this);
+            String ele = Double.isNaN(p.ele) ? "" : String.format(Locale.ITALY, "  ·  %,.0f m", p.ele)
+                + (Double.isNaN(myAlt) ? "" : String.format(Locale.ITALY, " (%+,.0f)", p.ele - myAlt));
+            t2.setText(GeoFormat.formatDistance(d) + " verso " + GeoFormat.cardinal(brg) + ele + "  ·  " + label(p.type));
+            t2.setTextColor(0xFF8FB3D0);
+            t2.setTextSize(12.5f);
+            col.addView(t1);
+            col.addView(t2);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            row.setOnClickListener(v -> actions(p));
+            list.addView(row, lp);
+        }
+    }
+
+    static String label(String type) {
+        switch (type) {
+            case PoiIndex.PEAK: return "cima";
+            case PoiIndex.HUT: return "rifugio";
+            case PoiIndex.WATER: return "acqua";
+            case PoiIndex.VIEW: return "panorama";
+            case PoiIndex.SHELTER: return "riparo";
+            case PoiIndex.CAMP: return "campeggio";
+            case PoiIndex.HOSPITAL: return "ospedale";
+            case PoiIndex.PHARMACY: return "farmacia";
+            case PoiIndex.AED: return "defibrillatore";
+            default: return "";
+        }
+    }
+
+    private void actions(PoiIndex.Poi p) {
+        new AlertDialog.Builder(this)
+            .setTitle(p.name)
+            .setItems(new String[]{"Naviga a piedi", "In auto", "Bussola verso il punto", "Mostra sulla mappa"}, (d, w) -> {
+                if (w == 0) ToolKit.navigate(this, p.lat, p.lon, p.name, RoutingEngine.PROFILE_FOOT);
+                else if (w == 1) ToolKit.navigate(this, p.lat, p.lon, p.name, RoutingEngine.PROFILE_CAR);
+                else if (w == 2) {
+                    Intent i = new Intent(this, GotoCoordsActivity.class);
+                    i.putExtra(GotoCoordsActivity.EXTRA_TEXT, GeoFormat.decimal(p.lat, p.lon));
+                    startActivity(i);
+                } else ToolKit.showOnMap(this, p.lat, p.lon, p.name);
+            }).show();
+    }
+}
+"""
+
+AR_PROJECTOR = r"""package com.offlinegps.map.util;
+
+/**
+ * Proiezione per la realta' aumentata: da una direzione nel mondo (rotta e
+ * angolo sopra l'orizzonte) al punto sullo schermo, data la matrice di
+ * rotazione del telefono (sensore ROTATION_VECTOR, dal telefono al mondo:
+ * X est, Y nord, Z in alto). La fotocamera posteriore guarda lungo -Z del
+ * telefono; destra = +X, alto dello schermo = +Y. Modello a foro stenopeico,
+ * l'inclinazione laterale del telefono e' gestita da sola.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class ArProjector {
+    private final float[] r = new float[9];
+    private double fx, fy, cx, cy;
+
+    /** Matrice 3x3 per righe, come da SensorManager.getRotationMatrixFromVector. */
+    public void setRotation(float[] rot) { System.arraycopy(rot, 0, r, 0, 9); }
+
+    /** Lunghezza focale in pixel e centro dell'immagine sullo schermo. */
+    public void setCamera(double fxPx, double fyPx, double centerX, double centerY) {
+        fx = fxPx; fy = fyPx; cx = centerX; cy = centerY;
+    }
+
+    /** Focale in pixel per un campo visivo orizzontale (gradi) su uno schermo largo w pixel. */
+    public static double focalForFov(double widthPx, double fovDeg) {
+        return widthPx / 2.0 / Math.tan(Math.toRadians(fovDeg) / 2.0);
+    }
+
+    /**
+     * Punto sullo schermo {x, y} per la direzione (rotta dal Nord del sensore,
+     * angolo sopra l'orizzonte), oppure null se e' alle spalle della fotocamera.
+     */
+    public double[] project(double bearingDeg, double elevationDeg) {
+        double b = Math.toRadians(bearingDeg), e = Math.toRadians(elevationDeg);
+        double tx = Math.sin(b) * Math.cos(e), ty = Math.cos(b) * Math.cos(e), tz = Math.sin(e);
+        // nel riferimento del telefono: d = R^T t
+        double dx = r[0] * tx + r[3] * ty + r[6] * tz;
+        double dy = r[1] * tx + r[4] * ty + r[7] * tz;
+        double dz = r[2] * tx + r[5] * ty + r[8] * tz;
+        if (dz > -1e-3) return null;                  // dietro (o di lato a 90 gradi)
+        return new double[]{cx + dx / -dz * fx, cy - dy / -dz * fy};
+    }
+
+    /** Dove guarda la fotocamera: {rotta 0..360, angolo sopra l'orizzonte}. */
+    public double[] viewDirection() {
+        double vx = -r[2], vy = -r[5], vz = -r[8];
+        double brg = (Math.toDegrees(Math.atan2(vx, vy)) + 360) % 360;
+        return new double[]{brg, Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, vz))))};
+    }
+
+    /**
+     * Angolo sopra l'orizzonte di un punto lontano, con la curvatura terrestre
+     * e la rifrazione atmosferica standard (k = 0,13).
+     */
+    public static double elevationAngle(double myAltM, double targetAltM, double distM) {
+        double drop = distM * distM / (2 * 6_371_000.0) * (1 - 0.13);
+        return Math.toDegrees(Math.atan2(targetAltM - myAltM - drop, distM));
+    }
+}
+"""
+
+AR_OVERLAY_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import com.offlinegps.map.util.ArProjector;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Disegno della realta' aumentata sopra la fotocamera: linea dell'orizzonte
+ * con i punti cardinali e le etichette (cime, compagni, waypoint) nella loro
+ * direzione vera. Le etichette vicine si impilano invece di sovrapporsi.
+ */
+public class ArOverlayView extends View {
+    public static final class Label {
+        public final String title, sub;
+        /** Rotta vera (gradi dal Nord geografico) e angolo sopra l'orizzonte. */
+        public final double bearing, elevation, dist;
+        public final int color;
+
+        public Label(String title, String sub, double bearing, double elevation, double dist, int color) {
+            this.title = title; this.sub = sub; this.bearing = bearing; this.elevation = elevation;
+            this.dist = dist; this.color = color;
+        }
+    }
+
+    private final float dp;
+    private final ArProjector proj = new ArProjector();
+    private final Paint pLine = new Paint(Paint.ANTI_ALIAS_FLAG), pText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pSub = new Paint(Paint.ANTI_ALIAS_FLAG), pBox = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pCard = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path path = new Path();
+    private List<Label> labels = new ArrayList<>();
+    private boolean hasRotation;
+    private float declination;
+    private double focalPx = Double.NaN;
+    private int shown, lastShown = -1;
+    private Runnable onShownChanged;
+    private Label focused, lastFocused;
+    /** Una cima e' "nel mirino" se la sua rotta dista meno di cosi' dal centro. */
+    private static final double AIM_DEG = 4;
+
+    public ArOverlayView(Context c) { this(c, null); }
+    public ArOverlayView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pLine.setStyle(Paint.Style.STROKE);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pText.setTextSize(15 * dp);
+        pText.setColor(0xFFFFFFFF);
+        pText.setShadowLayer(4 * dp, 0, 0, 0xCC000000);
+        pSub.setTextSize(11.5f * dp);
+        pSub.setColor(0xFFDDE8F2);
+        pSub.setShadowLayer(3 * dp, 0, 0, 0xCC000000);
+        pCard.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pCard.setTextAlign(Paint.Align.CENTER);
+    }
+
+    public void setLabels(List<Label> l) { labels = l == null ? new ArrayList<>() : l; invalidate(); }
+
+    /** Matrice del sensore di rotazione (riferimento al Nord MAGNETICO) e declinazione locale. */
+    public void setRotation(float[] r, float declinationDeg) {
+        proj.setRotation(r);
+        declination = declinationDeg;
+        hasRotation = true;
+        invalidate();
+    }
+
+    /** Focale della fotocamera in pixel dello schermo (NaN = campo visivo standard di 60 gradi). */
+    public void setFocal(double px) { focalPx = px; invalidate(); }
+
+    /** Rotta vera verso cui guarda la fotocamera. */
+    public double viewBearing() { return (proj.viewDirection()[0] + declination + 360) % 360; }
+    public double viewPitch() { return proj.viewDirection()[1]; }
+    public int shownCount() { return shown; }
+    /** L'etichetta piu' vicina al centro dello schermo (null se nessuna entro 4 gradi). */
+    public Label focused() { return focused; }
+    /** Avvisa quando cambiano le etichette visibili o quella nel mirino (dopo il disegno). */
+    public void setOnShownChanged(Runnable r) { onShownChanged = r; }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        int w = getWidth(), h = getHeight();
+        if (w == 0 || !hasRotation) return;
+        double f = Double.isNaN(focalPx) ? ArProjector.focalForFov(w, 60) : focalPx;
+        proj.setCamera(f, f, w / 2.0, h / 2.0);
+        double view = proj.viewDirection()[0];
+        // orizzonte (la rotta del sensore e' magnetica: vera - declinazione)
+        path.reset();
+        boolean started = false;
+        for (int k = -60; k <= 60; k += 2) {
+            double[] p = proj.project(view + k, 0);
+            if (p == null) { started = false; continue; }
+            if (!started) { path.moveTo((float) p[0], (float) p[1]); started = true; }
+            else path.lineTo((float) p[0], (float) p[1]);
+        }
+        pLine.setColor(0x9900E5FF);
+        pLine.setStrokeWidth(1.5f * dp);
+        c.drawPath(path, pLine);
+        // punti cardinali e tacche ogni 15 gradi (rotte vere)
+        String[] names = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+        pCard.setTextSize(13 * dp);
+        for (int t = 0; t < 360; t += 15) {
+            double[] p = proj.project(t - declination, 0);
+            if (p == null || p[0] < -20 || p[0] > w + 20) continue;
+            boolean card = t % 45 == 0;
+            pLine.setColor(card ? 0xFF00E5FF : 0x8800E5FF);
+            pLine.setStrokeWidth((card ? 2 : 1) * dp);
+            c.drawLine((float) p[0], (float) p[1] - (card ? 9 : 5) * dp, (float) p[0], (float) p[1] + (card ? 9 : 5) * dp, pLine);
+            if (card) {
+                pCard.setColor(t == 0 ? 0xFFFF3D71 : 0xFF00E5FF);
+                c.drawText(names[t / 45], (float) p[0], (float) p[1] + 26 * dp, pCard);
+            }
+        }
+        // mirino: linea verticale al centro, la cima piu' vicina alla linea e' "nel mirino"
+        pLine.setColor(0x3300E5FF);
+        pLine.setStrokeWidth(1 * dp);
+        c.drawLine(w / 2f, 72 * dp, w / 2f, h - 140 * dp, pLine);
+        double vb = viewBearing();
+        Label aim = null;
+        double aimDiff = AIM_DEG;
+        for (Label l : labels) {
+            double d = Math.abs(((l.bearing - vb) % 360 + 540) % 360 - 180);
+            if (d < aimDiff) { aimDiff = d; aim = l; }
+        }
+        focused = aim;
+        // etichette: prima quella nel mirino, poi dalla piu' vicina
+        List<RectF> used = new ArrayList<>();
+        List<Object[]> placed = new ArrayList<>();
+        float boxH = 40 * dp, gap = 6 * dp, top = 72 * dp, bottom = h - 140 * dp;
+        List<Label> sorted = new ArrayList<>(labels);
+        sorted.sort((a, b) -> Double.compare(a.dist, b.dist));
+        if (aim != null) { sorted.remove(aim); sorted.add(0, aim); }
+        for (Label l : sorted) {
+            double[] p = proj.project(l.bearing - declination, l.elevation);
+            if (p == null || p[0] < -40 || p[0] > w + 40 || p[1] < top || p[1] > bottom) continue;
+            float tw = Math.max(pText.measureText(l.title), pSub.measureText(l.sub)) + 18 * dp;
+            float x = (float) Math.max(4 * dp, Math.min(w - tw - 4 * dp, p[0] - tw / 2));
+            // prima sopra il punto, appoggiata sull'etichetta che la blocca; se non c'e' posto, sotto
+            RectF r = new RectF(x, (float) p[1] - 56 * dp - boxH, x + tw, (float) p[1] - 56 * dp);
+            RectF hit;
+            while ((hit = overlap(r, used)) != null && r.top >= top) r.offsetTo(x, hit.top - gap - boxH);
+            if (hit != null || r.top < top) {
+                r.offsetTo(x, (float) p[1] + 22 * dp);
+                while ((hit = overlap(r, used)) != null && r.bottom <= bottom) r.offsetTo(x, hit.bottom + gap);
+                if (hit != null || r.bottom > bottom) continue;
+            }
+            used.add(r);
+            placed.add(new Object[]{l, p, r});
+        }
+        shown = placed.size();
+        // prima linee e punti, poi i riquadri: nessuna linea attraversa una scritta
+        for (Object[] o : placed) {
+            Label l = (Label) o[0];
+            double[] p = (double[]) o[1];
+            RectF r = (RectF) o[2];
+            pLine.setColor(l.color);
+            pLine.setStrokeWidth((l == aim ? 2.5f : 1.5f) * dp);
+            c.drawLine((float) p[0], (float) p[1], (float) p[0], r.bottom < p[1] ? r.bottom : r.top, pLine);
+            pBox.setColor(l.color);
+            c.drawCircle((float) p[0], (float) p[1], (l == aim ? 6 : 4.5f) * dp, pBox);
+        }
+        for (Object[] o : placed) {
+            Label l = (Label) o[0];
+            RectF r = (RectF) o[2];
+            pBox.setColor(l == aim ? 0xE6050A14 : 0xBB050A14);
+            c.drawRoundRect(r, 10 * dp, 10 * dp, pBox);
+            pLine.setColor(l == aim ? l.color : (l.color & 0x00FFFFFF) | 0xCC000000);
+            pLine.setStrokeWidth((l == aim ? 2.5f : 1.2f) * dp);
+            c.drawRoundRect(r, 10 * dp, 10 * dp, pLine);
+            c.drawText(l.title, r.left + 9 * dp, r.top + 17 * dp, pText);
+            c.drawText(l.sub, r.left + 9 * dp, r.top + 32 * dp, pSub);
+        }
+        if (shown != lastShown || aim != lastFocused) {
+            lastShown = shown;
+            lastFocused = aim;
+            if (onShownChanged != null) post(onShownChanged);
+        }
+    }
+
+    /** Il primo riquadro gia' piazzato che si sovrappone a r (null = posto libero). */
+    private static RectF overlap(RectF r, List<RectF> used) {
+        for (RectF u : used) if (RectF.intersects(r, u)) return u;
+        return null;
+    }
+
+    /** "4.808 m · 62 km" */
+    static String sub(double ele, double dist) {
+        return (Double.isNaN(ele) ? "" : String.format(java.util.Locale.ITALY, "%,.0f m · ", ele)) + GeoFormat.formatDistance(dist);
+    }
+}
+"""
+
+PEAK_AR_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.Manifest;
+import android.annotation.SuppressLint;
+import android.content.pm.PackageManager;
+import android.graphics.Matrix;
+import android.graphics.SurfaceTexture;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraDevice;
+import android.hardware.camera2.CameraManager;
+import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.params.StreamConfigurationMap;
+import android.location.Location;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.util.Size;
+import android.util.SizeF;
+import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.TextureView;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.chat.MeshHub;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.PoiIndex;
+import com.offlinegps.map.util.ArProjector;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * "Che montagna e'?" (v5.2): inquadri le montagne con la fotocamera e sopra
+ * compaiono i nomi delle cime con quota e distanza, dalla mappa della zona,
+ * senza internet. Anche i compagni del radar del gruppo. Usa il sensore di
+ * rotazione del telefono; se manca si trascina col dito come un panorama.
+ * Senza modello del terreno: anche le cime nascoste dietro altre montagne
+ * vengono indicate nella loro direzione.
+ */
+public class PeakArActivity extends AppCompatActivity implements SensorEventListener {
+    private static final int REQ_CAM = 7401;
+    private static final double[] RANGES = {10_000, 30_000, 60_000, 100_000};
+
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextureView texture;
+    private View sky;
+    private ArOverlayView overlay;
+    private TextView tvInfo, tvRange, tvHint;
+    private SensorManager sm;
+    private Sensor rotSensor;
+    private final float[] rv = new float[4], rot = new float[9];
+    private boolean rvInit;
+    private float declination;
+    private PoiIndex index;
+    private int rangeIdx = 1;
+    private CameraDevice camera;
+    private CameraCaptureSession session;
+    private HandlerThread camThread;
+    private Handler camHandler;
+    private Size previewSize;
+    private double focalMm = Double.NaN, sensorWidthMm = Double.NaN;
+    /** Senza sensore di rotazione: direzione scelta trascinando il dito. */
+    private double manualBearing = 0, dragStartX, dragStartBearing;
+    private boolean aimed;
+    private boolean visible;
+
+    private final Runnable labelsTick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            rebuildLabels();
+            updateInfo();
+            h.postDelayed(this, 1000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_peak_ar);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        texture = findViewById(R.id.ar_camera);
+        sky = findViewById(R.id.ar_sky);
+        overlay = findViewById(R.id.ar_overlay);
+        overlay.setOnShownChanged(this::updateInfo);
+        tvInfo = findViewById(R.id.tv_ar_info);
+        tvRange = findViewById(R.id.tv_ar_range);
+        tvHint = findViewById(R.id.tv_ar_hint);
+        View back = findViewById(R.id.btn_ar_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        if (tvRange != null) tvRange.setOnClickListener(v -> {
+            rangeIdx = (rangeIdx + 1) % RANGES.length;
+            rebuildLabels();
+            updateInfo();
+        });
+        sm = (SensorManager) getSystemService(SENSOR_SERVICE);
+        rotSensor = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        if (rotSensor == null) setupManualMode();
+        double[] w = ToolKit.where(this);
+        PoiStore.get(this, w == null ? Double.NaN : w[0], w == null ? 0 : w[1], new PoiStore.Callback() {
+            @Override public void onProgress(String msg) { if (tvHint != null) tvHint.setText(msg); }
+            @Override public void onReady(PoiIndex idx, String error) {
+                if (isFinishing()) return;
+                index = idx;
+                if (tvHint != null) tvHint.setText(error != null ? error
+                    : "Le cime dietro altre montagne compaiono lo stesso: non c'e' un modello del terreno.");
+                if (rotSensor == null && !aimed) aimAtHighestPeak();
+                rebuildLabels();
+            }
+        });
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_CAM);
+    }
+
+    @Override public void onRequestPermissionsResult(int req, @NonNull String[] p, @NonNull int[] res) {
+        super.onRequestPermissionsResult(req, p, res);
+        if (req == REQ_CAM && visible) startCamera();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        if (rotSensor != null) sm.registerListener(this, rotSensor, SensorManager.SENSOR_DELAY_GAME);
+        h.removeCallbacks(labelsTick);
+        h.post(labelsTick);
+        startCamera();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        if (sm != null) sm.unregisterListener(this);
+        h.removeCallbacks(labelsTick);
+        stopCamera();
+    }
+
+    // ------------------------------------------------------------ orientamento
+    @Override public void onSensorChanged(SensorEvent e) {
+        int n = Math.min(4, e.values.length);
+        float[] v = new float[4];
+        System.arraycopy(e.values, 0, v, 0, n);
+        if (n < 4) v[3] = (float) Math.sqrt(Math.max(0, 1 - v[0] * v[0] - v[1] * v[1] - v[2] * v[2]));
+        if (!rvInit) { System.arraycopy(v, 0, rv, 0, 4); rvInit = true; }
+        else {
+            // stesso orientamento ha due quaternioni opposti: si resta sullo stesso lato
+            float dot = v[0] * rv[0] + v[1] * rv[1] + v[2] * rv[2] + v[3] * rv[3];
+            float sgn = dot < 0 ? -1 : 1, a = 0.18f;    // filtro: niente etichette che tremano
+            float norm = 0;
+            for (int i = 0; i < 4; i++) { rv[i] += a * (sgn * v[i] - rv[i]); norm += rv[i] * rv[i]; }
+            norm = (float) Math.sqrt(norm);
+            for (int i = 0; i < 4; i++) rv[i] /= norm;
+        }
+        SensorManager.getRotationMatrixFromVector(rot, rv);
+        overlay.setRotation(rot, declination);
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int accuracy) {
+        if (tvHint != null && accuracy <= SensorManager.SENSOR_STATUS_ACCURACY_LOW)
+            tvHint.setText("Bussola poco precisa: muovi il telefono disegnando un 8 nell'aria per tararla.");
+    }
+
+    /** Nessun sensore: telefono "in verticale" e si gira trascinando il dito. */
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupManualMode() {
+        applyManual();
+        overlay.setOnTouchListener((v, ev) -> {
+            if (ev.getAction() == MotionEvent.ACTION_DOWN) { dragStartX = ev.getX(); dragStartBearing = manualBearing; aimed = true; }
+            else if (ev.getAction() == MotionEvent.ACTION_MOVE) {
+                double degPerPx = 60.0 / Math.max(1, overlay.getWidth());
+                manualBearing = ((dragStartBearing - (ev.getX() - dragStartX) * degPerPx) % 360 + 360) % 360;
+                applyManual();
+                updateInfo();
+            }
+            return true;
+        });
+    }
+
+    private void applyManual() {
+        double b = Math.toRadians(manualBearing - declination);
+        double[] right = {Math.cos(b), -Math.sin(b), 0}, up = {0, 0, 1}, back = {-Math.sin(b), -Math.cos(b), 0};
+        float[] m = {(float) right[0], (float) up[0], (float) back[0], (float) right[1], (float) up[1], (float) back[1],
+            (float) right[2], (float) up[2], (float) back[2]};
+        overlay.setRotation(m, declination);
+    }
+
+    private void aimAtHighestPeak() {
+        double[] w = ToolKit.where(this);
+        if (index == null || w == null) return;
+        aimed = true;
+        double best = -1;
+        for (Object[] o : index.near(w[0], w[1], RANGES[rangeIdx], Collections.singleton(PoiIndex.PEAK), "", 200)) {
+            PoiIndex.Poi p = (PoiIndex.Poi) o[0];
+            if (!Double.isNaN(p.ele) && p.ele > best) { best = p.ele; manualBearing = GeoFormat.bearing(w[0], w[1], p.lat, p.lon); }
+        }
+        applyManual();
+    }
+
+    // ------------------------------------------------------------ etichette
+    private void rebuildLabels() {
+        double[] w = ToolKit.where(this);
+        List<ArOverlayView.Label> out = new ArrayList<>();
+        if (w == null) { overlay.setLabels(out); return; }
+        Location me = GpsTrackingService.getLastLocation();
+        double myAlt = me != null && me.hasAltitude() ? me.getAltitude() : 0;
+        declination = new GeomagneticField((float) w[0], (float) w[1], (float) myAlt, System.currentTimeMillis()).getDeclination();
+        if (rotSensor == null) applyManual();
+        if (index != null) {
+            HashSet<String> types = new HashSet<>();
+            types.add(PoiIndex.PEAK);
+            types.add(PoiIndex.HUT);
+            for (Object[] o : index.near(w[0], w[1], RANGES[rangeIdx], types, "", 150)) {
+                PoiIndex.Poi p = (PoiIndex.Poi) o[0];
+                double d = (Double) o[1];
+                if (PoiIndex.HUT.equals(p.type) && d > 15_000) continue;     // rifugi solo se vicini
+                double ele = Double.isNaN(p.ele) ? myAlt : p.ele;
+                out.add(new ArOverlayView.Label(p.name, ArOverlayView.sub(p.ele, d), GeoFormat.bearing(w[0], w[1], p.lat, p.lon),
+                    ArProjector.elevationAngle(myAlt, ele, d), d, PoiIndex.PEAK.equals(p.type) ? 0xFFFFD600 : 0xFFFF6B35));
+            }
+        }
+        for (MeshHub.Member m : MeshHub.get(this).team()) {
+            double d = GeoFormat.distance(w[0], w[1], m.lat, m.lon);
+            out.add(new ArOverlayView.Label(m.name, "compagno · " + GeoFormat.formatDistance(d),
+                GeoFormat.bearing(w[0], w[1], m.lat, m.lon), ArProjector.elevationAngle(myAlt, myAlt, d), d, 0xFFB388FF));
+        }
+        overlay.setLabels(out);
+    }
+
+    private void updateInfo() {
+        if (tvRange != null) tvRange.setText("RAGGIO " + Math.round(RANGES[rangeIdx] / 1000) + " KM");
+        if (tvInfo == null) return;
+        double b = overlay.viewBearing();
+        ArOverlayView.Label f = overlay.focused();
+        String view = String.format(Locale.ITALY, "%s %.0f°  ·  %d in vista%s", GeoFormat.cardinal(b), b,
+            overlay.shownCount(), rotSensor == null ? "  ·  trascina per girarti" : "");
+        tvInfo.setText(f == null ? "Guardi verso " + view : "◎ " + f.title + "  ·  " + f.sub + "\n" + view);
+    }
+
+    // ------------------------------------------------------------ fotocamera (Camera2)
+    private void startCamera() {
+        if (camera != null || checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return;
+        if (texture == null) return;
+        texture.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override public void onSurfaceTextureAvailable(@NonNull SurfaceTexture st, int w, int hh) { openCamera(); }
+            @Override public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture st, int w, int hh) { applyTransform(); }
+            @Override public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture st) { return true; }
+            // il cielo disegnato copre l'anteprima finche' non arriva il primo fotogramma vero
+            @Override public void onSurfaceTextureUpdated(@NonNull SurfaceTexture st) {
+                if (sky != null && sky.getVisibility() != View.GONE) sky.setVisibility(View.GONE);
+            }
+        });
+        if (texture.isAvailable()) openCamera();
+    }
+
+    @SuppressLint("MissingPermission")
+    private void openCamera() {
+        try {
+            CameraManager cm = (CameraManager) getSystemService(CAMERA_SERVICE);
+            if (cm == null) return;
+            String id = null;
+            CameraCharacteristics ch = null;
+            for (String c : cm.getCameraIdList()) {
+                CameraCharacteristics x = cm.getCameraCharacteristics(c);
+                Integer facing = x.get(CameraCharacteristics.LENS_FACING);
+                if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) { id = c; ch = x; break; }
+            }
+            if (id == null) { noCamera(); return; }
+            StreamConfigurationMap map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            Size best = new Size(1280, 720);
+            if (map != null) {
+                long bestArea = 0;
+                for (Size s : map.getOutputSizes(SurfaceTexture.class)) {
+                    long area = (long) s.getWidth() * s.getHeight();
+                    if (s.getWidth() <= 1920 && s.getHeight() <= 1080 && area > bestArea) { bestArea = area; best = s; }
+                }
+            }
+            previewSize = best;
+            float[] focals = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+            SizeF phys = ch.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+            if (focals != null && focals.length > 0 && phys != null) { focalMm = focals[0]; sensorWidthMm = phys.getWidth(); }
+            camThread = new HandlerThread("ar-camera");
+            camThread.start();
+            camHandler = new Handler(camThread.getLooper());
+            cm.openCamera(id, new CameraDevice.StateCallback() {
+                @Override public void onOpened(@NonNull CameraDevice cd) { camera = cd; startPreview(); }
+                @Override public void onDisconnected(@NonNull CameraDevice cd) { cd.close(); camera = null; }
+                @Override public void onError(@NonNull CameraDevice cd, int err) { cd.close(); camera = null; runOnUiThread(() -> noCamera()); }
+            }, camHandler);
+        } catch (Exception e) {
+            noCamera();
+        }
+    }
+
+    private void startPreview() {
+        try {
+            SurfaceTexture st = texture.getSurfaceTexture();
+            if (st == null || camera == null) return;
+            st.setDefaultBufferSize(previewSize.getWidth(), previewSize.getHeight());
+            Surface surface = new Surface(st);
+            CaptureRequest.Builder b = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            b.addTarget(surface);
+            camera.createCaptureSession(Collections.singletonList(surface), new CameraCaptureSession.StateCallback() {
+                @Override public void onConfigured(@NonNull CameraCaptureSession s) {
+                    session = s;
+                    try { s.setRepeatingRequest(b.build(), null, camHandler); } catch (Exception ignored) {}
+                    runOnUiThread(() -> applyTransform());
+                }
+                @Override public void onConfigureFailed(@NonNull CameraCaptureSession s) { runOnUiThread(() -> noCamera()); }
+            }, camHandler);
+        } catch (Exception e) {
+            runOnUiThread(this::noCamera);
+        }
+    }
+
+    /**
+     * Anteprima a pieno schermo senza deformazioni (ritaglio al centro) e
+     * focale in pixel dello schermo, cosi' le etichette cadono sulle cime vere.
+     */
+    private void applyTransform() {
+        if (previewSize == null || texture.getWidth() == 0) return;
+        float vw = texture.getWidth(), vh = texture.getHeight();
+        float cw = previewSize.getHeight(), chh = previewSize.getWidth();   // in verticale l'immagine e' ruotata
+        float s = Math.max(vw / cw, vh / chh);
+        Matrix m = new Matrix();
+        m.setScale(cw * s / vw, chh * s / vh, vw / 2f, vh / 2f);
+        texture.setTransform(m);
+        if (!Double.isNaN(focalMm) && sensorWidthMm > 0)
+            overlay.setFocal(focalMm * previewSize.getWidth() / sensorWidthMm * s);
+    }
+
+    private void noCamera() {
+        if (tvHint != null) tvHint.setText("Fotocamera non disponibile: le cime sono mostrate sul cielo, nella loro direzione.");
+    }
+
+    private void stopCamera() {
+        try { if (session != null) session.close(); } catch (Exception ignored) {}
+        session = null;
+        try { if (camera != null) camera.close(); } catch (Exception ignored) {}
+        camera = null;
+        if (camThread != null) { camThread.quitSafely(); camThread = null; }
+    }
+}
+"""
+
+GPX_TRACK = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Traccia GPX da seguire (sentieri scaricati da siti e app, o le proprie
+ * tracce registrate). Legge i punti di traccia (trkpt), di rotta (rtept) e
+ * i waypoint (wpt) con nome e quota; calcola lunghezza, dislivello (con
+ * isteresi di 5 m per il rumore delle quote) e il tempo con la regola di
+ * Naismith: 1 ora ogni 5 km + 1 ora ogni 600 m di salita.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class GpxTrack {
+    public String name = "Traccia";
+    /** {lat, lon, quota (NaN se assente)} */
+    public final List<double[]> points = new ArrayList<>();
+    public final List<Waypoint> waypoints = new ArrayList<>();
+    /** Distanza progressiva e salita/discesa progressiva per ogni punto. */
+    public double[] cumDist = new double[0], cumUp = new double[0], cumDown = new double[0];
+
+    public static final class Waypoint {
+        public final String name;
+        public final double lat, lon, ele;
+        Waypoint(String name, double lat, double lon, double ele) { this.name = name; this.lat = lat; this.lon = lon; this.ele = ele; }
+    }
+
+    private static final Pattern PT = Pattern.compile("<(trkpt|rtept|wpt)\\b([^>]*?)(/>|>(.*?)</\\1>)", Pattern.DOTALL);
+    private static final Pattern LAT = Pattern.compile("\\blat\\s*=\\s*[\"']([-+0-9.eE]+)[\"']");
+    private static final Pattern LON = Pattern.compile("\\blon\\s*=\\s*[\"']([-+0-9.eE]+)[\"']");
+    private static final Pattern ELE = Pattern.compile("<ele>\\s*([-+0-9.eE]+)\\s*</ele>");
+    private static final Pattern NAME = Pattern.compile("<name>\\s*(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?\\s*</name>", Pattern.DOTALL);
+
+    /** null se il testo non contiene punti validi. */
+    public static GpxTrack parse(String xml) {
+        GpxTrack t = new GpxTrack();
+        // nome: il primo <name> che non sta dentro un punto
+        String head = PT.matcher(xml).replaceAll("");
+        Matcher nm = NAME.matcher(head);
+        if (nm.find() && !nm.group(1).trim().isEmpty()) t.name = unescape(nm.group(1).trim());
+        List<double[]> rte = new ArrayList<>();
+        Matcher m = PT.matcher(xml);
+        while (m.find()) {
+            Matcher la = LAT.matcher(m.group(2)), lo = LON.matcher(m.group(2));
+            if (!la.find() || !lo.find()) continue;
+            double lat, lon;
+            try { lat = Double.parseDouble(la.group(1)); lon = Double.parseDouble(lo.group(1)); }
+            catch (NumberFormatException e) { continue; }
+            if (Math.abs(lat) > 90 || Math.abs(lon) > 180) continue;
+            String body = m.group(4) == null ? "" : m.group(4);
+            double ele = Double.NaN;
+            Matcher em = ELE.matcher(body);
+            if (em.find()) try { ele = Double.parseDouble(em.group(1)); } catch (NumberFormatException ignored) {}
+            switch (m.group(1)) {
+                case "trkpt": t.points.add(new double[]{lat, lon, ele}); break;
+                case "rtept": rte.add(new double[]{lat, lon, ele}); break;
+                default: {
+                    Matcher wn = NAME.matcher(body);
+                    t.waypoints.add(new Waypoint(wn.find() ? unescape(wn.group(1).trim()) : "Waypoint", lat, lon, ele));
+                }
+            }
+        }
+        if (t.points.isEmpty()) t.points.addAll(rte);          // file con sola rotta
+        if (t.points.size() < 2) return null;
+        t.compute();
+        return t;
+    }
+
+    private static String unescape(String s) {
+        return s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&");
+    }
+
+    /**
+     * Distanze e dislivelli progressivi: quota mediata su 5 punti (finestra
+     * simmetrica, piu' stretta agli estremi cosi' partenza e arrivo restano
+     * esatti), poi isteresi di 5 m.
+     */
+    public void compute() {
+        int n = points.size();
+        cumDist = new double[n]; cumUp = new double[n]; cumDown = new double[n];
+        double ref = Double.NaN;
+        for (int i = 0; i < n; i++) {
+            double[] p = points.get(i);
+            if (i > 0) {
+                double[] q = points.get(i - 1);
+                cumDist[i] = cumDist[i - 1] + GeoFormat.distance(q[0], q[1], p[0], p[1]);
+                cumUp[i] = cumUp[i - 1];
+                cumDown[i] = cumDown[i - 1];
+            }
+            double sum = 0;
+            int c = 0;
+            int k = Math.min(2, Math.min(i, n - 1 - i));
+            for (int j = i - k; j <= i + k; j++)
+                if (!Double.isNaN(points.get(j)[2])) { sum += points.get(j)[2]; c++; }
+            if (c == 0) continue;
+            double ele = sum / c;
+            if (Double.isNaN(ref)) ref = ele;
+            else if (ele - ref >= 5) { cumUp[i] += ele - ref; ref = ele; }
+            else if (ref - ele >= 5) { cumDown[i] += ref - ele; ref = ele; }
+        }
+    }
+
+    public double length() { return cumDist.length == 0 ? 0 : cumDist[cumDist.length - 1]; }
+    public double ascent() { return cumUp.length == 0 ? 0 : cumUp[cumUp.length - 1]; }
+    public double descent() { return cumDown.length == 0 ? 0 : cumDown[cumDown.length - 1]; }
+    public boolean hasElevation() { for (double[] p : points) if (!Double.isNaN(p[2])) return true; return false; }
+
+    /** Regola di Naismith (millisecondi) per una distanza e una salita. */
+    public static long naismithMs(double distM, double ascentM) {
+        return Math.round((distM / 5000.0 + Math.max(0, ascentM) / 600.0) * 3_600_000L);
+    }
+
+    /** Indice del punto alla distanza progressiva data. */
+    public int indexAt(double alongM) {
+        int lo = 0, hi = cumDist.length - 1;
+        while (lo < hi) {
+            int mid = (lo + hi + 1) >>> 1;
+            if (cumDist[mid] <= alongM) lo = mid; else hi = mid - 1;
+        }
+        return lo;
+    }
+
+    /** La stessa traccia percorsa al contrario. */
+    public GpxTrack reversed() {
+        GpxTrack r = new GpxTrack();
+        r.name = name + " (al contrario)";
+        for (int i = points.size() - 1; i >= 0; i--) r.points.add(points.get(i));
+        r.waypoints.addAll(waypoints);
+        r.compute();
+        return r;
+    }
+
+    public String summary() {
+        String climb = descent() < 1 ? String.format(Locale.ITALY, "+%.0f m", ascent())
+            : ascent() < 1 ? String.format(Locale.ITALY, "-%.0f m", descent())
+            : String.format(Locale.ITALY, "+%.0f m / -%.0f m", ascent(), descent());
+        return String.format(Locale.ITALY, "%s  ·  %s  ·  circa %s", GeoFormat.formatDistance(length()),
+            climb, hm(naismithMs(length(), ascent())));
+    }
+
+    public static String hm(long ms) {
+        long min = Math.round(ms / 60000.0);
+        return min < 60 ? min + " min" : String.format(Locale.ITALY, "%d h %02d min", min / 60, min % 60);
+    }
+}
+"""
+
+FOLLOW_TRACK_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.location.Location;
+import android.net.Uri;
+import android.os.Bundle;
+import android.speech.tts.TextToSpeech;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.map.MapEngine;
+import com.offlinegps.map.map.MapEngines;
+import com.offlinegps.map.routing.NavCore;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.GpxTrack;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Segui traccia GPX (v5.2): importi la traccia di un sentiero (o ripercorri
+ * una tua traccia registrata, anche al contrario) e l'app ti guida: posizione
+ * sulla traccia, metri e salita che mancano, tempo con la regola di Naismith,
+ * profilo altimetrico con il punto in cui sei e avviso a voce quando esci
+ * dalla traccia (con la direzione per rientrare). Funziona a schermo spento.
+ */
+public class FollowTrackActivity extends AppCompatActivity implements GpsTrackingService.LocationCallback {
+    public static final String EXTRA_FILE = "follow_file", EXTRA_REVERSE = "follow_reverse";
+    private static final int REQ_IMPORT = 7501;
+    private static final double OFF_TRACK_M = 40;
+
+    private MapEngine engine;
+    private TextView tvName, tvState, tvLeft, tvUp, tvEta, tvHint;
+    private TrackProfileView profile;
+    private GpxTrack track;
+    private NavCore nav;
+    private File trackFile;
+    private boolean reversed, following = true, offAnnounced, arrivedAnnounced, firstFix = true;
+    private long lastOffSpeech;
+    private double lastAlong = 0;
+    private TextToSpeech tts;
+    private boolean ttsReady;
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_follow);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        tvName = findViewById(R.id.tv_follow_name);
+        tvState = findViewById(R.id.tv_follow_state);
+        tvLeft = findViewById(R.id.tv_follow_left);
+        tvUp = findViewById(R.id.tv_follow_up);
+        tvEta = findViewById(R.id.tv_follow_eta);
+        tvHint = findViewById(R.id.tv_follow_hint);
+        profile = findViewById(R.id.follow_profile);
+        FrameLayout box = findViewById(R.id.follow_map_container);
+        engine = MapEngines.create(this);
+        box.addView(engine.view(), 0, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        engine.setOnUserGesture(() -> following = false);
+        String mapPath = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString(AppConfig.PREF_MAP_FILE, "");
+        if (!mapPath.isEmpty() && new File(mapPath).exists()) engine.loadMapFile(new File(mapPath));
+        click(R.id.btn_follow_back, v -> finish());
+        click(R.id.btn_follow_import, v -> importGpx());
+        click(R.id.btn_follow_list, v -> chooseTrack());
+        click(R.id.btn_follow_reverse, v -> { if (trackFile != null) load(trackFile, !reversed); });
+        click(R.id.tv_follow_state, v -> onStateTap());
+        try {
+            tts = new TextToSpeech(this, st -> {
+                if (st == TextToSpeech.SUCCESS && tts != null) {
+                    int r = tts.setLanguage(Locale.ITALIAN);
+                    ttsReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED;
+                }
+            });
+        } catch (Exception ignored) {}
+        // GPS tenuto finche' la schermata e' aperta: la guida continua a schermo spento
+        GpsTrackingService.addListener(this);
+        GpsTrackingService.acquire(this, "FollowTrackActivity");
+        String extra = getIntent().getStringExtra(EXTRA_FILE);
+        SharedPreferences p = prefs();
+        File f = extra != null ? new File(extra) : new File(p.getString("follow_last", ""));
+        if (f.isFile()) load(f, extra != null ? getIntent().getBooleanExtra(EXTRA_REVERSE, false) : p.getBoolean("follow_rev", false));
+        else showEmpty();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private SharedPreferences prefs() { return getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE); }
+
+    @Override protected void onResume() { super.onResume(); if (engine != null) engine.onResume(); }
+    @Override protected void onPause() { super.onPause(); if (engine != null) engine.onPause(); }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        GpsTrackingService.removeListener(this);
+        GpsTrackingService.release(this, "FollowTrackActivity");
+        if (tts != null) { tts.stop(); tts.shutdown(); }
+        if (engine != null) engine.onDestroy();
+    }
+
+    private void speak(String s) {
+        if (ttsReady && tts != null) tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "follow");
+    }
+
+    // ------------------------------------------------------------ tracce
+    private File importDir() {
+        File d = new File(getFilesDir(), "tracks_import");
+        if (!d.isDirectory()) d.mkdirs();
+        return d;
+    }
+
+    private void importGpx() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try { startActivityForResult(i, REQ_IMPORT); }
+        catch (Exception e) { Toast.makeText(this, "Nessuna app per scegliere i file", Toast.LENGTH_LONG).show(); }
+    }
+
+    @Override protected void onActivityResult(int req, int res, @Nullable Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_IMPORT || res != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new Exception("file non leggibile");
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                bo.write(buf, 0, n);
+                if (bo.size() > 30 * 1024 * 1024) throw new Exception("file troppo grande");
+            }
+            String xml = bo.toString("UTF-8");
+            GpxTrack t = GpxTrack.parse(xml);
+            if (t == null) { Toast.makeText(this, "Non e' una traccia GPX valida", Toast.LENGTH_LONG).show(); return; }
+            String safe = t.name.replaceAll("[^A-Za-z0-9 _-]", "").trim();
+            if (safe.isEmpty()) safe = "traccia";
+            File out = new File(importDir(), safe + "_" + System.currentTimeMillis() % 100000 + ".gpx");
+            try (FileOutputStream fo = new FileOutputStream(out)) { fo.write(xml.getBytes(StandardCharsets.UTF_8)); }
+            load(out, false);
+            Toast.makeText(this, "Traccia importata: " + t.name, Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Importazione non riuscita: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** Tracce importate e tracce registrate esportate in GPX. */
+    private void chooseTrack() {
+        List<File> files = new ArrayList<>();
+        File[] a = importDir().listFiles((d, n) -> n.endsWith(".gpx"));
+        if (a != null) Collections.addAll(files, a);
+        File rec = new File(getExternalFilesDir(null), "tracks");
+        File[] b = rec.listFiles((d, n) -> n.endsWith(".gpx"));
+        if (b != null) Collections.addAll(files, b);
+        if (files.isEmpty()) { Toast.makeText(this, "Nessuna traccia: premi IMPORTA GPX", Toast.LENGTH_LONG).show(); return; }
+        files.sort((x, y) -> Long.compare(y.lastModified(), x.lastModified()));
+        String[] names = new String[files.size()];
+        for (int i = 0; i < names.length; i++) names[i] = files.get(i).getName().replace(".gpx", "").replace('_', ' ');
+        new AlertDialog.Builder(this).setTitle("Scegli la traccia")
+            .setItems(names, (d, w) -> load(files.get(w), false)).show();
+    }
+
+    private void load(File f, boolean reverse) {
+        try {
+            GpxTrack t = GpxTrack.parse(new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8));
+            if (t == null) { Toast.makeText(this, "Traccia non valida", Toast.LENGTH_LONG).show(); return; }
+            if (reverse) t = t.reversed();
+            track = t;
+            trackFile = f;
+            reversed = reverse;
+            prefs().edit().putString("follow_last", f.getAbsolutePath()).putBoolean("follow_rev", reverse).apply();
+            List<double[]> pts = new ArrayList<>();
+            for (double[] p : t.points) pts.add(new double[]{p[0], p[1]});
+            double[] end = pts.get(pts.size() - 1);
+            List<RoutingEngine.NavStep> steps = new ArrayList<>();
+            steps.add(new RoutingEngine.NavStep("Fine della traccia", "", t.length(), 0, 4, pts.size() - 1, end[0], end[1], 0));
+            nav = new NavCore(pts, steps);
+            offAnnounced = arrivedAnnounced = false;
+            engine.setRoute(pts);
+            engine.setDestination(end[0], end[1]);
+            List<double[]> wp = new ArrayList<>();
+            for (GpxTrack.Waypoint w : t.waypoints) wp.add(new double[]{w.lat, w.lon});
+            engine.setPoints(wp);
+            engine.fitBounds(pts, false);
+            following = false;
+            firstFix = true;
+            if (tvName != null) tvName.setText(t.name);
+            if (tvHint != null) tvHint.setText(t.summary() + (t.waypoints.isEmpty() ? "" : "  ·  " + t.waypoints.size() + " waypoint"));
+            if (profile != null) {
+                profile.setVisibility(t.hasElevation() ? View.VISIBLE : View.GONE);
+                int n = t.points.size(), step = Math.max(1, n / 400);
+                List<float[]> pr = new ArrayList<>();
+                double lastEle = Double.NaN;
+                for (int i = 0; i < n; i += step) {
+                    double e = t.points.get(i)[2];
+                    if (Double.isNaN(e)) e = lastEle; else lastEle = e;
+                    if (!Double.isNaN(e)) pr.add(new float[]{(float) t.cumDist[i], (float) e});
+                }
+                float[] dd = new float[pr.size()], aa = new float[pr.size()];
+                for (int i = 0; i < pr.size(); i++) { dd[i] = pr.get(i)[0]; aa[i] = pr.get(i)[1]; }
+                profile.setData(dd, aa);
+                profile.setMarker(Float.NaN);
+            }
+            Location l = GpsTrackingService.getLastLocation();
+            if (l != null) onLocationUpdate(l, 0);
+            else render(null, null);
+        } catch (Exception e) {
+            Toast.makeText(this, "Errore nella traccia: " + e.getMessage(), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void showEmpty() {
+        if (tvName != null) tvName.setText("Nessuna traccia");
+        if (tvHint != null) tvHint.setText("Importa un file GPX (sentiero scaricato da un sito o da un'altra app) oppure "
+            + "ripercorri una tua traccia da REGISTRA TRACCIA. Poi segui la linea: se esci dal sentiero l'app te lo dice.");
+        if (profile != null) profile.setVisibility(View.GONE);
+        if (tvState != null) tvState.setText("NESSUNA TRACCIA");
+    }
+
+    // ------------------------------------------------------------ guida
+    @Override public void onLocationUpdate(@NonNull Location loc, int sats) {
+        runOnUiThread(() -> {
+            if (isFinishing()) return;
+            float brg = loc.hasBearing() && loc.getSpeed() > 0.8f ? loc.getBearing() : Float.NaN;
+            engine.setUserPosition(loc.getLatitude(), loc.getLongitude(), loc.getAccuracy(), brg);
+            if (nav == null) return;
+            NavCore.Progress p = nav.update(loc.getLatitude(), loc.getLongitude(), loc.getAccuracy());
+            if (firstFix) { firstFix = false; following = p.offRouteM < 200; }
+            if (following) engine.moveTo(loc.getLatitude(), loc.getLongitude(), 16, Float.NaN, Float.NaN, true);
+            render(loc, p);
+        });
+    }
+
+    private void render(@Nullable Location loc, @Nullable NavCore.Progress p) {
+        if (track == null) return;
+        if (p == null || loc == null) {
+            set(tvLeft, GeoFormat.formatDistance(track.length()));
+            set(tvUp, String.format(Locale.ITALY, "+%.0f m", track.ascent()));
+            set(tvEta, GpxTrack.hm(GpxTrack.naismithMs(track.length(), track.ascent())));
+            set(tvState, "IN ATTESA DEL GPS");
+            return;
+        }
+        lastAlong = p.alongM;
+        int idx = track.indexAt(p.alongM);
+        double left = Math.max(0, track.length() - p.alongM);
+        double upLeft = Math.max(0, track.ascent() - track.cumUp[idx]);
+        set(tvLeft, GeoFormat.formatDistance(left));
+        set(tvUp, String.format(Locale.ITALY, "+%.0f m", upLeft));
+        set(tvEta, GpxTrack.hm(GpxTrack.naismithMs(left, upLeft)));
+        if (profile != null) profile.setMarker((float) p.alongM);
+        double limit = Math.max(OFF_TRACK_M, Math.min(80, loc.getAccuracy() * 1.5));
+        boolean off = p.offRouteM > limit;
+        long now = System.currentTimeMillis();
+        String towards = GeoFormat.cardinal(GeoFormat.bearing(loc.getLatitude(), loc.getLongitude(), p.snappedLat, p.snappedLon));
+        if (p.alongM < 30 && p.offRouteM > 150) {
+            set(tvState, "ALL'INIZIO: " + GeoFormat.formatDistance(p.offRouteM) + " " + towards + "  ·  NAVIGA");
+            color(0xFFFFD600);
+        } else if (off) {
+            set(tvState, "FUORI TRACCIA " + Math.round(p.offRouteM) + " m · torna verso " + towards);
+            color(0xFFFF5C7A);
+            if (!offAnnounced || now - lastOffSpeech > 60_000) {
+                offAnnounced = true;
+                lastOffSpeech = now;
+                speak("Sei fuori traccia di " + Math.round(p.offRouteM / 10.0) * 10 + " metri. La traccia e' verso " + spoken(towards));
+            }
+        } else {
+            if (offAnnounced) { speak("Sei di nuovo sulla traccia"); offAnnounced = false; }
+            set(tvState, p.arrived ? "ARRIVATO ALLA FINE" : "SULLA TRACCIA  ·  " + Math.round(p.fraction * 100) + "%");
+            color(0xFF00FF88);
+        }
+        if (p.arrived && !arrivedAnnounced) {
+            arrivedAnnounced = true;
+            speak("Sei arrivato alla fine della traccia");
+        }
+    }
+
+    /** Tocco sullo stato: lontano dall'inizio -> navigazione a piedi fino all'inizio; altrimenti ricentra. */
+    private void onStateTap() {
+        if (track == null) { importGpx(); return; }
+        Location l = GpsTrackingService.getLastLocation();
+        double[] start = track.points.get(0);
+        // ancora da partire e lontani dall'inizio: si offre la navigazione fin li'
+        if (l != null && lastAlong < 30 && GeoFormat.distance(l.getLatitude(), l.getLongitude(), start[0], start[1]) > 150) {
+            new AlertDialog.Builder(this).setTitle("Raggiungere l'inizio della traccia?")
+                .setPositiveButton("NAVIGA A PIEDI", (d, w) -> ToolKit.navigate(this, start[0], start[1], "Inizio traccia", RoutingEngine.PROFILE_FOOT))
+                .setNegativeButton("Ricentra la mappa", (d, w) -> following = true).show();
+        } else following = true;
+    }
+
+    private static String spoken(String card) {
+        switch (card) {
+            case "N": return "nord"; case "S": return "sud"; case "E": return "est"; case "O": return "ovest";
+            case "NE": return "nord-est"; case "NO": return "nord-ovest"; case "SE": return "sud-est"; case "SO": return "sud-ovest";
+            default: return card.length() == 3 ? spoken(card.substring(1)) : card;
+        }
+    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
+    private void color(int c) { if (tvState != null) tvState.setTextColor(c); }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -19593,6 +21184,7 @@ V5_TOOL_ICONS = {
     "ic_v5_record":    _v4_icon(["M12,12m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"]),
     "ic_v5_pause":     _v4_icon(["M6,19h4V5H6v14zm8,-14v14h4V5h-4z"]),
     "ic_v5_stop":      _v4_icon(["M6,6h12v12H6z"]),
+    "ic_v5_folder":    _v4_icon(["M10,4H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8c0,-1.1 -0.9,-2 -2,-2h-8l-2,-2z"]),
     "ic_v5_paste":     _v4_icon(["M19,2h-4.18C14.4,0.84 13.3,0 12,0c-1.3,0 -2.4,0.84 -2.82,2H5c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm-7,0c0.55,0 1,0.45 1,1s-0.45,1 -1,1 -1,-0.45 -1,-1 0.45,-1 1,-1zm7,18H5V4h2v3h10V4h2v16z"]),
     "ic_v5_bookmark":  _v4_icon(["M17,3H7c-1.1,0 -1.99,0.9 -1.99,2L5,21l7,-3 7,3V5c0,-1.1 -0.9,-2 -2,-2z"]),
     "ic_v5_lock":      _v4_icon(["M18,8h-1V6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6v2H6c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2V10c0,-1.1 -0.9,-2 -2,-2zm-6,9c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2zm3.1,-9H8.9V6c0,-1.71 1.39,-3.1 3.1,-3.1 1.71,0 3.1,1.39 3.1,3.1v2z"]),
@@ -20207,6 +21799,129 @@ LAYOUT_TEAM = _v4_screen(
                      "Condividere tiene acceso il GPS: consuma batteria."),
     "team_column")
 
+# ---------------------------------------------------------------- v5.2 ESCURSIONE
+V5_DRAWABLES["bg_ar_sky"] = _v5_shape('    <gradient android:type="linear" android:angle="270"\n'
+                                      '        android:startColor="#FF0B1A3A" android:centerColor="#FF1C3B66"\n'
+                                      '        android:endColor="#FF0A1424"/>\n')
+V5_DRAWABLES["bg_ar_panel"] = _v5_shape('    <solid android:color="#CC050A14"/>\n'
+                                        '    <stroke android:width="1dp" android:color="#4400E5FF"/>\n'
+                                        '    <corners android:radius="18dp"/>\n')
+
+LAYOUT_POI = _v4_screen(
+    _v4_header("btn_poi_back", "LUOGHI VICINI", "Cime, rifugi, acqua e soccorso, offline", "#FFD600", "tv_poi_count", "--")
+    + '<LinearLayout android:id="@+id/btn_poi_ar" android:layout_width="match_parent" android:layout_height="64dp"\n'
+      '    android:orientation="horizontal" android:gravity="center_vertical" android:paddingStart="14dp"\n'
+      '    android:background="@drawable/bg_tile_yellow" android:clickable="true" android:focusable="true"\n'
+      '    android:layout_marginBottom="12dp">\n'
+      '    <ImageView android:layout_width="34dp" android:layout_height="34dp" android:padding="6dp"\n'
+      '        android:src="@drawable/ic_v5_mountain" android:tint="#FFD600" android:background="@drawable/bg_disc_yellow"\n'
+      '        android:contentDescription="Realta\' aumentata"/>\n'
+      '    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '        android:layout_marginStart="12dp" android:text="CHE MONTAGNA E\'?  ·  realta\' aumentata"\n'
+      '        android:textColor="#FFFFFF" android:textSize="15sp" android:textStyle="bold"/>\n'
+      '</LinearLayout>\n'
+    + _t_chips(("poi_cat_peak", "CIME"), ("poi_cat_hut", "RIFUGI"), ("poi_cat_water", "ACQUA"), margin="8dp")
+    + _t_chips(("poi_cat_view", "PANORAMI"), ("poi_cat_camp", "RIPARI"), ("poi_cat_help", "SOCCORSO"))
+    + '<EditText android:id="@+id/et_poi_search" android:layout_width="match_parent" android:layout_height="50dp"\n'
+      '    android:hint="Cerca per nome (es. Rifugio, Monte...)" android:textColor="#E8F4FD"\n'
+      '    android:textColorHint="#5A7A99" android:textSize="15sp" android:background="@drawable/bg_input"\n'
+      '    android:paddingStart="16dp" android:paddingEnd="16dp" android:inputType="text" android:maxLines="1"\n'
+      '    android:layout_marginBottom="12dp"/>\n'
+    + _v4_hint("tv_poi_status", "Caricamento...")
+    + '<LinearLayout android:id="@+id/poi_list" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n',
+    "poi_column")
+
+LAYOUT_PEAK_AR = (_XML_HEAD +
+    '<FrameLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="@drawable/bg_ar_sky">\n'
+    '    <TextureView android:id="@+id/ar_camera" android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '    <View android:id="@+id/ar_sky" android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '        android:background="@drawable/bg_ar_sky"/>\n'
+    '    <com.offlinegps.map.ui.ArOverlayView android:id="@+id/ar_overlay"\n'
+    '        android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:gravity="center_vertical" android:padding="14dp">\n'
+    '        <ImageView android:id="@+id/btn_ar_back" android:layout_width="44dp" android:layout_height="44dp"\n'
+    '            android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+    '            android:background="@drawable/bg_fab_glass" android:clickable="true" android:focusable="true"\n'
+    '            android:contentDescription="Indietro"/>\n'
+    '        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+    '            android:layout_marginStart="12dp" android:text="CHE MONTAGNA E\'?" android:textColor="#FFFFFF"\n'
+    '            android:textSize="19sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+    '            android:shadowColor="#000000" android:shadowRadius="8"/>\n'
+    '        <TextView android:id="@+id/tv_ar_range" android:layout_width="wrap_content" android:layout_height="34dp"\n'
+    '            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp" android:text="RAGGIO 30 KM"\n'
+    '            android:textColor="#FFD600" android:textSize="11sp" android:textStyle="bold"\n'
+    '            android:background="@drawable/bg_ar_panel" android:clickable="true" android:focusable="true"/>\n'
+    '    </LinearLayout>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="bottom" android:orientation="vertical" android:layout_margin="14dp"\n'
+    '        android:padding="14dp" android:background="@drawable/bg_ar_panel">\n'
+    '        <TextView android:id="@+id/tv_ar_info" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:text="Punta il telefono verso le montagne" android:textColor="#FFFFFF" android:textSize="15sp"\n'
+    '            android:textStyle="bold"/>\n'
+    '        <TextView android:id="@+id/tv_ar_hint" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:layout_marginTop="4dp" android:text="" android:textColor="#B9CCE0" android:textSize="12sp"/>\n'
+    '    </LinearLayout>\n'
+    '</FrameLayout>')
+
+LAYOUT_FOLLOW = (_XML_HEAD +
+    '<LinearLayout ' + _NS + '\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:orientation="vertical" android:background="#050A14">\n'
+    '    <FrameLayout android:id="@+id/follow_map_container" android:layout_width="match_parent"\n'
+    '        android:layout_height="0dp" android:layout_weight="1">\n'
+    '        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:orientation="horizontal" android:gravity="center_vertical" android:padding="12dp">\n'
+    '            <ImageView android:id="@+id/btn_follow_back" android:layout_width="44dp" android:layout_height="44dp"\n'
+    '                android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
+    '                android:background="@drawable/bg_fab_glass" android:clickable="true" android:focusable="true"\n'
+    '                android:contentDescription="Indietro"/>\n'
+    '            <TextView android:id="@+id/tv_follow_state" android:layout_width="0dp" android:layout_height="40dp"\n'
+    '                android:layout_weight="1" android:layout_marginStart="10dp" android:gravity="center"\n'
+    '                android:paddingStart="12dp" android:paddingEnd="12dp" android:text="NESSUNA TRACCIA"\n'
+    '                android:textColor="#8FB3D0" android:textSize="12sp" android:textStyle="bold" android:maxLines="1"\n'
+    '                android:ellipsize="end" android:background="@drawable/bg_ar_panel"\n'
+    '                android:clickable="true" android:focusable="true"/>\n'
+    '        </LinearLayout>\n'
+    '    </FrameLayout>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="vertical" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+    '        android:paddingTop="14dp" android:paddingBottom="14dp" android:background="@drawable/bg_sheet_v5">\n'
+    '        <TextView android:id="@+id/tv_follow_name" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:text="Nessuna traccia" android:textColor="#E8F4FD" android:textSize="17sp" android:textStyle="bold"\n'
+    '            android:maxLines="1" android:ellipsize="end"/>\n'
+    '        <TextView android:id="@+id/tv_follow_hint" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:textColor="#8FB3D0" android:textSize="12.5sp" android:layout_marginTop="2dp"\n'
+    '            android:layout_marginBottom="10dp"/>\n'
+    + _v4_row(_t_stat("tv_follow_left", "--", "MANCANO", "cyan"),
+              _t_stat("tv_follow_up", "--", "SALITA RIMASTA", "green"),
+              _t_stat("tv_follow_eta", "--", "TEMPO (NAISMITH)", "yellow", end_margin=False), margin="10dp") +
+    '        <com.offlinegps.map.ui.TrackProfileView android:id="@+id/follow_profile" android:layout_width="match_parent"\n'
+    '            android:layout_height="110dp" android:layout_marginBottom="10dp"/>\n'
+    + _t_buttons(_t_btn("btn_follow_import", "ic_v5_folder", "APRI", "cyan", filled=True, height="48dp"),
+                 _t_btn("btn_follow_list", "ic_v5_list", "TRACCE", "cyan", height="48dp"),
+                 _t_btn("btn_follow_reverse", "ic_v5_undo", "INVERTI", "violet", end_margin=False, height="48dp"), margin="0dp") +
+    '    </LinearLayout>\n'
+    '</LinearLayout>')
+
+# menu: sezione escursione
+LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace(
+    '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '    android:text="SEGNALARSI E SOCCORSO"',
+    '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '    android:text="ESCURSIONE" android:textColor="#00E5FF" android:textSize="12sp"\n'
+    '    android:letterSpacing="0.18" android:textStyle="bold" android:layout_marginTop="10dp"\n'
+    '    android:layout_marginBottom="10dp" android:layout_marginStart="4dp"/>\n'
+    + _v4_row(_v4_tile("card_follow", "ic_v5_route", "Segui traccia GPX", "Guida sul sentiero", "green", "118dp"),
+              _v4_tile("card_poi", "ic_v5_mountain", "Luoghi vicini", "Cime, rifugi, acqua", "yellow", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_ar", "ic_v5_eye", "Che montagna e'?", "Realta' aumentata", "orange", "118dp", end_margin=False))
+    + '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '    android:text="SEGNALARSI E SOCCORSO"', 1)
+LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace('"26 strumenti offline per l\'outdoor"', '"29 strumenti offline per l\'outdoor"')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -20325,6 +22040,15 @@ def build_java_file_map():
         f"{PKG_ROOT}/chat/MeshService.java":     CHAT_MESH_SERVICE,
         f"{PKG_UI}/TeamRadarView.java":          TEAM_RADAR_VIEW,
         f"{PKG_UI}/TeamActivity.java":           TEAM_ACTIVITY,
+        # v5.2 — luoghi, realta' aumentata, segui traccia
+        f"{PKG_ROUTING}/PoiIndex.java":          POI_INDEX,
+        f"{PKG_UI}/PoiStore.java":               POI_STORE,
+        f"{PKG_UI}/PoiActivity.java":            POI_ACTIVITY,
+        f"{PKG_UTIL}/ArProjector.java":          AR_PROJECTOR,
+        f"{PKG_UI}/ArOverlayView.java":          AR_OVERLAY_VIEW,
+        f"{PKG_UI}/PeakArActivity.java":         PEAK_AR_ACTIVITY,
+        f"{PKG_UTIL}/GpxTrack.java":             GPX_TRACK,
+        f"{PKG_UI}/FollowTrackActivity.java":    FOLLOW_TRACK_ACTIVITY,
     }
 
 def build_layout_map():
@@ -20389,6 +22113,9 @@ def build_layout_map():
         "activity_map3d.xml":          LAYOUT_MAP3D,
         "activity_firecamp.xml":       LAYOUT_FIRECAMP,
         "activity_team.xml":           LAYOUT_TEAM,
+        "activity_poi.xml":            LAYOUT_POI,
+        "activity_peak_ar.xml":        LAYOUT_PEAK_AR,
+        "activity_follow.xml":         LAYOUT_FOLLOW,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -20469,7 +22196,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.1")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.2")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -20612,7 +22339,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.1.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.2.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -20626,6 +22353,13 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.2 - ESCURSIONE:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Luoghi vicini offline: cime, rifugi, acqua, panorami, ripari, soccorso")
+    print(f"  {C.OK}[NEW]{C.RESET}  'Che montagna e'?': realta' aumentata con mirino sulla cima")
+    print(f"  {C.OK}[NEW]{C.RESET}  Segui traccia GPX: quanto manca, salita, tempo, avviso fuori traccia")
+    print(f"  {C.OK}[NEW]{C.RESET}  Ripercorri al contrario una traccia registrata")
+    info("L'indice dei luoghi si crea la prima volta dal file del routing (qualche minuto).")
 
     print(f"\n{C.BOLD}NOVITA v5.1 - NAVIGATORE E CHAT PIU' AVANZATI:{C.RESET}")
     print(f"  {C.OK}[NAV]{C.RESET}  Limiti di velocita' con cartello, preavviso e avviso eccesso")
@@ -20689,7 +22423,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.1.apk")
+    info("1. Installa OfflineGPS-3D-v5.2.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -20701,7 +22435,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.1 - Navigatore 3D, chat cifrata, radar del gruppo")
+    print("  OfflineGPS 3D v5.2 - Navigatore 3D, chat cifrata, luoghi e realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -20718,7 +22452,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.1 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.2 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

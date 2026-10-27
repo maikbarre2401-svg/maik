@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.2 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.3 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
+                      + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -135,7 +136,7 @@ NOVITA' v5.1 — NAVIGATORE E CHAT PIU' AVANZATI:
    velocita' e da quanto non si aggiornano. Navigazione o bussola verso un
    compagno; compagni visibili anche sulla mappa 3D.
 
-NOVITA' v5.2 (questa versione) — ESCURSIONE:
+NOVITA' v5.2 — ESCURSIONE:
  * LUOGHI VICINI OFFLINE: dal file della regione (lo stesso del routing)
    si costruisce una volta un indice di cime (con quota), rifugi e bivacchi,
    acqua potabile e sorgenti, punti panoramici, ripari e campeggi, ospedali,
@@ -154,6 +155,25 @@ NOVITA' v5.2 (questa versione) — ESCURSIONE:
    profilo altimetrico con la tua posizione. Avviso a voce se esci dalla
    traccia (oltre 40 m) con la direzione per rientrare. "Ripercorri al
    contrario" per tornare indietro sulla traccia appena registrata.
+
+NOVITA' v5.3 (questa versione) — ANCORA PIU' AVANZATO:
+ * AUTOVELOX nel navigatore (in auto): gli autovelox fissi della mappa
+   OpenStreetMap che stanno sul percorso compaiono con la distanza e il
+   limite, con un avviso a voce a 400 m (800 m in strada veloce). L'indice
+   dei luoghi si rifa' una volta per aggiungerli.
+ * SOLE E LUNA in realta' aumentata: l'arco del Sole di oggi con le ore
+   (arancione = luce dorata), alba e tramonto sull'orizzonte, la Luna con
+   fase e orari; insieme alle cime si vede dietro quale montagna cala il
+   sole. Pulsante anche da Sole & tramonto.
+ * INCLINOMETRO nuovo per i pendii da valanga: quadrante con le fasce
+   (sotto 25, 25-30, 30-45, 45-60, oltre 60 gradi), percentuale, massima
+   misurata, BLOCCA MISURA. Non sostituisce il bollettino valanghe.
+ * TEMPORALE: tocchi al lampo e al tuono e sai a che distanza e' il fulmine
+   (circa 3 s = 1 km), se si avvicina e a che velocita', regola 30/30 con
+   conto alla rovescia per uscire dal riparo e consigli per la montagna.
+ * CHAT: punto d'incontro per il gruppo (qui dove sei, o un rifugio/cima da
+   Luoghi vicini), visibile in chat, sul radar, nell'elenco compagni e in
+   realta' aumentata, con "naviga fin li'"; messaggi rapidi con un tocco.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -199,8 +219,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 50
-        versionName "5.2.0"
+        versionCode 51
+        versionName "5.3.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -507,6 +527,8 @@ MANIFEST = """\
         <activity android:name=".ui.PeakArActivity" android:exported="false" android:screenOrientation="portrait"
             android:theme="@style/Theme.OfflineGPS.Fullscreen"/>
         <activity android:name=".ui.FollowTrackActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <!-- v5.3 STRUMENTI -->
+        <activity android:name=".ui.StormActivity" android:exported="false" android:screenOrientation="portrait"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -4046,6 +4068,12 @@ public class NavigationActivity extends AppCompatActivity
     /** Nuovo tragitto (es. cambio auto/bici/piedi): annuncio e alternative come alla partenza. */
     private boolean freshRoute = false;
     private final Runnable hideRoutes = () -> { if (panelRoutes != null) panelRoutes.setVisibility(View.GONE); };
+    // v5.3: autovelox fissi (dall'indice dei luoghi della zona)
+    private View camBadge;
+    private TextView tvCam;
+    @Nullable private List<double[]> cameras;
+    private boolean camerasRequested = false;
+    private int lastCameraAnnounced = -1;
     private ImageButton btnProfileCar, btnProfileBike, btnProfileFoot, btn3d, btnVoice;
 
     private double destLat, destLon;
@@ -4112,6 +4140,8 @@ public class NavigationActivity extends AppCompatActivity
         speedBubble    = findViewById(R.id.nav_speed_bubble);
         panelRoutes    = findViewById(R.id.panel_nav_routes);
         routesList     = findViewById(R.id.nav_routes_list);
+        camBadge       = findViewById(R.id.nav_cam_badge);
+        tvCam          = findViewById(R.id.tv_nav_cam);
 
         SharedPreferences prefs = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
         tilt3d = prefs.getBoolean("nav_3d", true);
@@ -4165,9 +4195,12 @@ public class NavigationActivity extends AppCompatActivity
         } catch (Exception e) { ttsReady = false; }
     }
 
-    private void speak(String text) {
+    private void speak(String text) { speak(text, false); }
+
+    /** queue = in coda (non interrompe una manovra che si sta annunciando). */
+    private void speak(String text, boolean queue) {
         if (!voiceEnabled || !ttsReady || tts == null || text == null || text.isEmpty()) return;
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "nav");
+        tts.speak(text, queue ? TextToSpeech.QUEUE_ADD : TextToSpeech.QUEUE_FLUSH, null, "nav");
     }
 
     private void toggleVoice() {
@@ -4396,10 +4429,32 @@ public class NavigationActivity extends AppCompatActivity
     private void useRoute(RoutingEngine.RouteResult r) {
         currentRoute = r;
         nav = new NavCore(r);
+        if (cameras != null) nav.setCameras(cameras);
         announced.clear();
         lastLimitAnnounced = Float.NaN;
+        lastCameraAnnounced = -1;
         engine.setRoute(r.points);
         stepsAdapter.submit(r.steps);
+        loadCameras(r);
+    }
+
+    /**
+     * Autovelox fissi dall'indice dei luoghi della zona (lo stesso di "Luoghi
+     * vicini"): si carica dopo il primo percorso, cosi' non rallenta la
+     * costruzione della rete stradale.
+     */
+    private void loadCameras(RoutingEngine.RouteResult r) {
+        if (camerasRequested || r.points.isEmpty()) return;
+        camerasRequested = true;
+        double[] start = r.points.get(0);
+        PoiStore.get(this, start[0], start[1], new PoiStore.Callback() {
+            @Override public void onProgress(String msg) {}
+            @Override public void onReady(com.offlinegps.map.routing.PoiIndex idx, String error) {
+                if (idx == null || isFinishing()) return;
+                cameras = idx.speedCameras();
+                if (nav != null) nav.setCameras(cameras);
+            }
+        });
     }
 
     // ------------------------------------------------------------ percorsi alternativi
@@ -4533,6 +4588,7 @@ public class NavigationActivity extends AppCompatActivity
         }
         renderProgress(p);
         renderLimit(p);
+        renderCamera(p);
         announce(p);
     }
 
@@ -4563,6 +4619,23 @@ public class NavigationActivity extends AppCompatActivity
         if (show && System.currentTimeMillis() - lastSpeedWarnAt > 60_000) {
             lastSpeedWarnAt = System.currentTimeMillis();
             speak("Attenzione, il limite e' " + Math.round(p.speedLimitKmh));
+        }
+    }
+
+    /** Autovelox in arrivo (solo in auto): riquadro con la distanza e un annuncio a voce. */
+    private void renderCamera(NavCore.Progress p) {
+        boolean car = RoutingEngine.PROFILE_CAR.equals(profile);
+        // in strada veloce si avvisa prima
+        double warnAt = speedMs > 20 ? 800 : 400;
+        boolean show = car && !p.arrived && !Double.isNaN(p.cameraInM) && p.cameraInM <= Math.max(warnAt, 500);
+        if (camBadge != null) camBadge.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (!show) return;
+        if (tvCam != null) tvCam.setText(RoutingEngine.NavStep.formatMeters(roundDistance(p.cameraInM))
+            + (Float.isNaN(p.cameraLimitKmh) ? "" : "  ·  " + Math.round(p.cameraLimitKmh)));
+        if (p.cameraInM <= warnAt && p.cameraIndex != lastCameraAnnounced) {
+            lastCameraAnnounced = p.cameraIndex;
+            speak("Autovelox tra " + spokenDistance(p.cameraInM)
+                + (Float.isNaN(p.cameraLimitKmh) ? "" : ", limite " + Math.round(p.cameraLimitKmh)), true);
         }
     }
 
@@ -5744,6 +5817,9 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_follow, FollowTrackActivity.class);
         wire(R.id.card_poi, PoiActivity.class);
         wire(R.id.card_ar, PeakArActivity.class);
+        // v5.3
+        wire(R.id.card_slope, SlopeToolActivity.class);
+        wire(R.id.card_storm, StormActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -6074,6 +6150,9 @@ public class DaylightToolActivity extends AppCompatActivity {
         click(R.id.btn_day_prev, v -> { dayOffset--; refresh(); });
         click(R.id.btn_day_next, v -> { dayOffset++; refresh(); });
         click(R.id.tv_day_date, v -> { dayOffset = 0; refresh(); });
+        // v5.3: l'arco del sole sopra il paesaggio vero, con la fotocamera
+        click(R.id.btn_day_ar, v -> startActivity(new android.content.Intent(this, PeakArActivity.class)
+            .putExtra(PeakArActivity.EXTRA_MODE, PeakArActivity.MODE_SKY)));
     }
 
     private void click(int id, View.OnClickListener l) {
@@ -6961,54 +7040,97 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.SlopeMeter;
+import java.util.Locale;
 
-/** Inclinometro: misura la pendenza (in gradi e %) appoggiando il telefono. */
+/**
+ * Inclinometro v5.3 (pendenza del terreno e pendii da valanga). Si appoggia il
+ * telefono sul pendio (o su un bastoncino steso lungo la massima pendenza) e
+ * si legge l'angolo con le fasce di rischio; BLOCCA fissa la misura prima di
+ * sollevare il telefono. Non dice se un pendio e' sicuro: conta il bollettino.
+ */
 public class SlopeToolActivity extends AppCompatActivity implements SensorEventListener {
+    private static final int[] BAND_COLORS = {0xFF00FF88, 0xFFFFD600, 0xFFFF1744, 0xFFFF6B35, 0xFFB388FF};
     private SensorManager sm;
-    private Sensor accel;
-    private TextView tvDeg, tvPct, tvHint;
-    private float fx, fy, fz;
+    private Sensor sensor;
+    private boolean lowPass;
+    private final float[] g = new float[3];
+    private boolean hasG, hold;
+    private double current = Double.NaN, max = Double.NaN;
+    private SlopeGaugeView gauge;
+    private TextView tvDeg, tvBand, tvPct, tvMax, tvHoldText;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_slope);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        gauge = findViewById(R.id.slope_gauge);
         tvDeg = findViewById(R.id.tv_slope_deg);
+        tvBand = findViewById(R.id.tv_slope_band);
         tvPct = findViewById(R.id.tv_slope_pct);
-        tvHint = findViewById(R.id.tv_slope_hint);
+        tvMax = findViewById(R.id.tv_slope_max);
+        tvHoldText = findViewById(R.id.tv_slope_hold);
         View back = findViewById(R.id.btn_slope_back);
         if (back != null) back.setOnClickListener(v -> finish());
+        View holdBtn = findViewById(R.id.btn_slope_hold);
+        if (holdBtn != null) holdBtn.setOnClickListener(v -> { hold = !hold; render(); });
+        View reset = findViewById(R.id.btn_slope_reset);
+        if (reset != null) reset.setOnClickListener(v -> { max = Double.NaN; hold = false; render(); });
         sm = (SensorManager) getSystemService(SENSOR_SERVICE);
-        if (sm != null) accel = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        sensor = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_GRAVITY);
+        if (sensor == null && sm != null) { sensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER); lowPass = true; }
+        render();
     }
+
     @Override protected void onResume() {
         super.onResume();
-        if (sm != null && accel != null) sm.registerListener(this, accel, SensorManager.SENSOR_DELAY_UI);
+        if (sensor != null) sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_UI);
     }
-    @Override protected void onPause() { super.onPause(); if (sm != null) sm.unregisterListener(this); }
 
-    @Override public void onSensorChanged(SensorEvent e) {
-        fx = fx * 0.85f + e.values[0] * 0.15f;
-        fy = fy * 0.85f + e.values[1] * 0.15f;
-        fz = fz * 0.85f + e.values[2] * 0.15f;
-        double deg = Math.abs(Math.toDegrees(Math.atan2(Math.sqrt(fx*fx+fy*fy), Math.abs(fz))));
-        if (deg > 90) deg = 180 - deg;
-        double pct = Math.tan(Math.toRadians(deg)) * 100;
-        if (tvDeg != null) tvDeg.setText(String.format(java.util.Locale.US, "%.1f°", deg));
-        if (tvPct != null) tvPct.setText(String.format(java.util.Locale.US, "%.0f%% pendenza", pct));
-        if (tvHint != null) {
-            String h;
-            if (deg < 5) h = "Quasi piano";
-            else if (deg < 15) h = "Salita dolce";
-            else if (deg < 30) h = "Salita ripida";
-            else h = "Molto ripido - attenzione!";
-            tvHint.setText(h);
-        }
+    @Override protected void onPause() {
+        super.onPause();
+        if (sm != null) sm.unregisterListener(this);
     }
-    @Override public void onAccuracyChanged(Sensor sensor, int a) {}
+
+    @Override public void onSensorChanged(SensorEvent e) { applyGravity(e.values); }
+    @Override public void onAccuracyChanged(Sensor s, int a) {}
+
+    /** Nuovo vettore gravita' (con l'accelerometro si filtrano i colpi della mano). */
+    void applyGravity(float[] v) {
+        if (!hasG || !lowPass) { System.arraycopy(v, 0, g, 0, 3); hasG = true; }
+        else for (int i = 0; i < 3; i++) g[i] += 0.12f * (v[i] - g[i]);
+        if (hold) return;
+        double d = SlopeMeter.slopeDeg(g[0], g[1], g[2]);
+        if (Double.isNaN(d)) return;
+        current = Double.isNaN(current) ? d : current + 0.3 * (d - current);
+        if (Double.isNaN(max) || current > max) max = current;
+        render();
+    }
+
+    private void render() {
+        if (tvHoldText != null) tvHoldText.setText(hold ? "RIPRENDI" : "BLOCCA MISURA");
+        if (Double.isNaN(current)) {
+            tvDeg.setText("--°");
+            tvBand.setText(sensor == null ? "Sensore di movimento non disponibile su questo telefono"
+                : "Appoggia il telefono sul pendio");
+            tvBand.setTextColor(0xFF8FB3D0);
+            gauge.setSlope(Double.NaN);
+            return;
+        }
+        int band = SlopeMeter.band(current);
+        tvDeg.setText(String.format(Locale.ITALY, "%.0f°%s", current, hold ? "  (bloccata)" : ""));
+        tvDeg.setTextColor(BAND_COLORS[band]);
+        tvBand.setText(SlopeMeter.bandText(band));
+        tvBand.setTextColor(BAND_COLORS[band]);
+        tvPct.setText(current >= 89 ? "--" : String.format(Locale.ITALY, "%.0f%%", SlopeMeter.percent(current)));
+        tvMax.setText(Double.isNaN(max) ? "--" : String.format(Locale.ITALY, "%.0f°", max));
+        gauge.setSlope(current);
+    }
 }
 """
 
@@ -7753,11 +7875,6 @@ LAYOUT_UNITCONV = _scroll(_tool_header("CONVERTITORE", "btn_unit_back", "#00E5FF
     + _btn("btn_u_len", "m > piedi", "#141E2E", "#00E5FF")
     + _btn("btn_u_temp", "C > F", "#141E2E", "#FFD600")
     + _btn("btn_u_speed", "km/h > mph", "#141E2E", "#FFD600"))
-
-LAYOUT_SLOPE = _scroll(_tool_header("INCLINOMETRO", "btn_slope_back", "#FFD600")
-    + _big("tv_slope_deg", "0°", "#00FF88")
-    + _big("tv_slope_pct", "0% pendenza", "#00E5FF")
-    + _big("tv_slope_hint", "Appoggia il telefono sulla superficie", "#E8F4FD"))
 
 LAYOUT_MORSE = _scroll(_tool_header("CODICE MORSE", "btn_morse_back", "#FFD600")
     + '<EditText android:id="@+id/et_morse" android:layout_width="match_parent"\n'
@@ -8537,6 +8654,7 @@ import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -8583,6 +8701,10 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         setContentView(R.layout.activity_chat);
         msgBox = findViewById(R.id.chat_messages);
         scroll = findViewById(R.id.chat_scroll);
+        // in fondo anche quando l'ultima bolla viene misurata dopo (nuovi messaggi, tastiera)
+        if (msgBox != null) msgBox.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (b - t != ob - ot && scroll != null) scroll.post(() -> scroll.scrollTo(0, msgBox.getHeight()));
+        });
         etMsg = findViewById(R.id.chat_input);
         tvStatus = findViewById(R.id.chat_status);
         tvPeers = findViewById(R.id.tv_chat_peers);
@@ -8603,6 +8725,8 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         click(R.id.tv_chat_group, v -> groupDialog());
         click(R.id.btn_chat_team, v -> startActivity(new Intent(this, TeamActivity.class)));
         click(R.id.btn_chat_power, v -> confirmPowerOff());
+        click(R.id.btn_chat_meet, v -> meetDialog());
+        fillQuickReplies();
 
         for (MeshNode.Msg m : hub.history()) show(m, false);
         if (msgBox != null && msgBox.getChildCount() > 0) {
@@ -8833,6 +8957,60 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
     }
 
     // ------------------------------------------------------------ invio
+    /** v5.3: messaggi rapidi, un tocco e partono (comodi con i guanti). */
+    private static final String[] QUICK = {"👍 OK", "Arrivo", "Aspettatemi", "Faccio una pausa", "Torno indietro",
+        "Tutto bene?", "Dove siete?", "Sono arrivato"};
+
+    private void fillQuickReplies() {
+        LinearLayout box = findViewById(R.id.chat_quick);
+        if (box == null) return;
+        for (String q : QUICK) {
+            TextView chip = new TextView(this);
+            chip.setText(q);
+            chip.setTextColor(0xFFCFE3F5);
+            chip.setTextSize(12.5f);
+            chip.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            chip.setGravity(Gravity.CENTER);
+            chip.setBackgroundResource(R.drawable.bg_chip_off);
+            int px = SkyUi.dp(this, 14);
+            chip.setPadding(px, 0, px, 0);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, SkyUi.dp(this, 34));
+            lp.setMarginEnd(SkyUi.dp(this, 6));
+            chip.setOnClickListener(v -> {
+                if (hub.peers().isEmpty()) Toast.makeText(this, "Nessun vicino collegato: il messaggio resta solo qui", Toast.LENGTH_SHORT).show();
+                hub.sendText(q);
+            });
+            box.addView(chip, lp);
+        }
+    }
+
+    /** Propone al gruppo il punto d'incontro: qui dove sei, con un nome. */
+    private void meetDialog() {
+        Location l = myLocation();
+        MeshHub.Meet cur = hub.meetingPoint();
+        EditText name = new EditText(this);
+        name.setHint("Nome del posto (es. Rifugio, bivio, parcheggio)");
+        name.setText(cur != null && cur.mine ? cur.name : "");
+        name.setSingleLine(true);
+        int pad = SkyUi.dp(this, 20);
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setPadding(pad, SkyUi.dp(this, 8), pad, 0);
+        wrap.addView(name);
+        String now = cur == null ? "" : "\nAttuale: " + cur.name + (cur.mine ? " (tuo)" : " (da " + cur.from + ")");
+        AlertDialog.Builder b = new AlertDialog.Builder(this)
+            .setTitle("Punto d'incontro")
+            .setMessage("Tutto il gruppo lo vede sul radar, in realta' aumentata e puo' navigare fin li'. "
+                + "Per proporre un rifugio o una cima: Luoghi vicini, tocca il posto." + now)
+            .setView(wrap)
+            .setPositiveButton("QUI DOVE SONO", (d, w) -> {
+                if (l == null) { Toast.makeText(this, "Posizione GPS non ancora disponibile", Toast.LENGTH_LONG).show(); return; }
+                hub.sendMeet(l.getLatitude(), l.getLongitude(), name.getText().toString());
+            })
+            .setNegativeButton("Annulla", null);
+        if (cur != null) b.setNeutralButton("TOGLI", (d, w) -> hub.clearMeet());
+        b.show();
+    }
+
     private void sendText() {
         String text = etMsg.getText().toString().trim();
         if (text.isEmpty()) return;
@@ -8909,7 +9087,7 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
     /** Aggiunge la bolla del messaggio. */
     private void show(MeshNode.Msg m, boolean animate) {
         if (msgBox == null || m == null) return;
-        boolean sos = MeshNode.SOS.equals(m.type), pos = MeshNode.POS.equals(m.type);
+        boolean sos = MeshNode.SOS.equals(m.type), pos = MeshNode.POS.equals(m.type), meet = MeshNode.MEET.equals(m.type);
         LinearLayout b = new LinearLayout(this);
         b.setOrientation(LinearLayout.VERTICAL);
         b.setBackgroundResource(sos ? R.drawable.bg_bubble_sos : m.mine ? R.drawable.bg_bubble_me : R.drawable.bg_bubble_other);
@@ -8926,11 +9104,14 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         if (!m.mine) b.addView(label(m.from, sos ? 0xFFFFFFFF : 0xFF00E5FF, 12, true));
         if (sos) b.addView(label("SOS — " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text), 0xFFFFFFFF, 17, true));
         else if (pos) b.addView(label("Posizione condivisa" + (m.text.isEmpty() ? "" : ": " + m.text), 0xFFE8F4FD, 15, true));
+        else if (meet) b.addView(label("🚩 Punto d'incontro: " + m.text, 0xFFFFB38F, 15, true));
         else b.addView(label(m.text, 0xFFE8F4FD, 15, false));
 
         if (m.hasPosition()) {
             Location me = myLocation();
-            String where = String.format(Locale.US, "%.5f, %.5f (±%.0f m)", m.lat, m.lon, m.acc);
+            // il punto d'incontro e' un posto, non una misura GPS: niente precisione
+            String where = String.format(Locale.US, "%.5f, %.5f", m.lat, m.lon)
+                + (m.acc > 0 ? String.format(Locale.US, " (±%.0f m)", m.acc) : "");
             if (me != null && !m.mine) {
                 double d = GeoFormat.distance(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
                 double brg = GeoFormat.bearing(me.getLatitude(), me.getLongitude(), m.lat, m.lon);
@@ -8941,7 +9122,7 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
                 TextView nav = label("NAVIGA FIN LI'  ›", sos ? 0xFFFFFFFF : 0xFF00FF88, 13, true);
                 nav.setPadding(0, SkyUi.dp(this, 6), 0, 0);
                 final double la = m.lat, lo = m.lon;
-                final String who = m.from;
+                final String who = meet ? m.text : m.from;
                 nav.setOnClickListener(v -> ToolKit.navigate(this, la, lo, who, RoutingEngine.PROFILE_FOOT));
                 b.addView(nav);
             }
@@ -14970,7 +15151,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.2 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.3 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -15207,6 +15388,7 @@ LAYOUT_ITEM_SPINNER_DARK = (_XML_HEAD +
 
 NAV_CORE = r"""package com.offlinegps.map.routing;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -15218,7 +15400,8 @@ import java.util.List;
  *  - fuori percorso solo dopo piu' letture consecutive (il GPS "salta");
  *  - direzione della strada nel punto agganciato (per ruotare la mappa);
  *  - v5.1: limite di velocita' e nome della via dove sei, e il prossimo
- *    limite piu' basso in arrivo (per avvisare prima).
+ *    limite piu' basso in arrivo (per avvisare prima);
+ *  - v5.3: il prossimo autovelox fisso sul percorso (entro 2 km).
  * Nessuna dipendenza da Android: e' testato sul computer.
  */
 public final class NavCore {
@@ -15237,9 +15420,14 @@ public final class NavCore {
         public String street;                      // via dove sei (null = senza nome)
         public float nextLimitKmh = Float.NaN;     // limite piu' basso entro 400 m
         public double nextLimitInM;                // ...a questa distanza
+        public double cameraInM = Double.NaN;      // prossimo autovelox (NaN = nessuno entro 2 km)
+        public float cameraLimitKmh = Float.NaN;   // ...e il suo limite, se noto
+        public int cameraIndex = -1;               // per annunciarlo una volta sola
     }
 
     private static final double ARRIVE_M = 25.0;
+    /** Un autovelox "e' sul percorso" se dista meno di cosi' dalla strada. */
+    private static final double CAMERA_ON_ROUTE_M = 20.0, CAMERA_AHEAD_M = 2000.0;
 
     private final double[] lat, lon, cum;
     private final List<RoutingEngine.NavStep> steps;
@@ -15251,6 +15439,8 @@ public final class NavCore {
     private boolean arrived;
     private float[] segMax = new float[0];
     private String[] segStreet = new String[0];
+    private double[] camAlong = new double[0];
+    private float[] camLimit = new float[0];
 
     /** Con limiti di velocita' e nomi delle vie del percorso. */
     public NavCore(RoutingEngine.RouteResult r) {
@@ -15276,6 +15466,40 @@ public final class NavCore {
     }
 
     public double totalMeters() { return totalM; }
+
+    /**
+     * Autovelox {lat, lon, limite o NaN}: tiene solo quelli sulla strada del
+     * percorso (entro 20 m), in ordine lungo il percorso. Restituisce quanti sono.
+     */
+    public int setCameras(List<double[]> cams) {
+        int n = lat.length;
+        List<double[]> on = new ArrayList<>();
+        if (n >= 2 && cams != null) {
+            double minLa = Double.MAX_VALUE, maxLa = -Double.MAX_VALUE, minLo = Double.MAX_VALUE, maxLo = -Double.MAX_VALUE;
+            for (int i = 0; i < n; i++) {
+                minLa = Math.min(minLa, lat[i]); maxLa = Math.max(maxLa, lat[i]);
+                minLo = Math.min(minLo, lon[i]); maxLo = Math.max(maxLo, lon[i]);
+            }
+            double m = 0.0005;                                   // circa 50 m di margine
+            for (double[] c : cams) {
+                if (c[0] < minLa - m || c[0] > maxLa + m || c[1] < minLo - m || c[1] > maxLo + m) continue;
+                double bestD = Double.MAX_VALUE, along = 0;
+                for (int i = 0; i < n - 1; i++) {
+                    // scarto rapido: tratto tutto a nord o tutto a sud (oltre ~100 m) dell'autovelox
+                    if ((lat[i] - c[0] > 0.001 && lat[i + 1] - c[0] > 0.001)
+                        || (c[0] - lat[i] > 0.001 && c[0] - lat[i + 1] > 0.001)) continue;
+                    double[] r = project(c[0], c[1], i);
+                    if (r[0] < bestD) { bestD = r[0]; along = cum[i] + r[1] * (cum[i + 1] - cum[i]); }
+                }
+                if (bestD <= CAMERA_ON_ROUTE_M) on.add(new double[]{along, c.length > 2 ? c[2] : Double.NaN});
+            }
+        }
+        on.sort((a, b) -> Double.compare(a[0], b[0]));
+        camAlong = new double[on.size()];
+        camLimit = new float[on.size()];
+        for (int i = 0; i < on.size(); i++) { camAlong[i] = on.get(i)[0]; camLimit[i] = (float) on.get(i)[1]; }
+        return on.size();
+    }
     public double stepAlong(int i) { return stepAlong[i]; }
 
     public Progress update(double la, double lo, float accuracy) {
@@ -15314,6 +15538,18 @@ public final class NavCore {
                 p.nextLimitInM = cum[j] - p.alongM;
                 break;
             }
+        }
+
+        // autovelox: il primo ancora davanti (appena superato non conta piu')
+        for (int j = 0; j < camAlong.length; j++) {
+            double ahead = camAlong[j] - p.alongM;
+            if (ahead < -5) continue;
+            if (ahead <= CAMERA_AHEAD_M) {
+                p.cameraInM = Math.max(0, ahead);
+                p.cameraLimitKmh = camLimit[j];
+                p.cameraIndex = j;
+            }
+            break;
         }
 
         // 2) prossima manovra = la prima che sta ancora davanti
@@ -15383,11 +15619,6 @@ public final class NavCore {
     }
 
     /**
-     * Distanze (metri) a cui annunciare una manovra, in base alla velocita':
-     * {lontano, vicino, adesso}. A piedi 120/40/12, in citta' 400/120/30,
-     * in strada veloce 1000/350/60.
-     */
-    /**
      * Eccesso di velocita' oltre la tolleranza degli autovelox italiani
      * (5%, minimo 5 km/h): cosi' l'avviso non scatta per un tachimetro pignolo.
      */
@@ -15397,6 +15628,11 @@ public final class NavCore {
         return speedKmh > limitKmh + tol;
     }
 
+    /**
+     * Distanze (metri) a cui annunciare una manovra, in base alla velocita':
+     * {lontano, vicino, adesso}. A piedi 120/40/12, in citta' 400/120/30,
+     * in strada veloce 1000/350/60.
+     */
     public static double[] announceDistances(float speedMs, String profile) {
         if (RoutingEngine.PROFILE_FOOT.equals(profile) || speedMs < 2.5f) return new double[]{120, 40, 12};
         if (RoutingEngine.PROFILE_BIKE.equals(profile) || speedMs < 9f) return new double[]{250, 80, 20};
@@ -15500,7 +15736,9 @@ public final class SunCalc {
         double[] c = moonCoords(d);
         double h = siderealTime(d, lw) - c[1];
         double alt = Math.asin(Math.sin(phi) * Math.sin(c[0]) + Math.cos(phi) * Math.cos(c[0]) * Math.cos(h));
-        if (alt > 0) alt += 0.0002967 / Math.tan(alt + 0.00312536 / (alt + 0.08901179));   // rifrazione
+        // rifrazione (sotto l'orizzonte vale quella dell'orizzonte: niente salti a 0 gradi)
+        double ar = Math.max(alt, 0);
+        alt += 0.0002967 / Math.tan(ar + 0.00312536 / (ar + 0.08901179));
         double az = Math.atan2(Math.sin(h), Math.cos(h) * Math.sin(phi) - Math.tan(c[0]) * Math.cos(phi));
         return new double[]{alt / RAD, (az / RAD + 180 + 360) % 360};
     }
@@ -16522,7 +16760,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  - TTL = numero massimo di salti (7);
  *  - conferme di consegna (ACK): chi riceve risponde, il mittente conta chi l'ha letto;
  *  - tipi: TXT testo, POS posizione, SOS emergenza con posizione, HELLO nome del vicino,
- *    BCN posizione periodica per il radar del gruppo (non compare in chat);
+ *    BCN posizione periodica per il radar del gruppo (non compare in chat),
+ *    MEET punto d'incontro proposto al gruppo (v5.3);
  *  - v5.1 GRUPPI CIFRATI: con una chiave di gruppo i messaggi viaggiano dentro
  *    una "busta" (tipo X) cifrata con AES-GCM. Chi non e' del gruppo la
  *    inoltra lo stesso ma non la legge. L'SOS parte sempre in chiaro: in
@@ -16532,7 +16771,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class MeshNode {
     public static final String TXT = "TXT", POS = "POS", SOS = "SOS", ACK = "ACK", HELLO = "HELLO",
-        BCN = "BCN", SEALED = "X";
+        BCN = "BCN", SEALED = "X", MEET = "MEET";
     public static final int BEACON_TTL = 4;
     public static final int DEFAULT_TTL = 7;
     private static final String VERSION = "m5";
@@ -16705,6 +16944,9 @@ public final class MeshNode {
     public Msg sendPosition(double lat, double lon, float acc, String note) { return send(POS, note, lat, lon, acc); }
 
     public Msg sendSos(double lat, double lon, float acc, String text) { return send(SOS, text, lat, lon, acc); }
+
+    /** Punto d'incontro per il gruppo: il nome del posto viaggia nel testo. */
+    public Msg sendMeet(double lat, double lon, String name) { return send(MEET, name, lat, lon, 0f); }
 
     /** Posizione per il radar del gruppo: batteria % e velocita' m/s viaggiano nel testo. */
     public Msg sendBeacon(double lat, double lon, float acc, int battery, float speedMs) {
@@ -18275,6 +18517,7 @@ import java.util.concurrent.Executors;
  * chiudendo la chat o spegnendo lo schermo (servizio in primo piano
  * MeshService), avvisa con una notifica quando arriva un messaggio, tiene la
  * cronologia, il gruppo cifrato e le posizioni dei compagni per il radar.
+ * v5.3: il punto d'incontro del gruppo (l'ultimo proposto, valido 24 ore).
  * Ogni telefono e' insieme "server" (accetta fino a 7 vicini) e "client".
  */
 public final class MeshHub implements MeshNode.Listener {
@@ -18292,6 +18535,17 @@ public final class MeshHub implements MeshNode.Listener {
         default void onTeam() {}
         default void onStatus(String status) {}
     }
+
+    /** Punto d'incontro proposto al gruppo (da te o da un compagno). */
+    public static final class Meet {
+        public String name, from;
+        public double lat, lon;
+        public long time;
+        public boolean mine;
+    }
+
+    /** Dopo un giorno il punto d'incontro non vale piu'. */
+    public static final long MEET_TTL_MS = 24 * 3_600_000L;
 
     /** Un compagno sul radar. */
     public static final class Member {
@@ -18323,6 +18577,7 @@ public final class MeshHub implements MeshNode.Listener {
     private volatile boolean running, sharing;
     private volatile int visibleScreens;
     private volatile String status = "Chat spenta";
+    private volatile Meet meet;
     private BluetoothServerSocket serverSocket;
     private final Set<String> connected = Collections.synchronizedSet(new HashSet<>());
     /** indirizzo Bluetooth -> {collegamento mesh, socket}, per ricollegare chi cade. */
@@ -18349,6 +18604,7 @@ public final class MeshHub implements MeshNode.Listener {
         BluetoothManager bm = (BluetoothManager) app.getSystemService(Context.BLUETOOTH_SERVICE);
         adapter = bm != null ? bm.getAdapter() : null;
         loadHistory();
+        loadMeet();
     }
 
     // ------------------------------------------------------------ ascoltatori (schermate)
@@ -18530,6 +18786,51 @@ public final class MeshHub implements MeshNode.Listener {
         io.execute(() -> deliverMine(node.sendSos(la, lo, acc, text)));
     }
 
+    /** Propone un punto d'incontro a tutto il gruppo (nome del posto + coordinate). */
+    public void sendMeet(double lat, double lon, String name) {
+        String n = name == null || name.trim().isEmpty() ? "Punto d'incontro" : name.trim();
+        io.execute(() -> {
+            MeshNode.Msg m = node.sendMeet(lat, lon, n);
+            setMeet(m);
+            deliverMine(m);
+        });
+    }
+
+    /** L'ultimo punto d'incontro (null se nessuno o piu' vecchio di 24 ore). */
+    @androidx.annotation.Nullable public Meet meetingPoint() {
+        Meet m = meet;
+        return m == null || System.currentTimeMillis() - m.time > MEET_TTL_MS ? null : m;
+    }
+
+    /** Lo toglie solo da questo telefono. */
+    public void clearMeet() {
+        meet = null;
+        prefs.edit().remove("meet").apply();
+        fire(Listener::onTeam);
+    }
+
+    private void setMeet(MeshNode.Msg m) {
+        Meet x = new Meet();
+        x.name = m.text.isEmpty() ? "Punto d'incontro" : m.text;
+        x.from = m.from; x.lat = m.lat; x.lon = m.lon; x.mine = m.mine;
+        x.time = System.currentTimeMillis();
+        meet = x;
+        prefs.edit().putString("meet", x.lat + "|" + x.lon + "|" + x.time + "|" + (x.mine ? 1 : 0) + "|"
+            + x.from.replace("|", " ") + "|" + x.name.replace("|", " ")).apply();
+        fire(Listener::onTeam);
+    }
+
+    private void loadMeet() {
+        String[] f = prefs.getString("meet", "").split("\\|", 6);
+        if (f.length < 6) return;
+        try {
+            Meet x = new Meet();
+            x.lat = Double.parseDouble(f[0]); x.lon = Double.parseDouble(f[1]); x.time = Long.parseLong(f[2]);
+            x.mine = "1".equals(f[3]); x.from = f[4]; x.name = f[5];
+            meet = x;
+        } catch (Exception ignored) {}
+    }
+
     private void deliverMine(MeshNode.Msg m) {
         saveHistory(m);
         fire(l -> l.onMessage(m));
@@ -18588,7 +18889,9 @@ public final class MeshHub implements MeshNode.Listener {
     // ------------------------------------------------------------ ricezione (MeshNode.Listener)
     @Override public void onMessage(MeshNode.Msg m) {
         saveHistory(m);
-        if (m.hasPosition()) updateMember(m, -1, -1);   // POS e SOS aggiornano anche il radar
+        if (MeshNode.MEET.equals(m.type)) {
+            if (m.hasPosition()) setMeet(m);             // il posto proposto, non dove sta chi lo manda
+        } else if (m.hasPosition()) updateMember(m, -1, -1);   // POS e SOS aggiornano anche il radar
         fire(l -> l.onMessage(m));
         if (visibleScreens == 0 || MeshNode.SOS.equals(m.type)) MeshService.notifyMessage(app, m);
     }
@@ -18775,7 +19078,8 @@ public class MeshService extends Service {
         channels(c);
         boolean sos = MeshNode.SOS.equals(m.type);
         String body = sos ? "SOS: " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text)
-            : MeshNode.POS.equals(m.type) ? "Ha condiviso la sua posizione" : m.text;
+            : MeshNode.POS.equals(m.type) ? "Ha condiviso la sua posizione"
+            : MeshNode.MEET.equals(m.type) ? "Punto d'incontro: " + m.text : m.text;
         Notification n = new Notification.Builder(c, sos ? CH_SOS : CH_MSG)
             .setSmallIcon(R.drawable.ic_gps)
             .setContentTitle(sos ? "SOS da " + m.from + "!" : m.from + (m.secure ? " (gruppo)" : ""))
@@ -18807,6 +19111,7 @@ import java.util.List;
  * direzione vere. Scala automatica (100 m ... 50 km), Nord in alto oppure
  * ruotato come il telefono. Colore = eta' del dato (verde fresco, giallo
  * qualche minuto, grigio vecchio); batteria scarica segnalata in rosso.
+ * v5.3: il punto d'incontro del gruppo come bandierina arancione.
  */
 public class TeamRadarView extends View {
     private static final double[] RANGES = {100, 150, 250, 400, 600, 900, 1500, 2500, 4000, 6000, 10000, 20000, 50000};
@@ -18819,6 +19124,7 @@ public class TeamRadarView extends View {
     private double myLat = Double.NaN, myLon;
     private float heading = Float.NaN;
     private double range = 500;
+    private MeshHub.Meet meet;
 
     public TeamRadarView(Context c) { this(c, null); }
     public TeamRadarView(Context c, AttributeSet a) {
@@ -18833,12 +19139,17 @@ public class TeamRadarView extends View {
     }
 
     /** heading = direzione del telefono (NaN = Nord in alto). */
-    public void setData(List<MeshHub.Member> m, double lat, double lon, float heading) {
+    public void setData(List<MeshHub.Member> m, double lat, double lon, float heading) { setData(m, null, lat, lon, heading); }
+
+    public void setData(List<MeshHub.Member> m, MeshHub.Meet meetPoint, double lat, double lon, float heading) {
         members = m == null ? new ArrayList<>() : m;
+        meet = meetPoint;
         myLat = lat; myLon = lon; this.heading = heading;
         double far = 0;
-        if (!Double.isNaN(lat))
+        if (!Double.isNaN(lat)) {
             for (MeshHub.Member x : members) far = Math.max(far, GeoFormat.distance(lat, lon, x.lat, x.lon));
+            if (meet != null) far = Math.max(far, GeoFormat.distance(lat, lon, meet.lat, meet.lon));
+        }
         range = RANGES[RANGES.length - 1];
         for (double r : RANGES) if (far * 1.15 <= r) { range = r; break; }
         invalidate();
@@ -18900,6 +19211,34 @@ public class TeamRadarView extends View {
         if (Float.isNaN(heading)) c.drawCircle(cx, cy, 7 * dp, pDot);
         else c.drawPath(arrow, pDot);
         float minR = 22 * dp;                         // i compagni non finiscono sopra di te
+
+        // punto d'incontro: bandierina arancione
+        if (!Double.isNaN(myLat) && meet != null) {
+            double d = GeoFormat.distance(myLat, myLon, meet.lat, meet.lon);
+            double b = Math.toRadians(GeoFormat.bearing(myLat, myLon, meet.lat, meet.lon) + rot);
+            float rr = Math.max(minR, r * (float) Math.min(1.0, d / range));
+            float x = cx + (float) Math.sin(b) * rr, y = cy - (float) Math.cos(b) * rr;
+            pDot.setColor(0x55FF6B35);
+            c.drawCircle(x, y, 16 * dp, pDot);
+            pRing.setColor(0xFFFF6B35);
+            pRing.setStrokeWidth(2.2f * dp);
+            c.drawLine(x - 4 * dp, y + 9 * dp, x - 4 * dp, y - 11 * dp, pRing);
+            arrow.reset();
+            arrow.moveTo(x - 4 * dp, y - 11 * dp);
+            arrow.lineTo(x + 9 * dp, y - 6 * dp);
+            arrow.lineTo(x - 4 * dp, y - 1 * dp);
+            arrow.close();
+            pDot.setColor(0xFFFF6B35);
+            c.drawPath(arrow, pDot);
+            boolean up = y < cy;
+            pName.setColor(0xFFFFB38F);
+            pName.setTextSize(11 * dp);
+            String nm = meet.name.length() > 16 ? meet.name.substring(0, 15).trim() + "…" : meet.name;
+            c.drawText(nm, x, up ? y - 24 * dp : y + 28 * dp, pName);
+            pName.setTextSize(10 * dp);
+            c.drawText(fmt(Math.round(d / 10.0) * 10), x, up ? y - 12 * dp : y + 40 * dp, pName);
+            pDot.setColor(0xFF00E5FF);
+        }
 
         // compagni
         long now = System.currentTimeMillis();
@@ -19053,7 +19392,8 @@ public class TeamActivity extends AppCompatActivity implements MeshHub.Listener,
     private void refresh() {
         Location me = GpsTrackingService.getLastLocation();
         List<MeshHub.Member> team = hub.team();
-        if (radar != null) radar.setData(team, me != null ? me.getLatitude() : Double.NaN,
+        MeshHub.Meet meet = hub.meetingPoint();
+        if (radar != null) radar.setData(team, meet, me != null ? me.getLatitude() : Double.NaN,
             me != null ? me.getLongitude() : 0, lastHeading);
         if (tvGroup != null) {
             tvGroup.setText(hub.inGroup() ? hub.groupCode() : "SENZA GRUPPO");
@@ -19065,15 +19405,40 @@ public class TeamActivity extends AppCompatActivity implements MeshHub.Listener,
             : (on ? "Stai condividendo la posizione ogni 30 s (anche a schermo spento)." : "Non stai condividendo la posizione.")
               + "  Vicini collegati: " + hub.peers().size()
               + (hub.foreignCount() > 0 ? "  ·  messaggi di altri gruppi inoltrati: " + hub.foreignCount() : ""));
-        fillList(team, me);
+        fillList(team, meet, me);
     }
 
-    private void fillList(List<MeshHub.Member> team, @Nullable Location me) {
+    private void fillList(List<MeshHub.Member> team, @Nullable MeshHub.Meet meet, @Nullable Location me) {
         if (list == null) return;
         list.removeAllViews();
         if (tvEmpty != null) tvEmpty.setVisibility(team.isEmpty() ? View.VISIBLE : View.GONE);
         float dp = getResources().getDisplayMetrics().density;
         long now = System.currentTimeMillis();
+        if (meet != null) {
+            // v5.3: il punto d'incontro in cima all'elenco
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.VERTICAL);
+            row.setBackgroundResource(R.drawable.bg_tile_orange);
+            int p = (int) (14 * dp);
+            row.setPadding(p, (int) (11 * dp), p, (int) (11 * dp));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (10 * dp);
+            TextView t1 = new TextView(this);
+            t1.setText("Punto d'incontro: " + meet.name);
+            t1.setTextColor(0xFFFFB38F);
+            t1.setTextSize(15);
+            t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            TextView t2 = new TextView(this);
+            String where = me == null ? "" : GeoFormat.formatDistance(GeoFormat.distance(me.getLatitude(), me.getLongitude(), meet.lat, meet.lon))
+                + " verso " + GeoFormat.cardinal(GeoFormat.bearing(me.getLatitude(), me.getLongitude(), meet.lat, meet.lon)) + "  ·  ";
+            t2.setText(where + (meet.mine ? "proposto da te" : "proposto da " + meet.from) + " " + ToolKit.span(now - meet.time) + " fa");
+            t2.setTextColor(0xFF8FB3D0);
+            t2.setTextSize(12.5f);
+            row.addView(t1);
+            row.addView(t2);
+            row.setOnClickListener(v -> placeActions(meet.name, meet.lat, meet.lon, true));
+            list.addView(row, lp);
+        }
         for (MeshHub.Member m : team) {
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.VERTICAL);
@@ -19097,21 +19462,26 @@ public class TeamActivity extends AppCompatActivity implements MeshHub.Listener,
             t2.setTextSize(12.5f);
             row.addView(t1);
             row.addView(t2);
-            row.setOnClickListener(v -> memberActions(m));
+            row.setOnClickListener(v -> placeActions(m.name, m.lat, m.lon, false));
             list.addView(row, lp);
         }
     }
 
-    private void memberActions(MeshHub.Member m) {
+    /** Azioni su un compagno o sul punto d'incontro (che si puo' anche togliere). */
+    private void placeActions(String name, double lat, double lon, boolean isMeet) {
+        String[] items = isMeet
+            ? new String[]{"Naviga a piedi fin li'", "Bussola verso il punto", "Mostra sulla mappa", "Togli il punto d'incontro"}
+            : new String[]{"Naviga a piedi fin li'", "Bussola verso " + name, "Mostra sulla mappa"};
         new AlertDialog.Builder(this)
-            .setTitle(m.name)
-            .setItems(new String[]{"Naviga a piedi fin li'", "Bussola verso " + m.name, "Mostra sulla mappa"}, (d, w) -> {
-                if (w == 0) ToolKit.navigate(this, m.lat, m.lon, m.name, RoutingEngine.PROFILE_FOOT);
+            .setTitle(name)
+            .setItems(items, (d, w) -> {
+                if (w == 0) ToolKit.navigate(this, lat, lon, name, RoutingEngine.PROFILE_FOOT);
                 else if (w == 1) {
                     Intent i = new Intent(this, GotoCoordsActivity.class);
-                    i.putExtra(GotoCoordsActivity.EXTRA_TEXT, GeoFormat.decimal(m.lat, m.lon));
+                    i.putExtra(GotoCoordsActivity.EXTRA_TEXT, GeoFormat.decimal(lat, lon));
                     startActivity(i);
-                } else ToolKit.showOnMap(this, m.lat, m.lon, m.name);
+                } else if (w == 2) ToolKit.showOnMap(this, lat, lon, name);
+                else { hub.clearMeet(); refresh(); }
             }).show();
     }
 }
@@ -19131,23 +19501,32 @@ import java.util.*;
  * Luoghi utili all'aperto, estratti offline dal file .pbf della regione:
  * cime (con quota), rifugi e bivacchi, sorgenti e fontanelle, punti
  * panoramici, ripari, campeggi e i punti per l'emergenza (ospedali,
- * farmacie, defibrillatori). I rifugi mappati come edificio vengono presi
+ * farmacie, defibrillatori) e gli autovelox fissi per il navigatore (v5.3,
+ * con il limite se indicato). I rifugi mappati come edificio vengono presi
  * dal primo nodo del contorno. Indice in un file di testo a parte, costruito
  * una volta. Nessuna dipendenza da Android: testato sul computer.
  */
 public final class PoiIndex {
     public static final String PEAK = "peak", HUT = "hut", WATER = "water", VIEW = "view",
-        SHELTER = "shelter", CAMP = "camp", HOSPITAL = "hospital", PHARMACY = "pharmacy", AED = "aed";
-    private static final String HEADER = "POI1";
+        SHELTER = "shelter", CAMP = "camp", HOSPITAL = "hospital", PHARMACY = "pharmacy", AED = "aed",
+        SPEED_CAM = "speedcam";
+    /** v5.3: c'e' anche la colonna "extra" (limite degli autovelox): gli indici vecchi si rifanno. */
+    private static final String HEADER = "POI2";
 
     public static final class Poi {
         public final String type, name;
         public final double lat, lon;
         /** Quota in metri (NaN se non nota). */
         public final double ele;
+        /** Autovelox: limite in km/h (NaN se non indicato). */
+        public final double limitKmh;
 
         public Poi(String type, String name, double lat, double lon, double ele) {
-            this.type = type; this.name = name; this.lat = lat; this.lon = lon; this.ele = ele;
+            this(type, name, lat, lon, ele, Double.NaN);
+        }
+
+        public Poi(String type, String name, double lat, double lon, double ele, double limitKmh) {
+            this.type = type; this.name = name; this.lat = lat; this.lon = lon; this.ele = ele; this.limitKmh = limitKmh;
         }
     }
 
@@ -19169,7 +19548,19 @@ public final class PoiIndex {
         if ("hospital".equals(amenity) || "hospital".equals(healthcare)) return HOSPITAL;
         if ("pharmacy".equals(amenity) || "pharmacy".equals(healthcare)) return PHARMACY;
         if ("defibrillator".equals(emergency)) return AED;
+        if ("speed_camera".equals(tag.apply("highway"))) return SPEED_CAM;
         return null;
+    }
+
+    /** Limite da "maxspeed" ("90", "90 km/h", "55 mph"); NaN per valori come "IT:urban". */
+    static double parseSpeed(String s) {
+        if (s == null) return Double.NaN;
+        String t = s.trim().toLowerCase(Locale.ROOT);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^(\\d{1,3})\\s*(km/h|kmh|mph)?$").matcher(t);
+        if (!m.find()) return Double.NaN;
+        double v = Double.parseDouble(m.group(1));
+        if ("mph".equals(m.group(2))) v = Math.round(v * 1.609344);
+        return v >= 5 && v <= 200 ? v : Double.NaN;
     }
 
     /** Quota da "ele" (accetta "2.912", "2912 m", "2912m", "9554 ft"). */
@@ -19198,6 +19589,7 @@ public final class PoiIndex {
             case AED: return "Defibrillatore (DAE)";
             case VIEW: return "Punto panoramico";
             case PHARMACY: return "Farmacia";
+            case SPEED_CAM: return "Autovelox";
             default: return null;                     // cime e rifugi senza nome: inutili
         }
     }
@@ -19234,7 +19626,8 @@ public final class PoiIndex {
                 if (type == null) continue;
                 String name = nameOf(tag, type);
                 if (name == null) continue;
-                out.add(new Poi(type, name, n.getLat(), n.getLon(), parseEle(n.getTag("ele", null))));
+                out.add(new Poi(type, name, n.getLat(), n.getLon(), parseEle(n.getTag("ele", null)),
+                    SPEED_CAM.equals(type) ? parseSpeed(n.getTag("maxspeed", null)) : Double.NaN));
             }
         }
         indexOut.getParentFile().mkdirs();
@@ -19242,7 +19635,8 @@ public final class PoiIndex {
             bw.write(HEADER); bw.newLine();
             for (Poi p : out) {
                 bw.write(p.type + "\t" + p.name.replace("\t", " ").replace("\n", " ") + "\t" + p.lat + "\t" + p.lon + "\t"
-                    + (Double.isNaN(p.ele) ? "" : String.valueOf(Math.round(p.ele))));
+                    + (Double.isNaN(p.ele) ? "" : String.valueOf(Math.round(p.ele))) + "\t"
+                    + (Double.isNaN(p.limitKmh) ? "" : String.valueOf(Math.round(p.limitKmh))));
                 bw.newLine();
             }
         }
@@ -19256,14 +19650,22 @@ public final class PoiIndex {
             String line;
             while ((line = br.readLine()) != null) {
                 String[] f = line.split("\t", -1);
-                if (f.length < 5) continue;
+                if (f.length < 6) continue;
                 try {
                     idx.pois.add(new Poi(f[0], f[1], Double.parseDouble(f[2]), Double.parseDouble(f[3]),
-                        f[4].isEmpty() ? Double.NaN : Double.parseDouble(f[4])));
+                        f[4].isEmpty() ? Double.NaN : Double.parseDouble(f[4]),
+                        f[5].isEmpty() ? Double.NaN : Double.parseDouble(f[5])));
                 } catch (NumberFormatException ignored) {}
             }
         }
         return idx;
+    }
+
+    /** Gli autovelox come {lat, lon, limite km/h o NaN}, per il navigatore. */
+    public List<double[]> speedCameras() {
+        List<double[]> out = new ArrayList<>();
+        for (Poi p : pois) if (SPEED_CAM.equals(p.type)) out.add(new double[]{p.lat, p.lon, p.limitKmh});
+        return out;
     }
 
     /** I luoghi dei tipi richiesti entro maxM metri, dal piu' vicino. {Poi, distanza}. */
@@ -19534,15 +19936,26 @@ public class PoiActivity extends AppCompatActivity {
     private void actions(PoiIndex.Poi p) {
         new AlertDialog.Builder(this)
             .setTitle(p.name)
-            .setItems(new String[]{"Naviga a piedi", "In auto", "Bussola verso il punto", "Mostra sulla mappa"}, (d, w) -> {
+            .setItems(new String[]{"Naviga a piedi", "In auto", "Bussola verso il punto", "Mostra sulla mappa",
+                "Punto d'incontro per il gruppo"}, (d, w) -> {
                 if (w == 0) ToolKit.navigate(this, p.lat, p.lon, p.name, RoutingEngine.PROFILE_FOOT);
                 else if (w == 1) ToolKit.navigate(this, p.lat, p.lon, p.name, RoutingEngine.PROFILE_CAR);
                 else if (w == 2) {
                     Intent i = new Intent(this, GotoCoordsActivity.class);
                     i.putExtra(GotoCoordsActivity.EXTRA_TEXT, GeoFormat.decimal(p.lat, p.lon));
                     startActivity(i);
-                } else ToolKit.showOnMap(this, p.lat, p.lon, p.name);
+                } else if (w == 3) ToolKit.showOnMap(this, p.lat, p.lon, p.name);
+                else proposeMeet(p);
             }).show();
+    }
+
+    /** v5.3: manda il luogo al gruppo come punto d'incontro (serve la chat offline accesa). */
+    private void proposeMeet(PoiIndex.Poi p) {
+        com.offlinegps.map.chat.MeshHub hub = com.offlinegps.map.chat.MeshHub.get(this);
+        hub.sendMeet(p.lat, p.lon, p.name);
+        android.widget.Toast.makeText(this, hub.peers().isEmpty()
+            ? "Punto d'incontro salvato. Nessun compagno collegato: accendi la CHAT OFFLINE per mandarlo."
+            : "Punto d'incontro mandato al gruppo: " + p.name, android.widget.Toast.LENGTH_LONG).show();
     }
 }
 """
@@ -19623,6 +20036,8 @@ import java.util.List;
  * Disegno della realta' aumentata sopra la fotocamera: linea dell'orizzonte
  * con i punti cardinali e le etichette (cime, compagni, waypoint) nella loro
  * direzione vera. Le etichette vicine si impilano invece di sovrapporsi.
+ * v5.3: archi nel cielo (percorso del Sole e della Luna, con le ore) e dischi
+ * per gli astri.
  */
 public class ArOverlayView extends View {
     public static final class Label {
@@ -19630,10 +20045,27 @@ public class ArOverlayView extends View {
         /** Rotta vera (gradi dal Nord geografico) e angolo sopra l'orizzonte. */
         public final double bearing, elevation, dist;
         public final int color;
+        /** Raggio del disco (dp) per Sole e Luna; 0 = semplice punto. */
+        public final float discDp;
 
         public Label(String title, String sub, double bearing, double elevation, double dist, int color) {
+            this(title, sub, bearing, elevation, dist, color, 0);
+        }
+
+        public Label(String title, String sub, double bearing, double elevation, double dist, int color, float discDp) {
             this.title = title; this.sub = sub; this.bearing = bearing; this.elevation = elevation;
-            this.dist = dist; this.color = color;
+            this.dist = dist; this.color = color; this.discDp = discDp;
+        }
+    }
+
+    /** Arco nel cielo: punti {rotta vera, altezza}, colore di ogni tratto (0 = non disegnato), scritte. */
+    public static final class Track {
+        final double[][] pts;
+        final int[] colors;
+        final String[] marks;
+
+        public Track(double[][] pts, int[] colors, String[] marks) {
+            this.pts = pts; this.colors = colors; this.marks = marks;
         }
     }
 
@@ -19644,6 +20076,8 @@ public class ArOverlayView extends View {
     private final Paint pCard = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private List<Label> labels = new ArrayList<>();
+    private List<Track> tracks = new ArrayList<>();
+    private final Paint pTrack = new Paint(Paint.ANTI_ALIAS_FLAG), pMark = new Paint(Paint.ANTI_ALIAS_FLAG);
     private boolean hasRotation;
     private float declination;
     private double focalPx = Double.NaN;
@@ -19652,6 +20086,8 @@ public class ArOverlayView extends View {
     private Label focused, lastFocused;
     /** Una cima e' "nel mirino" se la sua rotta dista meno di cosi' dal centro. */
     private static final double AIM_DEG = 4;
+    /** Sotto la barra in alto (titolo e scelta CIME / SOLE E LUNA). */
+    private static final float TOP_DP = 116;
 
     public ArOverlayView(Context c) { this(c, null); }
     public ArOverlayView(Context c, AttributeSet a) {
@@ -19667,9 +20103,17 @@ public class ArOverlayView extends View {
         pSub.setShadowLayer(3 * dp, 0, 0, 0xCC000000);
         pCard.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
         pCard.setTextAlign(Paint.Align.CENTER);
+        pTrack.setStyle(Paint.Style.STROKE);
+        pTrack.setStrokeCap(Paint.Cap.ROUND);
+        pTrack.setStrokeWidth(3 * dp);
+        pMark.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pMark.setTextSize(12 * dp);
+        pMark.setTextAlign(Paint.Align.CENTER);
+        pMark.setShadowLayer(3 * dp, 0, 0, 0xCC000000);
     }
 
     public void setLabels(List<Label> l) { labels = l == null ? new ArrayList<>() : l; invalidate(); }
+    public void setTracks(List<Track> t) { tracks = t == null ? new ArrayList<>() : t; invalidate(); }
 
     /** Matrice del sensore di rotazione (riferimento al Nord MAGNETICO) e declinazione locale. */
     public void setRotation(float[] r, float declinationDeg) {
@@ -19725,10 +20169,32 @@ public class ArOverlayView extends View {
                 c.drawText(names[t / 45], (float) p[0], (float) p[1] + 26 * dp, pCard);
             }
         }
+        // archi nel cielo (Sole, Luna) con le ore
+        for (Track t : tracks) {
+            double[] prev = null;
+            for (int i = 0; i < t.pts.length; i++) {
+                double[] p = proj.project(t.pts[i][0] - declination, t.pts[i][1]);
+                // niente tratti che "saltano" quando un punto passa ai lati della fotocamera
+                if (p != null && prev != null && t.colors[i - 1] != 0
+                    && Math.abs(p[0] - prev[0]) < 2 * w && Math.abs(p[1] - prev[1]) < 2 * h) {
+                    pTrack.setColor(t.colors[i - 1]);
+                    c.drawLine((float) prev[0], (float) prev[1], (float) p[0], (float) p[1], pTrack);
+                }
+                prev = p;
+            }
+            for (int i = 0; i < t.pts.length; i++) {
+                if (t.marks[i] == null) continue;
+                double[] p = proj.project(t.pts[i][0] - declination, t.pts[i][1]);
+                if (p == null || p[0] < 0 || p[0] > w || p[1] < TOP_DP * dp || p[1] > h) continue;
+                pMark.setColor(0xFFFFFFFF);
+                c.drawCircle((float) p[0], (float) p[1], 3.5f * dp, pMark);
+                c.drawText(t.marks[i], (float) p[0], (float) p[1] - 9 * dp, pMark);
+            }
+        }
         // mirino: linea verticale al centro, la cima piu' vicina alla linea e' "nel mirino"
         pLine.setColor(0x3300E5FF);
         pLine.setStrokeWidth(1 * dp);
-        c.drawLine(w / 2f, 72 * dp, w / 2f, h - 140 * dp, pLine);
+        c.drawLine(w / 2f, TOP_DP * dp, w / 2f, h - 140 * dp, pLine);
         double vb = viewBearing();
         Label aim = null;
         double aimDiff = AIM_DEG;
@@ -19740,7 +20206,7 @@ public class ArOverlayView extends View {
         // etichette: prima quella nel mirino, poi dalla piu' vicina
         List<RectF> used = new ArrayList<>();
         List<Object[]> placed = new ArrayList<>();
-        float boxH = 40 * dp, gap = 6 * dp, top = 72 * dp, bottom = h - 140 * dp;
+        float boxH = 40 * dp, gap = 6 * dp, top = TOP_DP * dp, bottom = h - 140 * dp;
         List<Label> sorted = new ArrayList<>(labels);
         sorted.sort((a, b) -> Double.compare(a.dist, b.dist));
         if (aim != null) { sorted.remove(aim); sorted.add(0, aim); }
@@ -19767,11 +20233,20 @@ public class ArOverlayView extends View {
             Label l = (Label) o[0];
             double[] p = (double[]) o[1];
             RectF r = (RectF) o[2];
+            float rad = l.discDp > 0 ? l.discDp * dp : (l == aim ? 6 : 4.5f) * dp;
             pLine.setColor(l.color);
             pLine.setStrokeWidth((l == aim ? 2.5f : 1.5f) * dp);
-            c.drawLine((float) p[0], (float) p[1], (float) p[0], r.bottom < p[1] ? r.bottom : r.top, pLine);
+            float from = (float) p[1] + (r.bottom < p[1] ? -rad : rad);
+            c.drawLine((float) p[0], from, (float) p[0], r.bottom < p[1] ? r.bottom : r.top, pLine);
+            if (l.discDp > 0) {
+                // astro: alone e disco
+                pBox.setColor((l.color & 0x00FFFFFF) | 0x33000000);
+                c.drawCircle((float) p[0], (float) p[1], rad * 2.2f, pBox);
+                pBox.setColor((l.color & 0x00FFFFFF) | 0x55000000);
+                c.drawCircle((float) p[0], (float) p[1], rad * 1.5f, pBox);
+            }
             pBox.setColor(l.color);
-            c.drawCircle((float) p[0], (float) p[1], (l == aim ? 6 : 4.5f) * dp, pBox);
+            c.drawCircle((float) p[0], (float) p[1], rad, pBox);
         }
         for (Object[] o : placed) {
             Label l = (Label) o[0];
@@ -19844,8 +20319,13 @@ import com.offlinegps.map.gps.GpsTrackingService;
 import com.offlinegps.map.routing.PoiIndex;
 import com.offlinegps.map.util.ArProjector;
 import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.SkyPaths;
+import com.offlinegps.map.util.SunCalc;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -19857,10 +20337,14 @@ import java.util.Locale;
  * rotazione del telefono; se manca si trascina col dito come un panorama.
  * Senza modello del terreno: anche le cime nascoste dietro altre montagne
  * vengono indicate nella loro direzione.
+ * v5.3 SOLE E LUNA: l'arco del Sole di oggi con le ore (arancione = luce
+ * dorata), alba e tramonto sull'orizzonte, la Luna con la fase e quando
+ * sorge e tramonta: si vede dietro quale montagna calera' il sole.
  */
 public class PeakArActivity extends AppCompatActivity implements SensorEventListener {
     private static final int REQ_CAM = 7401;
     private static final double[] RANGES = {10_000, 30_000, 60_000, 100_000};
+    public static final String EXTRA_MODE = "ar_mode", MODE_SKY = "sky";
 
     private final Handler h = new Handler(Looper.getMainLooper());
     private TextureView texture;
@@ -19884,6 +20368,13 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
     private double manualBearing = 0, dragStartX, dragStartBearing;
     private boolean aimed;
     private boolean visible;
+    // v5.3: modalita' SOLE E LUNA
+    private boolean skyMode;
+    private TextView tvTitle, tvModePeaks, tvModeSky;
+    private List<ArOverlayView.Track> skyTracks = new ArrayList<>();
+    private final List<ArOverlayView.Label> skyLabels = new ArrayList<>();
+    private String skyHint = "", peaksHint = "";
+    private long skyKey = Long.MIN_VALUE;
 
     private final Runnable labelsTick = new Runnable() {
         @Override public void run() {
@@ -19905,6 +20396,13 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
         tvInfo = findViewById(R.id.tv_ar_info);
         tvRange = findViewById(R.id.tv_ar_range);
         tvHint = findViewById(R.id.tv_ar_hint);
+        tvTitle = findViewById(R.id.tv_ar_title);
+        tvModePeaks = findViewById(R.id.tv_ar_mode_peaks);
+        tvModeSky = findViewById(R.id.tv_ar_mode_sky);
+        skyMode = MODE_SKY.equals(getIntent().getStringExtra(EXTRA_MODE));
+        if (tvModePeaks != null) tvModePeaks.setOnClickListener(v -> setSkyMode(false));
+        if (tvModeSky != null) tvModeSky.setOnClickListener(v -> setSkyMode(true));
+        applyModeUi();
         View back = findViewById(R.id.btn_ar_back);
         if (back != null) back.setOnClickListener(v -> finish());
         if (tvRange != null) tvRange.setOnClickListener(v -> {
@@ -19917,13 +20415,14 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
         if (rotSensor == null) setupManualMode();
         double[] w = ToolKit.where(this);
         PoiStore.get(this, w == null ? Double.NaN : w[0], w == null ? 0 : w[1], new PoiStore.Callback() {
-            @Override public void onProgress(String msg) { if (tvHint != null) tvHint.setText(msg); }
+            @Override public void onProgress(String msg) { peaksHint = msg; applyModeUi(); }
             @Override public void onReady(PoiIndex idx, String error) {
                 if (isFinishing()) return;
                 index = idx;
-                if (tvHint != null) tvHint.setText(error != null ? error
-                    : "Le cime dietro altre montagne compaiono lo stesso: non c'e' un modello del terreno.");
-                if (rotSensor == null && !aimed) aimAtHighestPeak();
+                peaksHint = error != null ? error
+                    : "Le cime dietro altre montagne compaiono lo stesso: non c'e' un modello del terreno.";
+                applyModeUi();
+                if (rotSensor == null && !aimed && !skyMode) aimAtHighestPeak();
                 rebuildLabels();
             }
         });
@@ -20019,6 +20518,7 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
         double[] w = ToolKit.where(this);
         List<ArOverlayView.Label> out = new ArrayList<>();
         if (w == null) { overlay.setLabels(out); return; }
+        if (skyMode && rotSensor == null && !aimed) aimAtSky(w);
         Location me = GpsTrackingService.getLastLocation();
         double myAlt = me != null && me.hasAltitude() ? me.getAltitude() : 0;
         declination = new GeomagneticField((float) w[0], (float) w[1], (float) myAlt, System.currentTimeMillis()).getDeclination();
@@ -20041,7 +20541,137 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
             out.add(new ArOverlayView.Label(m.name, "compagno · " + GeoFormat.formatDistance(d),
                 GeoFormat.bearing(w[0], w[1], m.lat, m.lon), ArProjector.elevationAngle(myAlt, myAlt, d), d, 0xFFB388FF));
         }
+        MeshHub.Meet meet = MeshHub.get(this).meetingPoint();
+        if (meet != null) {
+            double d = GeoFormat.distance(w[0], w[1], meet.lat, meet.lon);
+            out.add(new ArOverlayView.Label("Incontro: " + meet.name, "punto del gruppo · " + GeoFormat.formatDistance(d),
+                GeoFormat.bearing(w[0], w[1], meet.lat, meet.lon), ArProjector.elevationAngle(myAlt, myAlt, d), d, 0xFFFF6B35));
+        }
+        if (skyMode) {
+            updateSky(w);
+            out.addAll(skyLabels);
+            overlay.setTracks(skyTracks);
+        } else overlay.setTracks(null);
         overlay.setLabels(out);
+    }
+
+    // ------------------------------------------------------------ Sole e Luna (v5.3)
+    private void setSkyMode(boolean on) {
+        if (skyMode == on) return;
+        skyMode = on;
+        if (rotSensor == null) {
+            aimed = false;
+            if (!on) aimAtHighestPeak();
+        }
+        applyModeUi();
+        rebuildLabels();
+        updateInfo();
+    }
+
+    private void applyModeUi() {
+        if (tvTitle != null) tvTitle.setText(skyMode ? "SOLE E LUNA" : "CHE MONTAGNA E'?");
+        if (tvModePeaks != null) {
+            tvModePeaks.setBackgroundResource(skyMode ? R.drawable.bg_ar_panel : R.drawable.bg_ar_chip_on);
+            tvModePeaks.setTextColor(skyMode ? 0xFFB9CCE0 : 0xFFFFFFFF);
+        }
+        if (tvModeSky != null) {
+            tvModeSky.setBackgroundResource(skyMode ? R.drawable.bg_ar_chip_on : R.drawable.bg_ar_panel);
+            tvModeSky.setTextColor(skyMode ? 0xFFFFFFFF : 0xFFB9CCE0);
+        }
+        if (tvHint != null) tvHint.setText(skyMode ? skyHint : peaksHint);
+    }
+
+    /** Senza sensore: si parte guardando il Sole (o la Luna, o dove tramonta). */
+    private void aimAtSky(double[] w) {
+        aimed = true;
+        long now = System.currentTimeMillis();
+        double[] s = SunCalc.position(now, w[0], w[1]), m = SunCalc.moonPosition(now, w[0], w[1]);
+        manualBearing = s[0] > -2 || m[0] <= 0 ? s[1] : m[1];
+        applyManual();
+    }
+
+    /** Archi e etichette del cielo: ricalcolati una volta al minuto (o se ci si sposta). */
+    private void updateSky(double[] w) {
+        long now = System.currentTimeMillis();
+        long key = now / 60_000 * 31 + Math.round(w[0] * 100) * 1_000_003L + Math.round(w[1] * 100) * 7919L;
+        if (key == skyKey) return;
+        skyKey = key;
+        skyLabels.clear();
+        List<ArOverlayView.Track> tracks = new ArrayList<>();
+        SimpleDateFormat hm = new SimpleDateFormat("HH:mm", Locale.ITALY);
+        Calendar cal = Calendar.getInstance();
+        cal.set(Calendar.HOUR_OF_DAY, 0);
+        cal.set(Calendar.MINUTE, 0);
+        cal.set(Calendar.SECOND, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+        long dayStart = cal.getTimeInMillis();
+        cal.add(Calendar.DATE, 1);
+        long dayEnd = cal.getTimeInMillis();
+        // Sole: l'arco di oggi
+        tracks.add(skyTrack(SkyPaths.path(false, dayStart, dayEnd, 5 * 60_000L, w[0], w[1]), false));
+        long rise = Long.MIN_VALUE, set = Long.MIN_VALUE;
+        for (long[] x : SkyPaths.horizonCrossings(false, dayStart, dayEnd, w[0], w[1])) {
+            if (x[1] > 0 && rise == Long.MIN_VALUE) rise = x[0];
+            if (x[1] < 0) set = x[0];
+        }
+        double[] sun = SunCalc.position(now, w[0], w[1]);
+        String sunSub;
+        if (sun[0] >= SkyPaths.SUN_H0) sunSub = String.format(Locale.ITALY, "alto %.0f°", sun[0])
+            + (set != Long.MIN_VALUE && set > now ? "  ·  tramonta " + hm.format(new Date(set)) : "");
+        else if (rise != Long.MIN_VALUE && now < rise) sunSub = "sotto l'orizzonte  ·  sorge " + hm.format(new Date(rise));
+        else if (set != Long.MIN_VALUE) sunSub = "tramontato alle " + hm.format(new Date(set));
+        else sunSub = "sotto l'orizzonte";
+        skyLabels.add(new ArOverlayView.Label("Sole", sunSub, sun[1], sun[0], 1, 0xFFFFD600, 11));
+        if (rise != Long.MIN_VALUE) {
+            double az = SunCalc.position(rise, w[0], w[1])[1];
+            skyLabels.add(new ArOverlayView.Label("Alba " + hm.format(new Date(rise)),
+                String.format(Locale.ITALY, "verso %s %.0f°", GeoFormat.cardinal(az), az), az, 0, 3, 0xFFFF8A3D));
+        }
+        if (set != Long.MIN_VALUE) {
+            double az = SunCalc.position(set, w[0], w[1])[1];
+            skyLabels.add(new ArOverlayView.Label("Tramonto " + hm.format(new Date(set)),
+                String.format(Locale.ITALY, "verso %s %.0f°", GeoFormat.cardinal(az), az), az, 0, 4, 0xFFFF8A3D));
+        }
+        // Luna: da 6 ore fa alle prossime 18
+        long from = (now - 6 * 3_600_000L) / 600_000L * 600_000L, to = from + 24 * 3_600_000L;
+        tracks.add(skyTrack(SkyPaths.path(true, from, to, 10 * 60_000L, w[0], w[1]), true));
+        double[] moon = SunCalc.moonPosition(now, w[0], w[1]), ill = SunCalc.moonIllumination(now);
+        String phase = SunCalc.moonPhaseName(ill[1]) + String.format(Locale.ITALY, " %.0f%%", ill[0] * 100);
+        skyLabels.add(new ArOverlayView.Label("Luna", phase + (moon[0] < 0 ? "  ·  sotto l'orizzonte" : ""),
+            moon[1], moon[0], 2, 0xFFE8F4FD, 9));
+        boolean riseDone = false, setDone = false;
+        for (long[] x : SkyPaths.horizonCrossings(true, now, to, w[0], w[1])) {
+            boolean up = x[1] > 0;
+            if (up ? riseDone : setDone) continue;
+            if (up) riseDone = true; else setDone = true;
+            double az = SunCalc.moonPosition(x[0], w[0], w[1])[1];
+            String when = (x[0] >= dayEnd ? "domani " : "") + hm.format(new Date(x[0]));
+            skyLabels.add(new ArOverlayView.Label((up ? "Sorge la Luna " : "Tramonta la Luna ") + when,
+                String.format(Locale.ITALY, "verso %s %.0f°", GeoFormat.cardinal(az), az), az, 0, up ? 5 : 6, 0xFFB0C4DE));
+        }
+        skyTracks = tracks;
+        skyHint = "Arco giallo: il Sole di oggi con le ore; arancione: luce dorata, la migliore per le foto. "
+            + "Luna: " + phase + ".";
+        if (skyMode && tvHint != null) tvHint.setText(skyHint);
+    }
+
+    /** Arco nel cielo: tratti solo sopra l'orizzonte, ore intere segnate (Luna ogni 3 ore). */
+    private static ArOverlayView.Track skyTrack(List<double[]> pts, boolean moon) {
+        int n = pts.size();
+        double[][] p = new double[n][];
+        int[] col = new int[n];
+        String[] marks = new String[n];
+        Calendar cal = Calendar.getInstance();
+        for (int i = 0; i < n; i++) {
+            double[] q = pts.get(i);
+            p[i] = new double[]{q[1], q[2]};
+            boolean nextUp = i + 1 < n && pts.get(i + 1)[2] >= -1;
+            col[i] = q[2] < -1 || !nextUp ? 0 : moon ? 0xBFB0C4DE : q[2] >= SunCalc.GOLDEN ? 0xFFFFD600 : 0xFFFF8A3D;
+            cal.setTimeInMillis((long) q[0]);
+            int hour = cal.get(Calendar.HOUR_OF_DAY);
+            if (q[2] >= 0 && cal.get(Calendar.MINUTE) == 0 && (!moon || hour % 3 == 0)) marks[i] = String.valueOf(hour);
+        }
+        return new ArOverlayView.Track(p, col, marks);
     }
 
     private void updateInfo() {
@@ -20632,6 +21262,476 @@ public class FollowTrackActivity extends AppCompatActivity implements GpsTrackin
 }
 """
 
+SKY_PATHS = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Percorsi del Sole e della Luna nel cielo (v5.3), per la realta' aumentata:
+ * punti {istante, azimut, altezza} lungo la giornata e gli istanti in cui
+ * l'astro sorge o tramonta, cercati per bisezione (precisione 30 secondi).
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class SkyPaths {
+    /**
+     * Altezza a cui l'astro "tocca" l'orizzonte: per il Sole -0,833 gradi
+     * (rifrazione + raggio del disco, la posizione e' geometrica); per la Luna
+     * +0,133 (la sua posizione ha gia' la rifrazione).
+     */
+    public static final double SUN_H0 = -0.833, MOON_H0 = 0.133;
+
+    private SkyPaths() {}
+
+    /** {istante ms, azimut da nord, altezza} ogni stepMs tra from e to (inclusi). */
+    public static List<double[]> path(boolean moon, long from, long to, long stepMs, double lat, double lon) {
+        List<double[]> out = new ArrayList<>();
+        for (long t = from; t <= to; t += stepMs) {
+            double[] p = position(moon, t, lat, lon);
+            out.add(new double[]{t, p[1], p[0]});
+        }
+        return out;
+    }
+
+    /** Quando l'astro sorge (+1) o tramonta (-1) tra from e to: {ms, +1 o -1}, in ordine di tempo. */
+    public static List<long[]> horizonCrossings(boolean moon, long from, long to, double lat, double lon) {
+        double h0 = moon ? MOON_H0 : SUN_H0;
+        long step = 10 * 60_000L;
+        List<long[]> out = new ArrayList<>();
+        double prev = position(moon, from, lat, lon)[0] - h0;
+        for (long t = from + step; t <= to; t += step) {
+            double cur = position(moon, t, lat, lon)[0] - h0;
+            if ((prev < 0) != (cur < 0)) {
+                boolean rising = cur >= 0;
+                long a = t - step, b = t;
+                while (b - a > 30_000) {
+                    long m = (a + b) / 2;
+                    if ((position(moon, m, lat, lon)[0] - h0 >= 0) == rising) b = m; else a = m;
+                }
+                out.add(new long[]{(a + b) / 2, rising ? 1 : -1});
+            }
+            prev = cur;
+        }
+        return out;
+    }
+
+    /** {altezza, azimut} come in SunCalc. */
+    public static double[] position(boolean moon, long t, double lat, double lon) {
+        return moon ? SunCalc.moonPosition(t, lat, lon) : SunCalc.position(t, lat, lon);
+    }
+}
+"""
+
+STORM_TRACKER = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Distanza dei fulmini (v5.3): si tocca al lampo e al tuono, il tempo fra i
+ * due per la velocita' del suono da' la distanza (circa 3 secondi = 1 km).
+ * Con piu' misure stima se il temporale si avvicina e a che velocita';
+ * regola 30/30: sotto i 30 secondi (circa 10 km) si e' gia' a portata di
+ * fulmine e si esce dal riparo solo 30 minuti dopo l'ultimo tuono.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class StormTracker {
+    /** Oltre i 120 s il tuono non si sente o non e' quello di quel lampo. */
+    public static final double MAX_SECONDS = 120;
+    public static final long SAFE_WAIT_MS = 30 * 60_000L;
+    /** Livelli: lontano, attenzione (10-15 km), pericolo (sotto i 10 km). */
+    public static final int FAR = 0, WATCH = 1, DANGER = 2;
+
+    public static final class Strike {
+        public final long at;
+        public final double seconds, km;
+
+        Strike(long at, double seconds, double km) { this.at = at; this.seconds = seconds; this.km = km; }
+    }
+
+    private final List<Strike> strikes = new ArrayList<>();
+    private long flashAt = -1;
+
+    /** Velocita' del suono (m/s) alla temperatura dell'aria. */
+    public static double soundSpeed(double tempC) { return 331.3 + 0.606 * tempC; }
+
+    public static int level(double km) { return km < 10 ? DANGER : km < 15 ? WATCH : FAR; }
+
+    public void flash(long now) { flashAt = now; }
+    public boolean waitingThunder() { return flashAt >= 0; }
+    public long flashAt() { return flashAt; }
+    public void cancel() { flashAt = -1; }
+    public void clear() { strikes.clear(); flashAt = -1; }
+    public List<Strike> strikes() { return strikes; }
+    public Strike last() { return strikes.isEmpty() ? null : strikes.get(strikes.size() - 1); }
+
+    /** Il tuono: registra la misura (null se non c'era un lampo o se e' passato troppo tempo). */
+    public Strike thunder(long now, double tempC) {
+        if (flashAt < 0) return null;
+        double s = (now - flashAt) / 1000.0;
+        flashAt = -1;
+        if (s <= 0 || s > MAX_SECONDS) return null;
+        Strike st = new Strike(now, s, s * soundSpeed(tempC) / 1000.0);
+        strikes.add(st);
+        return st;
+    }
+
+    /**
+     * Velocita' con cui il temporale si avvicina (km/h, negativa = si
+     * allontana), dalla retta che passa meglio per le misure degli ultimi 20
+     * minuti. NaN con meno di 2 misure o se coprono meno di un minuto.
+     */
+    public double approachKmh(long now) {
+        List<Strike> recent = new ArrayList<>();
+        for (Strike s : strikes) if (now - s.at <= 20 * 60_000L) recent.add(s);
+        if (recent.size() < 2 || recent.get(recent.size() - 1).at - recent.get(0).at < 60_000L) return Double.NaN;
+        double mt = 0, mk = 0;
+        for (Strike s : recent) { mt += s.at; mk += s.km; }
+        mt /= recent.size(); mk /= recent.size();
+        double num = 0, den = 0;
+        for (Strike s : recent) { num += (s.at - mt) * (s.km - mk); den += (s.at - mt) * (s.at - mt); }
+        return den == 0 ? Double.NaN : -num / den * 3_600_000.0;
+    }
+
+    /** Quando si potra' uscire dal riparo: 30 minuti dopo l'ultimo tuono (0 se nessuno). */
+    public long safeAt() {
+        Strike l = last();
+        return l == null ? 0 : l.at + SAFE_WAIT_MS;
+    }
+}
+"""
+
+SLOPE_METER = r"""package com.offlinegps.map.util;
+
+/**
+ * Pendenza di un pendio dal vettore gravita' (v5.3): con il telefono
+ * appoggiato sul pendio, l'angolo fra lo schermo e l'orizzontale e' la
+ * pendenza massima del terreno sotto il telefono, comunque sia girato.
+ * Fasce dei pendii da valanga come nei manuali di scialpinismo.
+ * Nessuna dipendenza da Android: testata sul computer.
+ */
+public final class SlopeMeter {
+    public static final int GENTLE = 0, CAUTION = 1, AVALANCHE = 2, STEEP = 3, WALL = 4;
+
+    private SlopeMeter() {}
+
+    /** Gradi (0 = piano, 90 = verticale), NaN se il vettore non e' valido. */
+    public static double slopeDeg(double gx, double gy, double gz) {
+        double g = Math.sqrt(gx * gx + gy * gy + gz * gz);
+        if (g < 1) return Double.NaN;
+        return Math.toDegrees(Math.acos(Math.min(1, Math.abs(gz) / g)));
+    }
+
+    /** Pendenza in percentuale (come sui cartelli stradali): 45 gradi = 100%. */
+    public static double percent(double deg) { return Math.tan(Math.toRadians(deg)) * 100; }
+
+    public static int band(double deg) {
+        if (deg < 25) return GENTLE;
+        if (deg < 30) return CAUTION;
+        if (deg <= 45) return AVALANCHE;
+        if (deg <= 60) return STEEP;
+        return WALL;
+    }
+
+    public static String bandText(int band) {
+        switch (band) {
+            case GENTLE: return "Sotto i 25°: valanghe a lastroni rare";
+            case CAUTION: return "25-30°: attenzione, alcune partono gia' da 28°";
+            case AVALANCHE: return "30-45°: pendenza tipica delle valanghe a lastroni";
+            case STEEP: return "45-60°: molto ripido, la neve scarica spesso da sola";
+            default: return "Oltre 60°: parete";
+        }
+    }
+}
+"""
+
+SLOPE_GAUGE_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import com.offlinegps.map.util.SlopeMeter;
+
+/**
+ * Quadrante della pendenza (v5.3): un quarto di cerchio da 0 (piano) a 90
+ * gradi (verticale) con le fasce dei pendii da valanga, il pendio disegnato
+ * con l'angolo misurato e la lancetta.
+ */
+public class SlopeGaugeView extends View {
+    private static final int[] BAND_COLORS = {0xFF00FF88, 0xFFFFD600, 0xFFFF1744, 0xFFFF6B35, 0xFFB388FF};
+    private static final double[][] BANDS = {{0, 25}, {25, 30}, {30, 45}, {45, 60}, {60, 90}};
+    private final float dp;
+    private final Paint pArc = new Paint(Paint.ANTI_ALIAS_FLAG), pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pNeedle = new Paint(Paint.ANTI_ALIAS_FLAG), pText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pBase = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF oval = new RectF();
+    private final Path wedge = new Path();
+    private double deg = Double.NaN;
+
+    public SlopeGaugeView(Context c) { this(c, null); }
+    public SlopeGaugeView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pArc.setStyle(Paint.Style.STROKE);
+        pArc.setStrokeWidth(12 * dp);
+        pArc.setStrokeCap(Paint.Cap.BUTT);
+        pNeedle.setStrokeWidth(3.5f * dp);
+        pNeedle.setStrokeCap(Paint.Cap.ROUND);
+        pText.setTextSize(11 * dp);
+        pText.setColor(0xFF8FB3D0);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pBase.setColor(0x6600E5FF);
+        pBase.setStrokeWidth(2 * dp);
+    }
+
+    /** Pendenza in gradi (NaN = nessuna misura). */
+    public void setSlope(double d) { deg = d; invalidate(); }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float w = getWidth(), h = getHeight();
+        float r = Math.min(w * 0.72f, h - 50 * dp);
+        float cx = (w - r) / 2f - 8 * dp, cy = h - 22 * dp;
+        oval.set(cx - r, cy - r, cx + r, cy + r);
+        // fasce (0 gradi = a destra, si sale in senso antiorario)
+        for (int i = 0; i < BANDS.length; i++) {
+            pArc.setColor((BAND_COLORS[i] & 0x00FFFFFF) | 0xB0000000);
+            c.drawArc(oval, (float) -BANDS[i][1], (float) (BANDS[i][1] - BANDS[i][0]), false, pArc);
+        }
+        c.drawLine(cx, cy, cx + r + 8 * dp, cy, pBase);
+        // tacche
+        for (int t : new int[]{0, 15, 25, 30, 45, 60, 90}) {
+            double a = Math.toRadians(t);
+            float x = (float) (cx + (r + 16 * dp) * Math.cos(a)), y = (float) (cy - (r + 16 * dp) * Math.sin(a));
+            pText.setTextAlign(t == 90 ? Paint.Align.CENTER : Paint.Align.LEFT);
+            c.drawText(t + "°", x - (t == 90 ? 0 : 4 * dp), y + 4 * dp, pText);
+        }
+        if (Double.isNaN(deg)) return;
+        double d = Math.max(0, Math.min(90, deg));
+        double a = Math.toRadians(d);
+        int col = BAND_COLORS[SlopeMeter.band(d)];
+        // il pendio: cuneo colorato fra l'orizzontale e l'angolo misurato
+        wedge.reset();
+        wedge.moveTo(cx, cy);
+        wedge.lineTo(cx + r * 0.92f, cy);
+        wedge.lineTo((float) (cx + r * 0.92f * Math.cos(a)), (float) (cy - r * 0.92f * Math.sin(a)));
+        wedge.close();
+        pFill.setShader(new LinearGradient(cx, cy - r, cx, cy, (col & 0x00FFFFFF) | 0x66000000,
+            (col & 0x00FFFFFF) | 0x10000000, Shader.TileMode.CLAMP));
+        c.drawPath(wedge, pFill);
+        pNeedle.setColor(col);
+        float ex = (float) (cx + r * Math.cos(a)), ey = (float) (cy - r * Math.sin(a));
+        c.drawLine(cx, cy, ex, ey, pNeedle);
+        c.drawCircle(ex, ey, 7 * dp, pNeedle);
+        pNeedle.setColor(0xFFFFFFFF);
+        c.drawCircle(cx, cy, 5 * dp, pNeedle);
+    }
+}
+"""
+
+STORM_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.StormTracker;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Temporale (v5.3): tocchi al lampo e al tuono e sai a che distanza cade il
+ * fulmine, se il temporale si avvicina e quando potrai uscire dal riparo
+ * (regola 30/30). Le misure restano anche chiudendo la schermata.
+ */
+public class StormActivity extends AppCompatActivity {
+    /** Aria a 15 gradi: 340 m/s, circa 3 secondi per chilometro. */
+    private static final double AIR_C = 15;
+    static final StormTracker TRACKER = new StormTracker();
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TextView tvKm, tvState, tvSub, tvBtn, tvBtnSub, tvSecs, tvTrend, tvTrendLabel, tvSafe;
+    private View btn;
+    private LinearLayout history;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            renderLive();
+            h.postDelayed(this, TRACKER.waitingThunder() ? 100 : 1000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_storm);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        tvKm = findViewById(R.id.tv_storm_km);
+        tvState = findViewById(R.id.tv_storm_state);
+        tvSub = findViewById(R.id.tv_storm_sub);
+        tvBtn = findViewById(R.id.tv_storm_btn);
+        tvBtnSub = findViewById(R.id.tv_storm_btn_sub);
+        tvSecs = findViewById(R.id.tv_storm_secs);
+        tvTrend = findViewById(R.id.tv_storm_trend);
+        tvTrendLabel = findViewById(R.id.tv_storm_trend_label);
+        tvSafe = findViewById(R.id.tv_storm_safe);
+        history = findViewById(R.id.storm_history);
+        btn = findViewById(R.id.btn_storm);
+        View back = findViewById(R.id.btn_storm_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        if (btn != null) {
+            btn.setOnClickListener(v -> tap());
+            btn.setOnLongClickListener(v -> { TRACKER.cancel(); render(); return true; });
+        }
+        View reset = findViewById(R.id.btn_storm_reset);
+        if (reset != null) reset.setOnClickListener(v -> { TRACKER.clear(); render(); });
+        render();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+    }
+
+    private void tap() {
+        long now = System.currentTimeMillis();
+        if (!TRACKER.waitingThunder()) {
+            TRACKER.flash(now);
+            vibrate(30);
+        } else {
+            StormTracker.Strike st = TRACKER.thunder(now, AIR_C);
+            vibrate(st != null && StormTracker.level(st.km) == StormTracker.DANGER ? 400 : 60);
+        }
+        render();
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    private void vibrate(long ms) {
+        try {
+            Vibrator v = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (v != null) v.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception ignored) {}
+    }
+
+    private void render() {
+        StormTracker.Strike last = TRACKER.last();
+        if (last == null) {
+            tvKm.setText("--");
+            tvState.setText("Nessuna misura");
+            tvState.setTextColor(0xFFE8F4FD);
+            tvSub.setText("Al lampo tocca il pulsante, al tuono toccalo di nuovo. Circa 3 secondi = 1 km.");
+        } else {
+            int lv = StormTracker.level(last.km);
+            int col = lv == StormTracker.DANGER ? 0xFFFF3D71 : lv == StormTracker.WATCH ? 0xFFFFD600 : 0xFF00FF88;
+            tvKm.setText(String.format(Locale.ITALY, "%.1f km", last.km));
+            tvKm.setTextColor(col);
+            tvState.setTextColor(col);
+            tvState.setText(lv == StormTracker.DANGER ? "PERICOLO: sei a portata di fulmine"
+                : lv == StormTracker.WATCH ? "Attenzione: il temporale e' vicino" : "Temporale lontano");
+            tvSub.setText(lv == StormTracker.DANGER
+                ? "Sotto i 10 km (30 secondi) un fulmine puo' arrivare fin qui: scendi da creste e cime, lascia ferrate e "
+                    + "oggetti metallici, cerca un riparo vero (edificio, auto)."
+                : lv == StormTracker.WATCH
+                ? "Tra 10 e 15 km: preparati a ripararti, i temporali in montagna si spostano in fretta."
+                : "Continua a misurare: se i secondi diminuiscono il temporale si avvicina.");
+        }
+        tvSecs.setText(last == null ? "--" : String.format(Locale.ITALY, "%.0f s", last.seconds));
+        double kmh = TRACKER.approachKmh(System.currentTimeMillis());
+        boolean still = !Double.isNaN(kmh) && Math.abs(kmh) < 3;
+        tvTrend.setText(Double.isNaN(kmh) ? "--" : still ? "ferma" : String.format(Locale.ITALY, "%.0f km/h", Math.abs(kmh)));
+        tvTrend.setTextColor(Double.isNaN(kmh) || still ? 0xFFFFD600 : kmh > 0 ? 0xFFFF3D71 : 0xFF00FF88);
+        if (tvTrendLabel != null) tvTrendLabel.setText(Double.isNaN(kmh) || still ? "TENDENZA" : kmh > 0 ? "SI AVVICINA" : "SI ALLONTANA");
+        renderHistory();
+        renderLive();
+    }
+
+    /** Pulsante (secondi che scorrono) e conto alla rovescia della regola 30/30. */
+    private void renderLive() {
+        long now = System.currentTimeMillis();
+        if (TRACKER.waitingThunder()) {
+            double secs = (now - TRACKER.flashAt()) / 1000.0;
+            tvBtn.setText("TUONO!");
+            tvBtnSub.setText(String.format(Locale.ITALY, "%.1f s  ·  %.1f km", secs, secs * StormTracker.soundSpeed(AIR_C) / 1000));
+            if (btn != null) btn.setBackgroundResource(R.drawable.bg_disc_yellow);
+        } else {
+            tvBtn.setText("LAMPO!");
+            tvBtnSub.setText("tocca quando vedi il lampo");
+            if (btn != null) btn.setBackgroundResource(R.drawable.bg_disc_violet);
+        }
+        long safe = TRACKER.safeAt();
+        if (safe == 0) tvSafe.setText("--");
+        else if (safe <= now) tvSafe.setText("ora");
+        else {
+            long left = (safe - now) / 1000;
+            tvSafe.setText(String.format(Locale.ITALY, "%d:%02d", left / 60, left % 60));
+        }
+    }
+
+    private void renderHistory() {
+        if (history == null) return;
+        history.removeAllViews();
+        List<StormTracker.Strike> list = TRACKER.strikes();
+        SimpleDateFormat f = new SimpleDateFormat("HH:mm", Locale.ITALY);
+        float dp = getResources().getDisplayMetrics().density;
+        if (list.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText("Le misure compaiono qui, dalla piu' recente.");
+            t.setTextColor(0xFF8FB3D0);
+            t.setTextSize(13);
+            history.addView(t);
+            return;
+        }
+        for (int i = list.size() - 1; i >= 0 && i >= list.size() - 8; i--) {
+            StormTracker.Strike st = list.get(i);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, (int) (6 * dp), 0, (int) (6 * dp));
+            TextView time = new TextView(this);
+            time.setText(f.format(new Date(st.at)));
+            time.setTextColor(0xFF8FB3D0);
+            time.setTextSize(13);
+            TextView km = new TextView(this);
+            int lv = StormTracker.level(st.km);
+            km.setText(String.format(Locale.ITALY, "%.1f km", st.km));
+            km.setTextColor(lv == StormTracker.DANGER ? 0xFFFF3D71 : lv == StormTracker.WATCH ? 0xFFFFD600 : 0xFF00FF88);
+            km.setTextSize(16);
+            km.setTypeface(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD));
+            TextView secs = new TextView(this);
+            secs.setText(String.format(Locale.ITALY, "%.1f s", st.seconds));
+            secs.setTextColor(0xFFCFE3F5);
+            secs.setTextSize(13);
+            secs.setGravity(Gravity.END);
+            row.addView(time, new LinearLayout.LayoutParams((int) (64 * dp), -2));
+            row.addView(km, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(secs, new LinearLayout.LayoutParams(-2, -2));
+            history.addView(row);
+        }
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -20656,6 +21756,7 @@ V5_ICONS = {
     "ic_v5_bluetooth":  _v4_icon(["M17.71,7.71L12,2h-1v7.59L6.41,5 5,6.41 10.59,12 5,17.59 6.41,19 11,14.41V22h1l5.71,-5.71 -4.3,-4.29 4.3,-4.29zM13,5.83l1.88,1.88L13,9.59V5.83zm1.88,10.46L13,18.17v-3.76l1.88,1.88z"]),
     "ic_v5_sun":        _v4_icon(["M6.76,4.84l-1.8,-1.79 -1.41,1.41 1.79,1.79 1.42,-1.41zM4,10.5H1v2h3v-2zm9,-9.95h-2V3.5h2V0.55zm7.45,3.91l-1.41,-1.41 -1.79,1.79 1.41,1.41 1.79,-1.79zm-3.21,13.7l1.79,1.8 1.41,-1.41 -1.8,-1.79 -1.4,1.4zM20,10.5v2h3v-2h-3zm-8,-5c-3.31,0 -6,2.69 -6,6s2.69,6 6,6 6,-2.69 6,-6 -2.69,-6 -6,-6zm-1,16.95h2V19.5h-2v2.95zm-7.45,-3.91l1.41,1.41 1.79,-1.8 -1.41,-1.41 -1.79,1.8z"]),
     "ic_v5_alt_route":  _v4_icon(["M9.78,11.16l-1.42,1.42c-0.68,-0.69 -1.34,-1.58 -1.79,-2.94l1.94,-0.49c0.32,0.89 0.77,1.5 1.27,2.01zM11,6L7,2 3,6h3.02c0.02,0.81 0.08,1.54 0.19,2.17l1.94,-0.49C8.08,7.2 8.03,6.63 8.02,6H11zm10,0l-4,-4 -4,4h2.99c-0.1,3.68 -1.28,4.75 -2.54,5.88 -0.5,0.44 -1.01,0.92 -1.45,1.55 -0.34,-0.49 -0.73,-0.88 -1.13,-1.24L9.46,13.6c0.93,0.85 1.54,1.54 1.54,3.4v5h2v-5c0,-2.02 0.71,-2.66 1.79,-3.63 1.38,-1.24 3.08,-2.78 3.2,-7.37H21z"]),
+    "ic_v5_speedcam":   _v4_icon(["M12,12m-3.2,0a3.2,3.2 0,1 1,6.4 0a3.2,3.2 0,1 1,-6.4 0M9,2L7.17,4H4c-1.1,0 -2,0.9 -2,2v12c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V6c0,-1.1 -0.9,-2 -2,-2h-3.17L15,2H9zm3,15c-2.76,0 -5,-2.24 -5,-5s2.24,-5 5,-5 5,2.24 5,5 -2.24,5 -5,5z"]),
     "ic_v5_map2d":      _v4_icon(["M20.5,3l-0.16,0.03L15,5.1 9,3 3.36,4.9c-0.21,0.07 -0.36,0.25 -0.36,0.48V20.5c0,0.28 0.22,0.5 0.5,0.5l0.16,-0.03L9,18.9l6,2.1 5.64,-1.9c0.21,-0.07 0.36,-0.25 0.36,-0.48V3.5c0,-0.28 -0.22,-0.5 -0.5,-0.5zM15,19l-6,-2.11V5l6,2.11V19z"]),
 }
 
@@ -20729,6 +21830,10 @@ V5_DRAWABLES.update({
     # v5.1: velocita' oltre il limite + cartello stradale del limite
     "bg_speed_bubble_alert": _v5_shape('    <solid android:color="#F2B00020"/>\n'
                                        '    <stroke android:width="3dp" android:color="#FFFF5C7A"/>\n', "oval"),
+    # v5.3: autovelox in arrivo
+    "bg_cam_badge": _v5_shape('    <solid android:color="#F2200A14"/>\n'
+                              '    <stroke android:width="2dp" android:color="#FFFF5C7A"/>\n'
+                              '    <corners android:radius="22dp"/>\n'),
     "bg_limit_sign": _v5_shape('    <solid android:color="#FFFFFFFF"/>\n'
                                '    <stroke android:width="6dp" android:color="#FFE30613"/>\n', "oval"),
     "bg_route_row": _v5_shape('    <solid android:color="#1400E5FF"/>\n'
@@ -20884,6 +21989,24 @@ LAYOUT_NAVIGATION = (_XML_HEAD +
     '                android:autoSizeTextType="uniform" android:autoSizeMinTextSize="12sp"\n'
     '                android:autoSizeMaxTextSize="22sp" android:padding="9dp"/>\n'
     '        </FrameLayout>\n'
+    # v5.3: autovelox in arrivo
+    '        <LinearLayout android:id="@+id/nav_cam_badge" android:layout_width="wrap_content"\n'
+    '            android:layout_height="52dp" android:layout_marginStart="10dp" android:layout_marginBottom="5dp"\n'
+    '            android:orientation="horizontal" android:gravity="center_vertical"\n'
+    '            android:paddingStart="12dp" android:paddingEnd="14dp" android:background="@drawable/bg_cam_badge"\n'
+    '            android:elevation="8dp" android:visibility="gone">\n'
+    '            <ImageView android:layout_width="22dp" android:layout_height="22dp"\n'
+    '                android:src="@drawable/ic_v5_speedcam" android:tint="#FF5C7A" android:contentDescription="Autovelox"/>\n'
+    '            <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                android:orientation="vertical" android:layout_marginStart="8dp">\n'
+    '                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '                    android:text="AUTOVELOX" android:textColor="#FF8FA3" android:textSize="9sp"\n'
+    '                    android:textStyle="bold" android:letterSpacing="0.1"/>\n'
+    '                <TextView android:id="@+id/tv_nav_cam" android:layout_width="wrap_content"\n'
+    '                    android:layout_height="wrap_content" android:text="400 m" android:textColor="#FFFFFF"\n'
+    '                    android:textSize="16sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"/>\n'
+    '            </LinearLayout>\n'
+    '        </LinearLayout>\n'
     '        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>\n'
     '        <LinearLayout android:id="@+id/btn_nav_recenter" android:layout_width="wrap_content"\n'
     '            android:layout_height="48dp" android:orientation="horizontal" android:gravity="center_vertical"\n'
@@ -21076,6 +22199,22 @@ def _v5_action(vid, icon, text, accent, end_margin=True):
             '            android:textStyle="bold" android:layout_marginTop="4dp"/>\n'
             '    </LinearLayout>\n')
 
+def _v5_action_slim(vid, icon, text, accent, end_margin=True):
+    """Azione su una riga (icona accanto al testo): piu' spazio per i messaggi."""
+    hexcol = V4_ACCENTS[accent]
+    return ('    <LinearLayout android:id="@+id/' + vid + '" android:layout_width="0dp"\n'
+            '        android:layout_height="44dp" android:layout_weight="1" android:orientation="horizontal"\n'
+            '        android:gravity="center" android:background="@drawable/bg_tile_' + accent + '"\n'
+            '        android:clickable="true" android:focusable="true"' +
+            ('\n        android:layout_marginEnd="8dp"' if end_margin else '') + '>\n'
+            '        <ImageView android:layout_width="18dp" android:layout_height="18dp"\n'
+            '            android:src="@drawable/' + icon + '" android:tint="#' + hexcol + '"\n'
+            '            android:contentDescription="' + text + '"/>\n'
+            '        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '            android:text="' + text + '" android:textColor="#E8F4FD" android:textSize="11sp"\n'
+            '            android:textStyle="bold" android:layout_marginStart="6dp" android:maxLines="1"/>\n'
+            '    </LinearLayout>\n')
+
 LAYOUT_CHAT = (_XML_HEAD +
     '<LinearLayout ' + _NS + '\n'
     '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
@@ -21126,14 +22265,21 @@ LAYOUT_CHAT = (_XML_HEAD +
     '    </LinearLayout>\n'
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:orientation="horizontal" android:layout_marginBottom="10dp">\n'
-    + _v5_action("btn_chat_group", "ic_v5_lock", "GRUPPO CIFRATO", "yellow")
-    + _v5_action("btn_chat_team", "ic_v4_radar", "RADAR GRUPPO", "violet", end_margin=False) +
+    + _v5_action_slim("btn_chat_group", "ic_v5_lock", "GRUPPO", "yellow")
+    + _v5_action_slim("btn_chat_team", "ic_v4_radar", "RADAR", "violet")
+    + _v5_action_slim("btn_chat_meet", "ic_v4_flag", "INCONTRO", "orange", end_margin=False) +
     '    </LinearLayout>\n'
     '    <ScrollView android:id="@+id/chat_scroll" android:layout_width="match_parent"\n'
     '        android:layout_height="0dp" android:layout_weight="1" android:overScrollMode="never">\n'
     '        <LinearLayout android:id="@+id/chat_messages" android:layout_width="match_parent"\n'
     '            android:layout_height="wrap_content" android:orientation="vertical" android:paddingTop="4dp"/>\n'
     '    </ScrollView>\n'
+    # v5.3: messaggi rapidi
+    '    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_marginTop="8dp" android:scrollbars="none" android:overScrollMode="never">\n'
+    '        <LinearLayout android:id="@+id/chat_quick" android:layout_width="wrap_content"\n'
+    '            android:layout_height="wrap_content" android:orientation="horizontal"/>\n'
+    '    </HorizontalScrollView>\n'
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginTop="8dp">\n'
     '        <EditText android:id="@+id/chat_input" android:layout_width="0dp" android:layout_height="wrap_content"\n'
@@ -21184,6 +22330,8 @@ V5_TOOL_ICONS = {
     "ic_v5_record":    _v4_icon(["M12,12m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0"]),
     "ic_v5_pause":     _v4_icon(["M6,19h4V5H6v14zm8,-14v14h4V5h-4z"]),
     "ic_v5_stop":      _v4_icon(["M6,6h12v12H6z"]),
+    "ic_v5_bolt":      _v4_icon(["M7,2v11h3v9l7,-12h-4l4,-8z"]),
+    "ic_v5_slope":     _v4_icon(["M3,20h18V5L3,20zM16.5,17.5h-3.2c-0.3,-1.2 -0.9,-2.3 -1.8,-3.1l5,-4.2v7.3z"]),
     "ic_v5_folder":    _v4_icon(["M10,4H4c-1.1,0 -1.99,0.9 -1.99,2L2,18c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2V8c0,-1.1 -0.9,-2 -2,-2h-8l-2,-2z"]),
     "ic_v5_paste":     _v4_icon(["M19,2h-4.18C14.4,0.84 13.3,0 12,0c-1.3,0 -2.4,0.84 -2.82,2H5c-1.1,0 -2,0.9 -2,2v16c0,1.1 0.9,2 2,2h14c1.1,0 2,-0.9 2,-2V4c0,-1.1 -0.9,-2 -2,-2zm-7,0c0.55,0 1,0.45 1,1s-0.45,1 -1,1 -1,-0.45 -1,-1 0.45,-1 1,-1zm7,18H5V4h2v3h10V4h2v16z"]),
     "ic_v5_bookmark":  _v4_icon(["M17,3H7c-1.1,0 -1.99,0.9 -1.99,2L5,21l7,-3 7,3V5c0,-1.1 -0.9,-2 -2,-2z"]),
@@ -21374,6 +22522,8 @@ LAYOUT_DAYLIGHT = _v4_screen(
               + '    <com.offlinegps.map.ui.SunPathView android:id="@+id/sun_path"\n'
                 '        android:layout_width="match_parent" android:layout_height="190dp" android:layout_marginTop="8dp"/>\n',
               accent="yellow", pad="12dp")
+    + _t_buttons(_t_btn("btn_day_ar", "ic_v5_eye", "VEDI IN REALTA' AUMENTATA", "yellow", filled=True, end_margin=False,
+                        height="50dp"), margin="12dp")
     + _v4_row(_t_stat("tv_sun_alt", "--", "ALTEZZA", "yellow"),
               _t_stat("tv_sun_az", "--", "DIREZIONE", "orange"),
               _t_stat("tv_sun_setdir", "--", "TRAMONTA A", "pink", end_margin=False), margin="10dp")
@@ -21671,6 +22821,8 @@ LAYOUT_SURVIVAL = _v4_screen(
               _v4_tile("card_moon", "ic_v5_moon", "Fase lunare", "Luce stanotte", "violet", "118dp", end_margin=False))
     + _v4_row(_v4_tile("card_nightvision", "ic_v5_eye", "Visione notturna", "Schermo rosso", "red", "118dp"),
               _v4_tile("card_battery", "ic_v5_battery", "Risparmio batteria", "Dura di piu'", "green", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_storm", "ic_v5_bolt", "Temporale", "Distanza dei fulmini, regola 30/30", "violet", "118dp",
+                       end_margin=False))
     + _v4_section("CAMPO E UTILITA'")
     + _v4_row(_v4_tile("card_hydration", "ic_v5_drop", "Idratazione", "Acqua di oggi", "cyan", "118dp"),
               _v4_tile("card_checklist", "ic_v5_checklist", "Checklist zaino", "Non scordare nulla", "green", "118dp", end_margin=False))
@@ -21765,7 +22917,7 @@ LAYOUT_TOOLS = _v4_screen(
     + _v4_row(_v4_tile("open_recorder", "ic_v5_route", "Registra traccia", "Km, dislivello, GPX", "green", "118dp"),
               _v4_tile("open_timer", "ic_v5_timer", "Timer", "Suono e vibrazione", "cyan", "118dp", end_margin=False))
     + _v4_row(_v4_tile("open_pace", "ic_v5_walk", "Tempi di marcia", "Regola di Naismith", "green", "118dp"),
-              _v4_tile("open_slope", "ic_v5_mountain", "Inclinometro", "Pendenza del terreno", "yellow", "118dp", end_margin=False))
+              _v4_tile("open_slope", "ic_v5_slope", "Inclinometro", "Pendenza e valanghe", "yellow", "118dp", end_margin=False))
     + _v4_row(_v4_tile("open_area", "ic_v5_layers", "Area terreno", "Cammina sul perimetro", "violet", "118dp"),
               _v4_tile("open_heat", "ic_v5_sun", "Temp. percepita", "Caldo e vento", "orange", "118dp", end_margin=False))
     + _v4_row(_v4_tile("open_metal", "ic_v4_radar", "Metal detector", "Magnetometro", "cyan", "118dp"),
@@ -21803,6 +22955,9 @@ LAYOUT_TEAM = _v4_screen(
 V5_DRAWABLES["bg_ar_sky"] = _v5_shape('    <gradient android:type="linear" android:angle="270"\n'
                                       '        android:startColor="#FF0B1A3A" android:centerColor="#FF1C3B66"\n'
                                       '        android:endColor="#FF0A1424"/>\n')
+V5_DRAWABLES["bg_ar_chip_on"] = _v5_shape('    <solid android:color="#40FFD600"/>\n'
+                                          '    <stroke android:width="1.5dp" android:color="#FFFFD600"/>\n'
+                                          '    <corners android:radius="17dp"/>\n')
 V5_DRAWABLES["bg_ar_panel"] = _v5_shape('    <solid android:color="#CC050A14"/>\n'
                                         '    <stroke android:width="1dp" android:color="#4400E5FF"/>\n'
                                         '    <corners android:radius="18dp"/>\n')
@@ -21842,12 +22997,14 @@ LAYOUT_PEAK_AR = (_XML_HEAD +
     '    <com.offlinegps.map.ui.ArOverlayView android:id="@+id/ar_overlay"\n'
     '        android:layout_width="match_parent" android:layout_height="match_parent"/>\n'
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="vertical">\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:orientation="horizontal" android:gravity="center_vertical" android:padding="14dp">\n'
     '        <ImageView android:id="@+id/btn_ar_back" android:layout_width="44dp" android:layout_height="44dp"\n'
     '            android:padding="10dp" android:src="@drawable/ic_v4_back" android:tint="#E8F4FD"\n'
     '            android:background="@drawable/bg_fab_glass" android:clickable="true" android:focusable="true"\n'
     '            android:contentDescription="Indietro"/>\n'
-    '        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+    '        <TextView android:id="@+id/tv_ar_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
     '            android:layout_marginStart="12dp" android:text="CHE MONTAGNA E\'?" android:textColor="#FFFFFF"\n'
     '            android:textSize="19sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
     '            android:shadowColor="#000000" android:shadowRadius="8"/>\n'
@@ -21855,6 +23012,20 @@ LAYOUT_PEAK_AR = (_XML_HEAD +
     '            android:gravity="center" android:paddingStart="12dp" android:paddingEnd="12dp" android:text="RAGGIO 30 KM"\n'
     '            android:textColor="#FFD600" android:textSize="11sp" android:textStyle="bold"\n'
     '            android:background="@drawable/bg_ar_panel" android:clickable="true" android:focusable="true"/>\n'
+    '    </LinearLayout>\n'
+    # v5.3: modalita' CIME / SOLE E LUNA
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:paddingStart="14dp" android:paddingEnd="14dp">\n'
+    '        <TextView android:id="@+id/tv_ar_mode_peaks" android:layout_width="wrap_content" android:layout_height="34dp"\n'
+    '            android:gravity="center" android:paddingStart="16dp" android:paddingEnd="16dp" android:text="CIME"\n'
+    '            android:textColor="#FFFFFF" android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.08"\n'
+    '            android:background="@drawable/bg_ar_chip_on" android:clickable="true" android:focusable="true"/>\n'
+    '        <TextView android:id="@+id/tv_ar_mode_sky" android:layout_width="wrap_content" android:layout_height="34dp"\n'
+    '            android:layout_marginStart="8dp" android:gravity="center" android:paddingStart="16dp"\n'
+    '            android:paddingEnd="16dp" android:text="SOLE E LUNA" android:textColor="#B9CCE0"\n'
+    '            android:textSize="11sp" android:textStyle="bold" android:letterSpacing="0.08"\n'
+    '            android:background="@drawable/bg_ar_panel" android:clickable="true" android:focusable="true"/>\n'
+    '    </LinearLayout>\n'
     '    </LinearLayout>\n'
     '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
     '        android:layout_gravity="bottom" android:orientation="vertical" android:layout_margin="14dp"\n'
@@ -21907,6 +23078,61 @@ LAYOUT_FOLLOW = (_XML_HEAD +
     '    </LinearLayout>\n'
     '</LinearLayout>')
 
+# ---------------------------------------------------------------- v5.3 PENDENZA NEVE
+LAYOUT_SLOPE = _v4_screen(
+    _v4_header("btn_slope_back", "INCLINOMETRO", "Pendenza del terreno e pendii da valanga", "#FF3D71")
+    + _t_card(_t_view("SlopeGaugeView", "slope_gauge", "230dp", margin="4dp")
+              + _t_big("tv_slope_deg", "--°", "#E8F4FD", "56sp", center=True)
+              + _t_text("tv_slope_band", "Appoggia il telefono sul pendio", "#8FB3D0", "14sp", bold=True, center=True, top="6dp"),
+              accent="pink", pad="16dp")
+    + _v4_row(_t_stat("tv_slope_pct", "--", "PERCENTUALE", "cyan"),
+              _t_stat("tv_slope_max", "--", "MASSIMA MISURATA", "pink", end_margin=False), margin="12dp")
+    + _t_buttons(_t_btn("btn_slope_hold", "ic_v5_lock", "BLOCCA MISURA", "pink", filled=True, text_id="tv_slope_hold"),
+                 _t_btn("btn_slope_reset", "ic_v5_undo", "AZZERA", "cyan", end_margin=False))
+    + _t_card(_t_label("COME SI MISURA")
+              + _t_text(None, "1. Appoggia il telefono sulla neve del pendio, oppure stendi un bastoncino lungo la linea "
+                              "di massima pendenza e appoggia il telefono sul bastoncino.\n"
+                              "2. Aspetta che il numero si fermi e tocca BLOCCA MISURA prima di sollevarlo.\n"
+                              "3. Misura in piu' punti: conta il tratto piu' ripido.", "#CFE3F5", "13.5sp", top="6dp"),
+              accent="cyan")
+    + _v4_hint(None, "La pendenza e' solo uno dei fattori. Prima di partire leggi il bollettino valanghe (AINEVA, "
+                     "Meteomont) e porta ARTVA, pala e sonda. Questo strumento NON dice se un pendio e' sicuro.", red=True),
+    "slope_column")
+
+# ---------------------------------------------------------------- v5.3 TEMPORALE
+LAYOUT_STORM = _v4_screen(
+    _v4_header("btn_storm_back", "TEMPORALE", "Quanto e' lontano il fulmine, senza rete", "#B388FF")
+    + _t_card(_t_big("tv_storm_km", "--", "#E8F4FD", "52sp", center=True)
+              + _t_text("tv_storm_state", "Nessuna misura", "#E8F4FD", "16sp", bold=True, center=True, top="4dp")
+              + _t_text("tv_storm_sub", "", "#8FB3D0", "13sp", center=True, top="6dp"), accent="violet", pad="18dp")
+    + '<LinearLayout android:id="@+id/btn_storm" android:layout_width="210dp" android:layout_height="210dp"\n'
+      '    android:layout_gravity="center_horizontal" android:layout_marginTop="4dp" android:layout_marginBottom="16dp"\n'
+      '    android:orientation="vertical" android:gravity="center" android:background="@drawable/bg_disc_violet"\n'
+      '    android:clickable="true" android:focusable="true" android:elevation="8dp">\n'
+      '    <ImageView android:layout_width="64dp" android:layout_height="64dp" android:src="@drawable/ic_v5_bolt"\n'
+      '        android:tint="#FFD600" android:contentDescription="Lampo"/>\n'
+      '    <TextView android:id="@+id/tv_storm_btn" android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '        android:text="LAMPO!" android:textColor="#FFFFFF" android:textSize="24sp" android:textStyle="bold"\n'
+      '        android:fontFamily="sans-serif-condensed" android:layout_marginTop="4dp"/>\n'
+      '    <TextView android:id="@+id/tv_storm_btn_sub" android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '        android:text="tocca quando vedi il lampo" android:textColor="#CFE3F5" android:textSize="12sp"/>\n'
+      '</LinearLayout>\n'
+    + _v4_row(_t_stat("tv_storm_secs", "--", "SECONDI", "violet"),
+              _t_stat("tv_storm_trend", "--", "TENDENZA", "yellow").replace(
+                  '<TextView android:layout_width="match_parent" android:layout_height="16dp"',
+                  '<TextView android:id="@+id/tv_storm_trend_label" android:layout_width="match_parent" android:layout_height="16dp"'),
+              _t_stat("tv_storm_safe", "--", "ESCI TRA", "green", end_margin=False), margin="12dp")
+    + _t_card(_t_label("ULTIME MISURE")
+              + '<LinearLayout android:id="@+id/storm_history" android:layout_width="match_parent"\n'
+                '    android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="6dp"/>\n',
+              accent="violet")
+    + _t_buttons(_t_btn("btn_storm_reset", "ic_v5_undo", "NUOVO TEMPORALE", "violet", end_margin=False))
+    + _v4_hint(None, "Regola 30/30: se fra lampo e tuono passano meno di 30 secondi sei gia' a portata di fulmine; "
+                     "esci dal riparo 30 minuti dopo l'ultimo tuono. In montagna: lascia creste, cime e ferrate, "
+                     "allontanati da croci e tralicci, non ripararti sotto alberi isolati. Se sei allo scoperto: "
+                     "accovacciati sullo zaino a piedi uniti; in gruppo state a qualche metro l'uno dall'altro.", red=True),
+    "storm_column")
+
 # menu: sezione escursione
 LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace(
     '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
@@ -21917,10 +23143,11 @@ LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace(
     '    android:layout_marginBottom="10dp" android:layout_marginStart="4dp"/>\n'
     + _v4_row(_v4_tile("card_follow", "ic_v5_route", "Segui traccia GPX", "Guida sul sentiero", "green", "118dp"),
               _v4_tile("card_poi", "ic_v5_mountain", "Luoghi vicini", "Cime, rifugi, acqua", "yellow", "118dp", end_margin=False))
-    + _v4_row(_v4_tile("card_ar", "ic_v5_eye", "Che montagna e'?", "Realta' aumentata", "orange", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_ar", "ic_v5_eye", "Che montagna e'?", "Realta' aumentata", "orange", "118dp"),
+              _v4_tile("card_slope", "ic_v5_slope", "Pendenza neve", "Pendii da valanga", "pink", "118dp", end_margin=False))
     + '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
     '    android:text="SEGNALARSI E SOCCORSO"', 1)
-LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace('"26 strumenti offline per l\'outdoor"', '"29 strumenti offline per l\'outdoor"')
+LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace('"26 strumenti offline per l\'outdoor"', '"31 strumenti offline per l\'outdoor"')
 
 # <<< V5 NAVIGATORE 3D
 
@@ -22049,6 +23276,12 @@ def build_java_file_map():
         f"{PKG_UI}/PeakArActivity.java":         PEAK_AR_ACTIVITY,
         f"{PKG_UTIL}/GpxTrack.java":             GPX_TRACK,
         f"{PKG_UI}/FollowTrackActivity.java":    FOLLOW_TRACK_ACTIVITY,
+        # v5.3
+        f"{PKG_UTIL}/SkyPaths.java":             SKY_PATHS,
+        f"{PKG_UTIL}/StormTracker.java":         STORM_TRACKER,
+        f"{PKG_UTIL}/SlopeMeter.java":           SLOPE_METER,
+        f"{PKG_UI}/SlopeGaugeView.java":         SLOPE_GAUGE_VIEW,
+        f"{PKG_UI}/StormActivity.java":          STORM_ACTIVITY,
     }
 
 def build_layout_map():
@@ -22116,6 +23349,7 @@ def build_layout_map():
         "activity_poi.xml":            LAYOUT_POI,
         "activity_peak_ar.xml":        LAYOUT_PEAK_AR,
         "activity_follow.xml":         LAYOUT_FOLLOW,
+        "activity_storm.xml":          LAYOUT_STORM,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -22196,7 +23430,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.2")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.3")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -22339,7 +23573,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.2.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.3.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -22353,6 +23587,13 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.3 - ANCORA PIU' AVANZATO:{C.RESET}")
+    print(f"  {C.OK}[NAV]{C.RESET}  Autovelox sul percorso: distanza, limite e avviso a voce")
+    print(f"  {C.OK}[NEW]{C.RESET}  Sole e Luna in realta' aumentata: arco del sole con le ore, alba e tramonto")
+    print(f"  {C.OK}[NEW]{C.RESET}  Inclinometro per i pendii da valanga, con fasce di rischio")
+    print(f"  {C.OK}[NEW]{C.RESET}  Temporale: distanza dei fulmini, tendenza e regola 30/30")
+    print(f"  {C.OK}[NEW]{C.RESET}  Chat: punto d'incontro del gruppo e messaggi rapidi")
 
     print(f"\n{C.BOLD}NOVITA v5.2 - ESCURSIONE:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Luoghi vicini offline: cime, rifugi, acqua, panorami, ripari, soccorso")
@@ -22423,7 +23664,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.2.apk")
+    info("1. Installa OfflineGPS-3D-v5.3.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -22435,7 +23676,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.2 - Navigatore 3D, chat cifrata, luoghi e realta' aumentata")
+    print("  OfflineGPS 3D v5.3 - Navigatore 3D, chat cifrata, luoghi, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -22452,7 +23693,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.2 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.3 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

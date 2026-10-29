@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.4 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.5 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
                       + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
                       + EVITA PEDAGGI + TAPPE + UOMO A TERRA + STELLE + METEO
+                      + WALKIE-TALKIE + SATELLITI + TROVA L'AUTO + PAESI E LAGHI
 
 STORICO:
  v2.5  Routing offline vero (GraphHopper sul telefono, profili auto/bici/piedi),
@@ -176,7 +177,7 @@ NOVITA' v5.3 — ANCORA PIU' AVANZATO:
    Luoghi vicini), visibile in chat, sul radar, nell'elenco compagni e in
    realta' aumentata, con "naviga fin li'"; messaggi rapidi con un tocco.
 
-NOVITA' v5.4 (questa versione) — NAVIGATORE, SICUREZZA, CIELO E METEO:
+NOVITA' v5.4 — NAVIGATORE, SICUREZZA, CIELO E METEO:
  * OPZIONI PERCORSO in auto: evita pedaggi, autostrade, traghetti (sulla
    rete gia' costruita, senza ricostruirla: le strade da evitare "costano"
    15 volte tanto, quindi si usano solo se non c'e' altra via).
@@ -195,6 +196,22 @@ NOVITA' v5.4 (questa versione) — NAVIGATORE, SICUREZZA, CIELO E METEO:
    pressione al livello del mare, tendenza in 3 ore, previsione indicativa
    col metodo Zambretti, avviso di calo rapido, grafico delle ultime 12 ore
    e registrazione della pressione anche a schermo spento.
+
+NOVITA' v5.5 (questa versione) — WALKIE-TALKIE, SATELLITI, AUTO, PAESI:
+ * WALKIE-TALKIE nella chat offline: tieni premuto il microfono, parli fino a
+   10 secondi, rilasci e il vocale (audio compresso, ~1,5 KB al secondo)
+   viaggia sulla rete Bluetooth, cifrato come gli altri messaggi del gruppo.
+   Con la chat aperta i vocali in arrivo si ascoltano subito.
+ * SATELLITI GPS: mappa del cielo con i satelliti di GPS, Galileo, GLONASS,
+   BeiDou, QZSS ed EGNOS, quanti usati per la posizione, forza del segnale,
+   precisione, tempo al primo fix e doppia frequenza L5/E5a.
+ * TROVA L'AUTO: freccia e distanza verso il parcheggio, nota (piano,
+   colonna), scadenza del ticket con avviso 10 minuti prima e alla
+   scadenza, navigazione a piedi. Il navigatore la salva da solo quando
+   arrivi a destinazione in auto.
+ * PAESI E LAGHI: nell'indice dei luoghi (filtri PAESI e LAGHI) e in realta'
+   aumentata; i laghi grandi descritti a pezzi sono uniti e il loro centro e'
+   calcolato dalla riva. L'indice si rifa' una volta.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -240,8 +257,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 52
-        versionName "5.4.0"
+        versionCode 53
+        versionName "5.5.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -561,6 +578,10 @@ MANIFEST = """\
             android:foregroundServiceType="location"/>
         <!-- v5.4: pressione registrata ogni 15 minuti anche a schermo spento -->
         <receiver android:name=".gps.PressureLogReceiver" android:exported="false"/>
+        <!-- v5.5 -->
+        <activity android:name=".ui.SatellitesActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <activity android:name=".ui.ParkingActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <receiver android:name=".ui.ParkingAlarmReceiver" android:exported="false"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -4946,8 +4967,12 @@ public class NavigationActivity extends AppCompatActivity
         stepsAdapter.setActiveIndex(idx);
         if (p.arrived && !arrivedShown) {
             arrivedShown = true;
-            speak("Sei arrivato a destinazione");
-            Toast.makeText(this, "Sei arrivato: " + destName, Toast.LENGTH_LONG).show();
+            // v5.5: arrivando in auto si ricorda dove si e' parcheggiato
+            Location here = GpsTrackingService.getLastLocation();
+            boolean park = RoutingEngine.PROFILE_CAR.equals(profile) && here != null;
+            if (park) ParkingStore.save(this, here.getLatitude(), here.getLongitude());
+            speak("Sei arrivato a destinazione" + (park ? ". Ho salvato dove lasci l'auto" : ""));
+            Toast.makeText(this, "Sei arrivato: " + destName + (park ? "  ·  posizione dell'auto salvata" : ""), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -5737,6 +5762,7 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         bindTool(R.id.open_heat, HeatIndexActivity.class);
         bindTool(R.id.open_pace, PaceCalcActivity.class);
         bindTool(R.id.open_speedhud, SpeedHudActivity.class);
+        bindTool(R.id.open_sats, SatellitesActivity.class);
 
         // nuovi strumenti
         tvLevel = findViewById(R.id.tv_level);
@@ -5900,11 +5926,7 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
     private void saveParking() {
         Location loc = GpsTrackingService.getLastLocation();
         if (loc == null) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
-        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit()
-            .putString("park_lat", String.valueOf(loc.getLatitude()))
-            .putString("park_lon", String.valueOf(loc.getLongitude()))
-            .putLong("park_time", System.currentTimeMillis())
-            .apply();
+        ParkingStore.save(this, loc.getLatitude(), loc.getLongitude());
         Toast.makeText(this, "Posizione auto salvata!", Toast.LENGTH_SHORT).show();
         refreshParkingLabel();
     }
@@ -5922,22 +5944,9 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         } catch (NumberFormatException e) { tvParkInfo.setText("Auto salvata (" + when + ")"); }
     }
 
+    /** v5.5: la schermata Trova l'auto (freccia, nota, scadenza, navigazione a piedi). */
     private void gotoParking() {
-        String la = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString("park_lat", "");
-        String lo = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString("park_lon", "");
-        if (la.isEmpty()) { Toast.makeText(this, "Salva prima l'auto", Toast.LENGTH_SHORT).show(); return; }
-        try {
-            final double plat = Double.parseDouble(la), plon = Double.parseDouble(lo);
-            new android.app.AlertDialog.Builder(this)
-                .setTitle("Riportami all'auto")
-                .setItems(new String[]{"Naviga a piedi", "Mostra sulla mappa"}, (d, w) -> {
-                    if (w == 0) ToolKit.navigate(this, plat, plon, "La mia auto",
-                        com.offlinegps.map.routing.RoutingEngine.PROFILE_FOOT);
-                    else ToolKit.showOnMap(this, plat, plon, "La mia auto");
-                }).show();
-        } catch (Exception e) {
-            Toast.makeText(this, "Errore", Toast.LENGTH_SHORT).show();
-        }
+        startActivity(new android.content.Intent(this, ParkingActivity.class));
     }
 
     // ---- SOS messaggio con coordinate ----
@@ -8971,9 +8980,19 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
     private TextView tvStatus, tvPeers, tvMe, tvGroup;
     private final Map<String, TextView> ackViews = new HashMap<>();
     private final Map<String, MeshNode.Msg> shownMine = new HashMap<>();
+    private final Map<String, TextView> voxLabels = new HashMap<>();
     private BroadcastReceiver discoveryReceiver;
     private ArrayAdapter<String> foundAdapter;
     private final List<BluetoothDevice> found = new ArrayList<>();
+    // v5.5: messaggi vocali (walkie-talkie)
+    private static final int REQ_MIC = 7311;
+    private android.media.MediaRecorder recorder;
+    private java.io.File recFile;
+    private long recStart;
+    private android.media.MediaPlayer player;
+    private TextView playingLabel;
+    private boolean screenVisible;
+    private final android.os.Handler recTick = new android.os.Handler(android.os.Looper.getMainLooper());
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
@@ -9006,6 +9025,7 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         click(R.id.btn_chat_power, v -> confirmPowerOff());
         click(R.id.btn_chat_meet, v -> meetDialog());
         fillQuickReplies();
+        setupMic();
 
         for (MeshNode.Msg m : hub.history()) show(m, false);
         if (msgBox != null && msgBox.getChildCount() > 0) {
@@ -9037,6 +9057,7 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         super.onStart();
         hub.addListener(this);
         hub.setScreenVisible(true);
+        screenVisible = true;
         onPeers(hub.peers());
     }
 
@@ -9044,6 +9065,9 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         super.onStop();
         hub.removeListener(this);
         hub.setScreenVisible(false);
+        screenVisible = false;
+        stopRecording(false);
+        stopPlaying();
     }
 
     @Override protected void onDestroy() {
@@ -9162,6 +9186,8 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
             if (hasBtPerms()) requireOn();
             else setStatus("Servono i permessi Bluetooth per la chat offline");
         }
+        if (req == REQ_MIC && res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED)
+            Toast.makeText(this, "Ora tieni premuto il microfono e parla", Toast.LENGTH_SHORT).show();
     }
 
     // ------------------------------------------------------------ Bluetooth
@@ -9263,6 +9289,115 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         }
     }
 
+    // ------------------------------------------------------------ v5.5 walkie-talkie
+    /** Tieni premuto il microfono per parlare, rilascia per mandare (max 10 secondi). */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void setupMic() {
+        View mic = findViewById(R.id.btn_chat_mic);
+        if (mic == null) return;
+        mic.setOnTouchListener((v, ev) -> {
+            switch (ev.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_MIC);
+                        return true;
+                    }
+                    startRecording();
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                    stopRecording(true);
+                    return true;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    stopRecording(false);
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    private void startRecording() {
+        stopPlaying();
+        try {
+            recFile = new java.io.File(getCacheDir(), "vox_out.amr");
+            recorder = new android.media.MediaRecorder();
+            recorder.setAudioSource(android.media.MediaRecorder.AudioSource.MIC);
+            recorder.setOutputFormat(android.media.MediaRecorder.OutputFormat.AMR_NB);
+            recorder.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AMR_NB);
+            recorder.setAudioSamplingRate(8000);
+            recorder.setAudioEncodingBitRate(12200);
+            recorder.setMaxDuration(MeshHub.VOICE_MAX_MS);
+            recorder.setOutputFile(recFile.getAbsolutePath());
+            recorder.setOnInfoListener((r, what, extra) -> {
+                if (what == android.media.MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) stopRecording(true);
+            });
+            recorder.prepare();
+            recorder.start();
+            recStart = System.currentTimeMillis();
+            vibrate(new long[]{0, 30});
+            recTick.post(new Runnable() {
+                @Override public void run() {
+                    if (recorder == null) return;
+                    long s = (System.currentTimeMillis() - recStart) / 1000;
+                    setStatus("● REGISTRO " + s + " s  ·  rilascia per inviare (massimo 10 s)");
+                    recTick.postDelayed(this, 250);
+                }
+            });
+        } catch (Exception e) {
+            recorder = null;
+            Toast.makeText(this, "Microfono non disponibile", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopRecording(boolean send) {
+        if (recorder == null) return;
+        int ms = (int) (System.currentTimeMillis() - recStart);
+        try { recorder.stop(); } catch (Exception e) { send = false; }
+        try { recorder.release(); } catch (Exception ignored) {}
+        recorder = null;
+        recTick.removeCallbacksAndMessages(null);
+        setStatus(hub.status());
+        if (!send) return;
+        if (ms < 700) { Toast.makeText(this, "Tieni premuto il microfono mentre parli", Toast.LENGTH_SHORT).show(); return; }
+        if (hub.peers().isEmpty()) Toast.makeText(this, "Nessun vicino collegato: il vocale resta solo qui", Toast.LENGTH_SHORT).show();
+        hub.sendVoice(recFile, Math.min(ms, MeshHub.VOICE_MAX_MS));
+        vibrate(new long[]{0, 20, 60, 20});
+    }
+
+    /** Ascolta un vocale (uno alla volta); il tasto mostra ASCOLTA / FERMA. */
+    private void play(MeshNode.Msg m, @Nullable TextView label) {
+        stopPlaying();
+        byte[] data = MeshNode.voiceData(m);
+        if (data == null) return;
+        try {
+            java.io.File f = new java.io.File(getCacheDir(), "vox_" + m.id.replaceAll("[^A-Za-z0-9]", "") + ".amr");
+            if (!f.exists()) java.nio.file.Files.write(f.toPath(), data);
+            player = new android.media.MediaPlayer();
+            player.setAudioAttributes(new android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build());
+            player.setDataSource(f.getAbsolutePath());
+            player.setOnCompletionListener(mp -> stopPlaying());
+            player.prepare();
+            player.start();
+            playingLabel = label;
+            if (label != null) label.setText("■ FERMA");
+        } catch (Exception e) {
+            stopPlaying();
+            Toast.makeText(this, "Impossibile riprodurre il vocale", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopPlaying() {
+        if (player != null) {
+            try { player.stop(); } catch (Exception ignored) {}
+            try { player.release(); } catch (Exception ignored) {}
+            player = null;
+        }
+        if (playingLabel != null) playingLabel.setText("▶ ASCOLTA");
+        playingLabel = null;
+    }
+
     /** Propone al gruppo il punto d'incontro: qui dove sei, con un nome. */
     private void meetDialog() {
         Location l = myLocation();
@@ -9333,6 +9468,8 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
     @Override public void onMessage(MeshNode.Msg m) {
         show(m, true);
         if (m.mine) return;
+        // walkie-talkie: con la chat aperta i vocali in arrivo si ascoltano subito
+        if (MeshNode.VOX.equals(m.type) && screenVisible && recorder == null && player == null) play(m, voxLabels.get(m.id));
         if (MeshNode.SOS.equals(m.type)) {
             vibrate(new long[]{0, 200, 120, 200, 120, 200, 400, 600});
             Toast.makeText(this, "SOS da " + m.from + "!", Toast.LENGTH_LONG).show();
@@ -9367,6 +9504,7 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
     private void show(MeshNode.Msg m, boolean animate) {
         if (msgBox == null || m == null) return;
         boolean sos = MeshNode.SOS.equals(m.type), pos = MeshNode.POS.equals(m.type), meet = MeshNode.MEET.equals(m.type);
+        boolean vox = MeshNode.VOX.equals(m.type);
         LinearLayout b = new LinearLayout(this);
         b.setOrientation(LinearLayout.VERTICAL);
         b.setBackgroundResource(sos ? R.drawable.bg_bubble_sos : m.mine ? R.drawable.bg_bubble_me : R.drawable.bg_bubble_other);
@@ -9384,6 +9522,14 @@ public class ChatActivity extends AppCompatActivity implements MeshHub.Listener 
         if (sos) b.addView(label("SOS — " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text), 0xFFFFFFFF, 17, true));
         else if (pos) b.addView(label("Posizione condivisa" + (m.text.isEmpty() ? "" : ": " + m.text), 0xFFE8F4FD, 15, true));
         else if (meet) b.addView(label("🚩 Punto d'incontro: " + m.text, 0xFFFFB38F, 15, true));
+        else if (vox) {
+            b.addView(label("🎤 Messaggio vocale  ·  " + Math.max(1, Math.round(MeshNode.voiceMs(m) / 1000f)) + " s", 0xFFE8F4FD, 15, true));
+            TextView playBtn = label("▶ ASCOLTA", m.mine ? 0xFFB3FFE0 : 0xFFFFD600, 14, true);
+            playBtn.setPadding(0, SkyUi.dp(this, 6), 0, SkyUi.dp(this, 2));
+            playBtn.setOnClickListener(v -> { if (playingLabel == playBtn) stopPlaying(); else play(m, playBtn); });
+            b.addView(playBtn);
+            if (!m.mine) voxLabels.put(m.id, playBtn);
+        }
         else b.addView(label(m.text, 0xFFE8F4FD, 15, false));
 
         if (m.hasPosition()) {
@@ -15444,7 +15590,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.4 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.5 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -17065,7 +17211,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *  - conferme di consegna (ACK): chi riceve risponde, il mittente conta chi l'ha letto;
  *  - tipi: TXT testo, POS posizione, SOS emergenza con posizione, HELLO nome del vicino,
  *    BCN posizione periodica per il radar del gruppo (non compare in chat),
- *    MEET punto d'incontro proposto al gruppo (v5.3);
+ *    MEET punto d'incontro proposto al gruppo (v5.3), VOX messaggio vocale (v5.4: audio
+ *    compresso AMR di pochi secondi, ~1,5 KB al secondo, cifrato come gli altri);
  *  - v5.1 GRUPPI CIFRATI: con una chiave di gruppo i messaggi viaggiano dentro
  *    una "busta" (tipo X) cifrata con AES-GCM. Chi non e' del gruppo la
  *    inoltra lo stesso ma non la legge. L'SOS parte sempre in chiaro: in
@@ -17075,7 +17222,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class MeshNode {
     public static final String TXT = "TXT", POS = "POS", SOS = "SOS", ACK = "ACK", HELLO = "HELLO",
-        BCN = "BCN", SEALED = "X", MEET = "MEET";
+        BCN = "BCN", SEALED = "X", MEET = "MEET", VOX = "VOX";
     public static final int BEACON_TTL = 4;
     public static final int DEFAULT_TTL = 7;
     private static final String VERSION = "m5";
@@ -17248,6 +17395,25 @@ public final class MeshNode {
     public Msg sendPosition(double lat, double lon, float acc, String note) { return send(POS, note, lat, lon, acc); }
 
     public Msg sendSos(double lat, double lon, float acc, String text) { return send(SOS, text, lat, lon, acc); }
+
+    /** Messaggio vocale: durata (ms) e audio in base64 nel testo, "4200;AAAA...". */
+    public Msg sendVoice(int durationMs, String audioBase64) {
+        return send(VOX, durationMs + ";" + audioBase64, Double.NaN, Double.NaN, 0f);
+    }
+
+    /** Durata di un messaggio vocale (ms), 0 se il messaggio non lo e'. */
+    public static int voiceMs(Msg m) {
+        int i = m.text.indexOf(';');
+        if (!VOX.equals(m.type) || i <= 0) return 0;
+        try { return Integer.parseInt(m.text.substring(0, i)); } catch (NumberFormatException e) { return 0; }
+    }
+
+    /** L'audio di un messaggio vocale (null se manca o e' rovinato). */
+    public static byte[] voiceData(Msg m) {
+        int i = m.text.indexOf(';');
+        if (!VOX.equals(m.type) || i < 0) return null;
+        try { return java.util.Base64.getDecoder().decode(m.text.substring(i + 1)); } catch (IllegalArgumentException e) { return null; }
+    }
 
     /** Punto d'incontro per il gruppo: il nome del posto viaggia nel testo. */
     public Msg sendMeet(double lat, double lon, String name) { return send(MEET, name, lat, lon, 0f); }
@@ -18831,6 +18997,8 @@ public final class MeshHub implements MeshNode.Listener {
     private static final int HISTORY_MAX = 300;
     /** Ogni quanto si manda la propria posizione al gruppo, e dopo quanto un compagno sparisce. */
     public static final long BEACON_MS = 30_000, MEMBER_TTL_MS = 2 * 3_600_000L;
+    /** Messaggi vocali: al massimo 10 secondi (~15 KB di audio AMR). */
+    public static final int VOICE_MAX_MS = 10_000, VOICE_MAX_BYTES = 24_000;
 
     public interface Listener {
         default void onMessage(MeshNode.Msg m) {}
@@ -19088,6 +19256,17 @@ public final class MeshHub implements MeshNode.Listener {
         double la = l != null ? l.getLatitude() : Double.NaN, lo = l != null ? l.getLongitude() : Double.NaN;
         float acc = l != null ? l.getAccuracy() : 0f;
         io.execute(() -> deliverMine(node.sendSos(la, lo, acc, text)));
+    }
+
+    /** Manda un messaggio vocale gia' registrato (file AMR). */
+    public void sendVoice(File clip, int durationMs) {
+        io.execute(() -> {
+            try {
+                byte[] b = Files.readAllBytes(clip.toPath());
+                if (b.length == 0 || b.length > VOICE_MAX_BYTES) return;
+                deliverMine(node.sendVoice(durationMs, java.util.Base64.getEncoder().encodeToString(b)));
+            } catch (Exception ignored) {}
+        });
     }
 
     /** Propone un punto d'incontro a tutto il gruppo (nome del posto + coordinate). */
@@ -19383,7 +19562,8 @@ public class MeshService extends Service {
         boolean sos = MeshNode.SOS.equals(m.type);
         String body = sos ? "SOS: " + (m.text.isEmpty() ? "richiesta di aiuto" : m.text)
             : MeshNode.POS.equals(m.type) ? "Ha condiviso la sua posizione"
-            : MeshNode.MEET.equals(m.type) ? "Punto d'incontro: " + m.text : m.text;
+            : MeshNode.MEET.equals(m.type) ? "Punto d'incontro: " + m.text
+            : MeshNode.VOX.equals(m.type) ? "Messaggio vocale (" + Math.max(1, Math.round(MeshNode.voiceMs(m) / 1000f)) + " s)" : m.text;
         Notification n = new Notification.Builder(c, sos ? CH_SOS : CH_MSG)
             .setSmallIcon(R.drawable.ic_gps)
             .setContentTitle(sos ? "SOS da " + m.from + "!" : m.from + (m.secure ? " (gruppo)" : ""))
@@ -19806,23 +19986,25 @@ import java.util.*;
  * cime (con quota), rifugi e bivacchi, sorgenti e fontanelle, punti
  * panoramici, ripari, campeggi e i punti per l'emergenza (ospedali,
  * farmacie, defibrillatori) e gli autovelox fissi per il navigatore (v5.3,
- * con il limite se indicato), distributori e colonnine di ricarica (v5.4). I rifugi mappati come edificio vengono presi
+ * con il limite se indicato), distributori e colonnine di ricarica (v5.4),
+ * paesi e citta' con la loro importanza e i laghi con il centro calcolato
+ * dai punti della riva, anche quelli grandi fatti di piu' tratti (v5.5). I rifugi mappati come edificio vengono presi
  * dal primo nodo del contorno. Indice in un file di testo a parte, costruito
  * una volta. Nessuna dipendenza da Android: testato sul computer.
  */
 public final class PoiIndex {
     public static final String PEAK = "peak", HUT = "hut", WATER = "water", VIEW = "view",
         SHELTER = "shelter", CAMP = "camp", HOSPITAL = "hospital", PHARMACY = "pharmacy", AED = "aed",
-        SPEED_CAM = "speedcam", FUEL = "fuel", CHARGE = "charge";
-    /** v5.4: distributori e colonnine (gli indici delle versioni precedenti si rifanno una volta). */
-    private static final String HEADER = "POI3";
+        SPEED_CAM = "speedcam", FUEL = "fuel", CHARGE = "charge", TOWN = "town", LAKE = "lake";
+    /** v5.5: paesi e laghi (gli indici delle versioni precedenti si rifanno una volta). */
+    private static final String HEADER = "POI4";
 
     public static final class Poi {
         public final String type, name;
         public final double lat, lon;
         /** Quota in metri (NaN se non nota). */
         public final double ele;
-        /** Autovelox: limite in km/h (NaN se non indicato). */
+        /** Autovelox: limite in km/h (NaN se non indicato); paesi: importanza (vedi placeRank). */
         public final double limitKmh;
 
         public Poi(String type, String name, double lat, double lon, double ele) {
@@ -19832,6 +20014,9 @@ public final class PoiIndex {
         public Poi(String type, String name, double lat, double lon, double ele, double limitKmh) {
             this.type = type; this.name = name; this.lat = lat; this.lon = lon; this.ele = ele; this.limitKmh = limitKmh;
         }
+
+        /** Paesi: 4 citta', 3 cittadina, 2 paese, 1 frazione (0 se non e' un paese). */
+        public int placeRank() { return TOWN.equals(type) && !Double.isNaN(limitKmh) ? (int) limitKmh : 0; }
     }
 
     private final List<Poi> pois = new ArrayList<>();
@@ -19855,7 +20040,30 @@ public final class PoiIndex {
         if ("speed_camera".equals(tag.apply("highway"))) return SPEED_CAM;
         if ("fuel".equals(amenity)) return FUEL;
         if ("charging_station".equals(amenity)) return CHARGE;
+        if (placeRank(tag.apply("place")) > 0) return TOWN;
         return null;
+    }
+
+    /** Importanza di un luogo abitato dal tag place (0 = non interessa). */
+    static int placeRank(String place) {
+        if (place == null) return 0;
+        switch (place) {
+            case "city": return 4;
+            case "town": return 3;
+            case "village": return 2;
+            case "hamlet": return 1;
+            default: return 0;
+        }
+    }
+
+    /** Lago o bacino con il nome (specchio d'acqua, non fiumi e piscine). */
+    static boolean isLake(java.util.function.Function<String, String> tag) {
+        String water = tag.apply("water");
+        boolean w = "water".equals(tag.apply("natural"))
+            && (water == null || water.equals("lake") || water.equals("reservoir") || water.equals("lagoon"))
+            || "reservoir".equals(tag.apply("landuse"));
+        String n = tag.apply("name");
+        return w && n != null && !n.trim().isEmpty();
     }
 
     /** Limite da "maxspeed" ("90", "90 km/h", "55 mph"); NaN per valori come "IT:urban". */
@@ -19908,40 +20116,79 @@ public final class PoiIndex {
 
     /** Legge il .pbf (o un .osm) e scrive l'indice. */
     public static int build(File osmFile, File indexOut) throws Exception {
-        // passata 1: edifici/aree (rifugi, ospedali, campeggi...) -> primo nodo del contorno
-        Map<Long, String[]> wayFirstNode = new HashMap<>();   // nodo -> {tipo, nome, ele}
+        // passata 1: edifici/aree (rifugi, ospedali, campeggi...) -> primo nodo del contorno;
+        // laghi: tutti i nodi della riva (il centro e' la loro media), anche dalle relazioni
+        Map<Long, String[]> wayFirstNode = new HashMap<>();   // nodo -> {tipo, nome, ele, importanza}
+        List<String> lakes = new ArrayList<>();
+        Map<Long, Integer> lakeNodes = new HashMap<>(), lakeWays = new HashMap<>();
         try (OSMInputFile in = new OSMInputFile(osmFile).setWorkerThreads(1).open()) {
             ReaderElement el;
             while ((el = in.getNext()) != null) {
+                if (el.getType() == ReaderElement.Type.RELATION) {
+                    com.graphhopper.reader.ReaderRelation r = (com.graphhopper.reader.ReaderRelation) el;
+                    if (!isLake(k -> r.getTag(k, null))) continue;
+                    int li = lakes.size();
+                    lakes.add(r.getTag("name", "").trim());
+                    for (com.graphhopper.reader.ReaderRelation.Member m : r.getMembers())
+                        if (m.getType() == ReaderElement.Type.WAY && !"inner".equals(m.getRole())) lakeWays.putIfAbsent(m.getRef(), li);
+                    continue;
+                }
                 if (el.getType() != ReaderElement.Type.WAY) continue;
                 ReaderWay w = (ReaderWay) el;
                 java.util.function.Function<String, String> tag = k -> w.getTag(k, null);
+                if (isLake(tag)) {
+                    int li = lakes.size();
+                    lakes.add(w.getTag("name", "").trim());
+                    for (int i = 0; i < w.getNodes().size(); i++) lakeNodes.putIfAbsent(w.getNodes().get(i), li);
+                    continue;
+                }
                 String type = classify(tag);
                 if (type == null || w.getNodes().size() == 0) continue;
                 String name = nameOf(tag, type);
                 if (name == null) continue;
-                wayFirstNode.put(w.getNodes().get(0), new String[]{type, name, w.getTag("ele", null)});
+                wayFirstNode.put(w.getNodes().get(0), new String[]{type, name, w.getTag("ele", null),
+                    String.valueOf(placeRank(w.getTag("place", null)))});
+            }
+        }
+        // passata 1b (solo se serve): i tratti di riva dei laghi descritti come relazione
+        if (!lakeWays.isEmpty()) {
+            try (OSMInputFile in = new OSMInputFile(osmFile).setWorkerThreads(1).open()) {
+                ReaderElement el;
+                while ((el = in.getNext()) != null) {
+                    if (el.getType() != ReaderElement.Type.WAY) continue;
+                    ReaderWay w = (ReaderWay) el;
+                    Integer li = lakeWays.get(w.getId());
+                    if (li == null) continue;
+                    for (int i = 0; i < w.getNodes().size(); i++) lakeNodes.putIfAbsent(w.getNodes().get(i), li);
+                }
             }
         }
         // passata 2: nodi
         List<Poi> out = new ArrayList<>();
+        double[][] lakeAcc = new double[lakes.size()][3];
         try (OSMInputFile in = new OSMInputFile(osmFile).setWorkerThreads(1).open()) {
             ReaderElement el;
             while ((el = in.getNext()) != null) {
                 if (el.getType() != ReaderElement.Type.NODE) continue;
                 ReaderNode n = (ReaderNode) el;
+                Integer li = lakeNodes.get(n.getId());
+                if (li != null) { lakeAcc[li][0] += n.getLat(); lakeAcc[li][1] += n.getLon(); lakeAcc[li][2]++; }
                 String[] w = wayFirstNode.get(n.getId());
-                if (w != null) out.add(new Poi(w[0], w[1], n.getLat(), n.getLon(), parseEle(w[2])));
+                if (w != null) out.add(new Poi(w[0], w[1], n.getLat(), n.getLon(), parseEle(w[2]),
+                    TOWN.equals(w[0]) ? Double.parseDouble(w[3]) : Double.NaN));
                 if (!n.hasTags()) continue;
                 java.util.function.Function<String, String> tag = k -> n.getTag(k, null);
                 String type = classify(tag);
                 if (type == null) continue;
                 String name = nameOf(tag, type);
                 if (name == null) continue;
-                out.add(new Poi(type, name, n.getLat(), n.getLon(), parseEle(n.getTag("ele", null)),
-                    SPEED_CAM.equals(type) ? parseSpeed(n.getTag("maxspeed", null)) : Double.NaN));
+                double extra = SPEED_CAM.equals(type) ? parseSpeed(n.getTag("maxspeed", null))
+                    : TOWN.equals(type) ? placeRank(n.getTag("place", null)) : Double.NaN;
+                out.add(new Poi(type, name, n.getLat(), n.getLon(), parseEle(n.getTag("ele", null)), extra));
             }
         }
+        for (int i = 0; i < lakes.size(); i++)
+            if (lakeAcc[i][2] > 0) out.add(new Poi(LAKE, lakes.get(i), lakeAcc[i][0] / lakeAcc[i][2], lakeAcc[i][1] / lakeAcc[i][2], Double.NaN));
         indexOut.getParentFile().mkdirs();
         try (BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(indexOut), StandardCharsets.UTF_8))) {
             bw.write(HEADER); bw.newLine();
@@ -20147,8 +20394,10 @@ public class PoiActivity extends AppCompatActivity {
         {"poi_cat_view", "PANORAMI", PoiIndex.VIEW, "30000"},
         {"poi_cat_camp", "RIPARI", PoiIndex.CAMP + "," + PoiIndex.SHELTER, "30000"},
         {"poi_cat_help", "SOCCORSO", PoiIndex.HOSPITAL + "," + PoiIndex.PHARMACY + "," + PoiIndex.AED, "40000"},
+        {"poi_cat_town", "PAESI", PoiIndex.TOWN, "30000"},
+        {"poi_cat_lake", "LAGHI", PoiIndex.LAKE, "60000"},
     };
-    private static final int[] COLORS = {0xFFFFD600, 0xFFFF6B35, 0xFF00E5FF, 0xFFB388FF, 0xFF00FF88, 0xFFFF3D71};
+    private static final int[] COLORS = {0xFFFFD600, 0xFFFF6B35, 0xFF00E5FF, 0xFFB388FF, 0xFF00FF88, 0xFFFF3D71, 0xFFE8F4FD, 0xFF4FC3F7};
 
     private PoiIndex index;
     private int cat = 0;
@@ -20164,7 +20413,8 @@ public class PoiActivity extends AppCompatActivity {
         tvCount = findViewById(R.id.tv_poi_count);
         search = findViewById(R.id.et_poi_search);
         list = findViewById(R.id.poi_list);
-        int[] ids = {R.id.poi_cat_peak, R.id.poi_cat_hut, R.id.poi_cat_water, R.id.poi_cat_view, R.id.poi_cat_camp, R.id.poi_cat_help};
+        int[] ids = {R.id.poi_cat_peak, R.id.poi_cat_hut, R.id.poi_cat_water, R.id.poi_cat_view, R.id.poi_cat_camp, R.id.poi_cat_help,
+            R.id.poi_cat_town, R.id.poi_cat_lake};
         for (int i = 0; i < ids.length; i++) {
             chips[i] = findViewById(ids[i]);
             final int k = i;
@@ -20251,7 +20501,8 @@ public class PoiActivity extends AppCompatActivity {
             TextView t2 = new TextView(this);
             String ele = Double.isNaN(p.ele) ? "" : String.format(Locale.ITALY, "  ·  %,.0f m", p.ele)
                 + (Double.isNaN(myAlt) ? "" : String.format(Locale.ITALY, " (%+,.0f)", p.ele - myAlt));
-            t2.setText(GeoFormat.formatDistance(d) + " verso " + GeoFormat.cardinal(brg) + ele + "  ·  " + label(p.type));
+            String kind = PoiIndex.TOWN.equals(p.type) ? (p.placeRank() >= 4 ? "citta'" : p.placeRank() == 1 ? "frazione" : "paese") : label(p.type);
+            t2.setText(GeoFormat.formatDistance(d) + " verso " + GeoFormat.cardinal(brg) + ele + "  ·  " + kind);
             t2.setTextColor(0xFF8FB3D0);
             t2.setTextSize(12.5f);
             col.addView(t1);
@@ -20273,6 +20524,8 @@ public class PoiActivity extends AppCompatActivity {
             case PoiIndex.HOSPITAL: return "ospedale";
             case PoiIndex.PHARMACY: return "farmacia";
             case PoiIndex.AED: return "defibrillatore";
+            case PoiIndex.TOWN: return "paese";
+            case PoiIndex.LAKE: return "lago";
             default: return "";
         }
     }
@@ -20917,6 +21170,21 @@ public class PeakArActivity extends AppCompatActivity implements SensorEventList
                 double ele = Double.isNaN(p.ele) ? myAlt : p.ele;
                 out.add(new ArOverlayView.Label(p.name, ArOverlayView.sub(p.ele, d), GeoFormat.bearing(w[0], w[1], p.lat, p.lon),
                     ArProjector.elevationAngle(myAlt, ele, d), d, PoiIndex.PEAK.equals(p.type) ? 0xFFFFD600 : 0xFFFF6B35));
+            }
+            // v5.5: paesi (le frazioni no, i villaggi solo vicini) e laghi
+            HashSet<String> places = new HashSet<>();
+            places.add(PoiIndex.TOWN);
+            places.add(PoiIndex.LAKE);
+            for (Object[] o : index.near(w[0], w[1], RANGES[rangeIdx], places, "", 40)) {
+                PoiIndex.Poi p = (PoiIndex.Poi) o[0];
+                double d = (Double) o[1];
+                int rank = p.placeRank();
+                boolean lake = PoiIndex.LAKE.equals(p.type);
+                if (!lake && (rank < 2 || (rank == 2 && d > 12_000))) continue;
+                double ele = Double.isNaN(p.ele) ? myAlt : p.ele;
+                String kind = lake ? "lago" : rank >= 4 ? "citta'" : "paese";
+                out.add(new ArOverlayView.Label(p.name, kind + " · " + GeoFormat.formatDistance(d), GeoFormat.bearing(w[0], w[1], p.lat, p.lon),
+                    ArProjector.elevationAngle(myAlt, ele, d), d + 1500, lake ? 0xFF4FC3F7 : 0xFFE8F4FD));
             }
         }
         for (MeshHub.Member m : MeshHub.get(this).team()) {
@@ -23231,6 +23499,682 @@ public class PressureGraphView extends View {
 }
 """
 
+GNSS_SUMMARY = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Riepilogo dei satelliti visti dal GPS del telefono (v5.5): quanti per
+ * costellazione (GPS, Galileo, GLONASS, BeiDou...), quanti usati per la
+ * posizione, forza del segnale e doppia frequenza (L5/E5a: posizione piu'
+ * precisa vicino ai palazzi e sotto gli alberi).
+ * Nessuna dipendenza da Android: testato sul computer.
+ */
+public final class GnssSummary {
+    /** Costanti come in android.location.GnssStatus. */
+    public static final int GPS = 1, SBAS = 2, GLONASS = 3, QZSS = 4, BEIDOU = 5, GALILEO = 6, NAVIC = 7;
+
+    public static final class Sat {
+        public final int constellation, svid;
+        /** Segnale (dB-Hz), altezza sull'orizzonte e azimut (gradi), frequenza (Hz, 0 = non nota). */
+        public final float cn0, elevation, azimuth;
+        public final boolean used;
+        public final double carrierHz;
+
+        public Sat(int constellation, int svid, float cn0, float elevation, float azimuth, boolean used, double carrierHz) {
+            this.constellation = constellation; this.svid = svid; this.cn0 = cn0; this.elevation = elevation;
+            this.azimuth = azimuth; this.used = used; this.carrierHz = carrierHz;
+        }
+    }
+
+    /** Una riga per costellazione: visti, usati, segnale medio. */
+    public static final class Group {
+        public final int constellation;
+        public int visible, used;
+        public float avgCn0;
+        public boolean secondFreq;
+
+        Group(int c) { constellation = c; }
+    }
+
+    public final List<Sat> sats;
+    public final List<Group> groups = new ArrayList<>();
+    public int visible, used;
+    public float avgCn0Used;
+    public boolean dualFrequency;
+
+    private GnssSummary(List<Sat> s) { sats = s; }
+
+    public static GnssSummary of(List<Sat> sats) {
+        GnssSummary g = new GnssSummary(sats == null ? new ArrayList<>() : sats);
+        Map<Integer, Group> by = new LinkedHashMap<>();
+        Map<Integer, Float> sum = new LinkedHashMap<>();
+        float usedSum = 0;
+        for (Sat s : g.sats) {
+            Group gr = by.computeIfAbsent(s.constellation, Group::new);
+            gr.visible++;
+            sum.merge(s.constellation, s.cn0, Float::sum);
+            g.visible++;
+            if (s.used) {
+                gr.used++;
+                g.used++;
+                usedSum += s.cn0;
+                if (secondFrequency(s.carrierHz)) { gr.secondFreq = true; g.dualFrequency = true; }
+            }
+        }
+        for (Group gr : by.values()) gr.avgCn0 = sum.get(gr.constellation) / gr.visible;
+        g.avgCn0Used = g.used == 0 ? 0 : usedSum / g.used;
+        g.groups.addAll(by.values());
+        g.groups.sort((a, b) -> b.used != a.used ? b.used - a.used : b.visible - a.visible);
+        return g;
+    }
+
+    /** Seconda frequenza civile: L5 / E5a / B2a (1176,45 MHz), E5b / B2b (1207,14), L2 (1227,6). */
+    public static boolean secondFrequency(double hz) {
+        double mhz = hz / 1e6;
+        return Math.abs(mhz - 1176.45) < 2 || Math.abs(mhz - 1207.14) < 2 || Math.abs(mhz - 1227.60) < 2;
+    }
+
+    /** Nome della banda ("L1", "L5"...), "" se la frequenza non e' nota. */
+    public static String band(double hz) {
+        if (hz <= 0) return "";
+        double mhz = hz / 1e6;
+        if (Math.abs(mhz - 1575.42) < 2) return "L1";
+        if (Math.abs(mhz - 1176.45) < 2) return "L5";
+        if (Math.abs(mhz - 1207.14) < 2) return "E5b";
+        if (Math.abs(mhz - 1227.60) < 2) return "L2";
+        if (Math.abs(mhz - 1561.10) < 2) return "B1";
+        if (mhz > 1597 && mhz < 1610) return "G1";
+        return String.format(java.util.Locale.US, "%.0f MHz", mhz);
+    }
+
+    public static String name(int constellation) {
+        switch (constellation) {
+            case GPS: return "GPS (USA)";
+            case GALILEO: return "Galileo (Europa)";
+            case GLONASS: return "GLONASS (Russia)";
+            case BEIDOU: return "BeiDou (Cina)";
+            case QZSS: return "QZSS (Giappone)";
+            case NAVIC: return "NavIC (India)";
+            case SBAS: return "SBAS / EGNOS (correzioni)";
+            default: return "Altro";
+        }
+    }
+
+    public static int color(int constellation) {
+        switch (constellation) {
+            case GPS: return 0xFF00E5FF;
+            case GALILEO: return 0xFFFFD600;
+            case GLONASS: return 0xFFFF3D71;
+            case BEIDOU: return 0xFFFF6B35;
+            case QZSS: return 0xFFB388FF;
+            case SBAS: return 0xFF00FF88;
+            default: return 0xFF8FB3D0;
+        }
+    }
+
+    /** Giudizio sulla ricezione: Ottima / Buona / Scarsa / Nessuna posizione. */
+    public String quality() {
+        if (used < 4) return "Nessuna posizione (servono almeno 4 satelliti)";
+        if (used >= 12 && avgCn0Used >= 30) return "Ottima";
+        if (used >= 7 && avgCn0Used >= 24) return "Buona";
+        return "Scarsa: cerca cielo aperto";
+    }
+}
+"""
+
+SKY_PLOT_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import com.offlinegps.map.util.GnssSummary;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Mappa del cielo dei satelliti (v5.5): il centro e' sopra la testa, il bordo
+ * e' l'orizzonte, Nord in alto. Colore = costellazione, pieno = usato per la
+ * posizione, grandezza = forza del segnale.
+ */
+public class SkyPlotView extends View {
+    private final float dp;
+    private final Paint pBg = new Paint(Paint.ANTI_ALIAS_FLAG), pRing = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG), pSat = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private List<GnssSummary.Sat> sats = new ArrayList<>();
+
+    public SkyPlotView(Context c) { this(c, null); }
+    public SkyPlotView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pRing.setStyle(Paint.Style.STROKE);
+        pText.setTextAlign(Paint.Align.CENTER);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+    }
+
+    public void setSats(List<GnssSummary.Sat> s) { sats = s == null ? new ArrayList<>() : s; invalidate(); }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f, r = Math.min(cx, cy) - 20 * dp;
+        if (r < 20) return;
+        pBg.setShader(new RadialGradient(cx, cy, r, 0xFF13234A, 0xFF050A14, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r, pBg);
+        for (int e = 0; e <= 60; e += 30) {
+            float rr = r * (90 - e) / 90f;
+            pRing.setColor(e == 0 ? 0xAA00E5FF : 0x4400E5FF);
+            pRing.setStrokeWidth((e == 0 ? 1.6f : 1f) * dp);
+            c.drawCircle(cx, cy, rr, pRing);
+            if (e > 0) {
+                pText.setTextSize(9 * dp);
+                pText.setColor(0xFF5A7A99);
+                c.drawText(e + "°", cx + 3 * dp + 8 * dp, cy - rr + 11 * dp, pText);
+            }
+        }
+        pRing.setColor(0x2200E5FF);
+        c.drawLine(cx - r, cy, cx + r, cy, pRing);
+        c.drawLine(cx, cy - r, cx, cy + r, pRing);
+        pText.setTextSize(13 * dp);
+        String[] card = {"N", "E", "S", "O"};
+        for (int i = 0; i < 4; i++) {
+            double a = Math.toRadians(i * 90);
+            pText.setColor(i == 0 ? 0xFFFF3D71 : 0xFF00E5FF);
+            c.drawText(card[i], cx + (float) Math.sin(a) * (r + 11 * dp), cy - (float) Math.cos(a) * (r + 11 * dp) + 5 * dp, pText);
+        }
+        // prima quelli non usati, sopra quelli usati
+        for (int pass = 0; pass < 2; pass++) {
+            for (GnssSummary.Sat s : sats) {
+                if (s.used != (pass == 1) || s.elevation < 0) continue;
+                float rr = r * (90 - s.elevation) / 90f;
+                double a = Math.toRadians(s.azimuth);
+                float x = cx + (float) Math.sin(a) * rr, y = cy - (float) Math.cos(a) * rr;
+                float size = Math.max(3.5f, Math.min(9.5f, s.cn0 / 4.5f)) * dp;
+                int col = GnssSummary.color(s.constellation);
+                if (s.used) {
+                    pSat.setStyle(Paint.Style.FILL);
+                    pSat.setColor((col & 0x00FFFFFF) | 0x44000000);
+                    c.drawCircle(x, y, size * 1.9f, pSat);
+                    pSat.setColor(col);
+                    c.drawCircle(x, y, size, pSat);
+                } else {
+                    pSat.setStyle(Paint.Style.STROKE);
+                    pSat.setStrokeWidth(1.6f * dp);
+                    pSat.setColor((col & 0x00FFFFFF) | 0x99000000);
+                    c.drawCircle(x, y, size, pSat);
+                }
+                pText.setTextSize(9 * dp);
+                pText.setColor(s.used ? 0xFFE8F4FD : 0xFF5A7A99);
+                c.drawText(String.valueOf(s.svid), x, y - size - 3 * dp, pText);
+            }
+        }
+        if (sats.isEmpty()) {
+            pText.setTextSize(13 * dp);
+            pText.setColor(0xFF8FB3D0);
+            c.drawText("In attesa dei satelliti...", cx, cy + r * 0.45f, pText);
+        }
+    }
+}
+"""
+
+SATELLITES_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.location.GnssStatus;
+import android.location.Location;
+import android.location.LocationManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.GnssSummary;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Satelliti GPS (v5.5): mappa del cielo con i satelliti di tutte le
+ * costellazioni, quanti sono usati per la posizione, forza del segnale,
+ * precisione, tempo al primo fix e doppia frequenza (L5/E5a).
+ */
+public class SatellitesActivity extends AppCompatActivity {
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private LocationManager lm;
+    private SkyPlotView sky;
+    private TextView tvUsed, tvAcc, tvTtff, tvQuality, tvDual;
+    private LinearLayout list;
+    private boolean visible, registered;
+
+    private final GnssStatus.Callback cb = new GnssStatus.Callback() {
+        @Override public void onSatelliteStatusChanged(@NonNull GnssStatus s) {
+            List<GnssSummary.Sat> out = new ArrayList<>();
+            for (int i = 0; i < s.getSatelliteCount(); i++) {
+                out.add(new GnssSummary.Sat(s.getConstellationType(i), s.getSvid(i), s.getCn0DbHz(i),
+                    s.getElevationDegrees(i), s.getAzimuthDegrees(i), s.usedInFix(i),
+                    s.hasCarrierFrequencyHz(i) ? s.getCarrierFrequencyHz(i) : 0));
+            }
+            applySats(out);
+        }
+
+        @Override public void onFirstFix(int ttffMillis) { showTtff(ttffMillis); }
+    };
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            Location l = GpsTrackingService.getLastLocation();
+            tvAcc.setText(l == null || !l.hasAccuracy() ? "--" : String.format(Locale.ITALY, "±%.0f m", l.getAccuracy()));
+            h.postDelayed(this, 1000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_satellites);
+        sky = findViewById(R.id.sat_sky);
+        tvUsed = findViewById(R.id.sat_used);
+        tvAcc = findViewById(R.id.sat_acc);
+        tvTtff = findViewById(R.id.sat_ttff);
+        tvQuality = findViewById(R.id.sat_quality);
+        tvDual = findViewById(R.id.sat_dual);
+        list = findViewById(R.id.sat_list);
+        View back = findViewById(R.id.btn_sat_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        applySats(new ArrayList<>());
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        GpsTrackingService.acquire(this, "SatellitesActivity");
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            tvQuality.setText("Serve il permesso della posizione precisa");
+        } else if (lm != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= 30) lm.registerGnssStatusCallback(getMainExecutor(), cb);
+                else lm.registerGnssStatusCallback(cb, h);
+                registered = true;
+            } catch (SecurityException ignored) {}
+        }
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+        if (registered && lm != null) { lm.unregisterGnssStatusCallback(cb); registered = false; }
+        GpsTrackingService.release(this, "SatellitesActivity");
+    }
+
+    private void showTtff(int ms) {
+        tvTtff.setText(String.format(Locale.ITALY, "%.0f s", ms / 1000f));
+    }
+
+    /** Disegna il cielo e il riepilogo per costellazione. */
+    void applySats(List<GnssSummary.Sat> sats) {
+        GnssSummary g = GnssSummary.of(sats);
+        sky.setSats(g.sats);
+        tvUsed.setText(g.used + " / " + g.visible);
+        tvQuality.setText(g.visible == 0 ? "In attesa dei satelliti: esci all'aperto, lontano dai muri"
+            : "Ricezione: " + g.quality() + (g.used > 0 ? String.format(Locale.ITALY, "  ·  segnale medio %.0f dB-Hz", g.avgCn0Used) : ""));
+        tvDual.setVisibility(g.visible == 0 ? View.GONE : View.VISIBLE);
+        tvDual.setText(g.dualFrequency
+            ? "Doppia frequenza attiva (L1 + L5/E5a): posizione piu' precisa vicino ai palazzi e sotto gli alberi."
+            : "Solo frequenza L1: il telefono non usa (o non ha) la seconda frequenza L5.");
+        tvDual.setTextColor(g.dualFrequency ? 0xFF00FF88 : 0xFF8FB3D0);
+        list.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        for (GnssSummary.Group gr : g.groups) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, (int) (7 * dp), 0, (int) (7 * dp));
+            View dot = new View(this);
+            android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+            gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+            gd.setColor(GnssSummary.color(gr.constellation));
+            dot.setBackground(gd);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams((int) (12 * dp), (int) (12 * dp));
+            dl.setMarginEnd((int) (10 * dp));
+            row.addView(dot, dl);
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView name = new TextView(this);
+            name.setText(GnssSummary.name(gr.constellation) + (gr.secondFreq ? "  ·  L5" : ""));
+            name.setTextColor(0xFFE8F4FD);
+            name.setTextSize(14);
+            name.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+            bar.setMax(50);
+            bar.setProgress(Math.round(gr.avgCn0));
+            bar.setProgressDrawable(getDrawable(R.drawable.bg_progress_neon));
+            col.addView(name);
+            col.addView(bar, new LinearLayout.LayoutParams(-1, (int) (6 * dp)));
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView cnt = new TextView(this);
+            cnt.setText(gr.used + "/" + gr.visible);
+            cnt.setTextColor(gr.used > 0 ? 0xFF00FF88 : 0xFF8FB3D0);
+            cnt.setTextSize(16);
+            cnt.setTypeface(android.graphics.Typeface.create("sans-serif-condensed", android.graphics.Typeface.BOLD));
+            cnt.setGravity(Gravity.END);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams((int) (56 * dp), -2);
+            row.addView(cnt, cl);
+            list.addView(row);
+        }
+        if (g.groups.isEmpty()) {
+            TextView t = new TextView(this);
+            t.setText("Nessun satellite ancora: all'aperto il primo fix arriva in 10-60 secondi.");
+            t.setTextColor(0xFF8FB3D0);
+            t.setTextSize(13);
+            list.addView(t);
+        }
+    }
+}
+"""
+
+PARKING_STORE = r"""package com.offlinegps.map.ui;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import com.offlinegps.map.AppConfig;
+
+/**
+ * Dove e' l'auto (v5.5): posizione, ora, nota (piano, colonna) e scadenza del
+ * parcheggio, con gli avvisi 10 minuti prima e alla scadenza. Le chiavi
+ * park_lat / park_lon / park_time sono quelle della scheda Strumenti.
+ */
+final class ParkingStore {
+    private ParkingStore() {}
+
+    private static SharedPreferences p(Context c) { return c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE); }
+
+    static boolean has(Context c) { return !p(c).getString("park_lat", "").isEmpty(); }
+
+    /** {lat, lon} oppure null. */
+    static double[] pos(Context c) {
+        try { return new double[]{Double.parseDouble(p(c).getString("park_lat", "")), Double.parseDouble(p(c).getString("park_lon", ""))}; }
+        catch (Exception e) { return null; }
+    }
+
+    static long time(Context c) { return p(c).getLong("park_time", 0); }
+    static String note(Context c) { return p(c).getString("park_note", ""); }
+    static long until(Context c) { return p(c).getLong("park_until", 0); }
+
+    /** Nuovo parcheggio: la nota e la scadenza precedenti non valgono piu'. */
+    static void save(Context c, double lat, double lon) {
+        p(c).edit().putString("park_lat", String.valueOf(lat)).putString("park_lon", String.valueOf(lon))
+            .putLong("park_time", System.currentTimeMillis()).putString("park_note", "").putLong("park_until", 0).apply();
+        schedule(c, 0);
+    }
+
+    static void setNote(Context c, String note) { p(c).edit().putString("park_note", note == null ? "" : note.trim()).apply(); }
+
+    /** Scadenza (0 = nessuna): avviso 10 minuti prima e alla scadenza. */
+    static void setUntil(Context c, long until) {
+        p(c).edit().putLong("park_until", until).apply();
+        schedule(c, until);
+    }
+
+    static void clear(Context c) {
+        p(c).edit().remove("park_lat").remove("park_lon").remove("park_time").remove("park_note").remove("park_until").apply();
+        schedule(c, 0);
+    }
+
+    private static void schedule(Context c, long until) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        PendingIntent soon = alarm(c, 1, "soon"), now = alarm(c, 2, "now");
+        am.cancel(soon);
+        am.cancel(now);
+        if (until <= System.currentTimeMillis()) return;
+        if (until - 10 * 60_000L > System.currentTimeMillis())
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, until - 10 * 60_000L, soon);
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, until, now);
+    }
+
+    private static PendingIntent alarm(Context c, int code, String kind) {
+        Intent i = new Intent(c, ParkingAlarmReceiver.class).putExtra(ParkingAlarmReceiver.EXTRA_KIND, kind);
+        return PendingIntent.getBroadcast(c, code, i, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+}
+"""
+
+PARKING_ALARM_RECEIVER = r"""package com.offlinegps.map.ui;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import com.offlinegps.map.R;
+
+/** Avvisi della scadenza del parcheggio (v5.5): 10 minuti prima e alla scadenza. */
+public class ParkingAlarmReceiver extends BroadcastReceiver {
+    static final String EXTRA_KIND = "park_kind", CH = "parking_v1";
+    static final int ID = 1501;
+
+    @Override public void onReceive(Context c, Intent intent) {
+        if (!ParkingStore.has(c) || ParkingStore.until(c) == 0) return;
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        nm.createNotificationChannel(new NotificationChannel(CH, "Scadenza parcheggio", NotificationManager.IMPORTANCE_HIGH));
+        boolean soon = "soon".equals(intent.getStringExtra(EXTRA_KIND));
+        String note = ParkingStore.note(c);
+        PendingIntent open = PendingIntent.getActivity(c, 0, new Intent(c, ParkingActivity.class),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification n = new Notification.Builder(c, CH)
+            .setSmallIcon(R.drawable.ic_gps)
+            .setContentTitle(soon ? "Il parcheggio scade tra 10 minuti" : "Parcheggio scaduto")
+            .setContentText((note.isEmpty() ? "" : note + "  ·  ") + "Tocca per tornare all'auto")
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .build();
+        try { nm.notify(ID, n); } catch (SecurityException ignored) {}
+    }
+}
+"""
+
+PARKING_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.location.Location;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.InputType;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.util.GeoFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/**
+ * Trova l'auto (v5.5): freccia e distanza verso il parcheggio, da quanto e'
+ * li', nota (piano, colonna, via), scadenza del ticket con avviso e
+ * navigazione a piedi. Il navigatore la salva da solo arrivando in auto.
+ */
+public class ParkingActivity extends AppCompatActivity {
+    private static final int[] EXP_MIN = {0, 30, 60, 120};
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TargetGuide guide;
+    private TextView tvTitle, tvNote, tvCoords, tvDist, tvLeft;
+    private TextView[] expChips;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            render();
+            h.postDelayed(this, 1000);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_parking);
+        guide = new TargetGuide(this, findViewById(R.id.park_compass));
+        tvTitle = findViewById(R.id.tv_park_title);
+        tvNote = findViewById(R.id.tv_park_note);
+        tvCoords = findViewById(R.id.tv_park_coords);
+        tvDist = findViewById(R.id.tv_park_dist);
+        tvLeft = findViewById(R.id.tv_park_left);
+        expChips = new TextView[]{findViewById(R.id.park_exp_0), findViewById(R.id.park_exp_30),
+            findViewById(R.id.park_exp_60), findViewById(R.id.park_exp_120), findViewById(R.id.park_exp_more)};
+        click(R.id.btn_park_back, v -> finish());
+        click(R.id.btn_park_save, v -> saveHere());
+        click(R.id.btn_park_note, v -> editNote());
+        click(R.id.btn_park_nav, v -> { double[] p = ParkingStore.pos(this); if (p != null) ToolKit.navigate(this, p[0], p[1], "La mia auto", RoutingEngine.PROFILE_FOOT); });
+        click(R.id.btn_park_map, v -> { double[] p = ParkingStore.pos(this); if (p != null) ToolKit.showOnMap(this, p[0], p[1], "La mia auto"); });
+        for (int i = 0; i < EXP_MIN.length; i++) {
+            final int m = EXP_MIN[i];
+            if (expChips[i] != null) expChips[i].setOnClickListener(v -> setExpiry(m));
+        }
+        if (expChips[4] != null) expChips[4].setOnClickListener(v -> customExpiry());
+        render();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        GpsTrackingService.acquire(this, "ParkingActivity");
+        guide.start();
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        guide.stop();
+        GpsTrackingService.release(this, "ParkingActivity");
+        h.removeCallbacks(tick);
+    }
+
+    private void saveHere() {
+        Location l = GpsTrackingService.getLastLocation();
+        if (l == null) { Toast.makeText(this, "Posizione GPS non ancora disponibile", Toast.LENGTH_LONG).show(); return; }
+        ParkingStore.save(this, l.getLatitude(), l.getLongitude());
+        Toast.makeText(this, String.format(Locale.ITALY, "Auto salvata qui (±%.0f m)", l.getAccuracy()), Toast.LENGTH_SHORT).show();
+        render();
+        editNote();
+    }
+
+    private void editNote() {
+        if (!ParkingStore.has(this)) { Toast.makeText(this, "Salva prima dove hai parcheggiato", Toast.LENGTH_SHORT).show(); return; }
+        EditText et = new EditText(this);
+        et.setHint("Es. piano -2, colonna B7, via Roma");
+        et.setText(ParkingStore.note(this));
+        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        FrameLayout wrap = new FrameLayout(this);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        wrap.setPadding(pad, 0, pad, 0);
+        wrap.addView(et);
+        new AlertDialog.Builder(this).setTitle("Nota sul parcheggio").setView(wrap)
+            .setPositiveButton("SALVA", (d, w) -> { ParkingStore.setNote(this, et.getText().toString()); render(); })
+            .setNegativeButton("Annulla", null).show();
+    }
+
+    private void setExpiry(int minutes) {
+        if (!ParkingStore.has(this)) { Toast.makeText(this, "Salva prima dove hai parcheggiato", Toast.LENGTH_SHORT).show(); return; }
+        ParkingStore.setUntil(this, minutes == 0 ? 0 : System.currentTimeMillis() + minutes * 60_000L);
+        if (minutes > 0) Toast.makeText(this, "Avviso 10 minuti prima della scadenza", Toast.LENGTH_SHORT).show();
+        render();
+    }
+
+    private void customExpiry() {
+        EditText et = new EditText(this);
+        et.setHint("Minuti (es. 90)");
+        et.setInputType(InputType.TYPE_CLASS_NUMBER);
+        FrameLayout wrap = new FrameLayout(this);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        wrap.setPadding(pad, 0, pad, 0);
+        wrap.addView(et);
+        new AlertDialog.Builder(this).setTitle("Il parcheggio scade tra...").setView(wrap)
+            .setPositiveButton("OK", (d, w) -> {
+                try { setExpiry(Math.max(1, Math.min(24 * 60, Integer.parseInt(et.getText().toString().trim())))); }
+                catch (Exception e) { Toast.makeText(this, "Valore non valido", Toast.LENGTH_SHORT).show(); }
+            })
+            .setNegativeButton("Annulla", null).show();
+    }
+
+    private void render() {
+        boolean has = ParkingStore.has(this);
+        double[] p = ParkingStore.pos(this);
+        Location me = GpsTrackingService.getLastLocation();
+        long now = System.currentTimeMillis();
+        if (!has || p == null) {
+            tvTitle.setText("Nessuna auto salvata");
+            tvNote.setText("Tocca SALVA QUI quando lasci l'auto.");
+            tvCoords.setText("");
+            tvDist.setText("--");
+            tvLeft.setText("--");
+            guide.update(Double.NaN, Double.NaN, null);
+        } else {
+            long t = ParkingStore.time(this);
+            tvTitle.setText("Parcheggiata " + ToolKit.span(now - t) + " fa, alle "
+                + new SimpleDateFormat("HH:mm", Locale.ITALY).format(new Date(t)));
+            String note = ParkingStore.note(this);
+            tvNote.setText(note.isEmpty() ? "Nessuna nota (tocca NOTA per piano, colonna, via)" : note);
+            tvCoords.setText(GeoFormat.decimal(p[0], p[1]));
+            double d = guide.update(p[0], p[1], me);
+            tvDist.setText(d < 0 ? "--" : GeoFormat.formatDistance(d));
+            long until = ParkingStore.until(this);
+            if (until == 0) { tvLeft.setText("--"); tvLeft.setTextColor(0xFF8FB3D0); }
+            else if (until <= now) { tvLeft.setText("SCADUTO"); tvLeft.setTextColor(0xFFFF3D71); }
+            else {
+                long min = (until - now + 59_999) / 60_000;
+                tvLeft.setText(min >= 60 ? String.format(Locale.ITALY, "%d h %02d", min / 60, min % 60) : min + " min");
+                tvLeft.setTextColor(min <= 10 ? 0xFFFF6B35 : 0xFF00FF88);
+            }
+        }
+        long until = ParkingStore.until(this);
+        int sel = until == 0 ? 0 : -1;
+        for (int i = 0; i < expChips.length; i++) {
+            if (expChips[i] == null) continue;
+            expChips[i].setBackgroundResource(i == sel ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            expChips[i].setTextColor(i == sel ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -23790,6 +24734,11 @@ LAYOUT_CHAT = (_XML_HEAD +
     '            android:hint="Scrivi un messaggio..." android:textColor="#E8F4FD" android:textColorHint="#5A7A99"\n'
     '            android:background="@drawable/bg_input" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
     '            android:inputType="textMultiLine|textCapSentences"/>\n'
+    # v5.5: tieni premuto per parlare (walkie-talkie)
+    '        <ImageButton android:id="@+id/btn_chat_mic" android:layout_width="50dp" android:layout_height="50dp"\n'
+    '            android:layout_marginStart="8dp" android:padding="12dp" android:src="@drawable/ic_v4_mic"\n'
+    '            android:tint="#FFD600" android:scaleType="fitCenter" android:background="@drawable/bg_fab_glass"\n'
+    '            android:contentDescription="Tieni premuto per parlare"/>\n'
     '        <ImageButton android:id="@+id/btn_chat_send" android:layout_width="50dp" android:layout_height="50dp"\n'
     '            android:layout_marginStart="8dp" android:padding="13dp" android:src="@drawable/ic_v5_send"\n'
     '            android:tint="#00FF88" android:scaleType="fitCenter" android:background="@drawable/bg_fab_glass"\n'
@@ -24366,7 +25315,7 @@ LAYOUT_TOOLS = _v4_screen(
               + _t_text("tv_park_info", "Nessuna auto salvata", "#CFE3F5", "13sp", mono=True, top="6dp")
               + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
               + _t_buttons(_t_btn("btn_save_parking", "ic_v5_car", "SALVA AUTO", "green", filled=True),
-                           _t_btn("btn_goto_parking", "ic_v4_nav", "PORTAMI LI'", "green", end_margin=False), margin="0dp"),
+                           _t_btn("btn_goto_parking", "ic_v4_nav", "TROVA L'AUTO", "green", end_margin=False), margin="0dp"),
               accent="green", pad="16dp")
     + _t_card(_t_label("EMERGENZA SOS", "#FF8FA3")
               + '<View android:layout_width="match_parent" android:layout_height="10dp"/>\n'
@@ -24427,7 +25376,8 @@ LAYOUT_TOOLS = _v4_screen(
               _v4_tile("open_heat", "ic_v5_sun", "Temp. percepita", "Caldo e vento", "orange", "118dp", end_margin=False))
     + _v4_row(_v4_tile("open_metal", "ic_v4_radar", "Metal detector", "Magnetometro", "cyan", "118dp"),
               _v4_tile("open_speedhud", "ic_v5_car", "Tachimetro HUD", "Riflesso sul vetro", "pink", "118dp", end_margin=False))
-    + _v4_row(_v4_tile("open_unitconv", "ic_v5_calc", "Convertitore unita'", "Lunghezze, pesi, gradi", "violet", "118dp", end_margin=False)),
+    + _v4_row(_v4_tile("open_sats", "ic_v5_satellite", "Satelliti GPS", "Cielo e precisione", "cyan", "118dp"),
+              _v4_tile("open_unitconv", "ic_v5_calc", "Convertitore unita'", "Lunghezze, pesi, gradi", "violet", "118dp", end_margin=False)),
     "tools_column")
 
 # ---------------------------------------------------------------- RADAR DEL GRUPPO (v5.1)
@@ -24468,7 +25418,7 @@ V5_DRAWABLES["bg_ar_panel"] = _v5_shape('    <solid android:color="#CC050A14"/>\
                                         '    <corners android:radius="18dp"/>\n')
 
 LAYOUT_POI = _v4_screen(
-    _v4_header("btn_poi_back", "LUOGHI VICINI", "Cime, rifugi, acqua e soccorso, offline", "#FFD600", "tv_poi_count", "--")
+    _v4_header("btn_poi_back", "LUOGHI VICINI", "Cime, rifugi, acqua, paesi e laghi, offline", "#FFD600", "tv_poi_count", "--")
     + '<LinearLayout android:id="@+id/btn_poi_ar" android:layout_width="match_parent" android:layout_height="64dp"\n'
       '    android:orientation="horizontal" android:gravity="center_vertical" android:paddingStart="14dp"\n'
       '    android:background="@drawable/bg_tile_yellow" android:clickable="true" android:focusable="true"\n'
@@ -24480,8 +25430,8 @@ LAYOUT_POI = _v4_screen(
       '        android:layout_marginStart="12dp" android:text="CHE MONTAGNA E\'?  ·  realta\' aumentata"\n'
       '        android:textColor="#FFFFFF" android:textSize="15sp" android:textStyle="bold"/>\n'
       '</LinearLayout>\n'
-    + _t_chips(("poi_cat_peak", "CIME"), ("poi_cat_hut", "RIFUGI"), ("poi_cat_water", "ACQUA"), margin="8dp")
-    + _t_chips(("poi_cat_view", "PANORAMI"), ("poi_cat_camp", "RIPARI"), ("poi_cat_help", "SOCCORSO"))
+    + _t_chips(("poi_cat_peak", "CIME"), ("poi_cat_hut", "RIFUGI"), ("poi_cat_water", "ACQUA"), ("poi_cat_view", "PANORAMI"), margin="8dp")
+    + _t_chips(("poi_cat_camp", "RIPARI"), ("poi_cat_help", "SOCCORSO"), ("poi_cat_town", "PAESI"), ("poi_cat_lake", "LAGHI"))
     + '<EditText android:id="@+id/et_poi_search" android:layout_width="match_parent" android:layout_height="50dp"\n'
       '    android:hint="Cerca per nome (es. Rifugio, Monte...)" android:textColor="#E8F4FD"\n'
       '    android:textColorHint="#5A7A99" android:textSize="15sp" android:background="@drawable/bg_input"\n'
@@ -24735,6 +25685,50 @@ LAYOUT_ALTIMETER = _v4_screen(
                      "La previsione e' indicativa: per uscite impegnative consulta il bollettino meteo."),
     "alt_column")
 
+# ---------------------------------------------------------------- v5.5 SATELLITI GPS
+V5_TOOL_ICONS_V55 = {
+    "ic_v5_satellite": _v4_icon(["M15.44,0.59l-3.18,3.18c-0.78,0.78 -0.78,2.05 0,2.83l1.24,1.24 -0.71,0.71 -1.24,-1.24c-0.78,-0.78 -2.05,-0.78 -2.83,0L7.3,6.75c-0.78,0.78 -0.78,2.05 0,2.83l1.24,1.24 -0.71,0.71L6.6,10.29c-0.78,-0.78 -2.05,-0.78 -2.83,0L0.59,13.47c-0.78,0.78 -0.78,2.05 0,2.83l3.54,3.54c0.78,0.78 2.05,0.78 2.83,0l3.18,-3.18c0.78,-0.78 0.78,-2.05 0,-2.83l-1.24,-1.24 0.71,-0.71 1.24,1.24c0.78,0.78 2.05,0.78 2.83,0l1.41,-1.41c0.78,-0.78 0.78,-2.05 0,-2.83L13.84,9.65l0.71,-0.71 1.24,1.24c0.78,0.78 2.05,0.78 2.83,0l3.18,-3.18c0.78,-0.78 0.78,-2.05 0,-2.83L18.27,0.59c-0.78,-0.79 -2.05,-0.79 -2.83,0zM6.25,19.13L2.71,15.59l3.18,-3.18 3.54,3.54 -3.18,3.18zM11.55,13.82l-2.12,-2.12 1.41,-1.41 2.12,2.12 -1.41,1.41zM17.56,8.51l-3.54,-3.54 3.18,-3.18 3.54,3.54 -3.18,3.18zM15,22v2c4.97,0 9,-4.03 9,-9h-2c0,3.87 -3.13,7 -7,7zM15,18v2c2.76,0 5,-2.24 5,-5h-2c0,1.66 -1.34,3 -3,3z"]),
+}
+V5_DRAWABLES.update(V5_TOOL_ICONS_V55)
+
+LAYOUT_SATELLITES = _v4_screen(
+    _v4_header("btn_sat_back", "SATELLITI GPS", "Quanti ne vedi e quanto e' precisa la posizione", "#00E5FF")
+    + _t_card(_t_view("SkyPlotView", "sat_sky", "320dp", margin="0dp"), accent="cyan", pad="8dp")
+    + _v4_row(_t_stat("sat_used", "--", "USATI / VISTI", "green"),
+              _t_stat("sat_acc", "--", "PRECISIONE", "cyan"),
+              _t_stat("sat_ttff", "--", "PRIMO FIX", "violet", end_margin=False), margin="10dp")
+    + _t_text("sat_quality", "", "#E8F4FD", "14sp", bold=True, top="0dp")
+    + _t_text("sat_dual", "", "#8FB3D0", "12.5sp", top="4dp")
+    + '<View android:layout_width="match_parent" android:layout_height="12dp"/>\n'
+    + _t_card(_t_label("COSTELLAZIONI  ·  USATI / VISTI")
+              + '<LinearLayout android:id="@+id/sat_list" android:layout_width="match_parent"\n'
+                '    android:layout_height="wrap_content" android:orientation="vertical" android:layout_marginTop="4dp"/>\n',
+              accent="cyan")
+    + _v4_hint(None, "Pallino pieno = satellite usato per la posizione; piu' grande = segnale piu' forte (oltre 35 dB-Hz e' ottimo). "
+                     "Al centro c'e' il cielo sopra la tua testa, sul bordo l'orizzonte. Tra i palazzi i segnali rimbalzano: "
+                     "la precisione migliora all'aperto e con la doppia frequenza L5."),
+    "sat_column")
+
+# ---------------------------------------------------------------- v5.5 TROVA L'AUTO
+LAYOUT_PARKING = _v4_screen(
+    _v4_header("btn_park_back", "TROVA L'AUTO", "Dove hai parcheggiato e quanto manca", "#00FF88")
+    + _t_view("GuideCompassView", "park_compass", "290dp")
+    + _t_card(_t_text("tv_park_title", "Nessuna auto salvata", "#E8F4FD", "16sp", bold=True, top="0dp")
+              + _t_text("tv_park_note", "", "#FFD600", "14sp", bold=True, top="4dp")
+              + _t_text("tv_park_coords", "", "#8FB3D0", "12.5sp", mono=True, top="4dp"), accent="green")
+    + _v4_row(_t_stat("tv_park_dist", "--", "DISTANZA", "green"),
+              _t_stat("tv_park_left", "--", "SCADE TRA", "orange", end_margin=False), margin="12dp")
+    + _v4_section("SCADENZA DEL PARCHEGGIO")
+    + _t_chips(("park_exp_0", "NESSUNA"), ("park_exp_30", "30 MIN"), ("park_exp_60", "1 ORA"), ("park_exp_120", "2 ORE"),
+               ("park_exp_more", "ALTRO"))
+    + _t_buttons(_t_btn("btn_park_save", "ic_v5_car", "SALVA QUI", "green", filled=True),
+                 _t_btn("btn_park_note", "ic_v5_notepad", "NOTA", "yellow", end_margin=False))
+    + _t_buttons(_t_btn("btn_park_nav", "ic_v5_walk", "NAVIGA A PIEDI", "cyan"),
+                 _t_btn("btn_park_map", "ic_v5_layers", "SULLA MAPPA", "cyan", end_margin=False))
+    + _v4_hint(None, "Il navigatore salva l'auto da solo quando arrivi a destinazione in auto. Nei garage sotterranei "
+                     "il GPS non arriva: salva prima di entrare e scrivi piano e colonna nella nota."),
+    "park_column")
+
 # menu: sezione escursione
 LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace(
     '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
@@ -24894,6 +25888,13 @@ def build_java_file_map():
         f"{PKG_UTIL}/PressureLog.java":          PRESSURE_LOG,
         f"{PKG_GPS}/PressureLogReceiver.java":   PRESSURE_LOG_RECEIVER,
         f"{PKG_UI}/PressureGraphView.java":      PRESSURE_GRAPH_VIEW,
+        # v5.5
+        f"{PKG_UTIL}/GnssSummary.java":          GNSS_SUMMARY,
+        f"{PKG_UI}/SkyPlotView.java":            SKY_PLOT_VIEW,
+        f"{PKG_UI}/SatellitesActivity.java":     SATELLITES_ACTIVITY,
+        f"{PKG_UI}/ParkingStore.java":           PARKING_STORE,
+        f"{PKG_UI}/ParkingAlarmReceiver.java":   PARKING_ALARM_RECEIVER,
+        f"{PKG_UI}/ParkingActivity.java":        PARKING_ACTIVITY,
     }
 
 def build_layout_map():
@@ -24964,6 +25965,8 @@ def build_layout_map():
         "activity_storm.xml":          LAYOUT_STORM,
         "activity_safety.xml":         LAYOUT_SAFETY,
         "activity_safety_alarm.xml":   LAYOUT_SAFETY_ALARM,
+        "activity_satellites.xml":     LAYOUT_SATELLITES,
+        "activity_parking.xml":        LAYOUT_PARKING,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -25044,7 +26047,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.4")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.5")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -25187,7 +26190,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.4.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.5.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -25201,6 +26204,12 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.5 - WALKIE-TALKIE, SATELLITI, AUTO, PAESI:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Walkie-talkie: messaggi vocali sulla chat offline, anche cifrati")
+    print(f"  {C.OK}[NEW]{C.RESET}  Satelliti GPS: cielo, costellazioni, segnale, doppia frequenza")
+    print(f"  {C.OK}[NEW]{C.RESET}  Trova l'auto: freccia, nota, scadenza del parcheggio con avviso")
+    print(f"  {C.OK}[NEW]{C.RESET}  Paesi e laghi nei luoghi vicini e in realta' aumentata")
 
     print(f"\n{C.BOLD}NOVITA v5.4 - NAVIGATORE, SICUREZZA, CIELO E METEO:{C.RESET}")
     print(f"  {C.OK}[NAV]{C.RESET}  Evita pedaggi, autostrade e traghetti")
@@ -25285,7 +26294,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.4.apk")
+    info("1. Installa OfflineGPS-3D-v5.5.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -25297,7 +26306,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.4 - Navigatore 3D, chat cifrata, sicurezza, realta' aumentata")
+    print("  OfflineGPS 3D v5.5 - Navigatore 3D, walkie-talkie, sicurezza, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -25314,7 +26323,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.4 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.5 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

@@ -47,6 +47,20 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🎬 Novità V32 — MAIK PRIME Laboratorio Cartoon: il Professore cartone animato (o anime, o realistico) (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🎬 **Cartone animato** (lo stile di partenza) | Il Professor Flux come in un film d'animazione 3D: **la testa e gli occhi più grandi** (l'azzurro lucido con il riflesso tondo), **la pelle liscia** con le guance rosa, il naso tondo, **i capelli e i baffi «scolpiti»** in ciocche morbide e lucide (con il ciuffo «antenna» in cima), le mani più piene, i colori vivaci e i tessuti morbidi. Il primo piano segue la testa più grande. |
+| ✨ **Anime** | Lo stesso personaggio in cel-shading: **colori pieni a tre toni** con le ombre colorate (azzurrine sul bianco, calde sulla pelle) e il bordo di luce, **i contorni a inchiostro**, **gli occhi anime** grandi con i riflessi e le ciglia spesse con la codina, le rughe a tratto d'inchiostro, le guance rosa con le lineette, il naso più piccolo. |
+| 📷 **Realistico** | Quello della V31: la pelle con i pori e le rughe, i capelli a fili. |
+| 💫 **I segni delle emozioni** | Nei due stili disegnati, sopra la testa compaiono i segni dei cartoni: ✨ **stelline** quando ha un'idea («eureka», presenta l'esperimento), 💧 **la goccia di sudore** quando si gratta la testa, 💢 **la vena** quando sbuffa (e alza gli occhi al cielo), ❓ **il punto di domanda** quando pensa. Fanno «pop» e svaniscono. |
+| 🎨 **Dove si sceglie** | A sinistra, «🧍 Personaggio 3D» → **🎨 Cambia** → **Stile**: 🎬 Cartone · ✨ Anime · 📷 Realistico. Si vede subito (anche se il Professore non c'è: arriverà così) e resta salvato; «↺ Come all'inizio» torna al cartone. |
+
+- `GET/POST /professore/aspetto` ha anche `stile` (`cartone`, `anime`, `realistico`); `GET /professore/aspetto` elenca gli `stili`.
+- Lo stile vale per il Professor Flux integrato; un tuo .glb/.vrm resta com'è (e sul tuo personaggio i segni non compaiono).
+- Tutto è disegnato dal codice (nessun modello da scaricare); il personaggio resta originale, in tutti e tre gli stili.
+
 ## 🧍 Novità V31 — MAIK PRIME Laboratorio 3: il secondo personaggio è tuo, e il Professor Flux più vero (versione server)
 
 | | Cosa fa |
@@ -584,7 +598,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V31 — `maikprime.py`
+## MAIK PRIME — Server V32 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

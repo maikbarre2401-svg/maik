@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v31.0                   ║
+║              MAIK PRIME — Server v32.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,14 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v32.0 — MAIK PRIME LABORATORIO CARTOON:
+  • 🎬 Il Professore in stile cartone animato, come in un film d'animazione 3D: la testa e gli occhi più grandi e lucidi,
+    la pelle liscia con le guance rosa, i capelli e i baffi «scolpiti», i colori vivaci, i segni delle emozioni
+    (stelline, goccia di sudore, vena, punto di domanda). È lo stile di partenza.
+  • ✨ Oppure in stile anime: cel-shading a tre toni con le ombre colorate e il bordo di luce, i contorni a inchiostro,
+    gli occhi anime, le rughe a tratto. Oppure 📷 realistico (quello della V31).
+    Si sceglie in «🎨 Cambia» → Stile. /professore/aspetto ha anche «stile».
 
 NOVITÀ v31.0 — MAIK PRIME LABORATORIO 3:
   • 🧍 Il secondo personaggio è tuo: al posto del Professor Flux puoi mettere un tuo personaggio 3D (.glb o .vrm) e dargli
@@ -475,7 +483,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "31.0"
+VERSIONE  = "32.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -15072,6 +15080,43 @@ def stato_professore_v31(sid):
 
 
 # ════════════════════════════════════════════════════════════
+# V32 — MAIK PRIME LABORATORIO CARTOON: 🎨 tre stili per il Professore — «cartone» (come in un film d'animazione 3D: è quello di partenza),
+# «anime» (cel-shading, contorni a inchiostro, occhi anime) e «realistico». Si sceglie con il nome, la voce e il carattere.
+# ════════════════════════════════════════════════════════════
+STILI_PROF = {"cartone": "cartone animato (film d'animazione 3D)", "anime": "anime (cel-shading, contorni, occhi grandi)", "realistico": "realistico (pelle, capelli a fili)"}
+_aspetto_prof_v31 = aspetto_prof
+_salva_aspetto_prof_v31 = salva_aspetto_prof
+
+
+def _stile_salvato():
+    try:
+        with open(os.path.join(DATA_DIR, "professore_aspetto.json"), encoding="utf-8") as f:
+            s = json.load(f).get("stile")
+        return s if s in STILI_PROF else "cartone"
+    except Exception:
+        return "cartone"
+
+
+def aspetto_prof():
+    """Come prima, più lo stile del Professore («cartone» se non l'hai cambiato)."""
+    return dict(_aspetto_prof_v31(), stile=_stile_salvato())
+
+
+def salva_aspetto_prof(c):
+    c = c if isinstance(c, dict) else {}
+    stile = c.get("stile") if c.get("stile") in STILI_PROF else _stile_salvato()
+    d, errore = _salva_aspetto_prof_v31(c)
+    if d is None:
+        return d, errore
+    d = dict(d, stile=stile)
+    p = os.path.join(DATA_DIR, "professore_aspetto.json")
+    with open(p + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+    os.replace(p + ".tmp", p)
+    return d, None
+
+
+# ════════════════════════════════════════════════════════════
 # AGENTE (v10) — il modello usa gli strumenti da solo
 # ════════════════════════════════════════════════════════════
 # Il modello scrive nella risposta un tag invisibile:  [[azione:{"tipo":"promemoria", ...}]]
@@ -16456,7 +16501,7 @@ class Handler(BaseHTTPRequestHandler):
             elif base == "/professore":                               # v29: 🧪 il Professore c'è (in questa chat)?
                 self._json(dict(stato_professore_v31(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
             elif base == "/professore/aspetto":                       # v31: 🧍 nome, voce e carattere del secondo personaggio
-                self._json(dict(aspetto_prof(), nome_mostrato=nome_prof(), voci=VOCI_PROF, modello=info_modello_prof(), ok=True))
+                self._json(dict(aspetto_prof(), nome_mostrato=nome_prof(), voci=VOCI_PROF, stili=STILI_PROF, modello=info_modello_prof(), ok=True))
             elif base == "/professore/modello/info":
                 info = info_modello_prof()
                 self._json({"presente": bool(info), **(info or {})})
@@ -17268,7 +17313,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V31</title>
+<title>MAIK PRIME // Zep V32</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -18120,12 +18165,12 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .p2mod small{display:block;color:var(--dim);font-size:11px;font-family:'Share Tech Mono',monospace;margin-top:2px}
   #p2modal input,#p2modal textarea{width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;padding:8px 10px}
   #p2modal textarea{resize:vertical;min-height:64px}
-  #p2voci .tbtn.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.18);color:var(--text)}
+  #p2stili .tbtn.on,#p2voci .tbtn.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.18);color:var(--text)}
   body.prof-on #avstate[data-prof]::after{content:' · 🧪 ' attr(data-prof)}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V31</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V32</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -18547,6 +18592,9 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <input type="file" id="p2in" accept=".vrm,.glb" style="display:none" onchange="caricaModelloP2(this.files[0]);this.value=''">
       <button class="tbtn" id="p2reset" type="button" style="width:100%;margin-top:6px;display:none" onclick="togliModelloP2()">↺ Torna il Professor Flux (3D)</button>
       <div class="note" style="margin-top:6px">Un <b>.vrm</b> (VRoid Studio) muove la bocca e gli occhi con le sue espressioni; un <b>.glb</b> con i visemi o le forme ARKit (per esempio Ready Player Me) muove la bocca suono per suono; le animazioni nel file (idle, talk, wave) partono da sole. Se il file è in centimetri lo porto a misura d'uomo.</div>
+      <h4>🎨 STILE DEL PROFESSORE</h4>
+      <div class="trow" id="p2stili"><button class="tbtn" type="button" data-p2stile="cartone">🎬 Cartone</button><button class="tbtn" type="button" data-p2stile="anime">✨ Anime</button><button class="tbtn" type="button" data-p2stile="realistico">📷 Realistico</button></div>
+      <div class="note">Cartone: come in un film d'animazione 3D (testa e occhi grandi, pelle liscia, capelli scolpiti). Anime: colori pieni, contorni a inchiostro, occhi anime. Realistico: la pelle con i pori, i capelli a fili. Vale per il Professor Flux integrato (un tuo .glb/.vrm resta com'è).</div>
       <h4>🏷️ NOME</h4>
       <input id="p2nome" maxlength="24" placeholder="Professor Flux" aria-label="Nome del secondo personaggio">
       <div class="note">Con il nome lo chiami: «chiama Nova», «Nova, perché il cielo è blu?», «grazie Nova, puoi andare» (va sempre bene anche «chiama il professore»).</div>
@@ -19134,7 +19182,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V31 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V32 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -19161,6 +19209,8 @@ const MaikKit = (() => {
         pendolo, molecola, buco_nero); il Professore più dettagliato (pelle, capelli a fili, stoffa, ciglia).
    V31: prof.modello(url): il tuo .glb / .vrm al posto del Professore (ossa, bocca, gesti, sguardo, animazioni); prof.modello(null) torna lui.
         Il Professore più vero: ciocche di capelli, sopracciglia e baffi a fili, occhi, orecchie, unghie, maniche con le pieghe, colletto.
+   V32: prof.stile('cartone' | 'anime' | 'realistico'): il Professore da film d'animazione 3D, in stile anime (cel-shading, contorni) o realistico;
+        nei due stili disegnati i segni delle emozioni (stelline, sudore, vena, punto di domanda).
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -20329,6 +20379,7 @@ window.ZepKit = (() => {
       aggiornaProf(dt, now);                                              // v29: 🧪
       aggiornaEsp(dt, now);                                               // v30: 🔬
       aggiornaModelloProf(dt, now);                                       // v31: 🧍 il tuo personaggio al posto del Professore
+      aggiornaAnime(dt, now);                                             // v32: ✨ i segni delle emozioni
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -21127,6 +21178,7 @@ window.ZepKit = (() => {
       PR.g = G;
       dettagliProf(PR.parti);                                                                                     // v30: pelle, capelli, stoffa, ciglia
       realismoV31(PR.parti);                                                                                      // v31: ciocche, occhi, orecchie, unghie, maniche
+      if (PR.stile !== 'realistico') stileProf(PR.stile);                                                         // v32: 🎨 lo stile che è stato chiesto (cartone, anime)
       return G;
     }
 
@@ -21215,7 +21267,7 @@ window.ZepKit = (() => {
       PR.camX = lerp(0, (sinistra + destra) / 2, w);
       const f = smoothstep(PR.focusW || 0) * w;                                  // il primo piano sul Professore (quando spiega a lungo)
       if (f > 0) {
-        const spanF = 0.6 * S.zoom, distF = (spanF / 2) / tg / Math.min(1, camera.aspect * 1.25), tyF = (PR.top || 1.8) - 0.16;
+        const sT = PR.scalaTesta || 1, spanF = 0.6 * S.zoom * sT, distF = (spanF / 2) / tg / Math.min(1, camera.aspect * 1.25), tyF = (PR.top || 1.8) - 0.16 * sT;   // v32
         cam.ty = lerp(cam.ty, tyF, f); cam.dist = lerp(cam.dist, distF, f); cam.span = lerp(cam.span, spanF, f); PR.camX = lerp(PR.camX, PR.X - 0.06, f);
       }
       camera.near = Math.max(0.005, cam.dist / 100); camera.far = cam.dist * 100;
@@ -22082,6 +22134,297 @@ window.ZepKit = (() => {
       const v = b.getWorldPosition(new THREE.Vector3()); return { x: +v.x.toFixed(3), y: +v.y.toFixed(3), z: +v.z.toFixed(3) };
     }
 
+    // ============================================================
+    // V32 — 🎨 TRE STILI PER IL PROFESSORE (sempre lo stesso personaggio originale):
+    //   'cartone'   come in un film d'animazione 3D: testa e occhi più grandi, forme morbide, pelle liscia con le guance rosa,
+    //               capelli e baffi «scolpiti» e lucidi, colori vivaci;
+    //   'anime'     cel-shading a tre toni con le ombre colorate e il bordo di luce, contorni a inchiostro, occhi anime, rughe a tratto;
+    //   'realistico' quello della V31 (pori, capelli a fili).
+    // Nei due stili disegnati compaiono i segni delle emozioni (stelline, goccia di sudore, vena, punto di domanda).
+    // ============================================================
+    PR.stile = PR.stile || 'realistico';
+    function gradToon() {                                      // tre toni (ombra, mezzatinta, luce), netti
+      if (PR.grad) return PR.grad;
+      const t = new THREE.DataTexture(new Uint8Array([120, 196, 255]), 3, 1, THREE.RedFormat);
+      t.minFilter = t.magFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true;
+      return (PR.grad = t);
+    }
+    function toon(colore, o = {}) {                            // un materiale «cel-shading»: ombre colorate, bordo di luce, (per i capelli) la banda lucida
+      const m = new THREE.MeshToonMaterial({ color: new THREE.Color(colore), gradientMap: gradToon(), map: o.map || null, side: o.side || THREE.FrontSide, toneMapped: false });
+      const ombra = o.ombra || [0.82, 0.86, 1.0], rim = o.rim ?? 0.45, banda = o.banda || 0;
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uRim = { value: new THREE.Color(o.rimCol || 0xcdeeff) }; sh.uniforms.uRimK = { value: rim };
+        sh.uniforms.uOmbra = { value: new THREE.Vector3(...ombra) }; sh.uniforms.uBanda = { value: banda };
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRim; uniform float uRimK; uniform vec3 uOmbra; uniform float uBanda;')
+          .replace('#include <opaque_fragment>', `#include <opaque_fragment>
+            { vec3 nn = normalize(normal);
+              float lum = dot(gl_FragColor.rgb / max(diffuseColor.rgb, vec3(0.02)), vec3(0.3333));          // quanta luce (senza il colore delle luci: niente dominanti azzurre)
+              float l = mix(0.76, 0.95, smoothstep(0.86, 0.94, lum)) + 0.06 * smoothstep(2.1, 2.2, lum);
+              gl_FragColor.rgb = diffuseColor.rgb * l * mix(uOmbra, vec3(1.0), smoothstep(0.86, 0.94, lum));
+              float rim = 1.0 - clamp(dot(nn, normalize(vViewPosition)), 0.0, 1.0);
+              gl_FragColor.rgb += uRim * uRimK * smoothstep(0.62, 0.95, rim);
+              gl_FragColor.rgb += vec3(uBanda) * smoothstep(0.40, 0.48, nn.y) * (1.0 - smoothstep(0.60, 0.68, nn.y)); }`);
+      };
+      m.customProgramCacheKey = () => 'maik-toon';
+      return m;
+    }
+    function materialeContorno() {                             // il contorno a inchiostro: la sagoma rovesciata, un filo più grande
+      if (PR.matContorno) return PR.matContorno;
+      const m = new THREE.MeshBasicMaterial({ color: 0x241626, side: THREE.BackSide });
+      m.onBeforeCompile = sh => {
+        sh.uniforms.uW = { value: 0.0026 };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uW;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize(normal) * uW;');
+      };
+      m.customProgramCacheKey = () => 'maik-contorno';
+      return (PR.matContorno = m);
+    }
+    function geoCioccaAnime(punti, r0, piatto = 0.6, seg = 18) {   // una ciocca piena: un tubo che si assottiglia fino alla punta, un po' schiacciato
+      const curva = new THREE.CatmullRomCurve3(punti), RS = 8;
+      const geo = new THREE.TubeGeometry(curva, seg, 1, RS, false), pos = geo.attributes.position;
+      const c = new THREE.Vector3(), v = new THREE.Vector3(), off = new THREE.Vector3();
+      for (let i = 0; i <= seg; i++) {
+        const u = i / seg, R = r0 * Math.pow(1 - u, 0.9) * (1 + 0.4 * Math.sin(Math.PI * Math.min(1, u * 1.5)));
+        curva.getPointAt(u, c);
+        for (let j = 0; j <= RS; j++) {
+          const k = i * (RS + 1) + j; v.fromBufferAttribute(pos, k); off.copy(v).sub(c);
+          const a = off.dot(geo.normals[i]), b = off.dot(geo.binormals[i]);
+          v.copy(c).addScaledVector(geo.normals[i], a * R * piatto).addScaledVector(geo.binormals[i], b * R);
+          pos.setXYZ(k, v.x, v.y, v.z);
+        }
+      }
+      geo.computeVertexNormals(); return geo;
+    }
+    function texIrideAnime() {                                 // l'occhio anime: sfumato dal blu scuro all'azzurro, la pupilla, i riflessi
+      const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+      const gr = g.createLinearGradient(0, 16, 0, 240); gr.addColorStop(0, '#101c3a'); gr.addColorStop(0.45, '#2a62b6'); gr.addColorStop(0.85, '#6fd2ff'); gr.addColorStop(1, '#b4f0ff');
+      g.fillStyle = gr; g.beginPath(); g.arc(128, 128, 122, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.13)'; g.lineWidth = 2;
+      for (let i = 0; i < 28; i++) { const a = i / 28 * Math.PI * 2; g.beginPath(); g.moveTo(128 + Math.cos(a) * 50, 128 + Math.sin(a) * 50); g.lineTo(128 + Math.cos(a) * 112, 128 + Math.sin(a) * 112); g.stroke(); }
+      g.lineWidth = 11; g.strokeStyle = '#0a1226'; g.beginPath(); g.arc(128, 128, 118, 0, Math.PI * 2); g.stroke();
+      g.fillStyle = '#060a15'; g.beginPath(); g.ellipse(128, 120, 40, 48, 0, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(150,235,255,.55)'; g.lineWidth = 9; g.beginPath(); g.arc(128, 128, 88, 0.22 * Math.PI, 0.78 * Math.PI); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.96)'; g.beginPath(); g.ellipse(86, 80, 31, 24, -0.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(166, 168, 13, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(150, 70, 7, 0, Math.PI * 2); g.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    }
+    function texVisoAnime() {                                  // la pelle anime: piena, con le rughe a tratto d'inchiostro e il rossore sulle guance
+      const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+      const P2 = (a, e) => [W * (0.25 + a / (2 * Math.PI)), H * (0.5 - e / Math.PI)];
+      const tratto = (pts, lw, a) => { g.strokeStyle = `rgba(112,56,46,${a})`; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); pts.forEach(([x, y], i) => { const [px, py] = P2(x, y); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); };
+      const linea = (a0, e0, a1, e1, curva = 0, n = 12) => Array.from({ length: n + 1 }, (_, i) => { const t = i / n; return [lerp(a0, a1, t), lerp(e0, e1, t) + curva * Math.sin(Math.PI * t)]; });
+      tratto(linea(-0.22, 0.56, 0.22, 0.56, 0.02), 3, 0.7); tratto(linea(-0.16, 0.64, 0.16, 0.64, 0.015), 2.6, 0.55);   // la fronte
+      for (const s of [-1, 1]) {
+        tratto(linea(s * 0.66, 0.2, s * 0.77, 0.25), 2.4, 0.65); tratto(linea(s * 0.67, 0.15, s * 0.78, 0.13), 2.2, 0.55);    // zampe di gallina
+        tratto(linea(s * 0.34, 0.07, s * 0.54, 0.08, -0.03), 2.2, 0.45);                                                       // sotto gli occhi
+        tratto(Array.from({ length: 13 }, (_, i) => { const t = i / 12; return [s * (0.25 + 0.2 * t + 0.04 * Math.sin(Math.PI * t)), lerp(-0.3, -0.62, t)]; }), 2.8, 0.6);   // vicino alla bocca
+        const [cx, cy] = P2(s * 0.52, -0.16);                                                                                 // le guance rosa, con le lineette
+        const rg = g.createRadialGradient(cx, cy, 2, cx, cy, 34); rg.addColorStop(0, 'rgba(255,120,130,.55)'); rg.addColorStop(1, 'rgba(255,120,130,0)');
+        g.fillStyle = rg; g.beginPath(); g.ellipse(cx, cy, 40, 22, 0, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = 'rgba(235,90,105,.6)'; g.lineWidth = 2;
+        for (let k = -1; k <= 1; k++) { g.beginPath(); g.moveTo(cx + k * 11 - 5, cy + 6); g.lineTo(cx + k * 11 + 5, cy - 6); g.stroke(); }
+      }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+    }
+    function texIrideCartone() {                               // l'occhio da cartone: grande pupilla, l'azzurro che sfuma, il riflesso tondo
+      const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+      const gr = g.createRadialGradient(128, 128, 20, 128, 128, 124); gr.addColorStop(0, '#9fdcff'); gr.addColorStop(0.5, '#3f8ddc'); gr.addColorStop(0.92, '#1b4c92'); gr.addColorStop(1, '#0f2a55');
+      g.fillStyle = gr; g.beginPath(); g.arc(128, 128, 124, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 3;
+      for (let i = 0; i < 36; i++) { const a = i / 36 * Math.PI * 2; g.beginPath(); g.moveTo(128 + Math.cos(a) * 58, 128 + Math.sin(a) * 58); g.lineTo(128 + Math.cos(a) * 110, 128 + Math.sin(a) * 110); g.stroke(); }
+      g.fillStyle = '#05070d'; g.beginPath(); g.arc(128, 128, 54, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.95)'; g.beginPath(); g.arc(96, 92, 27, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(158, 160, 11, 0, Math.PI * 2); g.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    }
+    function texVisoCartone() {                                // la pelle da cartone: liscia, le guance rosa sfumate, un po' di caldo su naso e orecchie
+      const W = 1024, H = 512, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+      const P2 = (a, e) => [W * (0.25 + a / (2 * Math.PI)), H * (0.5 - e / Math.PI)];
+      for (const s of [-1, 1]) {
+        const [cx, cy] = P2(s * 0.52, -0.15), rg = g.createRadialGradient(cx, cy, 4, cx, cy, 60);
+        rg.addColorStop(0, 'rgba(255,135,135,.5)'); rg.addColorStop(1, 'rgba(255,135,135,0)'); g.fillStyle = rg; g.beginPath(); g.ellipse(cx, cy, 64, 44, 0, 0, Math.PI * 2); g.fill();
+        const [ox, oy] = P2(s * 1.45, 0.0), ro = g.createRadialGradient(ox, oy, 4, ox, oy, 50);
+        ro.addColorStop(0, 'rgba(255,140,120,.35)'); ro.addColorStop(1, 'rgba(255,140,120,0)'); g.fillStyle = ro; g.fillRect(ox - 60, oy - 60, 120, 120);
+      }
+      const [nx, ny] = P2(0, -0.12), rn = g.createRadialGradient(nx, ny, 2, nx, ny, 30); rn.addColorStop(0, 'rgba(255,130,120,.3)'); rn.addColorStop(1, 'rgba(255,130,120,0)');
+      g.fillStyle = rn; g.fillRect(nx - 40, ny - 40, 80, 80);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+    }
+    function morbido(colore, o = {}) {                         // un materiale «da film d'animazione»: liscio, morbido, con il velluto della luce (sheen)
+      return new THREE.MeshPhysicalMaterial({ color: new THREE.Color(colore), roughness: o.r ?? 0.55, metalness: o.metal || 0, sheen: o.sheen ?? 0.35,
+        sheenColor: new THREE.Color(o.sheenCol ?? 0xffffff), sheenRoughness: 0.5, clearcoat: o.cc || 0, clearcoatRoughness: 0.2, map: o.map || null, side: o.side || THREE.FrontSide });
+    }
+    function geoIrideCurva() {                                 // l'iride disegnata su una calotta che segue l'occhio (non un disco piatto: con la palpebra chiusa non spunta)
+      if (PR.geoIride) return PR.geoIride;
+      const R = 0.01875, tm = 0.78, geo = new THREE.SphereGeometry(R, 40, 14, 0, Math.PI * 2, 0, tm);
+      geo.rotateX(Math.PI / 2);                                                                        // la calotta guarda avanti (+Z)
+      const p = geo.attributes.position, uv = geo.attributes.uv, rc = R * Math.sin(tm);
+      for (let i = 0; i < p.count; i++) uv.setXY(i, 0.5 + p.getX(i) / (2 * rc), 0.5 + p.getY(i) / (2 * rc));
+      return (PR.geoIride = geo);
+    }
+    function texSegno(k) {                                     // i segni anime delle emozioni
+      const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+      g.lineJoin = g.lineCap = 'round';
+      if (k === 'sudore') {
+        g.beginPath(); g.moveTo(64, 10); g.bezierCurveTo(90, 52, 100, 74, 100, 86); g.arc(64, 86, 36, 0, Math.PI); g.bezierCurveTo(28, 74, 38, 52, 64, 10); g.closePath();
+        g.fillStyle = '#8fd6ff'; g.fill(); g.lineWidth = 6; g.strokeStyle = '#1b4b8a'; g.stroke();
+        g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(52, 84, 8, 14, 0.3, 0, Math.PI * 2); g.fill();
+      } else if (k === 'vena') {
+        g.strokeStyle = '#3a0a10'; g.lineWidth = 16;
+        const vena = () => { for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0]]) { const r = a * Math.PI / 2 + Math.PI / 4; g.beginPath(); g.arc(64 + Math.cos(r) * 34, 64 + Math.sin(r) * 34, 26, r + Math.PI * 0.7, r + Math.PI * 1.3); g.stroke(); } };
+        vena(); g.strokeStyle = '#ff3346'; g.lineWidth = 9; vena();
+      } else if (k === 'stelle') {
+        const stella = (x, y, r, col) => { g.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * 0.28 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = 3; g.strokeStyle = '#7a4a00'; g.stroke(); };
+        stella(60, 58, 44, '#ffe14d'); stella(104, 26, 20, '#ffffff'); stella(24, 104, 16, '#fff3a6');
+      } else {
+        g.font = 'bold 112px "DejaVu Sans", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.lineWidth = 12; g.strokeStyle = '#1d1430'; g.strokeText('?', 64, 70); g.fillStyle = '#ffffff'; g.fillText('?', 64, 70);
+      }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    }
+    const SEGNI_GESTO = { eureka: 'stelle', presenta: 'stelle', saluta: 'stelle', sbuffa: 'vena', gratta: 'sudore', pensa: 'dubbio', occhiali: 'stelle' };
+
+    function costruisciAnime(P) {
+      if (P.anime) return P.anime;
+      const M = P.M, A = { swap: [], soloReal: [], soloAnime: [], contorni: 0, segni: {} };
+      const V = (x, y, z) => new THREE.Vector3(x, y, z);
+      let seme = 32; const cas = () => { seme = (seme * 16807) % 2147483647; return seme / 2147483647; };
+      // --- i materiali: ogni materiale vero ha il suo gemello «cel-shading»
+      const caldo = [1.0, 0.8, 0.78], freddo = [0.8, 0.86, 1.0];
+      const mPelle = toon(0xffd9c4, { map: texVisoAnime(), ombra: caldo, rim: 0.35, rimCol: 0xffe8d8 });
+      const pal = new Map([
+        [M.pelle, mPelle], [M.cute, toon(0xffd9c4, { ombra: caldo, rim: 0.35, rimCol: 0xffe8d8 })], [M.naso, toon(0xffcbb4, { ombra: caldo, rim: 0.3 })],
+        [M.rosa, toon(0xffc7b0, { ombra: caldo, rim: 0.3 })], [M.labbra, toon(0xdb7468, { ombra: caldo, rim: 0.2 })], [M.bocca, toon(0x3d0f18, { rim: 0 })], [M.denti, toon(0xffffff, { rim: 0 })],
+        [M.capelli, toon(0xf6f8ff, { ombra: freddo, banda: 0.18 })], [M.capelliOmbra, toon(0xe6ecfa, { ombra: freddo, banda: 0.12 })],
+        [M.camice, toon(0xfbfcff, { ombra: freddo, side: THREE.DoubleSide })], [M.camiceOmbra, toon(0xe9eef9, { ombra: freddo })],
+        [M.maglia, toon(0x6b4cc8, { ombra: [0.75, 0.75, 1.0] })], [M.pantaloni, toon(0x2f3858, { ombra: [0.8, 0.8, 1.0] })], [M.scarpe, toon(0x7c4526, { banda: 0.12 })],
+        [M.cuoio, toon(0x6e452a)], [M.ottone, toon(0xf3c25a, { ombra: [1.0, 0.82, 0.62], banda: 0.25, rimCol: 0xfff2c0 })], [M.scuro, toon(0x272c40, { rim: 0.6 })],
+        [M.papillon, toon(0xe8314f, { ombra: [0.85, 0.7, 0.8], banda: 0.15 })], [M.bianco, toon(0xffffff, { rim: 0, ombra: [0.92, 0.94, 1.0] })], [M.pupilla, toon(0x080b14, { rim: 0 })],
+      ]);
+      if (M.peli) pal.set(M.peli, pal.get(M.capelli));
+      const pelleC = morbido(0xf6c8a6, { map: texVisoCartone(), r: 0.5, sheen: 0.5, sheenCol: 0xff9a86 }), capC = morbido(0xf5f7fb, { r: 0.4, sheen: 0.8, cc: 0.15 });
+      const palC = new Map([
+        [M.pelle, pelleC], [M.cute, morbido(0xf6c8a6, { r: 0.5, sheen: 0.5, sheenCol: 0xff9a86 })], [M.naso, morbido(0xf4b597, { r: 0.45, sheen: 0.5, sheenCol: 0xff9a86 })],
+        [M.rosa, morbido(0xf2b294, { r: 0.45, sheen: 0.5, sheenCol: 0xff9a86 })], [M.labbra, morbido(0xd06f5e, { r: 0.35 })], [M.bocca, morbido(0x4a1218, { r: 0.8, sheen: 0 })], [M.denti, morbido(0xffffff, { r: 0.2, cc: 0.6, sheen: 0 })],
+        [M.capelli, capC], [M.capelliOmbra, morbido(0xe9edf6, { r: 0.42, sheen: 0.8, cc: 0.1 })],
+        [M.camice, morbido(0xf8f9fd, { r: 0.78, side: THREE.DoubleSide, sheenCol: 0xdde6ff })], [M.camiceOmbra, morbido(0xe8edf8, { r: 0.8, sheenCol: 0xdde6ff })],
+        [M.maglia, morbido(0x6a48c9, { r: 0.9, sheen: 0.6, sheenCol: 0xb9a6ff })], [M.pantaloni, morbido(0x34406a, { r: 0.85 })], [M.scarpe, morbido(0x7a4223, { r: 0.35, cc: 0.8, sheen: 0 })],
+        [M.cuoio, morbido(0x6b4329, { r: 0.6 })], [M.ottone, morbido(0xf0bc4f, { r: 0.28, metal: 0.85, sheen: 0 })], [M.scuro, morbido(0x262b3d, { r: 0.4, metal: 0.4, sheen: 0 })],
+        [M.papillon, morbido(0xe42c4b, { r: 0.55, sheen: 0.5 })], [M.bianco, morbido(0xffffff, { r: 0.1, cc: 1, sheen: 0 })], [M.pupilla, morbido(0x05070d, { sheen: 0 })],
+      ]);
+      if (M.peli) palC.set(M.peli, capC);
+      A.ciocche = []; A.iridi = []; A.stilizzati = [];
+      const salta = new Set([M.iride, M.pupilla, M.riflesso, M.lente, M.luce, M.luce2, M.ciocca, M.cioccaO].filter(Boolean));
+      const palpebre = new Set(); for (const O of P.occhi) { O.su.traverse(o => palpebre.add(o)); O.giu.traverse(o => palpebre.add(o)); }
+      const daContornare = [];
+      P.corpo.traverse(o => {
+        if (!o.isMesh || o.userData.contorno) return;
+        const m0 = o.material;
+        if (m0 === M.ciocca || m0 === M.cioccaO) { A.soloReal.push(o); return; }                     // le ciocche di fili: solo nel realistico
+        if (m0 === M.iride || m0 === M.pupilla || m0 === M.riflesso) { A.soloReal.push(o); return; }  // l'occhio realistico
+        if (!m0 || m0.isMeshBasicMaterial || m0.isSpriteMaterial) return;                              // luci, schermi, lenti: restano
+        if (palpebre.has(o) && m0 !== M.cute) { A.soloReal.push(o); return; }                          // le ciglia chiare (V30)
+        let mA = pal.get(m0);
+        if (!mA) { mA = toon(m0.color ? m0.color.getHex() : 0xffffff, { rim: 0.3 }); pal.set(m0, mA); }
+        let mC = palC.get(m0);
+        if (!mC) { mC = morbido(m0.color ? m0.color.getHex() : 0xffffff, { r: 0.5 }); palC.set(m0, mC); }
+        A.swap.push([o, m0, mA, mC]);
+        if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        const r = o.geometry.boundingSphere.radius * Math.max(o.scale.x, o.scale.y, o.scale.z);
+        if (!salta.has(m0) && m0 !== M.bianco && m0 !== M.bocca && m0 !== M.denti && !palpebre.has(o) && r > 0.0065) daContornare.push(o);
+      });
+      // --- i capelli anime: ciocche piene, bianche e lucide, che si muovono come prima (bianco con le ombre azzurrine e la banda lucida)
+      const mCap = pal.get(M.capelli), testa = P.testa, C0 = V(0, 0.012, 0);
+      const capelli = new THREE.Group(); capelli.name = 'capelli-disegnati'; testa.add(capelli); A.stilizzati.push(capelli); A.capC = capC; A.capA = mCap;
+      const ciocca = (base, ctrl, r0, piatto) => {
+        const g = new THREE.Group(); g.position.copy(base); capelli.add(g);
+        const m = new THREE.Mesh(geoCioccaAnime([V(0, 0, 0), ...ctrl], r0, piatto), mCap); g.add(m); daContornare.push(m); A.ciocche.push(m);
+        P.ciuffi.push({ g, q0: g.quaternion.clone(), f: 0.5 + cas() * 0.8, ph: cas() * 6.28 });
+        return g;
+      };
+      const SU = V(0, 1, 0);
+      for (const [n, el0, lung, rr] of [[18, -0.1, 0.085, 0.026], [16, 0.12, 0.07, 0.024], [10, 0.32, 0.05, 0.02]]) {           // due giri: sotto le ciocche lunghe, sopra quelle corte
+        for (let i = 0; i < n; i++) {
+          const az = (0.4 + 1.2 * (i + 0.5) / n) * Math.PI, el = el0 + (cas() - 0.5) * 0.12;
+          const d = V(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+          const base = V(d.x * 0.084, d.y * 0.104, d.z * 0.09).add(C0);
+          const fuori = V(d.x, 0, d.z).normalize(), L = lung * (0.8 + 0.45 * cas()), giu = 0.3 + 0.35 * cas(), su = el0 > 0.2 ? 0.2 : el0 > 0 ? 0.1 : 0.04;
+          ciocca(base, [fuori.clone().multiplyScalar(L * 0.35).addScaledVector(SU, L * su),
+                        fuori.clone().multiplyScalar(L * 0.75).addScaledVector(SU, L * (su * 0.8 - 0.05)).add(V(0, 0, -L * 0.15)),
+                        fuori.clone().multiplyScalar(L * 1.05).addScaledVector(SU, -L * giu).add(V(-fuori.z, 0, fuori.x).multiplyScalar(L * 0.2 * (cas() - 0.5)))],
+                 rr * (0.8 + 0.4 * cas()), 0.55);
+        }
+      }
+      for (const s of [-1, 1]) {                                                                        // due ali grandi sopra le orecchie, all'indietro
+        const base = V(s * 0.08, 0.06, -0.02).add(C0);
+        ciocca(base, [V(s * 0.04, 0.012, -0.03), V(s * 0.08, -0.004, -0.07), V(s * 0.1, -0.05, -0.095)], 0.028, 0.5);
+      }
+      ciocca(V(0, 0.112, -0.012).add(C0), [V(0, 0.035, 0.004), V(0.004, 0.06, 0.026), V(0.002, 0.052, 0.05)], 0.0075, 0.8);   // l'«antenna» in cima
+      // --- gli occhi anime: l'iride grande con i riflessi (senza luci: brillano da soli), le ciglia spesse con la codina
+      const mIride = new THREE.MeshBasicMaterial({ map: texIrideAnime(), transparent: true, toneMapped: false });
+      A.irideA = mIride; A.irideC = new THREE.MeshBasicMaterial({ map: texIrideCartone(), transparent: true, toneMapped: false });
+      const mCiglia = new THREE.MeshBasicMaterial({ color: 0x1d1222 });
+      for (const O of P.occhi) {
+        const ir = new THREE.Mesh(geoIrideCurva(), mIride); ir.scale.y = 1.1; ir.position.y = 0.0003; O.bulbo.add(ir); A.stilizzati.push(ir); A.iridi.push(ir);
+        const cg = new THREE.Mesh(new THREE.TorusGeometry(0.0209, 0.0019, 6, 28, Math.PI), mCiglia); cg.rotation.x = Math.PI / 2; cg.scale.set(1.04, 1, 1.08); O.su.add(cg); A.stilizzati.push(cg);
+        const coda = new THREE.Mesh(new THREE.ConeGeometry(0.0021, 0.0075, 8), mCiglia); coda.position.set(O.s * 0.0215, 0.0018, 0.004); coda.rotation.set(0, 0, -O.s * 1.0); O.su.add(coda); A.stilizzati.push(coda);
+      }
+      // --- il naso un po' più piccolo (come negli anime)
+      A.naso = testa.children.find(o => o.isGroup && o.children.some(m => m.isMesh && (m.material === M.naso || pal.get(M.naso) === m.material)));
+      // --- i contorni a inchiostro
+      const mC = materialeContorno();
+      for (const o of daContornare) { const c = new THREE.Mesh(o.geometry, mC); c.userData.contorno = true; o.add(c); A.soloAnime.push(c); A.contorni++; }
+      // --- i segni delle emozioni (sopra la testa, a destra)
+      for (const k of ['sudore', 'vena', 'stelle', 'dubbio']) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: texSegno(k), transparent: true, depthTest: false, toneMapped: false }));
+        sp.renderOrder = 10; sp.visible = false; sp.position.set(0.105, 0.115, 0.03); sp.scale.setScalar(0.001); testa.add(sp); A.segni[k] = sp;
+      }
+      A.segno = null; A.segnoT = 0; A.gestoVisto = null;
+      return (P.anime = A);
+    }
+    function stileProf(s) {                                    // 'cartone', 'anime' o 'realistico' (se il Professore non c'è ancora, lo sarà quando arriva)
+      s = s === 'anime' || s === 'cartone' ? s : 'realistico'; PR.stile = s;
+      const P = PR.parti; if (!P) return s;
+      const disegnato = s !== 'realistico', anime = s === 'anime', cartone = s === 'cartone';
+      const A = disegnato ? costruisciAnime(P) : P.anime; if (!A) return s;
+      for (const [o, mR, mA, mC] of A.swap) o.material = anime ? mA : cartone ? mC : mR;
+      for (const o of A.soloReal) o.visible = !disegnato;
+      for (const o of A.stilizzati) o.visible = disegnato;
+      for (const o of A.soloAnime) o.visible = anime;                                                  // i contorni a inchiostro: solo nell'anime
+      for (const m of A.ciocche) m.material = cartone ? A.capC : A.capA;
+      for (const m of A.iridi) m.material = cartone ? A.irideC : A.irideA;
+      if (A.naso) A.naso.scale.set(anime ? 0.78 : cartone ? 1.06 : 1, anime ? 0.8 : cartone ? 1.04 : 1, anime ? 0.72 : cartone ? 1.08 : 1);
+      P.testa.scale.setScalar(cartone ? 1.16 : 1);                                                     // da cartone: la testa e gli occhi più grandi, le mani più piene
+      for (const O of P.occhi) O.c.scale.setScalar(cartone ? 1.2 : 1);
+      for (const B of Object.values(P.B)) B.mano.scale.setScalar(cartone ? 1.12 : 1);
+      PR.scalaTesta = cartone ? 1.16 : 1;                                                               // l'inquadratura (anche il primo piano) segue la testa più grande
+      if (!PR.mod && PR.topFlux) { PR.top = PR.topFlux + (cartone ? 0.035 : 0); inquadraDuo(); placeCamera(); camera.updateProjectionMatrix(); }
+      if (!disegnato) { for (const sp of Object.values(A.segni)) sp.visible = false; A.segno = null; }
+      return s;
+    }
+    function aggiornaAnime(dt, now) {                          // i segni delle emozioni: compaiono con un gesto, fanno «pop», svaniscono
+      const P = PR.parti; if (!P || !P.anime) return;
+      const A = P.anime, g = PR.gest;
+      if (PR.stile === 'realistico' || PR.mod || !PR.g || !PR.g.visible) {                                   // niente segni sul tuo personaggio o nel realistico
+        if (A.segno) { A.segni[A.segno].visible = false; A.segno = null; }
+        A.gestoVisto = g; return;
+      }
+      if (g && g !== A.gestoVisto) {
+        A.gestoVisto = g;
+        const k = SEGNI_GESTO[g.k];
+        if (k) { if (A.segno && A.segni[A.segno]) A.segni[A.segno].visible = false; A.segno = k; A.segnoT = now; A.segnoFine = now + g.dur * 1000; A.segni[k].visible = true; }
+      }
+      if (!A.segno) return;
+      const sp = A.segni[A.segno], t = (now - A.segnoT) / 1000, fine = (A.segnoFine - now) / 1000;
+      if (fine <= 0) { sp.visible = false; A.segno = null; return; }
+      const pop = t < 0.3 ? Math.sin(t / 0.3 * Math.PI * 0.75) * 1.25 : 1;
+      sp.scale.setScalar(0.065 * clamp(pop, 0.001, 1.3) * (1 + 0.05 * Math.sin(t * 9)));
+      sp.position.y = 0.115 + 0.006 * Math.sin(t * 3) + (A.segno === 'sudore' ? -0.01 * clamp(t / 1.5, 0, 1) : 0);
+      sp.material.opacity = clamp(fine / 0.35, 0, 1);
+    }
+
     const api = {
       get kind() { return kind; }, get name() { return name; },
       get info() {
@@ -22300,10 +22643,12 @@ window.ZepKit = (() => {
       guarda(x, y) { PR.guarda.x = clamp(+x || 0, -1, 1); PR.guarda.y = clamp(+y || 0, -1, 1); },
       get gesti() { return Object.keys(PR_GESTI); },
       esperimento: k => esperimento(k),                                                                            // v30: 🔬 (null lo spegne)
+      stile: s => (s == null ? PR.stile : stileProf(s)),                                                           // v32: 🎨 'cartone', 'anime' o 'realistico'
       modello: url => caricaModelloProf(url), get modelloInfo() { return infoModelloProf(); }, valore: n => valoreModelloProf(n), osso: k => ossoProf(k),   // v31: 🧍
       get esperimenti() { return Object.fromEntries(Object.entries(ESPERIMENTI_3D).map(([k, v]) => [k, v.titolo])); },
       get stato() { return { on: PR.on, stato: PR.stato, w: +PR.w.toFixed(2), parla: PR.parlando, voce: PR.voce, gesto: PR.gest ? PR.gest.k : null, bocca: +PR.mp.open.toFixed(2),
-                             scan: +(PR.scanW || 0).toFixed(2), modello: PR.mod ? PR.mod.tipo : 'flux', realismo: !!(PR.parti && PR.parti.M._v31), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
+                             scan: +(PR.scanW || 0).toFixed(2), modello: PR.mod ? PR.mod.tipo : 'flux', stile: PR.stile, contorni: PR.parti && PR.parti.anime ? PR.parti.anime.contorni : 0,
+                             segno: PR.parti && PR.parti.anime ? PR.parti.anime.segno : null, realismo: !!(PR.parti && PR.parti.M._v31), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
     };
     Object.defineProperty(api, 'voce', { get: () => (PR.voce && PR.on ? 'prof' : 'zep'), set: v => { PR.voce = v === 'prof' && PR.on && PR.stato !== 'esce'; }, enumerable: true });
     for (const nome of ['speakLine', 'sync', 'lineEnd', 'audioLevel']) {
@@ -22813,7 +23158,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V31',key:'maik_boot_v31',checks:[
+  return MaikKit.boot({version:'PRIME · V32',key:'maik_boot_v32',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -22823,7 +23168,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
-    {label:'Personaggio 2',run:async()=>{try{const a=await (await fetch('/professore/aspetto')).json();return{ok:true,text:'🧍 '+(a.nome_mostrato||'Professor Flux')+(a.modello?' · '+a.modello.tipo.toUpperCase():' · integrato')};}catch(e){return{ok:false,text:'errore'};}}},
+    {label:'Personaggio 2',run:async()=>{try{const a=await (await fetch('/professore/aspetto')).json();return{ok:true,text:'🧍 '+(a.nome_mostrato||'Professor Flux')+(a.modello?' · '+a.modello.tipo.toUpperCase():' · integrato · '+(a.stile||'cartone'))};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Esperimenti',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:'🔬 '+((p.esperimenti||[]).length)+' esperimenti · 📓 '+((p.taccuino||{}).lezioni||0)+' nel taccuino'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:p.on?'🧪 il Professore è qui':'🧪 Professor Flux pronto'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Analisi',run:async()=>{try{const p=await (await fetch('/previsione')).json();return{ok:true,text:p.vuoto?'🔬 pronta':'🔮 fine mese ≈ '+Math.round(p.previsione)+' €'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -22847,7 +23192,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 31 🧍 Novità: il secondo personaggio può essere **tuo**: carica un tuo **.glb o .vrm** al posto del Professore e dagli un **nome**, una **voce** e un **carattere** (a sinistra, «🧍 Personaggio 3D» → «🎨 Cambia»); e il Professor Flux è più vero, con i capelli, i baffi e le sopracciglia a ciocche. Il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 32 🎬 Novità: il Professore adesso è un **cartone animato**, come in un film d\'animazione 3D (testa e occhi grandi, pelle liscia, capelli e baffi scolpiti, i segni delle emozioni); se lo vuoi **anime** o **realistico**: «🎨 Cambia» → Stile. E il secondo personaggio può essere **tuo**: carica un tuo **.glb o .vrm** al posto del Professore e dagli un **nome**, una **voce** e un **carattere** (a sinistra, «🧍 Personaggio 3D» → «🎨 Cambia»); e il Professor Flux è più vero, con i capelli, i baffi e le sopracciglia a ciocche. Il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -23742,7 +24087,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V31'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V32'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -27850,10 +28195,10 @@ function applicaNomeProf31() {
   const s = $('#p2side'); if (s) s.textContent = '🧪 ' + nomeProf31();
   const st = $('#avstate'); if (st) st.dataset.prof = PERS2.nome ? 'con ' + PERS2.nome : 'col Professore';         // «Zep pronto · 🧪 con Nova»
   const h = document.querySelector('#lav29 h6'); if (h && h.firstChild && h.firstChild.nodeType === 3) h.firstChild.textContent = '🧪 LAVAGNA ' + (PERS2.nome ? 'DI ' + PERS2.nome.toUpperCase() : 'DEL PROFESSORE');
-  const k = $('#p2sidek'); if (k) k.textContent = PERS2.modello ? 'il tuo ' + (PERS2.modello.tipo || 'glb').toUpperCase() + ' · ' + PERS2.modello.nome : 'il secondo personaggio (integrato)';
+  const k = $('#p2sidek'); if (k) k.textContent = PERS2.modello ? 'il tuo ' + (PERS2.modello.tipo || 'glb').toUpperCase() + ' · ' + PERS2.modello.nome : 'il secondo personaggio (integrato · ' + ({ anime: 'anime', realistico: 'realistico' }[PERS2.stile] || 'cartone') + ')';
 }
 async function caricaAspetto31() {                               // all'avvio (e dopo ogni cambio): nome, voce, carattere e il modello 3D
-  try { const r = await (await fetch('/professore/aspetto')).json(); Object.assign(PERS2, { nome: r.nome || '', voce: r.voce || 'grave', carattere: r.carattere || '', modello: r.modello || null }); } catch (e) {}
+  try { const r = await (await fetch('/professore/aspetto')).json(); Object.assign(PERS2, { nome: r.nome || '', voce: r.voce || 'grave', carattere: r.carattere || '', modello: r.modello || null, stile: r.stile || 'cartone' }); } catch (e) {}
   applicaNomeProf31();
   if (AV && AV.prof && AV.prof.modello) {
     const url = PERS2.modello ? '/professore/modello?v=' + encodeURIComponent(PERS2.modello.caricato || '') : null;
@@ -27863,6 +28208,7 @@ async function caricaAspetto31() {                               // all'avvio (e
       catch (e) { console.info('[Professore] modello non caricato', e); toast('Il tuo personaggio non si carica: per ora c\'è il Professor Flux 🧪', 'err'); PERS2.url = null; try { await AV.prof.modello(null); } catch (e2) {} }
     }
   }
+  if (AV && AV.prof && AV.prof.stile) AV.prof.stile(PERS2.stile || 'cartone');               // v32: 🎨 cartone, anime o realistico
   segnaP2();
 }
 function segnaP2() {
@@ -27897,10 +28243,11 @@ async function togliModelloP2() {
   await caricaAspetto31(); toast('🧪 È tornato il Professor Flux', 'ok');
 }
 async function salvaP2(ripristina) {
-  const corpo = ripristina ? { nome: '', voce: 'grave', carattere: '' } : { nome: $('#p2nome').value, voce: PERS2.sel, carattere: $('#p2car').value };
+  const corpo = ripristina ? { nome: '', voce: 'grave', carattere: '', stile: 'cartone' } : { nome: $('#p2nome').value, voce: PERS2.sel, carattere: $('#p2car').value, stile: PERS2.stile || 'cartone' };
   let r; try { r = await postJ('/professore/aspetto', corpo); } catch (e) { r = { ok: false, errore: 'Non riesco a salvare' }; }
   if (!r.ok) { toast(r.errore || 'Non riesco a salvare', 'err'); return; }
-  Object.assign(PERS2, { nome: r.aspetto.nome, voce: r.aspetto.voce, carattere: r.aspetto.carattere, sel: r.aspetto.voce });
+  Object.assign(PERS2, { nome: r.aspetto.nome, voce: r.aspetto.voce, carattere: r.aspetto.carattere, sel: r.aspetto.voce, stile: r.aspetto.stile || 'cartone' });
+  if (AV && AV.prof && AV.prof.stile) AV.prof.stile(PERS2.stile); segnaStileP2();
   $('#p2nome').value = PERS2.nome; $('#p2car').value = PERS2.carattere; segnaVociP2(); applicaNomeProf31();
   toast(ripristina ? '🧪 Di nuovo il Professor Flux, come all\'inizio' : '💾 Salvato: ' + nomeProf31() + ' · voce ' + PERS2.voce, 'ok');
 }
@@ -27934,6 +28281,21 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-p2voce]'); if (!b) return;
   PERS2.sel = b.dataset.p2voce; segnaVociP2();
 });
+
+// ════════════════════════════════════════════════════════════
+// V32 — MAIK PRIME LABORATORIO CARTOON: 🎨 lo stile del Professore (cartone / anime / realistico), scelto in «🎨 Cambia» e salvato sul server
+// ════════════════════════════════════════════════════════════
+function segnaStileP2() { document.querySelectorAll('[data-p2stile]').forEach(b => b.classList.toggle('on', b.dataset.p2stile === (PERS2.stile || 'cartone'))); }
+async function scegliStileP2(s) {                                // si vede subito (anche se il Professore non c'è: sarà così quando arriva) e si salva
+  if (AV && AV.prof && AV.prof.stile) AV.prof.stile(s);
+  let r; try { r = await postJ('/professore/aspetto', { nome: PERS2.nome, voce: PERS2.voce, carattere: PERS2.carattere, stile: s }); } catch (e) { r = { ok: false }; }
+  if (!r.ok) { toast(r.errore || 'Non riesco a salvare lo stile', 'err'); if (AV && AV.prof && AV.prof.stile) AV.prof.stile(PERS2.stile || 'cartone'); return; }
+  PERS2.stile = r.aspetto.stile; segnaStileP2(); applicaNomeProf31();
+  toast({ cartone: '🎬 Stile cartone animato', anime: '✨ Stile anime', realistico: '📷 Stile realistico' }[PERS2.stile] || '🎨 Stile cambiato', 'ok');
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-p2stile]'); if (b) scegliStileP2(b.dataset.p2stile); });
+const _segnaP2_31 = segnaP2;
+segnaP2 = function () { _segnaP2_31(); segnaStileP2(); };
 
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();if(!document.querySelector('.ov.open'))chiudiHUD();}});
@@ -28156,8 +28518,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 31.0 — Server avviato         ║
-║ il tuo personaggio · esperimenti · lezioni · hud ║
+║        MAIK PRIME 32.0 — Server avviato         ║
+║ professore cartoon/anime · il tuo personaggio    ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)

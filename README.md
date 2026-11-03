@@ -47,6 +47,25 @@ I modelli molto piccoli (`llama3.2:1b`) a volte dimenticano i tag degli strument
 
 ---
 
+## 🎬🧠 Novità V33 — MAIK PRIME Cinema & Scienza: il laboratorio 3D con le ombre e il bagliore, e i numeri giusti (versione server)
+
+| | Cosa fa |
+|---|---|
+| 🧪 **Il laboratorio 3D** | Zep e il Professore non sono più nel vuoto: intorno c'è un **laboratorio** (pavimento a esagoni di metallo, parete curva con le strisce di luce, un grande **oblò sullo spazio** con un pianeta ad anelli, il **banco** con le provette che brillano e fanno le bolle, gli **scaffali** con i libri e il mappamondo, due **schermi olografici** dal vivo, la lampada a cono con la polvere nella luce, la nebbia in fondo). Oppure lo **spazio** di sempre. |
+| 🎬 **Le ombre vere e il bagliore** | I personaggi e i mobili fanno **ombre vere** sul pavimento (shadow map morbida) e le luci del laboratorio hanno il **bagliore** (bloom): brillano solo le luci, non il bianco di Zep o del camice. |
+| ⚡ **Dove si sceglie** | ⚡ Prestazioni → **🎬 Cinema 3D**: 🤖 Automatico · 🎬 Sempre · 🚫 Mai, e la scena: 🤖 auto · 🧪 Laboratorio · 🌌 Spazio. In **automatico** si accende se il 3D lo disegna una **scheda video vera** e non c'è la modalità leggera; se lo disegna il processore (niente accelerazione grafica) resta tutto spento, per non rallentare. La scelta resta salvata. |
+| 🧠 **Le risposte esatte** | Una **banca dati scientifica verificata** dentro MAIK: **tutta la tavola periodica** (118 elementi: numero atomico, massa, categoria, elettroni per guscio), le **costanti fisiche** (velocità della luce, Planck, G, Avogadro, Boltzmann…, valori CODATA), il **Sistema solare** (raggio, massa, gravità, distanza, durata dell'anno e del giorno). «**numero atomico del ferro**», «**elemento 79**», «**quanto pesa Marte?**», «**qual è la velocità della luce?**» → la risposta esatta, subito, senza chiedere al modello. |
+| 📐 **Le equazioni passo per passo** | «**risolvi 2x + 3 = 11**», «**x² − 5x + 6 = 0**», «**3(x − 1) = 2x + 5**»: primo e secondo grado, con i passaggi (anche il Δ) sulla **lavagna**, il risultato con la frazione se serve, e **la verifica** (rimette il valore nell'equazione). Se è di grado più alto lo dice, non inventa. |
+| 📏 **Le conversioni** | «**100 km/h in m/s**», «**converti 100 °F in °C**», «**quanti metri sono 3 miglia**», «**1 kWh in joule**»: lunghezze, masse, tempi, velocità, volumi, superfici, dati, energia e temperature, con la regola sotto (1 miglio = 1,609344 km). |
+| ✅ **I dati verificati** | Quando la risposta la scrive il modello («perché il ferro arrugginisce?», «parlami di Marte»), MAIK gli passa i **DATI VERIFICATI** che c'entrano: così i numeri sono quelli giusti. Sotto la risposta compare **✅ dati verificati**: toccalo e vedi quali. |
+| ⚛️ **L'atomo dell'elemento** | «**fammi vedere l'atomo di carbonio**» → sul palco c'è proprio quello: **6 protoni, 6 neutroni**, gli elettroni sui **gusci giusti** (2 · 4); il ferro ne ha 26 (2 · 8 · 14 · 2). Il Professore lo spiega sapendo quale elemento è, e la lavagna ha i suoi numeri. Nella chat la **carta della tavola periodica** (colorata per categoria) ha il bottone «⚛️ Fammi vedere l'atomo». |
+| 🧪 **Con il Professore** | Se c'è lui (o lo chiami: «professore, quanto pesa Marte?»), le domande esatte le risolve **lui alla lavagna**, con la sua voce, e finiscono nel suo taccuino. Durante un'interrogazione, «x = 4» resta la tua risposta da valutare. |
+
+- Nuovi endpoint: `GET /scienza?q=…` (la risposta esatta, se c'è, e i fatti verificati) · `GET /scienza/elemento?z=26` (o `?s=Fe`, `?nome=ferro`).
+- I file di three.js per il bagliore (`addons/postprocessing`, `addons/shaders`) si scaricano una volta dal CDN e restano in cache, come gli altri.
+- Il 3D resta **disegnato dal codice** (procedurale, stile cartone): non è un rendering fotografico. Le ombre e il bagliore pesano sulla scheda video: se il PC fatica, ⚡ Prestazioni → 🚫 Mai (o la modalità leggera).
+- La banca dati è dentro il file (niente internet). Il modello semplificato dei gusci (regola di Madelung) è quello delle scuole: per alcuni metalli di transizione la configurazione reale è un po' diversa.
+
 ## 🎬 Novità V32 — MAIK PRIME Laboratorio Cartoon: il Professore cartone animato (o anime, o realistico) (versione server)
 
 | | Cosa fa |
@@ -598,7 +617,7 @@ Tutti i dati restano nel tuo browser (`localStorage`, e i documenti in IndexedDB
 
 ---
 
-## MAIK PRIME — Server V32 — `maikprime.py`
+## MAIK PRIME — Server V33 — `maikprime.py`
 
 Server in **puro Python (solo libreria standard, niente pip; Piper per la voce neurale è facoltativo)** con memoria avanzata salvata su disco. Serve la GUI nel browser e fa da ponte verso Ollama.
 

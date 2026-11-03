@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════╗
-║              MAIK PRIME — Server v32.0                   ║
+║              MAIK PRIME — Server v33.0                   ║
 ║   AI locale con GUI futuristica 3D nel browser           ║
 ║   Memoria avanzata: episodica, semantica, emotiva        ║
 ╚══════════════════════════════════════════════════════════╝
@@ -11,6 +11,20 @@ COME SI AVVIA:
   3. Si apre da solo nel browser.
 
 Solo librerie standard Python — niente pip.
+
+NOVITÀ v33.0 — MAIK PRIME CINEMA & SCIENZA:
+  • 🎬 Il 3D da film: Zep e il Professore stanno in un laboratorio vero (il pavimento a esagoni, la parete curva con le luci,
+    l'oblò sul pianeta con gli anelli, il banco con le provette che brillano e fanno le bolle, gli scaffali, gli schermi
+    olografici), con le ombre vere e il bagliore (bloom) sulle luci. Sui PC senza scheda video gli effetti pesanti
+    si spengono da soli; si sceglie in «⚡ Prestazioni» (Cinema: auto / sempre / mai · Scena: laboratorio / spazio).
+  • 🧠 Più intelligente, con i numeri giusti: una banca dati scientifica verificata (tutta la tavola periodica, le costanti
+    fisiche, il Sistema solare), il risolutore di equazioni di primo e secondo grado passo per passo (con la verifica),
+    le conversioni di unità (lunghezze, masse, tempi, velocità, volumi, superfici, dati, energia, temperature).
+    «risolvi x² − 5x + 6 = 0», «100 km/h in m/s», «numero atomico del ferro», «quanto pesa Marte?».
+    Quando la risposta la scrive il modello, riceve i DATI VERIFICATI che c'entrano (niente numeri inventati).
+  • ⚛️ L'atomo 3D è quello dell'elemento di cui parli: «fammi vedere l'atomo di carbonio» → 6 protoni, 6 neutroni,
+    gli elettroni sui gusci giusti; con il Professore, le domande esatte le risolve lui alla lavagna.
+  • Nuovo endpoint: GET /scienza?q= (la risposta esatta, se c'è) · GET /scienza/elemento?z= o ?s=
 
 NOVITÀ v32.0 — MAIK PRIME LABORATORIO CARTOON:
   • 🎬 Il Professore in stile cartone animato, come in un film d'animazione 3D: la testa e gli occhi più grandi e lucidi,
@@ -483,7 +497,7 @@ che avete vissuto insieme, citalo con calore.""",
     "meteo_forecast_url": _env("MAIK_METEO_URL", "https://api.open-meteo.com/v1/forecast"),
 }
 
-VERSIONE  = "32.0"
+VERSIONE  = "33.0"
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR  = CONFIG["data_dir"] if os.path.isabs(CONFIG["data_dir"]) else os.path.join(BASE_DIR, CONFIG["data_dir"])
 HTML_FILE = os.path.join(BASE_DIR, "aria.html")   # GUI principale (se presente)
@@ -14673,7 +14687,7 @@ def professore_risponde(motore, pr, on_token, allegato=None, rigenera=False, ses
         if k:
             P["esperimento"] = info_esperimento(k)
             if not P.get("lavagna"):
-                P["lavagna"] = list(ESPERIMENTI[k]["lavagna"])
+                P["lavagna"] = list((P["esperimento"] or {}).get("lavagna") or ESPERIMENTI[k]["lavagna"])
         domanda = pr.get("domanda") or pr.get("testo")
         if _da_segnare(domanda, P.get("lavagna"), k):
             v = TACCUINO.segna(domanda, P.get("lavagna"), k, pr.get("tipo") or "domanda")
@@ -15114,6 +15128,525 @@ def salva_aspetto_prof(c):
         json.dump(d, f, ensure_ascii=False)
     os.replace(p + ".tmp", p)
     return d, None
+
+
+# ════════════════════════════════════════════════════════════
+# V33 — MAIK PRIME CINEMA & SCIENZA: 🧠 i numeri giusti. Una banca dati scientifica verificata (la tavola periodica completa,
+# le costanti fisiche, il Sistema solare), un risolutore di equazioni passo per passo e le conversioni di unità: le risposte
+# di MAIK e del Professore usano questi dati (niente numeri inventati), e l'atomo 3D è quello dell'elemento di cui parli.
+# ════════════════════════════════════════════════════════════
+_TAVOLA = """1 H Idrogeno 1.008 nm|2 He Elio 4.0026 gn|3 Li Litio 6.94 am|4 Be Berillio 9.0122 at|5 B Boro 10.81 sm|6 C Carbonio 12.011 nm|7 N Azoto 14.007 nm|8 O Ossigeno 15.999 nm
+9 F Fluoro 18.998 al|10 Ne Neon 20.180 gn|11 Na Sodio 22.990 am|12 Mg Magnesio 24.305 at|13 Al Alluminio 26.982 pt|14 Si Silicio 28.085 sm|15 P Fosforo 30.974 nm|16 S Zolfo 32.06 nm
+17 Cl Cloro 35.45 al|18 Ar Argon 39.95 gn|19 K Potassio 39.098 am|20 Ca Calcio 40.078 at|21 Sc Scandio 44.956 mt|22 Ti Titanio 47.867 mt|23 V Vanadio 50.942 mt|24 Cr Cromo 51.996 mt
+25 Mn Manganese 54.938 mt|26 Fe Ferro 55.845 mt|27 Co Cobalto 58.933 mt|28 Ni Nichel 58.693 mt|29 Cu Rame 63.546 mt|30 Zn Zinco 65.38 mt|31 Ga Gallio 69.723 pt|32 Ge Germanio 72.630 sm
+33 As Arsenico 74.922 sm|34 Se Selenio 78.971 nm|35 Br Bromo 79.904 al|36 Kr Kripton 83.798 gn|37 Rb Rubidio 85.468 am|38 Sr Stronzio 87.62 at|39 Y Ittrio 88.906 mt|40 Zr Zirconio 91.224 mt
+41 Nb Niobio 92.906 mt|42 Mo Molibdeno 95.95 mt|43 Tc Tecnezio 98 mt|44 Ru Rutenio 101.07 mt|45 Rh Rodio 102.91 mt|46 Pd Palladio 106.42 mt|47 Ag Argento 107.87 mt|48 Cd Cadmio 112.41 mt
+49 In Indio 114.82 pt|50 Sn Stagno 118.71 pt|51 Sb Antimonio 121.76 sm|52 Te Tellurio 127.60 sm|53 I Iodio 126.90 al|54 Xe Xeno 131.29 gn|55 Cs Cesio 132.91 am|56 Ba Bario 137.33 at
+57 La Lantanio 138.91 la|58 Ce Cerio 140.12 la|59 Pr Praseodimio 140.91 la|60 Nd Neodimio 144.24 la|61 Pm Promezio 145 la|62 Sm Samario 150.36 la|63 Eu Europio 151.96 la|64 Gd Gadolinio 157.25 la
+65 Tb Terbio 158.93 la|66 Dy Disprosio 162.50 la|67 Ho Olmio 164.93 la|68 Er Erbio 167.26 la|69 Tm Tulio 168.93 la|70 Yb Itterbio 173.05 la|71 Lu Lutezio 174.97 la|72 Hf Afnio 178.49 mt
+73 Ta Tantalio 180.95 mt|74 W Tungsteno 183.84 mt|75 Re Renio 186.21 mt|76 Os Osmio 190.23 mt|77 Ir Iridio 192.22 mt|78 Pt Platino 195.08 mt|79 Au Oro 196.97 mt|80 Hg Mercurio 200.59 mt
+81 Tl Tallio 204.38 pt|82 Pb Piombo 207.2 pt|83 Bi Bismuto 208.98 pt|84 Po Polonio 209 pt|85 At Astato 210 al|86 Rn Radon 222 gn|87 Fr Francio 223 am|88 Ra Radio 226 at
+89 Ac Attinio 227 ac|90 Th Torio 232.04 ac|91 Pa Protoattinio 231.04 ac|92 U Uranio 238.03 ac|93 Np Nettunio 237 ac|94 Pu Plutonio 244 ac|95 Am Americio 243 ac|96 Cm Curio 247 ac
+97 Bk Berkelio 247 ac|98 Cf Californio 251 ac|99 Es Einsteinio 252 ac|100 Fm Fermio 257 ac|101 Md Mendelevio 258 ac|102 No Nobelio 259 ac|103 Lr Laurenzio 266 ac|104 Rf Rutherfordio 267 mt
+105 Db Dubnio 268 mt|106 Sg Seaborgio 269 mt|107 Bh Bohrio 270 mt|108 Hs Hassio 269 mt|109 Mt Meitnerio 278 mt|110 Ds Darmstadtio 281 mt|111 Rg Roentgenio 282 mt|112 Cn Copernicio 285 mt
+113 Nh Nihonio 286 pt|114 Fl Flerovio 289 pt|115 Mc Moscovio 290 pt|116 Lv Livermorio 293 pt|117 Ts Tennesso 294 al|118 Og Oganesson 294 gn"""
+CATEGORIE_EL = {"am": "metallo alcalino", "at": "metallo alcalino-terroso", "mt": "metallo di transizione", "pt": "metallo post-transizione", "sm": "semimetallo",
+                "nm": "non metallo", "al": "alogeno", "gn": "gas nobile", "la": "lantanide", "ac": "attinide"}
+_ORBITALI = [(1, 2), (2, 2), (2, 6), (3, 2), (3, 6), (4, 2), (3, 10), (4, 6), (5, 2), (4, 10), (5, 6), (6, 2), (4, 14), (5, 10), (6, 6), (7, 2), (5, 14), (6, 10), (7, 6)]
+
+
+def _gusci(z):
+    """Gli elettroni per guscio (riempimento in ordine di energia, regola di Madelung: un modello semplificato)."""
+    g = [0] * 7
+    for n, cap in _ORBITALI:
+        if z <= 0:
+            break
+        e = min(cap, z); g[n - 1] += e; z -= e
+    while g and g[-1] == 0:
+        g.pop()
+    return g
+
+
+ELEMENTI = []
+for _r in _TAVOLA.replace("\n", "|").split("|"):
+    _z, _s, _n, _m, _c = _r.split()
+    ELEMENTI.append({"Z": int(_z), "simbolo": _s, "nome": _n, "massa": float(_m), "categoria": CATEGORIE_EL[_c], "gusci": _gusci(int(_z)),
+                     "stabile": "." in _m})
+EL_PER_NOME = {Studio._norm(e["nome"]): e for e in ELEMENTI}
+EL_PER_NOME.update({"cripto": ELEMENTI[35], "kripto": ELEMENTI[35], "nickel": ELEMENTI[27], "tungsteno": ELEMENTI[73], "wolframio": ELEMENTI[73]})
+EL_PER_SIMBOLO = {e["simbolo"]: e for e in ELEMENTI}
+_RE_NOMI_EL = re.compile(r"\b(" + "|".join(sorted((re.escape(k) for k in EL_PER_NOME), key=len, reverse=True)) + r")\b", re.I)
+
+COSTANTI = [   # (chiave, nome, simbolo, valore in testo, numero, unità, regex, nota)
+    ("c", "Velocità della luce nel vuoto", "c", "299.792.458", 299792458, "m/s", r"velocit[aà]\s+della\s+luce|\bluce\b.{0,25}\bveloc|\bveloc\w*.{0,20}\bluce\b", "valore esatto, per definizione"),
+    ("h", "Costante di Planck", "h", "6,62607015 × 10⁻³⁴", 6.62607015e-34, "J·s", r"costante\s+di\s+planck", "valore esatto, per definizione"),
+    ("G", "Costante di gravitazione universale", "G", "6,67430 × 10⁻¹¹", 6.6743e-11, "N·m²/kg²", r"costante\s+(?:di\s+)?gravita(?:zion|ziona)\w*|costante\s+gravitazionale", "misurata (CODATA 2018)"),
+    ("NA", "Numero di Avogadro", "Nₐ", "6,02214076 × 10²³", 6.02214076e23, "1/mol", r"(?:numero|costante)\s+di\s+avogadro", "valore esatto, per definizione"),
+    ("kB", "Costante di Boltzmann", "k", "1,380649 × 10⁻²³", 1.380649e-23, "J/K", r"costante\s+di\s+boltzmann", "valore esatto, per definizione"),
+    ("e", "Carica elementare", "e", "1,602176634 × 10⁻¹⁹", 1.602176634e-19, "C", r"carica\s+(?:elementare|dell['’]\s*elettrone|del\s+protone)", "valore esatto, per definizione"),
+    ("me", "Massa dell'elettrone", "mₑ", "9,1093837 × 10⁻³¹", 9.1093837e-31, "kg", r"massa\s+dell['’]\s*elettrone", "misurata (CODATA 2018)"),
+    ("mp", "Massa del protone", "mₚ", "1,67262192 × 10⁻²⁷", 1.67262192e-27, "kg", r"massa\s+del\s+protone", "misurata (CODATA 2018)"),
+    ("g", "Accelerazione di gravità standard", "g", "9,80665", 9.80665, "m/s²", r"accelerazione\s+di\s+gravit[aà]|gravit[aà]\s+(?:sulla|della)\s+terra", "valore convenzionale"),
+    ("R", "Costante dei gas", "R", "8,314462618", 8.314462618, "J/(mol·K)", r"costante\s+(?:universale\s+)?dei\s+gas", "valore esatto (da Nₐ e k)"),
+    ("sigma", "Costante di Stefan-Boltzmann", "σ", "5,670374419 × 10⁻⁸", 5.670374419e-8, "W/(m²·K⁴)", r"stefan[\s-]+boltzmann", "valore esatto (da h, c, k)"),
+    ("suono", "Velocità del suono nell'aria (20 °C)", "v", "343", 343, "m/s", r"velocit[aà]\s+del\s+suono", "circa, nell'aria secca a 20 °C"),
+    ("zero", "Zero assoluto", "0 K", "−273,15", -273.15, "°C", r"zero\s+assoluto", "valore esatto"),
+    ("au", "Unità astronomica", "au", "149.597.870.700", 149597870700, "m", r"unit[aà]\s+astronomica", "valore esatto, per definizione"),
+    ("al", "Anno luce", "al", "9,4607304725808 × 10¹⁵", 9.4607304725808e15, "m", r"\banno\s+luce\b", "la distanza che la luce percorre in un anno giuliano"),
+    ("pi", "Pi greco", "π", "3,14159265358979…", math.pi, "", r"\bpi\s+greco\b", "numero irrazionale"),
+    ("nepero", "Numero di Nepero", "e", "2,71828182845904…", math.e, "", r"numero\s+di\s+nepero", "numero irrazionale"),
+]
+_RE_COSTANTI = [(c, re.compile(c[6], re.I)) for c in COSTANTI]
+_COST_DIRETTE = {"c": re.compile(r"velocit[aà]\s+della\s+luce", re.I)}      # «quanto è veloce la luce?» la spiega il modello (con il numero giusto)
+
+CORPI = {   # dati medi (NASA): raggio km, massa kg (testo), gravità m/s², distanza (testo), anno, giorno
+    "sole": ("Il Sole", "696.340", "1,989 × 10³⁰", "274", "—", "—", "circa 25 giorni (all'equatore)", "stella"),
+    "mercurio": ("Mercurio", "2.439,7", "3,301 × 10²³", "3,7", "57,9 milioni di km dal Sole", "88 giorni", "176 giorni (giorno solare)", "pianeta"),
+    "venere": ("Venere", "6.051,8", "4,867 × 10²⁴", "8,87", "108,2 milioni di km dal Sole", "224,7 giorni", "243 giorni (ruota al contrario)", "pianeta"),
+    "terra": ("La Terra", "6.371", "5,972 × 10²⁴", "9,81", "149,6 milioni di km dal Sole (1 au)", "365,25 giorni", "24 ore", "pianeta"),
+    "luna": ("La Luna", "1.737,4", "7,342 × 10²²", "1,62", "384.400 km dalla Terra", "27,3 giorni (un giro intorno alla Terra)", "27,3 giorni (mostra sempre la stessa faccia)", "satellite"),
+    "marte": ("Marte", "3.389,5", "6,417 × 10²³", "3,71", "227,9 milioni di km dal Sole", "687 giorni", "24 h 37 min", "pianeta"),
+    "giove": ("Giove", "69.911", "1,898 × 10²⁷", "24,79", "778,5 milioni di km dal Sole", "11,86 anni", "9 h 56 min", "pianeta"),
+    "saturno": ("Saturno", "58.232", "5,683 × 10²⁶", "10,44", "1.432 milioni di km dal Sole", "29,46 anni", "10 h 34 min", "pianeta"),
+    "urano": ("Urano", "25.362", "8,681 × 10²⁵", "8,69", "2.867 milioni di km dal Sole", "84 anni", "17 h 14 min (ruota al contrario)", "pianeta"),
+    "nettuno": ("Nettuno", "24.622", "1,024 × 10²⁶", "11,15", "4.515 milioni di km dal Sole", "164,8 anni", "16 h 6 min", "pianeta"),
+    "plutone": ("Plutone", "1.188", "1,303 × 10²²", "0,62", "5.906 milioni di km dal Sole", "248 anni", "6,4 giorni", "pianeta nano"),
+}
+_RE_CORPI = re.compile(r"\b(sole|mercurio|venere|terra|luna|marte|giove|saturno|urano|nettuno|plutone)\b", re.I)
+
+# ── le unità di misura: (grandezza, fattore verso l'unità base) ──
+_UNITA = {}
+for _g, _lista in {
+    "lunghezza": [("mm millimetro millimetri", 1e-3), ("cm centimetro centimetri", 1e-2), ("dm decimetro decimetri", 0.1), ("m metro metri", 1), ("km chilometro chilometri kilometro kilometri", 1e3),
+                  ("pollice pollici inch inches", 0.0254), ("piede piedi ft feet", 0.3048), ("iarda iarde yd yard", 0.9144), ("miglio miglia mi", 1609.344),
+                  ("miglio_nautico miglia_nautiche", 1852), ("anno_luce anni_luce", 9.4607304725808e15), ("au ua unità_astronomica unità_astronomiche", 1.495978707e11)],
+    "massa": [("mg milligrammo milligrammi", 1e-6), ("g grammo grammi", 1e-3), ("hg etto etti ettogrammo ettogrammi", 0.1), ("kg chilo chili chilogrammo chilogrammi kilo kili", 1),
+              ("t tonnellata tonnellate", 1e3), ("libbra libbre lb lbs", 0.45359237), ("oncia once oz", 0.028349523125)],
+    "tempo": [("ms millisecondo millisecondi", 1e-3), ("s sec secondo secondi", 1), ("min minuto minuti", 60), ("h ora ore", 3600), ("giorno giorni", 86400),
+              ("settimana settimane", 604800), ("anno anni", 31557600)],
+    "velocità": [("m/s metri_al_secondo metri_al_secondi", 1), ("km/h kmh km_orari chilometri_orari chilometri_all'ora km_all'ora", 1 / 3.6), ("mph miglia_orarie miglia_all'ora", 0.44704), ("nodo nodi", 1852 / 3600)],
+    "volume": [("ml millilitro millilitri", 1e-3), ("cl centilitro centilitri", 1e-2), ("dl decilitro decilitri", 0.1), ("l litro litri", 1), ("m³ m3 metro_cubo metri_cubi", 1e3),
+               ("gallone galloni", 3.785411784)],
+    "superficie": [("cm² cm2 centimetro_quadrato centimetri_quadrati", 1e-4), ("m² m2 metro_quadro metri_quadri metri_quadrati", 1), ("km² km2 chilometro_quadrato chilometri_quadrati", 1e6),
+                   ("ettaro ettari ha", 1e4), ("acro acri", 4046.8564224)],
+    "dati": [("byte", 1), ("kb kilobyte", 1e3), ("mb megabyte", 1e6), ("gb gigabyte", 1e9), ("tb terabyte", 1e12)],
+    "energia": [("j joule", 1), ("kj kilojoule chilojoule", 1e3), ("cal caloria calorie", 4.184), ("kcal chilocaloria chilocalorie kilocalorie kilocaloria", 4184),
+                ("wh wattora", 3600), ("kwh chilowattora kilowattora", 3.6e6), ("ev elettronvolt", 1.602176634e-19)],
+}.items():
+    for _nomi, _f in _lista:
+        for _x in _nomi.split():
+            _UNITA[_x.replace("_", " ")] = (_g, _f, _nomi.split()[0].replace("_", " "))
+_TEMP = {"c": "°C", "°c": "°C", "celsius": "°C", "gradi celsius": "°C", "gradi centigradi": "°C", "centigradi": "°C", "gradi": "°C",
+         "f": "°F", "°f": "°F", "fahrenheit": "°F", "gradi fahrenheit": "°F", "k": "K", "kelvin": "K", "gradi kelvin": "K"}
+_SIMBOLO_UNITA = {"j": "J", "kj": "kJ", "wh": "Wh", "kwh": "kWh", "ev": "eV", "kb": "kB", "mb": "MB", "gb": "GB", "tb": "TB", "cal": "cal", "kcal": "kcal"}
+_PLURALI = {"pollice": "pollici", "piede": "piedi", "iarda": "iarde", "miglio": "miglia", "miglio nautico": "miglia nautiche", "anno luce": "anni luce", "libbra": "libbre",
+            "oncia": "once", "giorno": "giorni", "settimana": "settimane", "anno": "anni", "nodo": "nodi", "gallone": "galloni", "ettaro": "ettari", "acro": "acri"}
+
+
+def _nome_unita(base, n):
+    """Il simbolo (km, kWh…) o il nome, al plurale se serve (1 miglio, 3 miglia)."""
+    if base in _SIMBOLO_UNITA:
+        return _SIMBOLO_UNITA[base]
+    return base if abs(n) == 1 else _PLURALI.get(base, base)
+
+
+_NUM = r"(?P<n>-?\d+(?:[.,]\d+)*)"
+_RE_CONV1 = re.compile(r"^(?:(?:converti(?:mi)?|trasforma|quanto\s+fanno|quanto\s+fa|quanto\s+sono|quant[ie]\s+sono)\s+)?" + _NUM + r"\s*(?P<u1>[^\d=]+?)\s+(?:in|a)\s+(?P<u2>[^\d=]+?)\s*\??$", re.I)
+_RE_CONV2 = re.compile(r"^quant[ie]\s+(?P<u2>[^\d=]+?)\s+(?:sono|fanno|ci\s+sono\s+in|corrispondono\s+a|equivalgono\s+a)\s+" + _NUM + r"\s*(?P<u1>[^\d=]+?)\s*\??$", re.I)
+_RE_EQ_PAROLE = re.compile(r"^(?:(?:risolvi(?:mi)?|calcola|trova(?:mi)?)(?:\s+(?:l['’]\s*)?equazione)?|(?:l['’]\s*)?equazione|trova\s+(?:la\s+)?x\s+(?:in|tale\s+che|se)|quanto\s+vale\s+x\s+(?:in|se)|"
+                           r"qual\s+[eè]\s+(?:la\s+)?x\s+(?:in|se))\s*:?\s*(?P<eq>.+=.+)$", re.I)
+_RE_EQ_SOLA = re.compile(r"^(?P<eq>[\dx\s+\-*/^().,²³×·:]*x[\dx\s+\-*/^().,²³×·:]*=[\dx\s+\-*/^().,²³×·:]+)$", re.I)
+_RE_EL_DATI = re.compile(r"\b(?:numero\s+atomico|massa\s+atomica|peso\s+atomico|simbolo(?:\s+chimico)?|configurazione(?:\s+elettronica)?|gusci|quanti\s+(?:protoni|elettroni|neutroni)|"
+                         r"scheda|dati|tavola\s+periodica)\b", re.I)
+_RE_EL_NUMERO = re.compile(r"\belemento\s+(?:numero\s+|n\.?\s*|z\s*=\s*)?(?P<z>\d{1,3})\b|\bnumero\s+atomico\s+(?P<z2>\d{1,3})\b", re.I)
+_RE_EL_SIMBOLO = re.compile(r"\b(?i:simbolo|elemento)\s+(?i:chimico\s+)?[«\"']?(?P<s>[A-Z][a-z]?)[»\"']?(?=\W|$)")
+_EL_AMBIGUI = {"calcio", "stagno", "radio", "indio", "elio", "tulio", "francio", "gallio", "curio", "cromo", "torio", "renio", "mercurio"}
+_RE_CHIMICA = re.compile(r"\b(?:element\w*|atom\w*|chimic\w*|metall\w*|tavola\s+periodica|numero\s+atomico|massa\s+atomica|simbolo|isotop\w*|protoni|elettroni|"
+                         r"neutroni|radioattiv\w*|minerale|ossa|denti|termometr\w*|tossic\w*|liquid\w*|curie)\b", re.I)
+_RE_CORPO_DATI = re.compile(r"\b(?:raggio|diametro|massa|quanto\s+pesa|gravit[aà]|quanto\s+dista|distanza|quanto\s+[eè]\s+(?:grande|lontan[oa])|grandezza|"
+                            r"quanto\s+dura\s+(?:un|l['’]|il)\s*(?:anno|giorno)|(?:durata\s+(?:del(?:l['’])?\s*)?)?(?:anno|giorno)\s+su|scheda\s+d\w*|dati\s+(?:su|d\w*))\b", re.I)
+_RE_COST_DOMANDA = re.compile(r"\b(?:quanto\s+vale|qual\s+[eè]\s+il\s+valore|valore\s+(?:della|del|dello|dell['’]|di)|dimmi|qual\s+[eè]|quant['’]\s*[eè])\b", re.I)
+_RE_ASTRO = re.compile(r"\b(?:pianet\w*|stell[ae]\w*|spazio|orbit\w*|astronom\w*|sistema\s+solare|gravit\w*|galassi\w*|satellit\w*|razz[oi]|astronaut\w*|telescop\w*|eclissi|"
+                       r"grand[ei]|pesa|dist\w*|lontan\w*|massa|raggio|diametro|anno|giorn[oi])\b", re.I)
+_RE_NON_CHIMICA = re.compile(r"\b(?:lista|elenco|array|vettore|tabella|serie|colonna|riga)\b", re.I)
+
+
+def fnum(x, dec=4):
+    """Un numero all'italiana (1.234,56), senza zeri inutili; i molto grandi o molto piccoli in notazione scientifica."""
+    if x == 0:
+        return "0"
+    if abs(x) >= 1e12 or abs(x) < 1e-4:
+        esp = int(math.floor(math.log10(abs(x)))); m = x / 10 ** esp
+        sup = str(esp).translate(str.maketrans("-0123456789", "⁻⁰¹²³⁴⁵⁶⁷⁸⁹"))
+        return f"{fnum(round(m, dec), dec)} × 10{sup}"
+    s = f"{x:,.{dec}f}".rstrip("0").rstrip(".")
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _n_testo(s):
+    s = s.strip()
+    if re.fullmatch(r"-?\d{1,3}(?:\.\d{3})+(?:,\d+)?", s):
+        s = s.replace(".", "")
+    return float(s.replace(",", "."))
+
+
+def _unita(u):
+    u = re.sub(r"\s+", " ", u.strip().lower().rstrip("?.! ")).replace("all’ora", "all'ora")
+    u = re.sub(r"^(?:di|dei|degli|delle|in)\s+", "", u)
+    if u in _TEMP:
+        return ("temperatura", None, _TEMP[u])
+    if u in _UNITA:
+        return _UNITA[u]
+    u2 = re.sub(r"^gradi\s+", "", u)
+    if u2 in _TEMP:
+        return ("temperatura", None, _TEMP[u2])
+    return None
+
+
+def converti_unita(testo):
+    t = re.sub(r"\s+", " ", (testo or "").strip())
+    m = _RE_CONV1.match(t) or _RE_CONV2.match(t)
+    if not m:
+        return None
+    if m.re is _RE_CONV1 and not re.match(r"(?:converti|trasforma|quant)", t, re.I) and not re.search(r"\s+in\s+", t):
+        return None                                                                  # «10 km a piedi» non è una conversione
+    try:
+        n = _n_testo(m.group("n"))
+    except ValueError:
+        return None
+    a, b = _unita(m.group("u1")), _unita(m.group("u2"))
+    if not a or not b or a[0] != b[0]:
+        return None
+    if a[0] == "temperatura":
+        da, a_ = a[2], b[2]
+        k = n + 273.15 if da == "°C" else (n - 32) * 5 / 9 + 273.15 if da == "°F" else n
+        r = k - 273.15 if a_ == "°C" else (k - 273.15) * 9 / 5 + 32 if a_ == "°F" else k
+        formula = {("°C", "°F"): "°F = °C × 9/5 + 32", ("°F", "°C"): "°C = (°F − 32) × 5/9", ("°C", "K"): "K = °C + 273,15", ("K", "°C"): "°C = K − 273,15",
+                   ("°F", "K"): "K = (°F − 32) × 5/9 + 273,15", ("K", "°F"): "°F = (K − 273,15) × 9/5 + 32"}.get((da, a_), "è la stessa scala")
+        s1, s2 = da, a_
+    else:
+        r = n * a[1] / b[1]
+        s1, s2 = _nome_unita(a[2], n), _nome_unita(b[2], r)
+        formula = f"1 {_nome_unita(a[2], 1)} = {fnum(a[1] / b[1], 6)} {_nome_unita(b[2], a[1] / b[1])}"
+    riga = f"{fnum(n)} {s1} = {fnum(r)} {s2}"
+    righe = [riga] + ([formula] if formula != riga else [])
+    return {"tipo": "conversione", "titolo": riga, "risultato": r, "testo": f"📏 **{riga}**" + (f"\n\n({formula})" if formula != riga else ""), "righe": righe}
+
+
+def _poli(espr):
+    """«2x + 3» → una funzione di x calcolata con la calcolatrice sicura (niente eval)."""
+    s = espr.lower().replace("²", "^2").replace("³", "^3").replace(",", ".").replace("×", "*").replace("·", "*").replace(":", "/").replace("−", "-")
+    s = re.sub(r"\s+", "", s)
+    s = re.sub(r"(\d)(x|\()", r"\1*\2", s); s = re.sub(r"(x|\))(\d|x|\()", r"\1*\2", s); s = re.sub(r"(x|\))(\d|x|\()", r"\1*\2", s)
+    s = s.replace("^", "**")
+    if not re.fullmatch(r"[\dx+\-*/().]+", s):
+        raise ValueError("non è un'equazione semplice")
+    albero = ast.parse(s, mode="eval")
+
+    def f(x):
+        def sost(n):
+            if isinstance(n, ast.Name) and n.id == "x":
+                return ast.Constant(value=x)
+            for campo, val in ast.iter_fields(n):
+                if isinstance(val, ast.AST):
+                    setattr(n, campo, sost(val))
+            return n
+        import copy
+        return _valuta(sost(copy.deepcopy(albero)))
+    return f
+
+
+def _pol_testo(a, b, c):
+    parti = []
+    for coef, var in ((a, "x²"), (b, "x"), (c, "")):
+        if abs(coef) < 1e-12:
+            continue
+        num = "" if var and abs(abs(coef) - 1) < 1e-12 else fnum(abs(coef))
+        parti.append(("− " if coef < 0 else "+ ") + num + var)
+    s = " ".join(parti) or "0"
+    return s[2:] if s.startswith("+ ") else "−" + s[2:]
+
+
+def risolvi_equazione(testo):
+    t = re.sub(r"\s+", " ", (testo or "").strip().rstrip("?.!"))
+    m = _RE_EQ_PAROLE.match(t) or _RE_EQ_SOLA.match(t)
+    if not m:
+        return None
+    eq = m.group("eq").strip()
+    if eq.count("=") != 1 or "x" not in eq.lower():
+        return None
+    sx, dx = eq.split("=")
+    try:
+        L, R = _poli(sx), _poli(dx)
+        f = [L(x) - R(x) for x in (0, 1, 2, 3)]
+    except (ValueError, SyntaxError, ZeroDivisionError, TypeError, OverflowError):
+        return None
+    c = f[0]; a = (f[2] - 2 * f[1] + c) / 2; b = f[1] - c - a
+    if abs(9 * a + 3 * b + c - f[3]) > 1e-6 * max(1, abs(f[3])):
+        return {"tipo": "equazione", "titolo": eq, "testo": f"📐 **{eq}**: so risolvere le equazioni di primo e di secondo grado; questa è di grado più alto.", "righe": [eq, "grado > 2"], "risultato": None}
+    pulisci = lambda v: 0.0 if abs(v) < 1e-12 else v
+    a, b, c = pulisci(a), pulisci(b), pulisci(c)
+    righe = [eq]
+    if a == 0:
+        if b == 0:
+            esito = "è vera per ogni x" if c == 0 else "non ha soluzioni"
+            return {"tipo": "equazione", "titolo": eq, "testo": f"📐 **{eq}** {esito}.", "righe": [eq, esito], "risultato": None}
+        x = -c / b
+        righe.append(f"{_pol_testo(0, b, 0)} = {fnum(-c)}")
+        if abs(b - 1) > 1e-12:
+            righe.append(f"x = {fnum(-c)} / {fnum(b)}")
+        fr = __import__("fractions").Fraction(x).limit_denominator(1000)
+        val = fnum(x) + (f" (cioè {fr.numerator}/{fr.denominator})" if fr.denominator != 1 and abs(float(fr) - x) < 1e-9 and fr.denominator <= 100 else "")
+        righe.append(f"x = {val}")
+        sol, sols = f"x = {val}", [x]
+    else:
+        d = b * b - 4 * a * c
+        righe.append(f"{_pol_testo(a, b, c)} = 0")
+        righe.append(f"Δ = b² − 4ac = {fnum(d)}")
+        if d < -1e-12:
+            sol, sols = "nessuna soluzione reale (Δ < 0)", []
+        elif abs(d) <= 1e-12:
+            x = -b / (2 * a); sol, sols = f"x = −b / 2a = {fnum(x)}", [x]
+        else:
+            r = math.sqrt(d); x1, x2 = (-b - r) / (2 * a), (-b + r) / (2 * a)
+            if x1 > x2:
+                x1, x2 = x2, x1
+            sol, sols = f"x₁ = {fnum(x1)} · x₂ = {fnum(x2)}", [x1, x2]
+        righe.append(sol)
+    canon = lambda x: re.sub(r"[\s*]", "", x.replace("^2", "²").replace("^3", "³").replace("−", "-"))
+    righe = [r for i, r in enumerate(righe) if i == 0 or canon(r) != canon(righe[i - 1])]          # niente righe doppie
+    verifica = all(abs(L(x) - R(x)) < 1e-6 * max(1, abs(L(x))) for x in sols)
+    testo_r = f"📐 **{eq}** → **{sol}**" + (" ✓ (verificato: rimettendo il valore torna)" if sols and verifica else "")
+    return {"tipo": "equazione", "titolo": eq, "testo": testo_r, "righe": righe[:5], "risultato": sols, "verificato": verifica}
+
+
+def trova_elemento(testo):
+    """L'elemento chimico di cui si parla (per nome, «elemento 26», «simbolo Fe»), o None.
+    Le parole di tutti i giorni (il calcio, lo stagno, la radio, Mercurio il pianeta…) contano solo se si parla di chimica."""
+    t = testo or ""
+    m = _RE_EL_NUMERO.search(t)
+    if m and not _RE_NON_CHIMICA.search(t):
+        z = int(m.group("z") or m.group("z2"))
+        if 1 <= z <= 118:
+            return ELEMENTI[z - 1]
+    m = _RE_EL_SIMBOLO.search(t)
+    if m and m.group("s") in EL_PER_SIMBOLO:
+        return EL_PER_SIMBOLO[m.group("s")]
+    for m in _RE_NOMI_EL.finditer(t):
+        nome = Studio._norm(m.group(1))
+        if nome in _EL_AMBIGUI and not _RE_CHIMICA.search(t):
+            continue
+        if nome == "mercurio" and re.search(r"\bpianet|\bsole\b|\borbit", t, re.I):
+            continue                                                                 # Mercurio il pianeta
+        return EL_PER_NOME[nome]
+    return None
+
+
+def scheda_elemento(e):
+    n = round(e["massa"]) - e["Z"]
+    g = " · ".join(map(str, e["gusci"]))
+    massa = fnum(e["massa"], 4) + " u" + ("" if e["stabile"] else " (l'isotopo più stabile: non ha isotopi stabili)")
+    testo = (f"⚛️ **{e['nome']} ({e['simbolo']})**: numero atomico **{e['Z']}**, massa atomica **{massa}**, {e['categoria']}.\n\n"
+             f"Nel nucleo: {e['Z']} protoni e circa {n} neutroni. Elettroni per guscio: {g} (modello semplificato).")
+    return {"tipo": "elemento", "titolo": f"{e['nome']} ({e['simbolo']})", "testo": testo,
+            "righe": [f"{e['simbolo']} · Z = {e['Z']}", f"massa ≈ {fnum(e['massa'], 3)} u", f"gusci: {g}", e["categoria"]],
+            "elemento": {"Z": e["Z"], "simbolo": e["simbolo"], "nome": e["nome"], "massa": e["massa"], "N": n, "gusci": e["gusci"], "categoria": e["categoria"]}}
+
+
+def scheda_costante(c):
+    k, nome, sim, val, num, unita, _, nota = c
+    riga = f"{sim} = {val} {unita}".strip()
+    return {"tipo": "costante", "titolo": nome, "testo": f"🔢 **{nome}**: {riga} ({nota}).", "righe": [nome, riga], "risultato": num}
+
+
+def scheda_corpo(k):
+    nome, raggio, massa, grav, dist, anno, giorno, tipo = CORPI[k]
+    righe = [f"raggio {raggio} km", f"massa {massa} kg", f"gravità {grav} m/s²"] + ([dist] if dist != "—" else [])
+    testo = (f"🪐 **{nome}** ({tipo}): raggio medio {raggio} km, massa {massa} kg, gravità in superficie {grav} m/s²"
+             + (f", distanza media {dist}" if dist != "—" else "") + (f", un anno dura {anno}" if anno != "—" else "") + f", un giorno dura {giorno}.")
+    return {"tipo": "corpo", "titolo": nome, "testo": testo, "righe": righe[:4]}
+
+
+def corpi_nominati(t):
+    """I corpi del Sistema solare nominati (la Terra solo se è proprio il pianeta; Mercurio non se è l'elemento)."""
+    out = []
+    for m in _RE_CORPI.finditer(t):
+        k = m.group(1).lower()
+        if k == "terra" and not re.search(r"\b(?:della|la|sulla)\s+terra\b|\bpianeta\s+terra\b|^terra\b", t, re.I):
+            continue
+        if k == "mercurio" and re.search(r"\belement|\batom|\bmetall|\btermometr|\bliquid|\bsimbolo", t, re.I):
+            continue
+        if k == "luna" and not re.search(r"\bla\s+luna\b|\bsulla\s+luna\b|\bdella\s+luna\b|\bluna\s+(?:piena|nuova)|^luna\b|\bsatellit", t, re.I):
+            continue
+        if k not in out:
+            out.append(k)
+    return out
+
+
+def scienza_router(testo):
+    """Le domande di scienza con una risposta esatta: equazioni, conversioni, i dati di un elemento, una costante, un pianeta."""
+    if not testo or len(testo) > 240:
+        return None
+    t = re.sub(r"\s+", " ", testo.strip())
+    for f in (risolvi_equazione, converti_unita):
+        r = f(t)
+        if r:
+            return r
+    if _RE_EL_DATI.search(t) or _RE_EL_NUMERO.search(t) or _RE_EL_SIMBOLO.search(t):
+        e = trova_elemento(t)
+        if e:
+            return scheda_elemento(e)
+    if _RE_CORPO_DATI.search(t):
+        corpi = corpi_nominati(t)
+        if len(corpi) == 2 and "sole" in corpi:
+            corpi = [k for k in corpi if k != "sole"]
+        elif set(corpi) == {"terra", "luna"}:
+            corpi = ["luna"]
+        if len(corpi) == 1:
+            return scheda_corpo(corpi[0])
+    if _RE_COST_DOMANDA.search(t) and not re.search(r"\bperch[eé]\b|\bcome\b|\bspiega", t, re.I):
+        for c, rx in _RE_COSTANTI:
+            if (_COST_DIRETTE.get(c[0]) or rx).search(t):
+                return scheda_costante(c)
+    return None
+
+
+def fatti_verificati(testo):
+    """I fatti certi che c'entrano con la domanda (per dare al modello i numeri giusti)."""
+    if not testo:
+        return []
+    t = testo[:600]
+    fatti = []
+    e = trova_elemento(t)
+    if e:
+        fatti.append(f"{e['nome']} ({e['simbolo']}): numero atomico {e['Z']}, massa atomica {fnum(e['massa'], 4)} u, {e['categoria']}, elettroni per guscio {'-'.join(map(str, e['gusci']))}")
+    for k in [k for k in corpi_nominati(t) if k not in ("sole", "terra", "luna", "venere") or _RE_ASTRO.search(t)][:2]:
+        if k == "mercurio" and e and e["simbolo"] == "Hg":
+            continue
+        nome, raggio, massa, grav, dist, anno, giorno, tipo = CORPI[k]
+        fatti.append(f"{nome} ({tipo}): raggio {raggio} km, massa {massa} kg, gravità {grav} m/s²" + (f", distanza media {dist}" if dist != "—" else "") + (f", anno {anno}" if anno != "—" else "") + f", giorno {giorno}")
+    for c, rx in _RE_COSTANTI:
+        if rx.search(t):
+            fatti.append(f"{c[1]}: {c[2]} = {c[3]} {c[5]} ({c[7]})".replace("  ", " "))
+    return fatti[:5]
+
+
+# ── dentro il cervello: i fatti verificati nel carattere, le risposte esatte dirette ──
+_carattere_attivo_v31b = carattere_attivo
+
+
+def carattere_attivo():
+    c = _carattere_attivo_v31b()
+    el = getattr(_CTX, "elemento", None)
+    if el and getattr(_CTX, "prof", False) and getattr(_CTX, "prof_esp", None) == "atomo":
+        c += (f"\nL'atomo acceso sul palco è proprio quello di {el['nome'].lower()} ({el['simbolo']}): {el['Z']} protoni, circa {el['N']} neutroni "
+              f"e {el['Z']} elettroni, per guscio {'-'.join(map(str, el['gusci']))}.")
+    f = getattr(_CTX, "fatti", None)
+    if f:
+        _CTX.fatti_usati = True
+        c += "\n\nDATI VERIFICATI (dalla banca dati scientifica di MAIK): se nella risposta servono questi numeri, usa esattamente questi e non altri; se non c'entrano, ignorali.\n" + "\n".join("• " + x for x in f)
+    return c
+
+
+_rispondi_v23_v32 = rispondi_v23
+
+
+def rispondi_v23(motore, *a, **k):
+    """Prima le risposte esatte (equazioni, conversioni, dati di elementi, costanti, pianeti), poi il resto con i fatti verificati."""
+    testo = a[1] if len(a) > 1 else k.get("testo", "")
+    allegato = a[3] if len(a) > 3 else k.get("allegato")
+    on_token = a[2] if len(a) > 2 else k.get("on_token")
+    sessione = a[5] if len(a) > 5 else k.get("sessione")
+    if not allegato and not getattr(_CTX, "automazione", False) and not getattr(_CTX, "prof", False):
+        r = scienza_router(testo)
+        if r:
+            sid = motore.memoria.sessione_valida(sessione)
+            out = r["testo"] + (" [[lavagna: " + " | ".join(r["righe"][:4]) + "]]" if r.get("righe") and r["tipo"] in ("equazione", "conversione") else "")
+            on_token(out)
+            motore.memoria.salva_scambio(testo, out, sid)
+            return motore._meta(done=True, ok=True, azione=True, sessione=sid, scienza={kk: v for kk, v in r.items() if kk != "testo"})
+    _CTX.fatti, _CTX.fatti_usati = fatti_verificati(testo), False
+    try:
+        meta = _rispondi_v23_v32(motore, *a, **k)
+    finally:
+        fatti, usati = _CTX.fatti, getattr(_CTX, "fatti_usati", False)
+        _CTX.fatti, _CTX.fatti_usati = None, False
+    if usati and fatti and isinstance(meta, dict):
+        meta["fatti"] = fatti
+    return meta
+
+
+# ── il Professore: le risposte esatte le dà lui (con la lavagna), e l'atomo è quello dell'elemento di cui parli ──
+_info_esperimento_v30 = info_esperimento
+
+
+def info_esperimento(k):
+    i = _info_esperimento_v30(k)
+    el = getattr(_CTX, "elemento", None)
+    if i and k == "atomo" and el:
+        i = dict(i, elemento=el, titolo=f"L'atomo di {el['nome'].lower()}", lavagna=[f"{el['simbolo']} · Z = {el['Z']}", f"{el['Z']} protoni · circa {el['N']} neutroni", "elettroni: " + " · ".join(map(str, el["gusci"]))])
+    return i
+
+
+_professore_intercetta_v31 = professore_intercetta
+FRASI_SCIENZA_PROF = ["Dati alla mano!", "Facilissimo, e i numeri sono quelli veri:", "Ecco qua, preciso al decimale:", "Lo so a memoria, ma ho controllato lo stesso:"]
+
+
+def professore_intercetta(motore, testo, on_token, allegato=None, sessione=None, on_evento=None):
+    """V33: con il Professore, le domande di scienza con una risposta esatta le risolve lui (alla lavagna); «l'atomo del ferro» è proprio quello."""
+    _CTX.elemento = None
+    if allegato or getattr(_CTX, "automazione", False) or not testo:
+        return _professore_intercetta_v31(motore, testo, on_token, allegato, sessione, on_evento)
+    sid = motore.memoria.sessione_valida(sessione)
+    t = re.sub(r"\s+", " ", testo.strip())
+    st = prof_attivo(sid)
+    nucleo, nominato = _senza_prof(nome_come_professore(t.rstrip(" ?!."), aspetto_prof()["nome"]) if aspetto_prof()["nome"] else t.rstrip(" ?!."))
+    if (st or nominato) and not INTERROGAZIONI.get(sid):
+        r = scienza_router(nucleo + ("?" if t.endswith("?") else ""))
+        if r:
+            avvisa = on_evento or (lambda e: None)
+            st, entra = _prof_entra(sid, st, avvisa)
+            st["domande"] += 1
+            stato = {"on": True, "entra": entra, "lavagna": r["righe"][:4], "scienza": r["tipo"]}
+            if r.get("elemento"):
+                _CTX.elemento = r["elemento"]
+                stato["esperimento"] = info_esperimento("atomo")
+                avvisa({"esperimento": stato["esperimento"]})
+            avvisa({"parla": "professore"})
+            TACCUINO.segna(r["titolo"], r["righe"][:4], "atomo" if r.get("elemento") else None, "domanda")
+            frase = "🧪 " + random.choice(FRASI_SCIENZA_PROF) + " " + re.sub(r"^[^\w*]+", "", r["testo"])
+            res = _prof_fine(motore, testo, on_token, sid, frase, stato)
+            _CTX.elemento = None
+            return res
+    el = trova_elemento(t) if re.search(r"\batom", t, re.I) else None          # «fammi vedere l'atomo di carbonio»
+    if el:
+        _CTX.elemento = {"Z": el["Z"], "simbolo": el["simbolo"], "nome": el["nome"], "massa": el["massa"], "N": round(el["massa"]) - el["Z"], "gusci": el["gusci"], "categoria": el["categoria"]}
+    r = _professore_intercetta_v31(motore, testo, on_token, allegato, sessione, on_evento)
+    if not isinstance(r, dict) or r.get("done"):
+        _CTX.elemento = None
+    return r
+
+
+_professore_risponde_v30 = professore_risponde
+
+
+def professore_risponde(motore, pr, on_token, allegato=None, rigenera=False, sessione=None, on_evento=None, accurato=False):
+    try:
+        return _professore_risponde_v30(motore, pr, on_token, allegato, rigenera, sessione, on_evento, accurato)
+    finally:
+        _CTX.elemento = None
+
+
+def elemento_da_query(qs):
+    """/scienza/elemento?z=26 · ?s=Fe · ?nome=ferro"""
+    z, sim, nome = str(qs.get("z", "")).strip(), str(qs.get("s", "")).strip(), str(qs.get("nome", "")).strip()
+    if z.isdigit() and 1 <= int(z) <= 118:
+        return ELEMENTI[int(z) - 1]
+    if sim:
+        return EL_PER_SIMBOLO.get(sim[:1].upper() + sim[1:3].lower())
+    if nome:
+        return EL_PER_NOME.get(Studio._norm(nome))
+    return None
 
 
 # ════════════════════════════════════════════════════════════
@@ -16194,7 +16727,7 @@ LIB_FISSE = {
     "pdf.min.mjs": f"pdfjs-dist@{VERSIONE_PDFJS}/build/pdf.min.mjs",
     "pdf.worker.min.mjs": f"pdfjs-dist@{VERSIONE_PDFJS}/build/pdf.worker.min.mjs",
 }
-_RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs|environments)/[A-Za-z0-9_-]{1,60}\.js")
+_RE_LIB_ADDON = re.compile(r"addons/(?:loaders|utils|libs|environments|postprocessing|shaders)/[A-Za-z0-9_-]{1,60}\.js")
 _RE_LIB_MP = re.compile(r"mp/wasm/vision_wasm(?:_nosimd)?_internal\.(?:js|wasm)")
 _LIB_LOCK = threading.Lock()
 
@@ -16500,6 +17033,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"avvisi": AUTOMAZIONI.prendi_avvisi()})
             elif base == "/professore":                               # v29: 🧪 il Professore c'è (in questa chat)?
                 self._json(dict(stato_professore_v31(MOTORE.memoria.sessione_valida(qs.get("sessione"))), ok=True))
+            elif base == "/scienza":                                  # v33: 🧠 la risposta esatta (equazioni, unità, elementi, costanti, pianeti)
+                r = scienza_router(qs.get("q", "")[:240])
+                self._json({"ok": True, "trovato": bool(r), **(r or {}), "fatti": fatti_verificati(qs.get("q", "")[:600])})
+            elif base == "/scienza/elemento":                         # v33: ⚛️ un elemento della tavola periodica (?z=26 o ?s=Fe o ?nome=ferro)
+                e = elemento_da_query(qs)
+                self._json(dict(scheda_elemento(e), ok=True) if e else {"ok": False, "errore": "elemento non trovato"})
             elif base == "/professore/aspetto":                       # v31: 🧍 nome, voce e carattere del secondo personaggio
                 self._json(dict(aspetto_prof(), nome_mostrato=nome_prof(), voci=VOCI_PROF, stili=STILI_PROF, modello=info_modello_prof(), ok=True))
             elif base == "/professore/modello/info":
@@ -17313,7 +17852,7 @@ class Handler(BaseHTTPRequestHandler):
 GUI_FALLBACK = r"""<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>MAIK PRIME // Zep V32</title>
+<title>MAIK PRIME // Zep V33</title>
 <meta name="theme-color" content="#050a0f">
 <link rel="manifest" href="/manifest.webmanifest">
 <script type="importmap">{"imports":{"three":"/lib/three.module.min.js","three/addons/":"/lib/addons/","@pixiv/three-vrm":"/lib/three-vrm.module.min.js","@pixiv/three-vrm-animation":"/lib/three-vrm-animation.module.min.js"}}</script>
@@ -18118,6 +18657,23 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .m.ai.prof29{border-color:rgba(201,162,75,.5);background:linear-gradient(135deg,rgba(201,162,75,.12),rgba(var(--accent2-rgb),.06))}
   .prof29tag{font:600 10.5px 'Share Tech Mono',monospace;letter-spacing:1.5px;color:#e8c46a;margin:-2px 0 4px}
   #caption.prof{border:1px solid rgba(232,196,106,.55);background:rgba(38,26,6,.6)}#caption.prof::before{content:'🧪 ';}
+  .sci33{display:inline-block;margin:0 0 6px;padding:2px 9px;border:1px solid rgba(var(--accent-rgb),.45);border-radius:999px;font-size:11px;letter-spacing:.5px;color:var(--cyan);background:rgba(var(--accent-rgb),.08)}
+  .sci33 span{opacity:.7}
+  .el33{display:flex;gap:12px;align-items:stretch;margin:8px 0 4px;--elc:#5eead4}
+  .el33[data-cat=am]{--elc:#f87171}.el33[data-cat=at]{--elc:#fb923c}.el33[data-cat=mt]{--elc:#facc15}.el33[data-cat=pt]{--elc:#a3e635}.el33[data-cat=sm]{--elc:#34d399}
+  .el33[data-cat=nm]{--elc:#22d3ee}.el33[data-cat=al]{--elc:#60a5fa}.el33[data-cat=gn]{--elc:#c084fc}.el33[data-cat=la]{--elc:#f472b6}.el33[data-cat=ac]{--elc:#fb7185}
+  .el33t{position:relative;width:92px;min-height:96px;flex:0 0 auto;border:2px solid var(--elc);border-radius:8px;background:linear-gradient(160deg,color-mix(in srgb,var(--elc) 22%,transparent),rgba(0,0,0,.25));display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 4px;box-shadow:0 0 14px color-mix(in srgb,var(--elc) 35%,transparent)}
+  .el33t small{position:absolute;left:7px;top:4px;font-size:12px;font-weight:700;color:var(--elc)}
+  .el33t b{font-size:32px;line-height:1;color:#fff}
+  .el33t span{font-size:11px;margin-top:3px;color:var(--text)}
+  .el33t i{font-style:normal;font-size:10px;opacity:.75}
+  .el33d{display:flex;flex-direction:column;justify-content:center;gap:3px;font-size:12px;color:var(--text)}
+  .el33d div:first-child{color:var(--elc);font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:11px}
+  .el33d .tbtn{margin-top:4px;flex:0 0 auto;padding:5px 10px;font-size:12px}
+  .fatti33{margin:8px 0 2px;font-size:12px;border:1px solid rgba(52,211,153,.4);border-radius:8px;padding:4px 10px;background:rgba(52,211,153,.06)}
+  .fatti33 summary{cursor:pointer;color:#34d399;font-weight:600}
+  .fatti33 ul{margin:6px 0 4px 16px;padding:0}
+  .fatti33 small{opacity:.7}
   .lav29{margin:8px 0 4px;padding:10px 14px 12px;border:5px solid #6b4a2b;border-radius:8px;background:radial-gradient(120% 90% at 30% 20%,#22372c,#15231c);box-shadow:inset 0 0 18px rgba(0,0,0,.45);
          font-family:'Share Tech Mono',monospace;color:#eef2e6;font-size:15px;line-height:1.55;text-shadow:0 0 1px rgba(255,255,255,.5);white-space:normal}
   .lav29 b{display:block;font-size:11px;letter-spacing:2px;color:#cfe3c9;opacity:.8;margin-bottom:4px}
@@ -18165,12 +18721,12 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
   .p2mod small{display:block;color:var(--dim);font-size:11px;font-family:'Share Tech Mono',monospace;margin-top:2px}
   #p2modal input,#p2modal textarea{width:100%;box-sizing:border-box;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;color:var(--text);font:inherit;padding:8px 10px}
   #p2modal textarea{resize:vertical;min-height:64px}
-  #p2stili .tbtn.on,#p2voci .tbtn.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.18);color:var(--text)}
+  #cinebtn .tbtn.on,#scenabtn .tbtn.on,#p2stili .tbtn.on,#p2voci .tbtn.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.18);color:var(--text)}
   body.prof-on #avstate[data-prof]::after{content:' · 🧪 ' attr(data-prof)}
 </style></head>
 <body>
 <header>
-  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V32</span></div>
+  <div class="logo">M A I K <b class="prime">PRIME</b> <span>// V33</span></div>
   <span class="dot" id="dot"></span><span id="stato">verifico…</span><span id="speed" class="hx" style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px"></span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="hbtn hx" onclick="openPalette()" title="Palette comandi (Ctrl+K)" aria-label="Palette comandi">⌘K</button>
@@ -18573,6 +19129,10 @@ GUI_FALLBACK = r"""<!DOCTYPE html>
       <h4>⚙ ZEP E WEBCAM</h4>
       <label class="opt">🪶 Modalità leggera (30 fotogrammi, risoluzione più bassa, webcam controllata meno spesso)<input type="checkbox" id="optlieve" onchange="setOpt('lieve',this.checked);applicaQualita()"></label>
       <label class="opt">🎚️ Qualità automatica (la risoluzione si adatta al tuo PC)<input type="checkbox" id="optqauto" onchange="setOpt('qauto',this.checked);applicaQualita()"></label>
+      <h4>🎬 CINEMA 3D (OMBRE VERE E BAGLIORE DELLE LUCI)</h4>
+      <div class="trow" id="cinebtn"><button class="tbtn" type="button" data-cine="auto">🤖 Automatico</button><button class="tbtn" type="button" data-cine="sempre">🎬 Sempre</button><button class="tbtn" type="button" data-cine="mai">🚫 Mai</button></div>
+      <div class="trow" id="scenabtn" style="margin-top:6px"><button class="tbtn" type="button" data-scena="auto">🤖 Scena auto</button><button class="tbtn" type="button" data-scena="laboratorio">🧪 Laboratorio</button><button class="tbtn" type="button" data-scena="spazio">🌌 Spazio</button></div>
+      <div class="note" id="cinenota" style="margin-top:6px"></div>
       <h4>💚 QUANDO TI VEDO (CON LA WEBCAM ACCESA)</h4>
       <label class="opt">Ti ricordo le pause, mi accorgo se sbadigli o se sei troppo vicino allo schermo<input type="checkbox" id="optbenessere" onchange="setOpt('benessere',this.checked)"></label>
       <label class="opt">⏱️ Ti ricordo la pausa dopo (minuti di fila)<select id="optpausa" onchange="setOpt('pausaMin',+this.value)"><option value="30">30</option><option value="50">50</option><option value="90">90</option></select></label>
@@ -19182,7 +19742,7 @@ const MaikKit = (() => {
 </script>
 <script>
 /* ============================================================
-   ZepKit V32 — il personaggio 3D di MAIK PRIME (Three.js)
+   ZepKit V33 — il personaggio 3D di MAIK PRIME (Three.js)
    · il TUO modello: .vrm (VRoid Studio…) con espressioni, sguardo e dita, oppure .glb
      (ossa riconosciute per nome, visemi Oculus/Ready Player Me o forme ARKit, animazioni del file)
    · senza file: «Zep», un robottino 3D con un viso-schermo (occhi, sopracciglia, bocca con denti e lingua)
@@ -19211,6 +19771,8 @@ const MaikKit = (() => {
         Il Professore più vero: ciocche di capelli, sopracciglia e baffi a fili, occhi, orecchie, unghie, maniche con le pieghe, colletto.
    V32: prof.stile('cartone' | 'anime' | 'realistico'): il Professore da film d'animazione 3D, in stile anime (cel-shading, contorni) o realistico;
         nei due stili disegnati i segni delle emozioni (stelline, sudore, vena, punto di domanda).
+   V33: scena('laboratorio'): il laboratorio 3D intorno ai personaggi; cinema({ bloom, ombre }): il bagliore delle luci e le ombre vere
+        (sui computer senza scheda grafica restano spenti); prof.esperimento('atomo', elemento): l'atomo di un elemento vero.
    Stessa interfaccia per tutti i personaggi.
    ============================================================ */
 window.ZepKit = (() => {
@@ -19772,6 +20334,7 @@ window.ZepKit = (() => {
       blinkT: 2, blink: 0, sacc: { t: 0, x: 0, y: 0 }, look: { x: 0, y: 0 }, guarda: { x: 0, y: 0 },
       emo: { happy: 0, surprised: 0, thinking: 0, annoyed: 0 }, emoTarget: null, emoUntil: 0, gest: null, nextIdle: 0, brow: 0, browT: 0, beat: 0, beatT: 0 };
     const ESP = { k: null, vuole: null, w: 0, vis: 0, g: null, upd: null, mats: [], t0: 0, root: null, base: null, label: null, texPunto: null };   // v30: 🔬
+    const CINE = { scena: 'spazio', bloom: false, ombre: false, composer: null, lab: null, sw: null };   // v33: 🎬
     const charRoot = new THREE.Group(); scene.add(charRoot);
     let rig = null, kind = 'robot', name = 'Zep', mixer = null, clips = {}, vrm = null, height = 1.6, headY = 1.45, baseY = 0, topY = 1.6;
 
@@ -20073,6 +20636,7 @@ window.ZepKit = (() => {
     function resize() {
       const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
       renderer.setSize(w, h, false); frame();
+      if (CINE.composer) { CINE.composer.setPixelRatio(renderer.getPixelRatio()); CINE.composer.setSize(w, h); }   // v33
     }
 
     function setMorph(list, v) { (list || []).forEach(([o, i]) => { o.morphTargetInfluences[i] = v; }); }
@@ -20380,6 +20944,7 @@ window.ZepKit = (() => {
       aggiornaEsp(dt, now);                                               // v30: 🔬
       aggiornaModelloProf(dt, now);                                       // v31: 🧍 il tuo personaggio al posto del Professore
       aggiornaAnime(dt, now);                                             // v32: ✨ i segni delle emozioni
+      aggiornaLab(dt, now);                                               // v33: 🎬 il laboratorio
 
       if (rig && rig.robot) animateRobot(rig.robot, P, { t, dt, blinkV, speaking });
       else if (rig) animateHumanoid(P, { t, dt, blinkV, speaking });
@@ -20896,7 +21461,7 @@ window.ZepKit = (() => {
       if (now - Q.ultimo < 1000 / cap - 2) { raf = rafWin.requestAnimationFrame(loop); return; }     // v22: questo fotogramma lo salto
       Q.ultimo = now;
       const dt = Math.min(0.1, (now - last) / 1000); last = now;
-      if (!paused) { const t1 = performance.now(); update(dt); const t2 = performance.now(); renderer.render(scene, camera); S.perf = { u: t2 - t1, r: performance.now() - t2 }; misuraQualita(now, cap); }
+      if (!paused) { const t1 = performance.now(); update(dt); const t2 = performance.now(); renderCine(); S.perf = { u: t2 - t1, r: performance.now() - t2 }; misuraQualita(now, cap); }
       raf = rafWin.requestAnimationFrame(loop);
     }
     raf = rafWin.requestAnimationFrame(loop);
@@ -21663,8 +22228,10 @@ window.ZepKit = (() => {
       const D = ESPERIMENTI_3D[k]; espBase(); espSvuota();
       ESP.mats = [];
       const g = new THREE.Group(); g.scale.setScalar(ESP_POS.R); ESP.base.holo.add(g);
-      ESP.upd = D.crea(g); ESP.g = g; ESP.k = k; ESP.t = 0; ESP.t0 = performance.now();
-      const lab = espTesto(D.titolo, 0.085); lab.position.y = ESP_POS.R * 1.38; ESP.base.holo.add(lab); ESP.label = lab;
+      const el = k === 'atomo' ? ESP.elementoVoluto : null; ESP.elemento = el;                         // v33: ⚛️ l'atomo di un elemento vero
+      ESP.upd = el ? espAtomoElemento(g, el) : D.crea(g); ESP.g = g; ESP.k = k; ESP.t = 0; ESP.t0 = performance.now();
+      const lab = espTesto(el ? el.simbolo + ' · ' + String(el.nome || '').toUpperCase() : D.titolo, 0.085); lab.position.y = ESP_POS.R * 1.38; ESP.base.holo.add(lab); ESP.label = lab;
+      if (el) { const sub = espTesto(el.Z + ' p · ' + Math.max(0, el.N ?? Math.round(el.massa) - el.Z) + ' n · ' + (el.gusci || []).join('·') + ' e', 0.16); sub.position.y = -1.3; g.add(sub); }
       ESP.root.visible = true;
     }
     function esperimento(k) {                                  // accende (o cambia) l'esperimento; null lo spegne
@@ -22425,6 +22992,246 @@ window.ZepKit = (() => {
       sp.material.opacity = clamp(fine / 0.35, 0, 1);
     }
 
+    // ============================================================
+    // V33 — 🎬 3D CINEMA: il LABORATORIO vero intorno a Zep e al Professore (pavimento a esagoni che riflette, la parete curva con le
+    // strisce di luce, il banco con le provette che bollono, gli scaffali, l'oblò sullo spazio con il pianeta, gli schermi olografici,
+    // la lampada con il polverone di luce), le OMBRE VERE (i personaggi le proiettano sul pavimento) e il BAGLIORE (bloom) delle luci.
+    // scena('laboratorio'|'spazio'), cinema({ bloom, ombre }) — sui computer senza scheda grafica gli effetti restano spenti.
+    // ============================================================
+    function gpuSoftware() {                                   // il disegno 3D lo fa il processore (niente scheda grafica)? allora niente effetti pesanti
+      if (CINE.sw != null) return CINE.sw;
+      let r = '';
+      try { const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info'); r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) {}
+      CINE.gpu = String(r || '');
+      return (CINE.sw = /swiftshader|llvmpipe|software|softpipe|basic render/i.test(CINE.gpu));
+    }
+    function texPavimento() {                                  // esagoni di metallo scuro con le fughe che brillano appena
+      const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+      g.fillStyle = '#10141f'; g.fillRect(0, 0, 512, 512);
+      const r = 32, h = Math.sqrt(3) * r;
+      for (let y = -1; y < 512 / h + 1; y++) for (let x = -1; x < 512 / (1.5 * r) + 1; x++) {
+        const cx = x * 1.5 * r, cy = y * h + (x % 2 ? h / 2 : 0), v = 18 + ((x * 7 + y * 13) % 5) * 3;
+        g.beginPath(); for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k; g.lineTo(cx + Math.cos(a) * (r - 2), cy + Math.sin(a) * (r - 2)); } g.closePath();
+        g.fillStyle = `rgb(${v},${v + 4},${v + 14})`; g.fill(); g.strokeStyle = 'rgba(0,245,255,.16)'; g.lineWidth = 2; g.stroke();
+      }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(9, 9); t.anisotropy = 8; return t;
+    }
+    function texParete() {                                     // pannelli con le giunture, piccole spie, un po' di sporco
+      const c = document.createElement('canvas'); c.width = 1024; c.height = 512; const g = c.getContext('2d');
+      const gr = g.createLinearGradient(0, 0, 0, 512); gr.addColorStop(0, '#0b1020'); gr.addColorStop(1, '#151b2e'); g.fillStyle = gr; g.fillRect(0, 0, 1024, 512);
+      g.strokeStyle = 'rgba(120,160,220,.18)'; g.lineWidth = 3;
+      for (let x = 0; x <= 1024; x += 128) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 512); g.stroke(); }
+      for (const y of [150, 360]) { g.beginPath(); g.moveTo(0, y); g.lineTo(1024, y); g.stroke(); }
+      let s = 9; const cas = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+      for (let i = 0; i < 60; i++) { g.fillStyle = cas() < 0.5 ? 'rgba(0,245,255,.55)' : 'rgba(124,58,237,.5)'; g.fillRect(cas() * 1024, cas() * 512, 6, 3); }
+      for (let i = 0; i < 30; i++) { g.strokeStyle = 'rgba(160,190,240,.08)'; g.strokeRect(cas() * 1000, 170 + cas() * 170, 40 + cas() * 60, 24 + cas() * 30); }
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = THREE.RepeatWrapping; t.repeat.set(3, 1); return t;
+    }
+    function texPianeta() {                                    // il pianeta a bande che si vede dall'oblò
+      const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+      const cols = ['#e8b98a', '#c98b5c', '#f2d3a8', '#a86a46', '#e9c49a', '#d29a6a', '#f5e1c0'];
+      let y = 0, i = 0; while (y < 256) { const hh = 10 + ((i * 37) % 23); g.fillStyle = cols[i % cols.length]; g.fillRect(0, y, 512, hh); y += hh; i++; }
+      g.fillStyle = 'rgba(160,60,40,.6)'; g.beginPath(); g.ellipse(330, 150, 34, 16, 0, 0, Math.PI * 2); g.fill();
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    }
+    function creaLaboratorio() {
+      if (CINE.lab) return CINE.lab;
+      const G = new THREE.Group(); G.name = 'laboratorio'; G.visible = false; scene.add(G);
+      const L = { G, schermi: [], bolle: null, liquidi: [], polvere: null, pianeta: null };
+      const add = (geo, mat, x, y, z, p = G) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); p.add(m); return m; };
+      const metallo = new THREE.MeshStandardMaterial({ color: 0x2a3142, roughness: 0.38, metalness: 0.75 });
+      const scuro = new THREE.MeshStandardMaterial({ color: 0x161b27, roughness: 0.6, metalness: 0.4 });
+      const luce = c => {                                     // le luci vere del laboratorio: con il bagliore acceso sono «più bianche del bianco» e solo loro brillano
+        const base = new THREE.Color(c), m = new THREE.MeshBasicMaterial({ color: base.clone().multiplyScalar(kLuce()), toneMapped: false });
+        (CINE.luci || (CINE.luci = [])).push({ m, base }); return m;
+      };
+      // il pavimento (riceve le ombre)
+      const pav = add(new THREE.CircleGeometry(9, 72), new THREE.MeshStandardMaterial({ map: texPavimento(), roughness: 0.32, metalness: 0.55, envMapIntensity: 0.9 }), 0.4, -0.003, -0.5);
+      pav.rotation.x = -Math.PI / 2; pav.receiveShadow = true; L.pav = pav;
+      // la parete curva dietro, con le strisce di luce
+      const parete = add(new THREE.CylinderGeometry(6, 6, 4.4, 72, 1, true, Math.PI * 0.62, Math.PI * 0.76), new THREE.MeshStandardMaterial({ map: texParete(), roughness: 0.7, metalness: 0.3, side: THREE.BackSide }), 0.4, 2.15, 1.4);
+      parete.receiveShadow = true;
+      for (let i = 0; i < 9; i++) {                                                                       // strisce verticali luminose sulla parete
+        const a = Math.PI * (0.66 + 0.68 * i / 8), x = 0.4 + Math.sin(a) * 5.92, z = 1.4 + Math.cos(a) * 5.92;
+        if (Math.abs(x - 0.4) < 1.6 && z < -3) continue;                                                     // non davanti all'oblò
+        const s = add(new THREE.BoxGeometry(0.035, 2.6, 0.02), luce(i % 2 ? 0x7c3aed : 0x00f5ff), x, 1.7, z); s.rotation.y = a;
+      }
+      add(new THREE.TorusGeometry(5.9, 0.018, 6, 120, Math.PI * 0.76), luce(0x00f5ff), 0.4, 0.06, 1.4).rotation.set(Math.PI / 2, 0, Math.PI * 0.62 - Math.PI / 2);   // la riga di luce in basso
+      // l'oblò sullo spazio, con il pianeta a bande e le stelle
+      const ob = new THREE.Group(); ob.position.set(0.4, 2.15, -4.45); G.add(ob);
+      add(new THREE.CircleGeometry(1.15, 64), new THREE.MeshBasicMaterial({ color: 0x02040c }), 0, 0, 0, ob);
+      const st = new THREE.BufferGeometry(), sp = []; for (let i = 0; i < 160; i++) { const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * 1.1; sp.push(Math.cos(a) * r, Math.sin(a) * r, 0.01); }
+      st.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3)); ob.add(new THREE.Points(st, new THREE.PointsMaterial({ color: 0xffffff, size: 0.018, toneMapped: false })));
+      const pi = add(new THREE.SphereGeometry(0.5, 48, 32), new THREE.MeshStandardMaterial({ map: texPianeta(), roughness: 0.9, emissive: 0x2a1408, emissiveIntensity: 0.6 }), -0.35, -0.2, 0.05, ob);
+      pi.rotation.z = 0.35; L.pianeta = pi;
+      const an = add(new THREE.RingGeometry(0.62, 0.86, 64), new THREE.MeshBasicMaterial({ color: 0xe9d2a8, transparent: true, opacity: 0.55, side: THREE.DoubleSide }), -0.35, -0.2, 0.06, ob); an.rotation.set(1.25, 0.3, 0);
+      add(new THREE.TorusGeometry(1.17, 0.07, 16, 72), metallo, 0, 0, 0.02, ob);
+      add(new THREE.TorusGeometry(1.26, 0.015, 8, 72), luce(0x00f5ff), 0, 0, 0.05, ob);
+      // il banco del laboratorio (dietro il Professore), con le provette che bollono
+      const banco = new THREE.Group(); banco.position.set(2.55, 0, -1.7); banco.rotation.y = -0.45; G.add(banco);
+      add(new THREE.BoxGeometry(1.5, 0.86, 0.62), scuro, 0, 0.43, 0, banco).castShadow = true;
+      add(new THREE.BoxGeometry(1.58, 0.05, 0.7), metallo, 0, 0.885, 0, banco);
+      add(new THREE.BoxGeometry(1.5, 0.012, 0.02), luce(0x00f5ff), 0, 0.86, 0.32, banco);
+      const vetro = new THREE.MeshPhysicalMaterial({ color: 0xdff7ff, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.28, clearcoat: 1, depthWrite: false });
+      [[-0.5, 0x39ff88, 'pallone'], [-0.15, 0x00e5ff, 'cilindro'], [0.18, 0xff4fd8, 'pallone'], [0.48, 0xffc857, 'cilindro']].forEach(([x, col, f], i) => {
+        const liq = luce(col);
+        if (f === 'pallone') { add(new THREE.SphereGeometry(0.13, 24, 18), vetro, x, 1.04, 0, banco); add(new THREE.CylinderGeometry(0.035, 0.035, 0.18, 14), vetro, x, 1.22, 0, banco); const l = add(new THREE.SphereGeometry(0.105, 22, 14, 0, Math.PI * 2, Math.PI * 0.45, Math.PI * 0.55), liq, x, 1.04, 0, banco); L.liquidi.push(l); }
+        else { add(new THREE.CylinderGeometry(0.07, 0.07, 0.36, 18, 1, true), vetro, x, 1.09, 0, banco); const l = add(new THREE.CylinderGeometry(0.06, 0.06, 0.2, 16), liq, x, 1.01, 0, banco); L.liquidi.push(l); }
+      });
+      { const N = 40, geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));            // le bollicine
+        L.bolle = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xcfffe8, size: 0.022, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+        L.bolle.userData.b = Array.from({ length: N }, (_, i) => ({ x: [-0.5, -0.15, 0.18, 0.48][i % 4] + (Math.random() - 0.5) * 0.06, y: Math.random(), v: 0.15 + Math.random() * 0.2 }));
+        banco.add(L.bolle); }
+      // gli scaffali dietro Zep: libri, un mappamondo
+      const sc = new THREE.Group(); sc.position.set(-2.35, 0, -1.9); sc.rotation.y = 0.5; G.add(sc);
+      for (const x of [-0.6, 0.6]) add(new THREE.BoxGeometry(0.05, 2.2, 0.36), metallo, x, 1.1, 0, sc).castShadow = true;
+      const colori = [0x8e2b3a, 0x2b4f8e, 0x2f7a4f, 0xb07a2a, 0x5a3a8a, 0x1f6f7a, 0x8a4a2a];
+      [0.45, 1.05, 1.65].forEach((y, r) => {
+        add(new THREE.BoxGeometry(1.25, 0.04, 0.36), metallo, 0, y, 0, sc);
+        let x = -0.56; for (let k = 0; k < 9; k++) { const w = 0.05 + ((k * 7 + r) % 4) * 0.012, h = 0.24 + ((k * 5 + r * 3) % 5) * 0.025;
+          const lib = add(new THREE.BoxGeometry(w, h, 0.24), new THREE.MeshStandardMaterial({ color: colori[(k + r * 3) % colori.length], roughness: 0.75 }), x + w / 2, y + 0.02 + h / 2, 0.02, sc);
+          if (k === 6) lib.rotation.z = 0.25; x += w + 0.012; if (x > 0.5) break; }
+      });
+      const globo = add(new THREE.SphereGeometry(0.13, 28, 20), new THREE.MeshStandardMaterial({ color: 0x2a6fb5, roughness: 0.5, emissive: 0x05142a }), 0.32, 1.86, 0.02, sc); L.globo = globo;
+      add(new THREE.TorusGeometry(0.15, 0.008, 6, 40, Math.PI * 1.2), new THREE.MeshStandardMaterial({ color: 0xc9a24b, metalness: 0.9, roughness: 0.3 }), 0.32, 1.86, 0.02, sc).rotation.y = Math.PI / 2;
+      // gli schermi olografici sospesi (si aggiornano)
+      for (const [x, y, z, ry, tipo] of [[-1.55, 1.85, -2.7, 0.35, 'onda'], [2.75, 2.05, -2.9, -0.4, 'barre']]) {
+        const cv = document.createElement('canvas'); cv.width = 256; cv.height = 160;
+        const tx = new THREE.CanvasTexture(cv);
+        const m = add(new THREE.PlaneGeometry(0.95, 0.6), new THREE.MeshBasicMaterial({ map: tx, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }), x, y, z);
+        m.rotation.y = ry; L.schermi.push({ m, cv, tx, tipo, y0: y });
+      }
+      // la lampada dall'alto, con il cono di luce e il pulviscolo
+      const cvc = document.createElement('canvas'); cvc.width = 4; cvc.height = 128;
+      { const g = cvc.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); }
+      const cono = add(new THREE.CylinderGeometry(0.25, 1.7, 3.2, 40, 1, true), new THREE.MeshBasicMaterial({ color: 0x9fdcff, map: new THREE.CanvasTexture(cvc), transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }), 0.5, 2.2, -0.2);
+      L.cono = cono;
+      add(new THREE.CylinderGeometry(0.3, 0.36, 0.08, 32), metallo, 0.5, 3.82, -0.2);
+      add(new THREE.CircleGeometry(0.27, 32), luce(0xdff6ff), 0.5, 3.775, -0.2).rotation.x = Math.PI / 2;
+      { const N = 120, geo = new THREE.BufferGeometry(), p = new Float32Array(N * 3);
+        for (let i = 0; i < N; i++) { const a = Math.random() * 6.283, r = Math.random() * 1.4; p[i * 3] = 0.5 + Math.cos(a) * r; p[i * 3 + 1] = Math.random() * 3.4; p[i * 3 + 2] = -0.2 + Math.sin(a) * r; }
+        geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
+        L.polvere = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xbfe9ff, size: 0.012, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); G.add(L.polvere); }
+      CINE.lab = L;
+      return L;
+    }
+    function disegnaSchermo(S2, now) {
+      const g = S2.cv.getContext('2d'), W = 256, H = 160, col = '#' + accent.getHexString();
+      g.clearRect(0, 0, W, H); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2; g.globalAlpha = 0.9;
+      g.strokeRect(3, 3, W - 6, H - 6); g.font = 'bold 14px monospace'; g.fillText(S2.tipo === 'onda' ? 'SEGNALE · ' + (now / 1000 % 60).toFixed(1) : 'ENERGIA', 12, 22);
+      if (S2.tipo === 'onda') { g.beginPath(); for (let x = 10; x < W - 10; x += 3) { const y = 95 + Math.sin(x * 0.07 + now / 300) * 28 * Math.sin(now / 1700 + x * 0.01); x > 10 ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke(); }
+      else for (let i = 0; i < 10; i++) { const h = 20 + 80 * (0.5 + 0.5 * Math.sin(now / 600 + i * 1.3)); g.globalAlpha = 0.35 + 0.06 * i; g.fillRect(16 + i * 23, H - 14 - h, 15, h); }
+      S2.tx.needsUpdate = true;
+    }
+    function aggiornaLab(dt, now) {
+      const L = CINE.lab; if (!L || !L.G.visible) return;
+      const t = now / 1000;
+      if (now - (L.tSchermi || 0) > 220) { L.tSchermi = now; for (const S2 of L.schermi) disegnaSchermo(S2, now); }
+      for (const S2 of L.schermi) S2.m.position.y = S2.y0 + 0.02 * Math.sin(t * 0.8 + S2.y0);
+      const b = L.bolle, pos = b.geometry.attributes.position;
+      b.userData.b.forEach((q, i) => { q.y += q.v * dt; if (q.y > 1) q.y = 0; pos.setXYZ(i, q.x + 0.01 * Math.sin(t * 6 + i), 0.96 + q.y * 0.28, 0.01 * Math.cos(t * 5 + i)); });
+      pos.needsUpdate = true;
+      L.liquidi.forEach((l, i) => { l.material.color.setHSL(((0.36 + i * 0.22) + 0.02 * Math.sin(t * 0.7 + i)) % 1, 1, 0.55 + 0.08 * Math.sin(t * 3 + i)).multiplyScalar(kLuce() * 0.85); });
+      L.pianeta.rotation.y += dt * 0.05; L.globo.rotation.y += dt * 0.3;
+      L.polvere.rotation.y += dt * 0.02; L.cono.material.opacity = 0.08 + 0.015 * Math.sin(t * 0.9);
+    }
+    function scenaKit(s) {                                     // 'laboratorio' o 'spazio'
+      s = s === 'laboratorio' ? 'laboratorio' : 'spazio'; CINE.scena = s;
+      const lab = s === 'laboratorio';
+      if (lab) creaLaboratorio();
+      if (CINE.lab) CINE.lab.G.visible = lab;
+      particles.visible = !lab;                                                                          // le stelline del palco restano nello spazio
+      scene.fog = lab ? (CINE.nebbia || (CINE.nebbia = new THREE.Fog(0x0b1020, 7, 15))) : null;
+      aggiornaSfondo();
+      return s;
+    }
+    function aggiornaSfondo() {                                // con il bagliore serve uno sfondo pieno (nello spazio: il blu notte della pagina)
+      scene.background = CINE.bloom && CINE.composer ? (CINE.sfondo || (CINE.sfondo = new THREE.Color(0x060a12))) : null;
+    }
+    function ombreSu(on) {                                     // le ombre vere: la luce principale le proietta, i personaggi e i mobili le fanno, il pavimento le riceve
+      renderer.shadowMap.enabled = on; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      key.castShadow = on;
+      if (on) {
+        key.shadow.mapSize.set(1024, 1024); key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+        const c = key.shadow.camera; c.left = -2.4; c.right = 3.2; c.top = 2.6; c.bottom = -1.2; c.near = 0.5; c.far = 9; c.updateProjectionMatrix();
+        key.target.position.set(0.5, 0.6, 0); if (!key.target.parent) scene.add(key.target);
+        if (!CINE.pianoOmbre) { CINE.pianoOmbre = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.ShadowMaterial({ opacity: 0.32 })); CINE.pianoOmbre.rotation.x = -Math.PI / 2; CINE.pianoOmbre.position.set(0.4, 0.001, 0); CINE.pianoOmbre.receiveShadow = true; scene.add(CINE.pianoOmbre); }
+        marcaOmbre();
+      }
+      if (CINE.pianoOmbre) CINE.pianoOmbre.visible = on && CINE.scena !== 'laboratorio';
+      shadow.material.opacity = on ? 0.45 : 1;                                                             // l'ombra finta resta, più leggera (sotto i piedi)
+      CINE.ombre = on;
+    }
+    function marcaOmbre() {                                    // chi fa ombra: le parti solide dei personaggi (non le luci, gli ologrammi, i fili trasparenti)
+      const fa = o => { if (!o.isMesh || o.userData.ombraOk) return; o.userData.ombraOk = true; const m = o.material; o.castShadow = !!m && !m.isMeshBasicMaterial && !(m.transparent && m.blending === THREE.AdditiveBlending) && !o.userData.contorno; };
+      charRoot.traverse(fa); if (PR.g) PR.g.traverse(fa);
+    }
+    async function cinemaKit(o = {}) {                         // { bloom, ombre }: accende o spegne gli effetti
+      if (o.ombre != null) ombreSu(!!o.ombre);
+      if (o.bloom != null) {
+        if (o.bloom && !CINE.composer && !CINE.errore) {
+          try {
+            const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+              import('three/addons/postprocessing/EffectComposer.js'), import('three/addons/postprocessing/RenderPass.js'),
+              import('three/addons/postprocessing/UnrealBloomPass.js'), import('three/addons/postprocessing/OutputPass.js')]);
+            const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
+            const comp = new EffectComposer(renderer); comp.setPixelRatio(renderer.getPixelRatio()); comp.setSize(w, h);
+            comp.addPass(new RenderPass(scene, camera));
+            CINE.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.45, 0.15, 2.6);     // brilla solo quello che è molto più luminoso del bianco (le luci, non il camice)
+            comp.addPass(CINE.bloomPass);
+            comp.addPass(new OutputPass());
+            CINE.composer = comp;
+          } catch (e) { CINE.errore = String(e && e.message || e); log('bagliore non disponibile: ' + CINE.errore); }
+        }
+        CINE.bloom = !!o.bloom && !!CINE.composer;
+        aggiornaSfondo(); luciCine();
+      }
+      if (CINE.bloomPass) {                                                                              // (si può regolare: forza e soglia del bagliore)
+        if (o.forza != null) CINE.bloomPass.strength = Math.max(0, Math.min(2, +o.forza || 0));
+        if (o.soglia != null) CINE.bloomPass.threshold = Math.max(0, Math.min(6, +o.soglia || 0));
+        if (o.raggio != null) CINE.bloomPass.radius = Math.max(0, Math.min(1, +o.raggio || 0));
+      }
+      return statoCine();
+    }
+    function kLuce() { return CINE.bloom ? 5 : 1.35; }
+    function luciCine() { for (const l of CINE.luci || []) l.m.color.copy(l.base).multiplyScalar(kLuce()); }
+    function renderCine() {
+      if (CINE.bloom && CINE.composer) CINE.composer.render(); else renderer.render(scene, camera);
+      if (CINE.ombre && performance.now() - (CINE.tMarca || 0) > 2000) { CINE.tMarca = performance.now(); marcaOmbre(); }   // (anche i pezzi nuovi: il Professore che arriva, un modello caricato)
+    }
+    function statoCine() { const sw = gpuSoftware(); return { scena: CINE.scena, bloom: CINE.bloom, ombre: CINE.ombre, mappaOmbre: !!renderer.shadowMap.enabled, composer: !!CINE.composer, laboratorio: !!(CINE.lab && CINE.lab.G.visible), gpu: CINE.gpu || '', software: sw, errore: CINE.errore || null }; }
+    // ---------- ⚛️ l'atomo di un elemento vero: i protoni e i neutroni giusti, gli elettroni sui loro gusci (modello di Bohr) ----------
+    function espAtomoElemento(g, el) {
+      const Z = el.Z, N = Math.max(0, el.N ?? Math.round(el.massa || 2 * Z) - Z), gusci = (el.gusci || []).filter(x => x > 0);
+      const nucleo = new THREE.Group(); g.add(nucleo);
+      const tot = Math.min(Z + N, 64), rN = 0.05 + 0.14 * Math.cbrt(tot / 64), pr = Math.round(tot * Z / Math.max(1, Z + N)), nuc = [];
+      for (let i = 0; i < tot; i++) {                                                                     // protoni (rossi) e neutroni (blu), stretti in una pallina
+        const y = 1 - (i + 0.5) / tot * 2, r = Math.sqrt(Math.max(0, 1 - y * y)), a = i * 2.39996, k = rN * Math.cbrt((i + 0.5) / tot);
+        const p = new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r).multiplyScalar(k);
+        nuc.push({ m: espSfera(0.034 + 0.03 * (1 - tot / 64), Math.floor((i + 1) * pr / tot) > Math.floor(i * pr / tot) ? 0xff5c7a : 0x8fb8ff, 0.95, nucleo, p.x, p.y, p.z, 12), p, ph: i });
+      }
+      nucleo.add(espBagliore(0xff9ab0, 0.4 + rN * 2, 0.45));
+      const orbite = gusci.map((n, i) => {
+        const o = new THREE.Group(), R = 0.32 + 0.68 * (i + 1) / gusci.length; o.rotation.set(1.2 + 0.1 * i, 0, i * 0.55); g.add(o);
+        espLinea(espCerchio(R, 96), accent, 0.35, true, o);
+        const el2 = [], vis = Math.min(n, 18);
+        for (let j = 0; j < vis; j++) { const e = new THREE.Group(); o.add(e); espSfera(0.032, 0x9ff6ff, 1, e, 0, 0, 0, 10); e.add(espBagliore(accent, 0.16, 0.7)); el2.push({ e, ph: j / vis * Math.PI * 2 }); }
+        return { R, el2, v: 1.6 / (1 + i * 0.6) };
+      });
+      return t => {
+        for (const q of nuc) q.m.position.copy(q.p).multiplyScalar(1 + 0.05 * Math.sin(t * 8 + q.ph));
+        for (const O of orbite) for (const q of O.el2) { const a = t * O.v + q.ph; q.e.position.set(Math.cos(a) * O.R, 0, Math.sin(a) * O.R); }
+        g.rotation.y = 0.35 * Math.sin(t * 0.35);
+      };
+    }
+    function esperimentoElemento(k, o) {                       // esperimento('atomo', { Z, simbolo, nome, massa, gusci }) → l'atomo di quell'elemento
+      const el = k && String(k).toLowerCase() === 'atomo' && o && o.Z ? o : null;
+      const cambia = ((ESP.elemento && ESP.elemento.Z) || 0) !== ((el && el.Z) || 0);
+      ESP.elementoVoluto = el;
+      if (cambia && ESP.k === 'atomo' && ESP.g) ESP.k = 'atomo~';                                        // un altro elemento: si spegne e si riaccende
+      return esperimento(k);
+    }
+
     const api = {
       get kind() { return kind; }, get name() { return name; },
       get info() {
@@ -22614,8 +23421,9 @@ window.ZepKit = (() => {
       get lampadina() { return lamp ? { visibile: lamp.visible, accesa: +lamp.userData.accesa.toFixed(2), luce: +lamp.userData.luce.intensity.toFixed(2), pos: lamp.position.toArray().map(x => +x.toFixed(3)), schermo: lamp.position.clone().project(camera).toArray().slice(0, 2).map(x => +x.toFixed(2)) } : { visibile: false, accesa: 0, luce: 0, pos: null }; },
       get propsVisibili() { const B = rig && rig.robot; return B && B.props ? Object.keys(B.props).filter(k => B.props[k].visible) : []; },
       get paused() { return paused; },
-      step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderer.render(scene, camera); },   // per i test: avanti di n fotogrammi
-      snapshot() { renderer.render(scene, camera); return canvas.toDataURL('image/png'); },
+      step(n = 1, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); renderCine(); },   // per i test: avanti di n fotogrammi
+      snapshot() { renderCine(); return canvas.toDataURL('image/png'); },
+      scena: s => (s == null ? CINE.scena : scenaKit(s)), cinema: o => cinemaKit(o || {}), get cine() { return statoCine(); },   // v33: 🎬
       faceSnapshot() { return faceCanvas.toDataURL('image/png'); },
       // per i test e il debug: dove sono le ossa e dove guardano
       boneQuat(k) { const b = rig && rig.bones && rig.bones[k]; return b && b.isObject3D ? b.quaternion.toArray().map(x => +x.toFixed(3)) : null; },
@@ -22642,13 +23450,13 @@ window.ZepKit = (() => {
       primoPiano(on) { PR.focus = !!on; return PR.focus; },
       guarda(x, y) { PR.guarda.x = clamp(+x || 0, -1, 1); PR.guarda.y = clamp(+y || 0, -1, 1); },
       get gesti() { return Object.keys(PR_GESTI); },
-      esperimento: k => esperimento(k),                                                                            // v30: 🔬 (null lo spegne)
+      esperimento: (k, o) => esperimentoElemento(k, o),                                                                            // v30: 🔬 (null lo spegne)
       stile: s => (s == null ? PR.stile : stileProf(s)),                                                           // v32: 🎨 'cartone', 'anime' o 'realistico'
       modello: url => caricaModelloProf(url), get modelloInfo() { return infoModelloProf(); }, valore: n => valoreModelloProf(n), osso: k => ossoProf(k),   // v31: 🧍
       get esperimenti() { return Object.fromEntries(Object.entries(ESPERIMENTI_3D).map(([k, v]) => [k, v.titolo])); },
       get stato() { return { on: PR.on, stato: PR.stato, w: +PR.w.toFixed(2), parla: PR.parlando, voce: PR.voce, gesto: PR.gest ? PR.gest.k : null, bocca: +PR.mp.open.toFixed(2),
                              scan: +(PR.scanW || 0).toFixed(2), modello: PR.mod ? PR.mod.tipo : 'flux', stile: PR.stile, contorni: PR.parti && PR.parti.anime ? PR.parti.anime.contorni : 0,
-                             segno: PR.parti && PR.parti.anime ? PR.parti.anime.segno : null, realismo: !!(PR.parti && PR.parti.M._v31), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
+                             segno: PR.parti && PR.parti.anime ? PR.parti.anime.segno : null, realismo: !!(PR.parti && PR.parti.M._v31), esperimento: ESP.vuole && ESP.k === ESP.vuole ? ESP.k : null, elemento: ESP.elemento && ESP.k === 'atomo' ? ESP.elemento.simbolo : null, espW: +ESP.w.toFixed(2), zepGuardaEsp: S.gaze.until > performance.now() && Math.abs(S.gaze.x - 0.42) < 0.01, dettagli: !!(PR.parti && PR.parti.M._v30 && PR.parti.M.pelle.bumpMap), visibile: !!(PR.g && PR.g.visible), camX: +PR.camX.toFixed(2), top: +PR.top.toFixed(2), zepGuarda: S.gaze.until > performance.now() && S.gaze.x > 0.5 }; },
     };
     Object.defineProperty(api, 'voce', { get: () => (PR.voce && PR.on ? 'prof' : 'zep'), set: v => { PR.voce = v === 'prof' && PR.on && PR.stato !== 'esce'; }, enumerable: true });
     for (const nome of ['speakLine', 'sync', 'lineEnd', 'audioLevel']) {
@@ -22842,7 +23650,7 @@ async function invia(opt){
             mc(bubble).innerHTML=renderAI(full);feedSpeech(full,true);if(!ttsOn||!voceDisponibile())captionOff(0);finalize(bubble,full,obj.stat,A?null:t);
             addConferme(bubble,obj.conferme);addFile(bubble,obj.file);addSchermate(bubble,obj.schermate);reactToReply(full,obj,t);
             addChips(bubble,obj.azioni,obj.fonti,obj.seguito);lavoroFinito();
-            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);addV28(bubble,obj);addV29(bubble,obj);addV30(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
+            addFontiWeb(bubble,obj.fonti_web);addLeggiFonti(bubble,obj.fonti_web);addAgenda(bubble,obj);addV16(bubble,obj);addV17(bubble,obj);addV18(bubble,obj);addV19(bubble,obj);addV20(bubble,obj);addV21(bubble,obj);addV22(bubble,obj);addV23(bubble,obj);addV24(bubble,obj);addV25(bubble,obj);addV26(bubble,obj);addV27(bubble,obj);addV28(bubble,obj);addV29(bubble,obj);addV30(bubble,obj);addV33(bubble,obj);if(SPENTO.on)controllaOllama();if(obj.pagina)leggiPagina(obj.pagina);if(obj.notizie){addNotizie(bubble,obj.notizie,!!obj.azione);if(obj.azione&&ttsOn)leggiNotizie(obj.notizie);}
             if(obj.azioni&&obj.azioni.length)loadPr();
             if(obj.seguito)toast('🔁 Ti chiederò com\'è andata: '+obj.seguito.evento,'ok');
             if(obj.sessione&&obj.sessione!==CUR){CUR=obj.sessione;LS.set('maik_srv_chat',CUR);}
@@ -23133,7 +23941,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
     c('🧠','Mappa della mente',()=>apriMente(),'mente','memoria cosa sai di me grafo dimentica'),
     c('🩺','Diagnosi: funziona tutto?',()=>openDiagnosi(),'diagnosi','controlla problemi ollama modelli ripara errori'),c('↩','Annulla l\'ultima cosa che ho cambiato',()=>annullaModifica(null,null),'annulla','undo ctrl z torna indietro sbagliato'),
     c('💾','Copie di sicurezza (backup)',()=>openDiagnosi(),'backup','copia ripristina dati salva'),c('🎯','Pensaci bene: …',()=>{$('#inp').value='pensaci bene: ';$('#inp').focus();},'accurato','ragiona rifletti revisore preciso'),
-    c('⚡','Prestazioni e benessere',()=>openPerf(),'veloce','lento velocità fps modalità leggera pausa'),c('📖','Leggi quello che ti mostro',()=>qs('leggi quello che ti mostro'),'leggi','webcam foglio biglietto'),
+    c('🎬','Cinema 3D: ombre, bagliore, laboratorio',()=>openPerf(),'cinema','ombre bagliore bloom laboratorio scena spazio grafica realistico'),c('⚡','Prestazioni e benessere',()=>openPerf(),'veloce','lento velocità fps modalità leggera pausa'),c('📖','Leggi quello che ti mostro',()=>qs('leggi quello che ti mostro'),'leggi','webcam foglio biglietto'),
     c('🖐️','Cosa ho in mano?',()=>qs('cosa ho in mano?'),'oggetto','webcam guarda mostro'),c('🙂','Come mi vedi?',()=>qs('come mi vedi?'),'espressione','webcam faccia umore'),
     c('🌀','Chiedi al multiverso…',()=>q('chiedi al multiverso: '),'multiverso','consiglio dimensioni portale parere'),c('🔬','Laboratorio delle invenzioni',()=>openLab(),'L','inventa app gadget invenzioni'),
     c('🔬','Inventami…',()=>q('inventami '),'inventa','app gadget gioco strumento'),c('🧪','Chiama un aiutante…',()=>q('chiama un aiutante per '),'aiutante','sottofondo compito lampo'),
@@ -23158,7 +23966,7 @@ function palCmds(){const c=(ic,label,run,hint,kw)=>({ic,label,run,hint:hint||'',
   PERS.forEach(p=>L.push(c(p.emoji,'Personalità: '+p.nome,()=>setPers(p.chiave),'personalità','modalità')));
   return L;}
 function runBoot(){if(OPT.boot===false)return;
-  return MaikKit.boot({version:'PRIME · V32',key:'maik_boot_v32',checks:[
+  return MaikKit.boot({version:'PRIME · V33',key:'maik_boot_v33',checks:[
     {label:'Server',run:async()=>{try{const r=await (await fetch('/salute')).json();window.__bootSalute=r;return{ok:true,text:'attivo'};}catch(e){return{ok:false,text:'non risponde'};}}},
     {label:'Ollama',run:async()=>{const r=window.__bootSalute;return r&&r.online?{ok:true,text:'online · '+r.modello}:{ok:false,text:'offline'};}},
     {label:'Memoria su disco',run:async()=>{try{const s=await (await fetch('/statistiche')).json();return{ok:true,text:(s.n_imparato||0)+' ricordi · '+(s.n_scambi||0)+' scambi'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -23168,6 +23976,7 @@ function runBoot(){if(OPT.boot===false)return;
     {label:'Documenti',run:async()=>{try{const r=await (await fetch('/documenti')).json();const n=(r.documenti||[]).length;return{ok:true,text:n?n+' document'+(n===1?'o':'i'):'nessuno (caricali con 📚)'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Promemoria',run:async()=>{try{const r=await (await fetch('/promemoria')).json();const n=(r.promemoria||[]).length;return{ok:true,text:n?n+' attiv'+(n===1?'o':'i'):'nessuno'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Voce italiana',run:async()=>{const v=await new Promise(r=>{const x=window.speechSynthesis?speechSynthesis.getVoices():[];if(x.length)return r(x);setTimeout(()=>r(window.speechSynthesis?speechSynthesis.getVoices():[]),900);});return v.some(x=>x.lang&&x.lang.startsWith('it'))?{ok:true,text:'disponibile'}:{ok:false,text:'non trovata'};}},
+    {label:'Scienza',run:async()=>{try{const r=await (await fetch('/scienza?q='+encodeURIComponent('2x+3=11'))).json();return r.trovato?{ok:true,text:'118 elementi · costanti · equazioni'}:{ok:false,text:'non risponde'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Personaggio 2',run:async()=>{try{const a=await (await fetch('/professore/aspetto')).json();return{ok:true,text:'🧍 '+(a.nome_mostrato||'Professor Flux')+(a.modello?' · '+a.modello.tipo.toUpperCase():' · integrato · '+(a.stile||'cartone'))};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Esperimenti',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:'🔬 '+((p.esperimenti||[]).length)+' esperimenti · 📓 '+((p.taccuino||{}).lezioni||0)+' nel taccuino'};}catch(e){return{ok:false,text:'errore'};}}},
     {label:'Laboratorio',run:async()=>{try{const p=await (await fetch('/professore')).json();return{ok:true,text:p.on?'🧪 il Professore è qui':'🧪 Professor Flux pronto'};}catch(e){return{ok:false,text:'errore'};}}},
@@ -23192,7 +24001,7 @@ function runBoot(){if(OPT.boot===false)return;
 
 // ---------- V10: CHAT MULTIPLE (stessa memoria) ----------
 let CUR=LS.get('maik_srv_chat','principale'),CHATS=[];
-const WELCOME='Ciao! Sono **Maik Prime**, versione 32 🎬 Novità: il Professore adesso è un **cartone animato**, come in un film d\'animazione 3D (testa e occhi grandi, pelle liscia, capelli e baffi scolpiti, i segni delle emozioni); se lo vuoi **anime** o **realistico**: «🎨 Cambia» → Stile. E il secondo personaggio può essere **tuo**: carica un tuo **.glb o .vrm** al posto del Professore e dagli un **nome**, una **voce** e un **carattere** (a sinistra, «🧍 Personaggio 3D» → «🎨 Cambia»); e il Professor Flux è più vero, con i capelli, i baffi e le sopracciglia a ciocche. Il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
+const WELCOME='Ciao! Sono **Maik Prime**, versione 33 🎬 Novità: il **3D da film**: intorno a me e al Professore c\'è un **laboratorio vero** (l\'oblò sul pianeta con gli anelli, il banco con le provette che brillano e fanno le bolle, gli schermi olografici), con le **ombre vere** e il **bagliore** delle luci (⚡ Prestazioni → 🎬 Cinema 3D; sui PC senza scheda video restano spenti da soli). E sono **più preciso** 🧠: «**risolvi x² − 5x + 6 = 0**» (passo per passo, con la verifica), «**100 km/h in m/s**», «**numero atomico del ferro**», «**quanto pesa Marte?**»: i numeri vengono da una **banca dati verificata** (tutta la tavola periodica, le costanti fisiche, il Sistema solare), non me li invento; «**fammi vedere l\'atomo di carbonio**» e sul palco c\'è proprio quello, con i suoi protoni, neutroni ed elettroni. Il Professore è un **cartone animato**, come in un film d\'animazione 3D (testa e occhi grandi, pelle liscia, capelli e baffi scolpiti, i segni delle emozioni); se lo vuoi **anime** o **realistico**: «🎨 Cambia» → Stile. E il secondo personaggio può essere **tuo**: carica un tuo **.glb o .vrm** al posto del Professore e dagli un **nome**, una **voce** e un **carattere** (a sinistra, «🧍 Personaggio 3D» → «🎨 Cambia»); e il Professor Flux è più vero, con i capelli, i baffi e le sopracciglia a ciocche. Il Professore accende gli **esperimenti olografici** sul palco («**fammi vedere un buco nero**»: anche l\'atomo, il DNA, il sistema solare…), fa le **lezioni a due voci** con me («**spiegatemi la fotosintesi**»), tiene il **taccuino** di quello che ti spiega e ti **interroga** con il voto («**professore, interrogami**»). Nel mio laboratorio c\'è sempre il **Professor Flux**, uno scienziato geniale (e un po\' brontolone) in 3D accanto a me. «**chiama il professore**» e arriva; finché c\'è, le domande le prende lui, con la sua voce, e le formule le scrive sulla **lavagna olografica**. «**professore, perché il cielo è blu?**» per chiedere a lui al volo, «**grazie professore, puoi andare**» per congedarlo. E poi **ragiono sui tuoi dati**: chiedimi «**in che giorno della settimana spendo di più?**», «**grafico delle spese degli ultimi 6 mesi**», «**quante volte sono andato in palestra a settembre?**», «**confronta settembre e ottobre**» e ti rispondo con il **grafico** (passaci sopra per i valori, c\'è anche la tabella) e con quello che si nota. «**quanto spenderò questo mese?**» e ti faccio la **previsione** con il budget; «**se risparmio 5 € al giorno?**» e faccio i conti; «**mostrami il mio anno**» e vedi tutti i tuoi giorni in un colpo d\'occhio. E ho anche un\'**interfaccia olografica**: «**modalità HUD**» (o il tasto **H**) e intorno a me compaiono, dal vivo, l\'agenda, i sistemi, le cose da fare, il budget e le **allerte**. «**come siamo messi?**» e ti faccio il punto della situazione in ordine di priorità, con la cosa da fare a un tocco. «**organizzami domani: dentista alle 10, finire la relazione, comprare il latte**» e preparo il **piano d\'azione**: parte solo col tuo ▶, e un «annulla» lo toglie tutto. E poi **cucino con te**: «**ricetta della carbonara**» (anche «per 6 persone»), «**cosa cucino con uova e zucchine?**», «**fammi il menu della settimana**» con la spesa divisa per reparto, poi «**cuciniamo!**» e ti guido passo passo, a voce e con i timer. **Parliamo le lingue**: «**parliamo in inglese al ristorante**» (o spagnolo, francese, tedesco, portoghese): ti rispondo nella lingua, ti correggo e le correzioni diventano carte da ripassare. Per staccare un attimo: «**facciamo un esercizio di respirazione**». E ti aiuto a **imparare**: «**fammi le carte per imparare le capitali d\'Europa**» (o di spagnolo, o da un tuo documento) e poi «**ripassiamo**»: ogni carta te la richiedo al momento giusto, come fanno le app per le lingue. Per divertirci: «**facciamo un quiz di storia**», il Quizzone presentato da Zep (timer, 50:50, il pubblico e i record). E per concentrarti: «**metti la pioggia**» (o il mare, il bosco, il camino). Ci sono anche lo **show**: «accendi radio maik», «il mio mese in storie», la «mappa della mente». Sono più affidabile: se sbaglio «**annulla**» (o Ctrl+Z), «**funziona tutto?**» per la diagnosi, una copia di sicurezza dei tuoi dati ogni giorno, e per le domande difficili «**pensaci bene: …**». Poi c\'è tutto il resto: sono veloce (⚡ Prestazioni), con la webcam «leggi quello che ti mostro» e «cosa ho in mano?», il consiglio del multiverso («chiedi al multiverso: …»), il laboratorio delle invenzioni («inventami un timer per il tè», tasto **L**), gli aiutanti lampo, obiettivi con le tappe («voglio imparare lo spagnolo entro giugno»), «pianificami la settimana», «come sto andando questo mese?», automazioni («ogni mattina alle 8 dimmi il meteo e le notizie»), ricerche approfondite, il **centro di controllo** 🛰️ (tasto **Y**), ricordo le nostre chiacchierate, ti propongo idee, ragiono a più passi, leggo foto e PDF, cose da fare, concentrazione, spese e abitudini, calendario, interprete e il tuo **PC** con conferma. Scrivi **aiuto** oppure premi **Ctrl+K** 💚';
 const NUOVA='✨ **Nuova chat!** Ricordo comunque tutto di te. Di cosa parliamo?';
 async function loadChats(){try{CHATS=(await (await fetch('/sessioni')).json()).sessioni||[];}catch(e){return;}
   if(!CHATS.some(c=>c.id===CUR)){CUR='principale';LS.set('maik_srv_chat',CUR);}
@@ -24087,7 +24896,7 @@ let AV_NOME = 'Zep';
 function nomeZep() { return OPT.nomeZep || AV_NOME || 'Zep'; }
 function applicaNome() {
   const n = nomeZep(); $('#avname').textContent = n; $('#avsname').textContent = n; $('#inp').placeholder = 'Scrivi a ' + n + '…';
-  document.title = 'MAIK PRIME // ' + n + ' V32'; if (GIOCO.on) rpsScore();
+  document.title = 'MAIK PRIME // ' + n + ' V33'; if (GIOCO.on) rpsScore();
 }
 function setNome(v) { v = String(v || '').replace(/[<>]/g, '').trim().slice(0, 24); setOpt('nomeZep', v || null); applicaNome(); if (v) toast('🏷️ Da ora mi chiamo ' + v + '!', 'ok'); if (AV) AV.gesture('nod'); }
 function setLookOpt(patch, silenzio) { const L = Object.assign(lookAttuale(), patch); setOpt('look', L); if (AV) AV.setLook(L); renderLook(); if (AV && !silenzio) AV.emote('happy', 1500); }
@@ -28091,7 +28900,7 @@ document.addEventListener('click', e => {
 const ESP30 = { k: null, t: 0 }, DIAL30 = { on: false }, INT30 = { on: false };
 function accendiEsp30(info) {                                    // l'ologramma tra Zep e il Professore (+ il cartellino con ✕)
   if (!info || !info.k || !AV || !AV.prof) return false;
-  const ok = AV.prof.esperimento(info.k);
+  const ok = AV.prof.esperimento(info.k, info.elemento || null);                     // v33: ⚛️ l'atomo dell'elemento di cui si parla
   if (!ok) return false;
   ESP30.k = info.k; clearTimeout(ESP30.t); ESP30.t = setTimeout(spegniEsp30, 150000);
   const el = $('#esp30'); if (el) { $('#esp30t').textContent = (info.emoji ? info.emoji + ' ' : '') + (info.titolo || info.k).toUpperCase(); el.hidden = false; el.classList.add('su'); }
@@ -28296,6 +29105,74 @@ async function scegliStileP2(s) {                                // si vede subi
 document.addEventListener('click', e => { const b = e.target.closest('[data-p2stile]'); if (b) scegliStileP2(b.dataset.p2stile); });
 const _segnaP2_31 = segnaP2;
 segnaP2 = function () { _segnaP2_31(); segnaStileP2(); };
+
+// V33 — MAIK PRIME CINEMA & SCIENZA: 🎬 il laboratorio 3D con le ombre vere e il bagliore (scelti in ⚡ Prestazioni, spenti da soli
+// sui PC senza scheda video) · 🧠 le risposte esatte (equazioni, unità, elementi, costanti, pianeti) e il bollino «✅ dati verificati»
+const CINE33 = { stato: null };
+function vuoleCinema33(c) {                                      // auto: sì, se il 3D lo fa una scheda video vera e non c'è la modalità leggera
+  const m = OPT.cinema || 'auto';
+  return m === 'sempre' || (m === 'auto' && !(c && c.software) && !OPT.lieve);
+}
+function scenaVoluta33(c) {
+  const s = OPT.scena || 'auto';
+  return s === 'auto' ? (vuoleCinema33(c) ? 'laboratorio' : 'spazio') : s;
+}
+async function applicaCinema33() {
+  if (!AV || !AV.cinema || !AV.scena) return null;
+  const c = AV.cine, on = vuoleCinema33(c);
+  AV.scena(scenaVoluta33(c));
+  try { CINE33.stato = await AV.cinema({ bloom: on, ombre: on }); } catch (e) { CINE33.stato = AV.cine; }
+  segnaCinema33();
+  return CINE33.stato;
+}
+function segnaCinema33() {
+  const m = OPT.cinema || 'auto', s = OPT.scena || 'auto';
+  document.querySelectorAll('#cinebtn [data-cine]').forEach(b => b.classList.toggle('on', b.dataset.cine === m));
+  document.querySelectorAll('#scenabtn [data-scena]').forEach(b => b.classList.toggle('on', b.dataset.scena === s));
+  const n = $('#cinenota'); if (!n) return;
+  const c = (AV && AV.cine) || null;
+  if (!c) { n.textContent = 'Il cinema 3D c\'è quando c\'è il personaggio 3D (su schermi grandi).'; return; }
+  n.innerHTML = (c.bloom || c.ombre ? '🎬 Accesi: ' + [c.ombre ? 'ombre vere' : '', c.bloom ? 'bagliore sulle luci' : ''].filter(Boolean).join(' e ') : '💤 Effetti spenti')
+    + ' · scena: <b>' + (c.scena === 'laboratorio' ? '🧪 laboratorio' : '🌌 spazio') + '</b>'
+    + (c.software ? '<br>⚠️ Qui il 3D lo disegna il processore (niente scheda video): in automatico gli effetti restano spenti, per non rallentare.' : '')
+    + (c.errore ? '<br>Il bagliore non si è potuto caricare (serve internet la prima volta).' : '');
+}
+function scegliCinema33(m) { setOpt('cinema', m); applicaCinema33(); }
+function scegliScena33(s) { setOpt('scena', s); applicaCinema33(); }
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-cine],[data-scena]'); if (!b || !b.closest('#pfmodal')) return;
+  if (b.dataset.cine) scegliCinema33(b.dataset.cine); else scegliScena33(b.dataset.scena);
+});
+const _avatarInit32 = avatarInit;
+avatarInit = async function () { await _avatarInit32(); await applicaCinema33(); };
+const _applicaQualita32 = applicaQualita;
+applicaQualita = function () { _applicaQualita32(); applicaCinema33(); };          // la modalità leggera spegne anche il cinema (in automatico)
+const _segnaPerf32 = segnaPerf;
+segnaPerf = function () { _segnaPerf32(); segnaCinema33(); };
+
+// 🧠 le risposte esatte e i fatti verificati
+const CAT33 = { 'metallo alcalino': 'am', 'metallo alcalino-terroso': 'at', 'metallo di transizione': 'mt', 'metallo post-transizione': 'pt', 'semimetallo': 'sm', 'non metallo': 'nm', 'alogeno': 'al', 'gas nobile': 'gn', 'lantanide': 'la', 'attinide': 'ac' };
+const TIPI33 = { equazione: '📐 equazione risolta', conversione: '📏 conversione', elemento: '⚛️ tavola periodica', costante: '🔢 costante fisica', corpo: '🪐 Sistema solare' };
+function cartaElemento33(el, conBottone) {
+  const massa = (+el.massa).toLocaleString('it-IT', { maximumFractionDigits: 3 });
+  return '<div class="el33" data-cat="' + (CAT33[el.categoria] || '') + '"><div class="el33t"><small>' + el.Z + '</small><b>' + esc(el.simbolo) + '</b><span>' + esc(el.nome) + '</span><i>' + massa + '</i></div>'
+    + '<div class="el33d"><div>' + esc(el.categoria || '') + '</div><div>' + el.Z + ' protoni · ' + (el.N != null ? el.N : '?') + ' neutroni</div><div>gusci: ' + (el.gusci || []).join(' · ') + '</div>'
+    + (conBottone ? '<button type="button" class="tbtn" data-q33="fammi vedere l\'atomo di ' + esc(String(el.nome).toLowerCase()) + '">⚛️ Fammi vedere l\'atomo</button>' : '') + '</div></div>';
+}
+function addV33(d, obj) {
+  const P = obj.professore || {}, S = obj.scienza || null;
+  const el = (S && S.elemento) || (P.esperimento && P.esperimento.elemento) || null;
+  if (S || P.scienza) d.insertAdjacentHTML('afterbegin', '<div class="sci33">🧠 ' + (TIPI33[(S && S.tipo) || P.scienza] || 'risposta esatta') + ' · <span>calcolato, non inventato</span></div>');
+  if (el && !d.querySelector('.el33')) d.insertAdjacentHTML('beforeend', cartaElemento33(el, !P.esperimento));
+  if (obj.fatti && obj.fatti.length && !d.querySelector('.fatti33')) {
+    d.insertAdjacentHTML('beforeend', '<details class="fatti33"><summary>✅ dati verificati (' + obj.fatti.length + ')</summary><ul>' + obj.fatti.map(f => '<li>' + esc(f) + '</li>').join('') + '</ul>'
+      + '<small>Questi numeri vengono dalla banca dati scientifica di MAIK (tavola periodica, costanti CODATA, dati NASA del Sistema solare): il modello li ha ricevuti per non inventarli.</small></details>');
+  }
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-q33]'); if (b) qs(b.dataset.q33); });
+// la lavagna nel fumetto: niente righe vuote prima e dopo (ha già il suo margine)
+const _renderAI32 = renderAI;
+renderAI = function (t) { return String(_renderAI32(t)).replace(/(?:<br\s*\/?>\s*)*(<div class="lav29"><b>[^<]*<\/b>(?:<div>[^<]*<\/div>)*<\/div>)(?:\s*<br\s*\/?>)*/g, '$1'); };
 
 // ---------- INIT ----------
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeTools();closeMem();closeDocs();closeLook();closeRoutine();closeCal();closeSpese();closeAbitudini();closeTodo();closeIdee();closePrime();closeAuto();closeLab();chiudiVista();$('#labcod').classList.remove('open');closePerf();closeDiagnosi();chiudiStorie();chiudiMente();chiudiStudio();chiudiQuiz();chiudiCucina();chiudiRespiro();if(!document.querySelector('.ov.open'))chiudiHUD();}});
@@ -28518,8 +29395,8 @@ def main():
         CONFIG["app"] = True
     print("""
 ╔══════════════════════════════════════════════════╗
-║        MAIK PRIME 32.0 — Server avviato         ║
-║ professore cartoon/anime · il tuo personaggio    ║
+║        MAIK PRIME 33.0 — Server avviato         ║
+║ cinema 3D · scienza verificata · professore      ║
 ╚══════════════════════════════════════════════════╝""")
 
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -28583,7 +29460,8 @@ def main():
     print(f"    GET  /hud · /situazione · POST /piano/esegui   [v27]")
     print(f"    POST /analisi · GET /previsione · /anno   [v28]")
     print(f"    GET  /professore   [v29 · v30: taccuino, esperimenti]")
-    print(f"    GET/POST /professore/modello · /professore/aspetto   [NUOVO v31]")
+    print(f"    GET/POST /professore/modello · /professore/aspetto   [v31]")
+    print(f"    GET  /scienza?q= · /scienza/elemento?z=|s=|nome=   [NUOVO v33]")
     print(f"    GET  /pc/file?q= · /pc/screenshot/<nome> · POST /pc/prepara        [NUOVO v12]")
     print(f"    GET  /pc/info · POST /pc/conferma · GET/POST /avatar · /lib/*      [v11]")
     print(f"    GET  /sessioni · POST /sessioni/nuova /rinomina /elimina")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.5 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.6 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
                       + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
@@ -197,7 +197,7 @@ NOVITA' v5.4 — NAVIGATORE, SICUREZZA, CIELO E METEO:
    col metodo Zambretti, avviso di calo rapido, grafico delle ultime 12 ore
    e registrazione della pressione anche a schermo spento.
 
-NOVITA' v5.5 (questa versione) — WALKIE-TALKIE, SATELLITI, AUTO, PAESI:
+NOVITA' v5.5 — WALKIE-TALKIE, SATELLITI, AUTO, PAESI:
  * WALKIE-TALKIE nella chat offline: tieni premuto il microfono, parli fino a
    10 secondi, rilasci e il vocale (audio compresso, ~1,5 KB al secondo)
    viaggia sulla rete Bluetooth, cifrato come gli altri messaggi del gruppo.
@@ -212,6 +212,31 @@ NOVITA' v5.5 (questa versione) — WALKIE-TALKIE, SATELLITI, AUTO, PAESI:
  * PAESI E LAGHI: nell'indice dei luoghi (filtri PAESI e LAGHI) e in realta'
    aumentata; i laghi grandi descritti a pezzi sono uniti e il loro centro e'
    calcolato dalla riva. L'indice si rifa' una volta.
+
+NOVITA' v5.6 (questa versione) — SOCCORSO, SEGNALI, LUNA E STRUMENTI RIFATTI:
+ * SCHEDA MEDICA: gruppo sanguigno, allergie, malattie, farmaci, note e due
+   contatti da chiamare con un tocco, vista grande per i soccorritori e QR
+   leggibile da qualsiasi telefono. Resta sul telefono; solo se lo scegli,
+   gruppo/allergie/malattie partono con l'SOS della chat (mai nome o farmaci).
+   In EMERGENZA: riepilogo della scheda, l'SMS va gia' al primo contatto e
+   i numeri di emergenza dei paesi vicini (Svizzera, Austria, Francia...).
+ * PRIMO SOCCORSO rifatto: schede con ricerca (RCP, soffocamento, emorragia,
+   ipotermia, vipera, allergia grave, fulmine, ictus...) e METRONOMO per la
+   rianimazione (110 al minuto, 30:2 o solo compressioni). Anche la GUIDA
+   SOPRAVVIVENZA e' a schede con ricerca.
+ * TORCIA rifatta: intensita' (Android 13+), stroboscopio, SOS, segnale
+   alpino (6 lampi al minuto), spegnimento automatico.
+ * CODICE MORSE rifatto: trasmette con flash, schermo, suono e vibrazione,
+   mostra il segno in corso, si ferma; RICEVE a mano con un tasto e
+   decodifica adattandosi alla velocita'.
+ * LUNA rifatta: fasi esatte (Meeus, errore sotto il minuto), sorge e
+   tramonta, luce di stanotte e delle prossime 7 notti (chiara/buia).
+ * AREA TERRENO rifatta: cammina sul confine (punti imprecisi scartati),
+   forma disegnata, annulla, avviso se il perimetro si incrocia, GPX.
+ * CHECKLIST con 6 liste (escursione, notte fuori, neve, ferrata, emergenza
+   casa, auto) e voci tue; AVVISO PRIMA DEL TRAMONTO ogni giorno;
+   CALCOLATRICE corretta (negativi, percentuali, niente 0,30000000000000004);
+   NOTE SUL POSTO tengono acceso il GPS e navigano verso la nota.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -257,8 +282,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 53
-        versionName "5.5.0"
+        versionCode 54
+        versionName "5.6.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -582,6 +607,9 @@ MANIFEST = """\
         <activity android:name=".ui.SatellitesActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name=".ui.ParkingActivity" android:exported="false" android:screenOrientation="portrait"/>
         <receiver android:name=".ui.ParkingAlarmReceiver" android:exported="false"/>
+        <activity android:name=".ui.MedicalActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <receiver android:name=".ui.SunsetAlarmReceiver" android:exported="false"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -6108,6 +6136,8 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_storm, StormActivity.class);
         // v5.4
         wire(R.id.card_safety, SafetyActivity.class);
+        // v5.6
+        wire(R.id.card_medical, MedicalActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -6441,6 +6471,40 @@ public class DaylightToolActivity extends AppCompatActivity {
         // v5.3: l'arco del sole sopra il paesaggio vero, con la fotocamera
         click(R.id.btn_day_ar, v -> startActivity(new android.content.Intent(this, PeakArActivity.class)
             .putExtra(PeakArActivity.EXTRA_MODE, PeakArActivity.MODE_SKY)));
+        // v5.6: avviso ogni giorno prima del tramonto
+        int[] ids = {R.id.day_al_0, R.id.day_al_30, R.id.day_al_60, R.id.day_al_90};
+        for (int i = 0; i < ids.length; i++) {
+            final int m = ALARM_MIN[i];
+            click(ids[i], v -> {
+                long at = SunsetAlarmReceiver.set(this, m);
+                if (m > 0 && at == 0) android.widget.Toast.makeText(this, "Serve una posizione per calcolare il tramonto",
+                    android.widget.Toast.LENGTH_LONG).show();
+                renderAlarm();
+            });
+        }
+        // dopo un riavvio del telefono gli avvisi programmati si perdono: li rimettiamo
+        if (SunsetAlarmReceiver.lead(this) > 0 && SunsetAlarmReceiver.nextAt(this) < System.currentTimeMillis())
+            SunsetAlarmReceiver.schedule(this);
+        renderAlarm();
+    }
+
+    private static final int[] ALARM_MIN = {0, 30, 60, 90};
+
+    private void renderAlarm() {
+        int lead = SunsetAlarmReceiver.lead(this);
+        int[] ids = {R.id.day_al_0, R.id.day_al_30, R.id.day_al_60, R.id.day_al_90};
+        for (int i = 0; i < ids.length; i++) {
+            TextView t = findViewById(ids[i]);
+            if (t == null) continue;
+            boolean on = ALARM_MIN[i] == lead;
+            t.setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            t.setTextColor(on ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        long at = SunsetAlarmReceiver.nextAt(this);
+        set(findViewById(R.id.tv_day_alarm), lead == 0 ? "Nessun avviso. Utile in escursione per non farsi sorprendere dal buio."
+            : at > 0 ? "Prossimo avviso: " + new SimpleDateFormat("EEE d MMM 'alle' HH:mm", Locale.ITALY).format(new Date(at))
+                + ", " + lead + " minuti prima del tramonto. Poi ogni giorno."
+            : "Avviso attivo: serve una posizione per calcolare il tramonto.");
     }
 
     private void click(int id, View.OnClickListener l) {
@@ -7054,88 +7118,202 @@ public class BacktrackActivity extends AppCompatActivity {
 
 AREA_TOOL_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.AppConfig;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.util.AreaCalc;
+import com.offlinegps.map.util.ShareUtil;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
-/** Calcolo area: aggiungi i vertici camminando il perimetro, area con shoelace. */
+/**
+ * Area e perimetro di un terreno (v5.6). Due modi: un vertice per angolo
+ * (MANUALE) o CAMMINA, che registra da solo il confine scartando i punti GPS
+ * imprecisi. Forma disegnata, distanza per chiudere il giro, annulla, avviso se
+ * il perimetro si incrocia, punti salvati (non si perdono girando il
+ * telefono) e GPX da aprire in qualsiasi app di mappe.
+ * Prima: non teneva acceso il GPS, perdeva i punti e non si poteva annullare.
+ */
 public class AreaToolActivity extends AppCompatActivity {
-    private final ArrayList<double[]> pts = new ArrayList<>();
-    private TextView tvArea, tvCount, tvPerim;
+    private static final String KEY = "area_pts", KEY_AUTO = "area_auto";
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private final List<double[]> pts = new ArrayList<>();
+    private AreaShapeView shape;
+    private TextView tvArea, tvCount, tvPerim, tvClose, tvAcc, tvHint, tvAutoTxt, tvState;
+    private boolean auto, visible;
+    private long lastFixTime;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            Location l = GpsTrackingService.getLastLocation();
+            if (auto && l != null && l.getTime() != lastFixTime) {
+                lastFixTime = l.getTime();
+                double[] last = pts.isEmpty() ? null : pts.get(pts.size() - 1);
+                if (AreaCalc.accept(last, l.getLatitude(), l.getLongitude(), l.getAccuracy(), 3)) {
+                    pts.add(new double[]{l.getLatitude(), l.getLongitude()});
+                    save();
+                }
+            }
+            update();
+            h.postDelayed(this, 1000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_area);
+        shape = findViewById(R.id.area_shape);
         tvArea = findViewById(R.id.tv_area);
         tvCount = findViewById(R.id.tv_area_count);
         tvPerim = findViewById(R.id.tv_area_perim);
-        View back = findViewById(R.id.btn_area_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View add = findViewById(R.id.btn_area_add);
-        if (add != null) add.setOnClickListener(v -> addPoint());
-        View clr = findViewById(R.id.btn_area_clear);
-        if (clr != null) clr.setOnClickListener(v -> { pts.clear(); update(); });
+        tvClose = findViewById(R.id.tv_area_close);
+        tvAcc = findViewById(R.id.tv_area_acc);
+        tvHint = findViewById(R.id.tv_area_hint);
+        tvAutoTxt = findViewById(R.id.btn_area_auto_txt);
+        tvState = findViewById(R.id.tv_area_state);
+        click(R.id.btn_area_back, v -> finish());
+        click(R.id.btn_area_add, v -> addPoint());
+        click(R.id.btn_area_undo, v -> { if (!pts.isEmpty()) { pts.remove(pts.size() - 1); save(); update(); } });
+        click(R.id.btn_area_clear, v -> confirmClear());
+        click(R.id.btn_area_auto, v -> setAuto(!auto));
+        click(R.id.btn_area_gpx, v -> shareGpx());
+        SharedPreferences p = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        pts.addAll(AreaCalc.parse(p.getString(KEY, "")));
+        auto = p.getBoolean(KEY_AUTO, false);
         update();
     }
 
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        GpsTrackingService.acquire(this, "AreaToolActivity");
+        applyAutoFlags();
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+        GpsTrackingService.release(this, "AreaToolActivity");
+    }
+
+    private void save() {
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putString(KEY, AreaCalc.serialize(pts)).apply();
+    }
+
     private void addPoint() {
-        try {
-            Location loc = GpsTrackingService.getLastLocation();
-            if (loc == null) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
-            pts.add(new double[]{loc.getLatitude(), loc.getLongitude()});
-            update();
-        } catch (Exception e) { Toast.makeText(this, "Errore", Toast.LENGTH_SHORT).show(); }
+        Location l = GpsTrackingService.getLastLocation();
+        if (l == null) { Toast.makeText(this, "GPS non ancora pronto: aspetta qualche secondo all'aperto", Toast.LENGTH_LONG).show(); return; }
+        if (System.currentTimeMillis() - l.getTime() > 30_000) {
+            Toast.makeText(this, "Posizione vecchia: aspetta che il GPS si aggiorni", Toast.LENGTH_LONG).show();
+            return;
+        }
+        pts.add(new double[]{l.getLatitude(), l.getLongitude()});
+        save();
+        if (l.getAccuracy() > 15) Toast.makeText(this, String.format(Locale.ITALY,
+            "Punto aggiunto, ma la precisione e' ±%.0f m: se puoi annulla e riprova fra poco", l.getAccuracy()), Toast.LENGTH_LONG).show();
+        update();
+    }
+
+    private void confirmClear() {
+        if (pts.isEmpty()) return;
+        new AlertDialog.Builder(this).setTitle("Cancellare la misura?")
+            .setMessage("Si perdono tutti i " + pts.size() + " punti.")
+            .setPositiveButton("CANCELLA", (d, w) -> { pts.clear(); save(); setAuto(false); update(); })
+            .setNegativeButton("Annulla", null).show();
+    }
+
+    private void setAuto(boolean on) {
+        auto = on;
+        lastFixTime = 0;
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putBoolean(KEY_AUTO, on).apply();
+        applyAutoFlags();
+        if (on) Toast.makeText(this, "Cammina lungo il confine: i punti si aggiungono da soli", Toast.LENGTH_LONG).show();
+        update();
+    }
+
+    private void applyAutoFlags() {
+        if (auto) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     private void update() {
-        if (tvCount != null) tvCount.setText("Vertici: " + pts.size());
-        double area = polygonArea(pts);
-        double perim = perimeter(pts);
-        if (tvArea != null) {
-            if (pts.size() < 3) tvArea.setText("Servono almeno 3 punti");
-            else if (area < 10000) tvArea.setText(String.format(java.util.Locale.US, "%.0f m²", area));
-            else tvArea.setText(String.format(java.util.Locale.US, "%.2f ettari  (%.0f m²)", area / 10000.0, area));
+        Location l = GpsTrackingService.getLastLocation();
+        boolean warn = AreaCalc.selfIntersects(AreaCalc.simplify(pts, 1.5));
+        double[] me = l == null ? null : new double[]{l.getLatitude(), l.getLongitude()};
+        if (shape != null) shape.set(pts, me, warn);
+        double a = AreaCalc.area(pts), per = AreaCalc.perimeter(pts, pts.size() >= 3);
+        set(tvArea, pts.size() < 3 ? "--" : AreaCalc.areaText(a));
+        set(tvPerim, pts.size() < 2 ? "--" : AreaCalc.lengthText(per));
+        set(tvCount, String.valueOf(pts.size()));
+        if (tvAcc != null) {
+            tvAcc.setText(l == null ? "GPS --" : String.format(Locale.ITALY, "GPS ±%.0f m", l.getAccuracy()));
+            tvAcc.setTextColor(l == null ? 0xFF8FB3D0 : l.getAccuracy() <= 8 ? 0xFF00FF88 : l.getAccuracy() <= 20 ? 0xFFFFD600 : 0xFFFF3D71);
         }
-        if (tvPerim != null) tvPerim.setText(perim < 1000
-            ? String.format(java.util.Locale.US, "Perimetro: %.0f m", perim)
-            : String.format(java.util.Locale.US, "Perimetro: %.2f km", perim / 1000.0));
+        if (tvState != null) {
+            tvState.setText(auto ? "REGISTRA" : "MANUALE");
+            tvState.setTextColor(auto ? 0xFFFF3D71 : 0xFF8FB3D0);
+        }
+        if (tvAutoTxt != null) tvAutoTxt.setText(auto ? "FERMA CAMMINA" : "CAMMINA SUL CONFINE");
+        String close = "";
+        if (me != null && pts.size() >= 2) {
+            double d = AreaCalc.distance(me, pts.get(0));
+            close = d < 8 ? "Sei tornato al punto di partenza: il giro e' chiuso. "
+                : "Mancano " + AreaCalc.lengthText(d) + " per tornare al primo punto. ";
+        }
+        set(tvClose, close.isEmpty() ? (auto ? "Cammina lungo il confine, il primo punto e' quello verde." : "Fermati su ogni angolo e premi AGGIUNGI.") : close.trim());
+        StringBuilder hint = new StringBuilder();
+        if (pts.size() >= 3) {
+            hint.append(String.format(Locale.ITALY, "%,.0f m²  ·  %.2f ettari  ·  circa %.1f campi da calcio",
+                a, a / 10_000, a / AreaCalc.FOOTBALL_M2));
+        }
+        if (warn) hint.append(hint.length() > 0 ? "\n" : "").append("Il perimetro si incrocia: l'area non e' affidabile. Annulla gli ultimi punti.");
+        set(tvHint, hint.length() == 0 ? "Servono almeno 3 punti per l'area." : hint.toString());
+        if (tvHint != null) tvHint.setTextColor(warn ? 0xFFFF6B35 : 0xFFCFE3F5);
     }
 
-    // area poligono su sfera (approssimazione planare locale, ok per piccoli campi)
-    private static double polygonArea(ArrayList<double[]> p) {
-        if (p.size() < 3) return 0;
-        double R = 6371000;
-        double lat0 = Math.toRadians(p.get(0)[0]);
-        double sum = 0;
-        double[] xs = new double[p.size()], ys = new double[p.size()];
-        for (int i = 0; i < p.size(); i++) {
-            xs[i] = Math.toRadians(p.get(i)[1]) * Math.cos(lat0) * R;
-            ys[i] = Math.toRadians(p.get(i)[0]) * R;
+    private void shareGpx() {
+        if (pts.size() < 3) { Toast.makeText(this, "Servono almeno 3 punti", Toast.LENGTH_SHORT).show(); return; }
+        try {
+            String stamp = new SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(new Date());
+            String name = "Area " + AreaCalc.areaText(AreaCalc.area(pts));
+            File f = new File(getCacheDir(), "area_" + stamp + ".gpx");
+            try (FileOutputStream out = new FileOutputStream(f)) {
+                out.write(AreaCalc.toGpx(pts, name, System.currentTimeMillis()).getBytes(StandardCharsets.UTF_8));
+            }
+            ShareUtil.shareFile(this, f, "application/gpx+xml", "Condividi il confine (GPX)");
+        } catch (Exception e) {
+            Toast.makeText(this, "Non riesco a creare il file GPX", Toast.LENGTH_LONG).show();
         }
-        for (int i = 0; i < p.size(); i++) {
-            int j = (i + 1) % p.size();
-            sum += xs[i] * ys[j] - xs[j] * ys[i];
-        }
-        return Math.abs(sum) / 2.0;
     }
-    private static double perimeter(ArrayList<double[]> p) {
-        if (p.size() < 2) return 0;
-        double tot = 0; float[] r = new float[1];
-        for (int i = 0; i < p.size(); i++) {
-            int j = (i + 1) % p.size();
-            if (j == 0 && p.size() < 3) break;
-            Location.distanceBetween(p.get(i)[0], p.get(i)[1], p.get(j)[0], p.get(j)[1], r);
-            tot += r[0];
-        }
-        return tot;
-    }
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
@@ -7750,92 +7928,279 @@ public class TrackRecorderActivity extends AppCompatActivity {
 
 MORSE_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.content.Context;
+import android.annotation.SuppressLint;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.text.Editable;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.TextWatcher;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.MorseCode;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
-/** Traduce testo in Morse e lo trasmette col flash. */
+/**
+ * Codice Morse (v5.6). TRASMETTE con flash, schermo, suono e vibrazione
+ * (anche insieme), mostra il segno che sta andando, ripete in continuo e si
+ * ferma quando vuoi. RICEVE a mano: tieni premuto il tasto finche' vedi la
+ * luce (o senti il suono) e l'app scrive le lettere, adattandosi alla velocita'.
+ * Prima non si poteva fermare, non c'era il suono e mancava la ricezione.
+ */
 public class MorseActivity extends AppCompatActivity {
-    private EditText input;
-    private TextView tvCode;
-    private android.hardware.camera2.CameraManager cam;
-    private String camId;
+    private static final int[] UNITS = {400, 250, 150};
     private final Handler h = new Handler(Looper.getMainLooper());
-    private boolean sending = false;
-
-    private static final java.util.Map<Character,String> M = new java.util.HashMap<>();
-    static {
-        String[][] t = {{"A",".-"},{"B","-..."},{"C","-.-."},{"D","-.."},{"E","."},{"F","..-."},
-        {"G","--."},{"H","...."},{"I",".."},{"J",".---"},{"K","-.-"},{"L",".-.."},{"M","--"},
-        {"N","-."},{"O","---"},{"P",".--."},{"Q","--.-"},{"R",".-."},{"S","..."},{"T","-"},
-        {"U","..-"},{"V","...-"},{"W",".--"},{"X","-..-"},{"Y","-.--"},{"Z","--.."},
-        {"0","-----"},{"1",".----"},{"2","..---"},{"3","...--"},{"4","....-"},{"5","....."},
-        {"6","-...."},{"7","--..."},{"8","---.."},{"9","----."}};
-        for (String[] e : t) M.put(e[0].charAt(0), e[1]);
-    }
+    private TorchControl torch;
+    private SignalPlayer player;
+    private ToneGenerator tone;
+    private Vibrator vib;
+    private EditText input;
+    private TextView tvCode, tvWpm, tvSendTxt, tvRx, tvRxCode, tvRxHint;
+    private View screen, key;
+    private TextView[] outChips, speedChips;
+    private final boolean[] outs = {true, false, true, false};   // flash, schermo, suono, vibrazione
+    private int speed = 1;
+    private MorseCode.Plan plan;
+    private boolean looping;
+    // ricezione
+    private final List<Long> rxPress = new ArrayList<>(), rxGap = new ArrayList<>();
+    private long downAt, upAt;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_morse);
+        torch = new TorchControl(this);
+        vib = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 85); } catch (Exception ignored) {}
+        player = new SignalPlayer(h, new SignalPlayer.Out() {
+            @Override public void set(boolean on, int el, long d) { output(on, el, d); }
+            @Override public void done() { finished(); }
+        });
         input = findViewById(R.id.et_morse);
         tvCode = findViewById(R.id.tv_morse_code);
-        View back = findViewById(R.id.btn_morse_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View tr = findViewById(R.id.btn_morse_translate);
-        if (tr != null) tr.setOnClickListener(v -> translate());
-        View send = findViewById(R.id.btn_morse_send);
-        if (send != null) send.setOnClickListener(v -> sendFlash());
-        cam = (android.hardware.camera2.CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            if (cam != null) for (String id : cam.getCameraIdList()) {
-                Boolean f = cam.getCameraCharacteristics(id)
-                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                if (Boolean.TRUE.equals(f)) { camId = id; break; }
-            }
-        } catch (Exception ignored) {}
+        tvWpm = findViewById(R.id.tv_morse_wpm);
+        tvSendTxt = findViewById(R.id.btn_morse_send_txt);
+        tvRx = findViewById(R.id.tv_morse_rx);
+        tvRxCode = findViewById(R.id.tv_morse_rx_code);
+        tvRxHint = findViewById(R.id.tv_morse_rx_hint);
+        screen = findViewById(R.id.morse_screen);
+        key = findViewById(R.id.btn_morse_key);
+        outChips = new TextView[]{findViewById(R.id.mo_flash), findViewById(R.id.mo_screen),
+            findViewById(R.id.mo_sound), findViewById(R.id.mo_vibe)};
+        speedChips = new TextView[]{findViewById(R.id.ms_slow), findViewById(R.id.ms_norm), findViewById(R.id.ms_fast)};
+        click(R.id.btn_morse_back, v -> finish());
+        click(R.id.btn_morse_send, v -> { if (player.isPlaying()) stopSending(); else send(false); });
+        click(R.id.btn_morse_loop, v -> send(true));
+        click(R.id.btn_morse_rx_clear, v -> clearRx());
+        click(R.id.btn_morse_rx_copy, v -> {
+            if (tvRx != null && tvRx.getText().length() > 0 && input != null) { input.setText(tvRx.getText()); }
+        });
+        if (screen != null) screen.setOnClickListener(v -> stopSending());
+        String[][] quick = {{"mq_sos", "SOS"}, {"mq_ok", "OK"}, {"mq_help", "AIUTO"}, {"mq_here", "SONO QUI"}};
+        int[] qid = {R.id.mq_sos, R.id.mq_ok, R.id.mq_help, R.id.mq_here};
+        for (int i = 0; i < qid.length; i++) {
+            final String t = quick[i][1];
+            click(qid[i], v -> { if (input != null) { input.setText(t); input.setSelection(t.length()); } });
+        }
+        for (int i = 0; i < outChips.length; i++) {
+            final int k = i;
+            if (outChips[i] != null) outChips[i].setOnClickListener(v -> {
+                if (k == 0 && !torch.available() && !outs[0]) {
+                    Toast.makeText(this, "Questo telefono non ha il flash", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                outs[k] = !outs[k];
+                render();
+            });
+        }
+        if (!torch.available()) { outs[0] = false; outs[1] = true; }
+        for (int i = 0; i < speedChips.length; i++) {
+            final int k = i;
+            if (speedChips[i] != null) speedChips[i].setOnClickListener(v -> { speed = k; render(); });
+        }
+        if (input != null) input.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { if (!player.isPlaying()) showCode(-1); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        setupKey();
+        TextView table = findViewById(R.id.tv_morse_table);
+        if (table != null) table.setText(MorseCode.tableText());
+        if (input != null && input.getText().length() == 0) input.setText("SOS");
+        render();
+        showCode(-1);
+        renderRx();
     }
 
-    private String toMorse() {
-        StringBuilder sb = new StringBuilder();
-        for (char c : input.getText().toString().toUpperCase().toCharArray()) {
-            if (c == ' ') sb.append(" / ");
-            else if (M.containsKey(c)) sb.append(M.get(c)).append(" ");
-        }
-        return sb.toString().trim();
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
     }
-    private void translate() { if (tvCode != null) tvCode.setText(toMorse()); }
 
-    private void sendFlash() {
-        if (sending || camId == null) return;
-        String code = toMorse();
-        sending = true;
-        final int unit = 250;
-        long delay = 0;
-        for (char c : code.toCharArray()) {
-            final long d = delay;
-            if (c == '.') { schedule(true, d); delay += unit; schedule(false, delay); delay += unit; }
-            else if (c == '-') { schedule(true, d); delay += unit * 3; schedule(false, delay); delay += unit; }
-            else delay += unit * 2;
-        }
-        h.postDelayed(() -> sending = false, delay + 200);
+    @Override protected void onPause() {
+        super.onPause();
+        // fuori dalla schermata non si trasmette (prima il flash continuava)
+        stopSending();
     }
-    private void schedule(boolean on, long at) {
-        h.postDelayed(() -> {
-            try { if (cam != null && camId != null) cam.setTorchMode(camId, on); }
-            catch (Exception ignored) {}
-        }, at);
-    }
+
     @Override protected void onDestroy() {
         super.onDestroy();
         h.removeCallbacksAndMessages(null);
-        try { if (cam != null && camId != null) cam.setTorchMode(camId, false); } catch (Exception ignored) {}
+        torch.set(false);
+        if (tone != null) tone.release();
+    }
+
+    // ------------------------------------------------------------ trasmissione
+    private void send(boolean loop) {
+        String text = input == null ? "" : input.getText().toString();
+        plan = MorseCode.plan(text, UNITS[speed]);
+        if (plan.durations.length == 0) { Toast.makeText(this, "Scrivi lettere o numeri", Toast.LENGTH_SHORT).show(); return; }
+        if (!outs[0] && !outs[1] && !outs[2] && !outs[3]) { Toast.makeText(this, "Scegli almeno un'uscita", Toast.LENGTH_SHORT).show(); return; }
+        looping = loop;
+        if (outs[1] && screen != null) {
+            screen.setVisibility(View.VISIBLE);
+            screen.setBackgroundColor(0xFF000000);
+            WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.screenBrightness = 1f;
+            getWindow().setAttributes(lp);
+        }
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        player.play(plan.durations, loop);
+        render();
+    }
+
+    private void output(boolean on, int el, long d) {
+        if (outs[0]) torch.set(on);
+        if (outs[1] && screen != null) screen.setBackgroundColor(on ? 0xFFFFFFFF : 0xFF000000);
+        if (on && outs[2] && tone != null) {
+            try { tone.startTone(ToneGenerator.TONE_SUP_DIAL, (int) d); } catch (Exception ignored) {}
+        }
+        if (on && outs[3] && vib != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= 26) vib.vibrate(VibrationEffect.createOneShot(d, VibrationEffect.DEFAULT_AMPLITUDE));
+            } catch (Exception ignored) {}
+        }
+        if (plan != null && el >= 0 && el < plan.codePos.length && on) showCode(plan.codePos[el]);
+    }
+
+    private void finished() {
+        restoreScreen();
+        showCode(-1);
+        render();
+    }
+
+    private void stopSending() {
+        player.stop();
+        try { if (tone != null) tone.stopTone(); } catch (Exception ignored) {}
+        torch.set(false);
+        restoreScreen();
+        showCode(-1);
+        render();
+    }
+
+    private void restoreScreen() {
+        if (screen != null) screen.setVisibility(View.GONE);
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        getWindow().setAttributes(lp);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    /** Codice con il segno in corso evidenziato e quelli gia' trasmessi attenuati. */
+    private void showCode(int pos) {
+        if (tvCode == null) return;
+        String code = pos >= 0 && plan != null ? plan.code : MorseCode.encode(input == null ? "" : input.getText().toString());
+        if (code.isEmpty()) { tvCode.setText("Scrivi un messaggio: qui compare il codice"); return; }
+        SpannableString sp = new SpannableString(code);
+        if (pos >= 0 && pos < code.length()) {
+            sp.setSpan(new ForegroundColorSpan(0xFF5A7A99), 0, pos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sp.setSpan(new ForegroundColorSpan(0xFF050A14), pos, pos + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sp.setSpan(new BackgroundColorSpan(0xFFFFD600), pos, pos + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        tvCode.setText(sp);
+    }
+
+    private void render() {
+        for (int i = 0; i < outChips.length; i++) chip(outChips[i], outs[i]);
+        for (int i = 0; i < speedChips.length; i++) chip(speedChips[i], i == speed);
+        if (tvWpm != null) tvWpm.setText(MorseCode.wpm(UNITS[speed]) + " PAROLE/MIN");
+        if (tvSendTxt != null) tvSendTxt.setText(player.isPlaying() ? (looping ? "STOP (IN RIPETIZIONE)" : "STOP") : "TRASMETTI");
+    }
+
+    private static void chip(TextView t, boolean on) {
+        if (t == null) return;
+        t.setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+        t.setTextColor(on ? 0xFF00FF88 : 0xFF8FB3D0);
+    }
+
+    // ------------------------------------------------------------ ricezione a mano
+    @SuppressLint("ClickableViewAccessibility")
+    private void setupKey() {
+        if (key == null) return;
+        key.setOnTouchListener((v, e) -> {
+            long now = SystemClock.uptimeMillis();
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downAt = now;
+                    v.setPressed(true);
+                    v.setBackgroundResource(R.drawable.bg_btn5_yellow);
+                    try { if (tone != null) tone.startTone(ToneGenerator.TONE_SUP_DIAL); } catch (Exception ignored) {}
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    v.setPressed(false);
+                    v.setBackgroundResource(R.drawable.bg_btn5_line_yellow);
+                    try { if (tone != null) tone.stopTone(); } catch (Exception ignored) {}
+                    if (downAt == 0) return true;
+                    long press = now - downAt;
+                    if (press < 25) return true;   // rimbalzo del dito
+                    rxGap.add(rxPress.isEmpty() || upAt == 0 ? 0 : downAt - upAt);
+                    rxPress.add(press);
+                    upAt = now;
+                    downAt = 0;
+                    renderRx();
+                    return true;
+                default:
+                    return true;
+            }
+        });
+    }
+
+    private void clearRx() {
+        rxPress.clear();
+        rxGap.clear();
+        upAt = 0;
+        renderRx();
+    }
+
+    private void renderRx() {
+        long[] p = new long[rxPress.size()], g = new long[rxGap.size()];
+        for (int i = 0; i < p.length; i++) { p[i] = rxPress.get(i); g[i] = rxGap.get(i); }
+        MorseCode.Received r = MorseCode.decodeKeyed(p, g);
+        if (tvRx != null) tvRx.setText(r.text.isEmpty() ? "--" : r.text);
+        if (tvRxCode != null) tvRxCode.setText(r.code.isEmpty() ? "Nessun segnale ancora" : r.code);
+        if (tvRxHint != null) tvRxHint.setText(p.length == 0
+            ? "Tieni premuto il tasto finche' vedi la luce o senti il suono, lascia quando si spegne."
+            : String.format(Locale.ITALY, "Punto stimato %d ms (circa %d parole al minuto). Una pausa lunga separa le lettere, "
+                + "una lunghissima le parole.", r.unitMs, MorseCode.wpm(Math.max(1, r.unitMs))));
     }
 }
 """
@@ -8039,70 +8404,230 @@ public class HydrationActivity extends AppCompatActivity {
 SURV_GUIDE_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 
-/** Guida rapida di sopravvivenza (riferimento offline). */
+/**
+ * Guida di sopravvivenza (v5.6): schede brevi (perso, segnali, riparo,
+ * acqua, temporale, notte fuori, animali, valanghe) con ricerca.
+ * Prima era un unico testo.
+ */
 public class SurvGuideActivity extends AppCompatActivity {
+    private LinearLayout box;
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_survguide);
+        box = findViewById(R.id.guide_topics);
         View back = findViewById(R.id.btn_guide_back);
         if (back != null) back.setOnClickListener(v -> finish());
+        EditText search = findViewById(R.id.et_guide_search);
+        if (search != null) search.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { fill(e.toString()); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        fill("");
+    }
+
+    private void fill(String q) {
+        if (box != null) GuideCards.fill(this, box, GuideData.SURVIVAL, q, true);
     }
 }
 """
 
 CHECKLIST_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
+import android.graphics.Paint;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.CheckBox;
+import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import com.offlinegps.map.R;
 import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Checklist attrezzatura outdoor, con stato salvato. */
+/**
+ * Checklist (v5.6): sei liste pronte (escursione, notte fuori, neve,
+ * ferrata, zaino d'emergenza, auto), voci tue da aggiungere, tieni premuto
+ * per togliere, barra di avanzamento. Prima c'era un'unica lista fissa.
+ */
 public class ChecklistActivity extends AppCompatActivity {
-    private static final String[] ITEMS = {
-        "Acqua (almeno 2L)", "Cibo / razioni", "Coltello multiuso",
-        "Accendino / fiammiferi", "Torcia + batterie", "Kit pronto soccorso",
-        "Powerbank carico", "Mappa offline scaricata", "Giacca antipioggia",
-        "Coperta termica", "Fischietto", "Corda / paracord", "Bussola",
-        "Crema solare", "Repellente insetti", "Sacchetti impermeabili"
+    static final String[] LISTS = {"Escursione", "Notte fuori", "Neve", "Ferrata", "Emergenza casa", "Auto"};
+    static final String[][] DEFAULTS = {
+        {"Acqua (almeno 1,5-2 litri)", "Cibo e snack energetici", "Giacca antipioggia e antivento", "Strato caldo (pile)",
+         "Cappello e occhiali da sole", "Crema solare", "Kit di primo soccorso", "Telefono carico e powerbank",
+         "Mappa della zona scaricata in questa app", "Frontale o torcia", "Fischietto", "Coperta termica",
+         "Coltellino", "Documenti e tessera sanitaria", "Scarpe da escursione", "Detto a qualcuno dove vado e quando torno"},
+        {"Tenda o telo", "Sacco a pelo della temperatura giusta", "Materassino isolante", "Fornello e gas",
+         "Due accendini", "Pentolino e posate", "Filtro o pastiglie per l'acqua", "Cena e colazione",
+         "Vestiti asciutti per la notte", "Frontale e batterie di ricambio", "Sacchetti per i rifiuti",
+         "Carta igienica e paletta", "Verificato dove e' permesso campeggiare o fare fuoco"},
+        {"Bollettino valanghe letto", "ARTVA, pala e sonda (e saperli usare)", "Ramponi o ciaspole", "Bastoncini con rotelle",
+         "Guanti di ricambio", "Berretto e scaldacollo", "Thermos con bevanda calda", "Occhiali da neve o maschera",
+         "Strato in piuma", "Crema per le labbra", "Coperta termica", "Ora di rientro prima del buio"},
+        {"Casco", "Imbrago", "Set da ferrata omologato", "Guanti da ferrata", "Previsioni meteo controllate (temporali)",
+         "Relazione del percorso", "Vie di fuga lungo il percorso", "Acqua e cibo", "Giacca e strato caldo",
+         "Ora di rientro decisa", "Telefono carico"},
+        {"Acqua in bottiglia per 3 giorni", "Cibo a lunga conservazione", "Farmaci abituali", "Copia dei documenti",
+         "Radio a batterie o a manovella", "Torcia e batterie", "Powerbank carico", "Contanti", "Coltellino multiuso",
+         "Fischietto", "Coperta", "Cambio di vestiti", "Numeri utili scritti su carta", "Chiavi di riserva",
+         "Mascherine e guanti"},
+        {"Giubbotto catarifrangente", "Triangolo", "Ruota di scorta o kit gonfiaggio", "Cavi per la batteria",
+         "Torcia", "Acqua e qualcosa da mangiare", "Coperta", "Caricatore per il telefono",
+         "Catene o gomme invernali (dal 15/11 al 15/4 dove c'e' l'obbligo)", "Kit di primo soccorso", "Documenti dell'auto"},
     };
+    private int list;
+    private final List<String> items = new ArrayList<>();
+    private final List<Boolean> done = new ArrayList<>();
+    private LinearLayout box;
+    private TextView tvProgress;
+    private ProgressBar bar;
+    private TextView[] chips;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_checklist);
-        View back = findViewById(R.id.btn_check_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        LinearLayout box = findViewById(R.id.checklist_box);
-        if (box == null) return;
-        android.content.SharedPreferences p = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
-        for (int i = 0; i < ITEMS.length; i++) {
-            final String key = "chk_" + i;
-            CheckBox cb = new CheckBox(this);
-            cb.setText(ITEMS[i]);
-            cb.setTextColor(0xFFE8F4FD);
-            cb.setTextSize(16);
-            cb.setPadding(0, 18, 0, 18);
-            cb.setChecked(p.getBoolean(key, false));
-            cb.setOnCheckedChangeListener((b, checked) ->
-                p.edit().putBoolean(key, checked).apply());
-            box.addView(cb);
+        box = findViewById(R.id.checklist_box);
+        tvProgress = findViewById(R.id.tv_check_progress);
+        bar = findViewById(R.id.check_bar);
+        chips = new TextView[]{findViewById(R.id.ck_l0), findViewById(R.id.ck_l1), findViewById(R.id.ck_l2),
+            findViewById(R.id.ck_l3), findViewById(R.id.ck_l4), findViewById(R.id.ck_l5)};
+        for (int i = 0; i < chips.length; i++) {
+            final int k = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> { list = k; prefs().edit().putInt("chk2_list", k).apply(); load(); });
         }
-        View rst = findViewById(R.id.btn_check_reset);
-        if (rst != null) rst.setOnClickListener(v -> {
-            android.content.SharedPreferences.Editor ed = p.edit();
-            for (int i = 0; i < ITEMS.length; i++) ed.putBoolean("chk_" + i, false);
-            ed.apply();
-            recreate();
-        });
+        click(R.id.btn_check_back, v -> finish());
+        click(R.id.btn_check_reset, v -> { for (int i = 0; i < done.size(); i++) done.set(i, false); store(); render(); });
+        click(R.id.btn_check_restore, v -> new AlertDialog.Builder(this).setTitle("Lista originale?")
+            .setMessage("Tornano le voci di partenza di \"" + LISTS[list] + "\"; quelle aggiunte da te si cancellano.")
+            .setPositiveButton("RIPRISTINA", (d, w) -> { prefs().edit().remove("chk2_" + list).apply(); load(); })
+            .setNegativeButton("Annulla", null).show());
+        click(R.id.btn_check_add, v -> addItem());
+        list = Math.max(0, Math.min(LISTS.length - 1, prefs().getInt("chk2_list", 0)));
+        load();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private SharedPreferences prefs() { return getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE); }
+
+    private void load() {
+        items.clear();
+        done.clear();
+        String raw = prefs().getString("chk2_" + list, null);
+        boolean ok = false;
+        if (raw != null) {
+            try {
+                JSONArray a = new JSONArray(raw);
+                for (int i = 0; i < a.length(); i++) {
+                    JSONObject o = a.getJSONObject(i);
+                    items.add(o.getString("t"));
+                    done.add(o.optBoolean("d", false));
+                }
+                ok = true;
+            } catch (Exception ignored) { items.clear(); done.clear(); }
+        }
+        if (!ok) for (String t : DEFAULTS[list]) { items.add(t); done.add(false); }
+        render();
+    }
+
+    private void store() {
+        JSONArray a = new JSONArray();
+        try {
+            for (int i = 0; i < items.size(); i++) a.put(new JSONObject().put("t", items.get(i)).put("d", done.get(i)));
+        } catch (Exception ignored) {}
+        prefs().edit().putString("chk2_" + list, a.toString()).apply();
+    }
+
+    private void addItem() {
+        EditText et = findViewById(R.id.et_check_new);
+        if (et == null) return;
+        String t = et.getText().toString().trim();
+        if (t.isEmpty()) { Toast.makeText(this, "Scrivi la voce da aggiungere", Toast.LENGTH_SHORT).show(); return; }
+        items.add(t);
+        done.add(false);
+        et.setText("");
+        store();
+        render();
+    }
+
+    private void render() {
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == list ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == list ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        int n = 0;
+        for (boolean d : done) if (d) n++;
+        if (tvProgress != null) {
+            tvProgress.setText(items.isEmpty() ? "Lista vuota" : n == items.size() ? "TUTTO PRONTO: " + n + " su " + n
+                : n + " su " + items.size() + " pronti");
+            tvProgress.setTextColor(!items.isEmpty() && n == items.size() ? 0xFF00FF88 : 0xFFE8F4FD);
+        }
+        if (bar != null) bar.setProgress(items.isEmpty() ? 0 : n * 1000 / items.size());
+        if (box == null) return;
+        box.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        for (int i = 0; i < items.size(); i++) {
+            final int k = i;
+            CheckBox cb = new CheckBox(this);
+            cb.setText(items.get(i));
+            cb.setTextSize(15.5f);
+            cb.setButtonTintList(ColorStateList.valueOf(0xFF00FF88));
+            cb.setPadding((int) (6 * dp), (int) (12 * dp), 0, (int) (12 * dp));
+            cb.setChecked(done.get(i));
+            style(cb, done.get(i));
+            cb.setOnCheckedChangeListener((b, checked) -> { done.set(k, checked); style(cb, checked); store(); renderHeaderOnly(); });
+            cb.setOnLongClickListener(v -> {
+                new AlertDialog.Builder(this).setTitle("Togliere questa voce?").setMessage(items.get(k))
+                    .setPositiveButton("TOGLI", (d, w) -> { items.remove(k); done.remove(k); store(); render(); })
+                    .setNegativeButton("Annulla", null).show();
+                return true;
+            });
+            box.addView(cb);
+            if (i < items.size() - 1) {
+                View sep = new View(this);
+                sep.setBackgroundColor(0x1400E5FF);
+                box.addView(sep, new LinearLayout.LayoutParams(-1, Math.max(1, (int) dp)));
+            }
+        }
+    }
+
+    private void renderHeaderOnly() {
+        int n = 0;
+        for (boolean d : done) if (d) n++;
+        if (tvProgress != null) {
+            tvProgress.setText(n == items.size() ? "TUTTO PRONTO: " + n + " su " + n : n + " su " + items.size() + " pronti");
+            tvProgress.setTextColor(n == items.size() ? 0xFF00FF88 : 0xFFE8F4FD);
+        }
+        if (bar != null) bar.setProgress(items.isEmpty() ? 0 : n * 1000 / items.size());
+    }
+
+    private static void style(CheckBox cb, boolean checked) {
+        cb.setTextColor(checked ? 0xFF5A7A99 : 0xFFE8F4FD);
+        cb.setPaintFlags(checked ? cb.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG : cb.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
     }
 }
 """
@@ -8146,13 +8671,6 @@ def _btn(vid, text, bg, fg="#050A14"):
         '    android:text="' + text + '" android:backgroundTint="' + bg + '" android:textColor="' + fg + '"\n'
         '    android:textStyle="bold" android:textSize="14sp" android:layout_marginBottom="10dp"/>')
 
-LAYOUT_AREA = _scroll(_tool_header("CALCOLO AREA", "btn_area_back", "#00E5FF")
-    + _big("tv_area", "Servono almeno 3 punti", "#00FF88")
-    + _big("tv_area_count", "Vertici: 0", "#E8F4FD")
-    + _big("tv_area_perim", "Perimetro: 0 m", "#FFD600")
-    + _btn("btn_area_add", "AGGIUNGI PUNTO (sono qui)", "#00FF88")
-    + _btn("btn_area_clear", "Cancella tutto", "#141E2E", "#FF6B35"))
-
 LAYOUT_UNITCONV = _scroll(_tool_header("CONVERTITORE", "btn_unit_back", "#00E5FF")
     + '<EditText android:id="@+id/et_unit_in" android:layout_width="match_parent"\n'
       '    android:layout_height="wrap_content" android:inputType="numberDecimal"\n'
@@ -8163,27 +8681,6 @@ LAYOUT_UNITCONV = _scroll(_tool_header("CONVERTITORE", "btn_unit_back", "#00E5FF
     + _btn("btn_u_len", "m > piedi", "#141E2E", "#00E5FF")
     + _btn("btn_u_temp", "C > F", "#141E2E", "#FFD600")
     + _btn("btn_u_speed", "km/h > mph", "#141E2E", "#FFD600"))
-
-LAYOUT_MORSE = _scroll(_tool_header("CODICE MORSE", "btn_morse_back", "#FFD600")
-    + '<EditText android:id="@+id/et_morse" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:hint="Scrivi un messaggio"\n'
-      '    android:textColor="#E8F4FD" android:textColorHint="#5A7A99" android:textSize="18sp"\n'
-      '    android:layout_marginBottom="16dp"/>\n'
-    + _big("tv_morse_code", "... --- ...", "#FFD600")
-    + _btn("btn_morse_translate", "TRADUCI", "#00E5FF")
-    + _btn("btn_morse_send", "TRASMETTI COL FLASH", "#FFD600"))
-
-LAYOUT_CHECKLIST = _scroll(_tool_header("CHECKLIST ZAINO", "btn_check_back", "#00FF88")
-    + '<LinearLayout android:id="@+id/checklist_box" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:orientation="vertical"\n'
-      '    android:layout_marginBottom="16dp"/>\n'
-    + _btn("btn_check_reset", "Azzera tutto", "#141E2E", "#FF6B35"))
-
-LAYOUT_SURVGUIDE = _scroll(_tool_header("GUIDA SOPRAVVIVENZA", "btn_guide_back", "#FF1744")
-    + '<TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
-      '    android:text="REGOLA DEL 3:\\n3 minuti senza aria\\n3 ore senza riparo (freddo)\\n3 giorni senza acqua\\n3 settimane senza cibo\\n\\nPRIORITA IN EMERGENZA:\\n1. Mantieni la calma, respira\\n2. Ripara dal freddo/caldo\\n3. Segnala la posizione (SOS, fuoco, specchio)\\n4. Trova acqua pulita\\n5. Resta vicino a un punto noto\\n\\nSEGNALE SOS:\\n3 segnali ripetuti (fischi, lampi, fuochi)\\nTriangolo = richiesta soccorso\\n\\nACQUA:\\nRaccogli pioggia/rugiada\\nBolli 1 min prima di bere\\nEvita acqua stagnante\\n\\nIPOTERMIA:\\nMuoviti, copri testa e collo\\nNon dormire se hai molto freddo\\nStrati asciutti vicino alla pelle"\n'
-      '    android:textColor="#E8F4FD" android:textSize="15sp" android:lineSpacingMultiplier="1.3"\n'
-      '    android:background="@drawable/bg_card_glass" android:padding="18dp"/>')
 
 GEONOTES_ACTIVITY = r"""package com.offlinegps.map.ui;
 
@@ -8203,7 +8700,12 @@ import com.offlinegps.map.gps.GpsTrackingService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-/** Note geolocalizzate: appunti legati a una posizione GPS, salvati localmente. */
+/**
+ * Note geolocalizzate: appunti legati a una posizione GPS, salvati localmente.
+ * v5.6: tiene acceso il GPS mentre la schermata e' aperta (prima la nota
+ * poteva prendere una posizione vecchia o nessuna), distanza e direzione di
+ * ogni nota, NAVIGA verso la nota e conferma prima di eliminare.
+ */
 public class GeoNotesActivity extends AppCompatActivity {
     private LinearLayout listBox;
     private EditText etNote;
@@ -8218,6 +8720,17 @@ public class GeoNotesActivity extends AppCompatActivity {
         View add = findViewById(R.id.btn_note_add);
         if (add != null) add.setOnClickListener(v -> addNote());
         render();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        GpsTrackingService.acquire(this, "GeoNotesActivity");
+        render();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        GpsTrackingService.release(this, "GeoNotesActivity");
     }
 
     private JSONArray load() {
@@ -8236,7 +8749,10 @@ public class GeoNotesActivity extends AppCompatActivity {
             String txt = etNote.getText().toString().trim();
             if (txt.isEmpty()) { Toast.makeText(this, "Scrivi una nota", Toast.LENGTH_SHORT).show(); return; }
             Location loc = GpsTrackingService.getLastLocation();
-            if (loc == null) { Toast.makeText(this, "GPS non pronto", Toast.LENGTH_SHORT).show(); return; }
+            if (loc == null || System.currentTimeMillis() - loc.getTime() > 120_000) {
+                Toast.makeText(this, "GPS non ancora pronto: aspetta qualche secondo all'aperto", Toast.LENGTH_LONG).show();
+                return;
+            }
             JSONArray arr = load();
             JSONObject o = new JSONObject();
             o.put("text", txt);
@@ -8279,8 +8795,16 @@ public class GeoNotesActivity extends AppCompatActivity {
                 card.addView(t);
 
                 TextView c = new TextView(this);
-                c.setText(String.format(java.util.Locale.US, "%.5f, %.5f",
-                    o.getDouble("lat"), o.getDouble("lon")));
+                Location me = GpsTrackingService.getLastLocation();
+                String where = String.format(java.util.Locale.US, "%.5f, %.5f", o.getDouble("lat"), o.getDouble("lon"));
+                if (me != null) {
+                    float[] r = new float[2];
+                    Location.distanceBetween(me.getLatitude(), me.getLongitude(), o.getDouble("lat"), o.getDouble("lon"), r);
+                    where += "  ·  " + com.offlinegps.map.util.GeoFormat.formatDistance(r[0])
+                        + " " + com.offlinegps.map.util.GeoFormat.cardinal((r[1] + 360) % 360);
+                }
+                where += "  ·  " + android.text.format.DateFormat.format("dd/MM/yyyy HH:mm", o.optLong("time"));
+                c.setText(where);
                 c.setTextColor(0xFF00E5FF); c.setTextSize(12);
                 c.setPadding(0, 8, 0, 0);
                 card.addView(c);
@@ -8302,10 +8826,22 @@ public class GeoNotesActivity extends AppCompatActivity {
                     } catch (Exception ignored) {}
                 });
                 row.addView(goBtn);
+                TextView navBtn = new TextView(this);
+                navBtn.setText("NAVIGA");
+                navBtn.setTextColor(0xFF00E5FF); navBtn.setTextSize(13);
+                navBtn.setPadding(0, 0, 40, 0);
+                navBtn.setOnClickListener(v -> {
+                    try { ToolKit.navigate(this, o.getDouble("lat"), o.getDouble("lon"), o.getString("text"),
+                        com.offlinegps.map.routing.RoutingEngine.PROFILE_FOOT); } catch (Exception ignored) {}
+                });
+                row.addView(navBtn);
                 TextView delBtn = new TextView(this);
                 delBtn.setText("ELIMINA");
                 delBtn.setTextColor(0xFFFF1744); delBtn.setTextSize(13);
-                delBtn.setOnClickListener(v -> deleteNote(idx));
+                delBtn.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
+                    .setTitle("Eliminare la nota?").setMessage(o.optString("text"))
+                    .setPositiveButton("ELIMINA", (d, w) -> deleteNote(idx))
+                    .setNegativeButton("Annulla", null).show());
                 row.addView(delBtn);
                 card.addView(row);
 
@@ -8485,49 +9021,226 @@ LAYOUT_GEONOTES = _scroll(_tool_header("NOTE SUL POSTO", "btn_notes_back", "#00E
 
 FLASHLIGHT_ACTIVITY = r"""package com.offlinegps.map.ui;
 
-import android.content.Context;
+import android.content.Intent;
+import android.hardware.camera2.CameraManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
+import android.widget.ImageView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.MorseCode;
+import java.util.Locale;
 
+/**
+ * Torcia (v5.6): luce fissa con intensita' regolabile (Android 13+),
+ * stroboscopio, SOS in Morse, segnale alpino di soccorso (6 lampi al minuto)
+ * e spegnimento automatico per non restare senza batteria.
+ * Prima era solo acceso/spento e non si accorgeva se un'altra app le
+ * "rubava" il flash.
+ */
 public class FlashlightActivity extends AppCompatActivity {
-    private android.hardware.camera2.CameraManager cam;
-    private String camId;
-    private boolean on = false;
-    private TextView tvState;
+    static final int LIGHT = 0, STROBE = 1, SOS = 2, ALPINE = 3;
+    private static final int[] OFF_MIN = {0, 5, 15, 30};
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private TorchControl torch;
+    private SignalPlayer player;
+    private int mode = LIGHT, offIdx = 0, strobeHz = 4;
+    private boolean active;
+    private long offAt;
+    private TextView tvState, tvLevel, tvStrobe, tvOff, tvPowerLabel;
+    private ImageView ivPower;
+    private View power;
+    private TextView[] modeChips, offChips;
+
+    private final Runnable autoOff = () -> {
+        if (active) { stopAll(); Toast.makeText(this, "Torcia spenta dal timer", Toast.LENGTH_SHORT).show(); }
+    };
+
+    private final CameraManager.TorchCallback torchCb = new CameraManager.TorchCallback() {
+        @Override public void onTorchModeChanged(@NonNull String cameraId, boolean enabled) {
+            // luce fissa spenta da fuori (tendina rapida, altra app): allineiamo lo stato
+            if (active && mode == LIGHT && !enabled && torch.isOurs(cameraId) && !player.isPlaying()) {
+                active = false;
+                h.removeCallbacks(autoOff);
+                render();
+            }
+        }
+
+        @Override public void onTorchModeUnavailable(@NonNull String cameraId) {
+            if (active && torch.isOurs(cameraId)) {
+                stopAll();
+                Toast.makeText(FlashlightActivity.this, "Il flash e' usato da un'altra app (fotocamera?)", Toast.LENGTH_LONG).show();
+            }
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_flashlight);
+        torch = new TorchControl(this);
+        player = new SignalPlayer(h, (on, el, d) -> torch.set(on));
         tvState = findViewById(R.id.tv_flash_state);
-        View back = findViewById(R.id.btn_flash_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View btn = findViewById(R.id.btn_flash_toggle);
-        if (btn != null) btn.setOnClickListener(v -> toggle());
-        cam = (android.hardware.camera2.CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            if (cam != null) for (String id : cam.getCameraIdList()) {
-                Boolean f = cam.getCameraCharacteristics(id)
-                    .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                if (Boolean.TRUE.equals(f)) { camId = id; break; }
-            }
-        } catch (Exception ignored) {}
+        tvLevel = findViewById(R.id.fl_level_txt);
+        tvStrobe = findViewById(R.id.fl_strobe_txt);
+        tvOff = findViewById(R.id.fl_off_txt);
+        tvPowerLabel = findViewById(R.id.fl_power_label);
+        ivPower = findViewById(R.id.fl_power_icon);
+        power = findViewById(R.id.btn_flash_toggle);
+        modeChips = new TextView[]{findViewById(R.id.fl_mode_on), findViewById(R.id.fl_mode_strobe),
+            findViewById(R.id.fl_mode_sos), findViewById(R.id.fl_mode_alpine)};
+        offChips = new TextView[]{findViewById(R.id.fl_off_0), findViewById(R.id.fl_off_5),
+            findViewById(R.id.fl_off_15), findViewById(R.id.fl_off_30)};
+        click(R.id.btn_flash_back, v -> finish());
+        click(R.id.btn_flash_toggle, v -> toggle());
+        click(R.id.btn_fl_screen, v -> startActivity(new Intent(this, SignalMirrorActivity.class)));
+        click(R.id.btn_fl_red, v -> startActivity(new Intent(this, NightVisionActivity.class)));
+        for (int i = 0; i < modeChips.length; i++) {
+            final int m = i;
+            if (modeChips[i] != null) modeChips[i].setOnClickListener(v -> setMode(m));
+        }
+        for (int i = 0; i < offChips.length; i++) {
+            final int k = i;
+            if (offChips[i] != null) offChips[i].setOnClickListener(v -> { offIdx = k; scheduleOff(); render(); });
+        }
+        if (getIntent().getIntExtra("mode", -1) >= 0) mode = Math.min(ALPINE, getIntent().getIntExtra("mode", LIGHT));
+
+        SeekBar lv = findViewById(R.id.fl_level);
+        if (lv != null) {
+            if (torch.dimmable()) {
+                lv.setMax(torch.maxLevel() - 1);
+                lv.setProgress(torch.level() - 1);
+                lv.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                    public void onProgressChanged(SeekBar b, int p, boolean u) { if (u) { torch.setLevel(p + 1); render(); } }
+                    public void onStartTrackingTouch(SeekBar b) {}
+                    public void onStopTrackingTouch(SeekBar b) {}
+                });
+            } else lv.setVisibility(View.GONE);   // niente cursore finto se l'intensita' non si regola
+        }
+        SeekBar sb = findViewById(R.id.fl_strobe);
+        if (sb != null) {
+            sb.setMax(9);
+            sb.setProgress(strobeHz - 1);
+            sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(SeekBar b, int p, boolean u) {
+                    strobeHz = p + 1;
+                    if (u && active && mode == STROBE) start();
+                    render();
+                }
+                public void onStartTrackingTouch(SeekBar b) {}
+                public void onStopTrackingTouch(SeekBar b) {}
+            });
+        }
+        torch.registerCallback(torchCb, h);
+        render();
+        if (getIntent().getBooleanExtra("start", false)) toggle();
     }
-    private void toggle() {
-        if (camId == null) { Toast.makeText(this, "Flash non disponibile", Toast.LENGTH_SHORT).show(); return; }
-        try {
-            on = !on;
-            cam.setTorchMode(camId, on);
-            if (tvState != null) tvState.setText(on ? "ACCESA" : "Spenta");
-        } catch (Exception e) { Toast.makeText(this, "Errore", Toast.LENGTH_SHORT).show(); }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
     }
+
     @Override protected void onDestroy() {
         super.onDestroy();
-        try { if (cam != null && camId != null) cam.setTorchMode(camId, false); } catch (Exception ignored) {}
+        torch.unregisterCallback(torchCb);
+        h.removeCallbacksAndMessages(null);
+        player.stop();
+        torch.set(false);
+    }
+
+    private void toggle() {
+        if (!torch.available()) {
+            Toast.makeText(this, "Questo telefono non ha il flash: usa LUCE BIANCA (lo schermo)", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (active) stopAll(); else start();
+    }
+
+    private void setMode(int m) {
+        mode = m;
+        if (active) start();
+        render();
+    }
+
+    /** Durate acceso/spento della modalita' (null = luce fissa). */
+    static long[] pattern(int mode, int strobeHz) {
+        switch (mode) {
+            case STROBE: {
+                long half = 500L / Math.max(1, strobeHz);
+                return new long[]{half, half};
+            }
+            case SOS: return MorseCode.plan("SOS", 200).durations;
+            case ALPINE: {
+                // 6 lampi da 1 secondo in un minuto, poi un minuto di silenzio
+                long[] p = new long[12];
+                for (int i = 0; i < 6; i++) { p[2 * i] = 1000; p[2 * i + 1] = i < 5 ? 9000 : 9000 + 60_000; }
+                return p;
+            }
+            default: return null;
+        }
+    }
+
+    private void start() {
+        player.stop();
+        long[] p = pattern(mode, strobeHz);
+        boolean ok;
+        if (p == null) ok = torch.set(true);
+        else { player.play(p, true); ok = true; }
+        if (!ok) {
+            Toast.makeText(this, "Il flash non risponde: forse e' usato da un'altra app", Toast.LENGTH_LONG).show();
+            active = false;
+        } else active = true;
+        scheduleOff();
+        render();
+    }
+
+    private void stopAll() {
+        player.stop();
+        torch.set(false);
+        active = false;
+        h.removeCallbacks(autoOff);
+        render();
+    }
+
+    private void scheduleOff() {
+        h.removeCallbacks(autoOff);
+        offAt = 0;
+        if (!active || OFF_MIN[offIdx] == 0) return;
+        offAt = System.currentTimeMillis() + OFF_MIN[offIdx] * 60_000L;
+        h.postDelayed(autoOff, OFF_MIN[offIdx] * 60_000L);
+    }
+
+    private void render() {
+        String[] names = {"LUCE", "STROBO", "SOS", "ALPINO"};
+        if (tvState != null) {
+            tvState.setText(active ? names[mode] + " ACCESA" : "SPENTA");
+            tvState.setTextColor(active ? 0xFFFFD600 : 0xFF8FB3D0);
+        }
+        if (tvPowerLabel != null) tvPowerLabel.setText(active ? "TOCCA PER SPEGNERE" : "TOCCA PER ACCENDERE");
+        if (ivPower != null) ivPower.setColorFilter(active ? 0xFFFFD600 : 0xFF5A7A99);
+        if (power != null) power.setBackgroundResource(active ? R.drawable.bg_disc_yellow : R.drawable.bg_disc_cyan);
+        for (int i = 0; i < modeChips.length; i++) chip(modeChips[i], i == mode);
+        for (int i = 0; i < offChips.length; i++) chip(offChips[i], i == offIdx);
+        if (tvLevel != null) tvLevel.setText(!torch.available() ? "Nessun flash su questo telefono"
+            : torch.dimmable() ? String.format(Locale.ITALY, "Intensita' %d di %d: piu' bassa dura di piu' e scalda meno", torch.level(), torch.maxLevel())
+            : "Intensita' fissa: questo telefono non permette di regolarla (serve Android 13 e un flash compatibile)");
+        if (tvStrobe != null) tvStrobe.setText(String.format(Locale.ITALY, "Stroboscopio: %d lampi al secondo. "
+            + "Attenzione: le luci lampeggianti possono disturbare chi soffre di epilessia fotosensibile.", strobeHz));
+        if (tvOff != null) tvOff.setText(offAt > 0 ? "Si spegne da sola alle " + ToolKit.hhmm(offAt)
+            : (OFF_MIN[offIdx] == 0 ? "Resta accesa finche' non la spegni (anche a schermo spento)" : "Il timer parte quando accendi"));
+    }
+
+    private static void chip(TextView t, boolean on) {
+        if (t == null) return;
+        t.setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+        t.setTextColor(on ? 0xFF00FF88 : 0xFF8FB3D0);
     }
 }
 """
@@ -8536,67 +9249,136 @@ CALC_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.os.Bundle;
 import android.view.View;
-import android.widget.Button;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.CalcEval;
 
+/**
+ * Calcolatrice (v5.6): anteprima del risultato mentre scrivi, cancella
+ * l'ultima cifra, cambio di segno, percentuale; un operatore premuto due
+ * volte sostituisce il precedente. Il calcolo e' in CalcEval (testato).
+ */
 public class CalcActivity extends AppCompatActivity {
-    private TextView display;
-    private StringBuilder expr = new StringBuilder();
+    private TextView display, preview;
+    private final StringBuilder expr = new StringBuilder();
+    private boolean justEvaluated;
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_calc);
         display = findViewById(R.id.calc_display);
-        View back = findViewById(R.id.btn_calc_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        int[] ids = {R.id.k0,R.id.k1,R.id.k2,R.id.k3,R.id.k4,R.id.k5,R.id.k6,R.id.k7,R.id.k8,R.id.k9,
-            R.id.kdot,R.id.kplus,R.id.kminus,R.id.kmul,R.id.kdiv};
-        for (int id : ids) {
-            Button b = findViewById(id);
-            if (b != null) b.setOnClickListener(v -> { expr.append(((Button)v).getText()); show(); });
+        preview = findViewById(R.id.calc_expr);
+        click(R.id.btn_calc_back, v -> finish());
+        int[] digits = {R.id.k0, R.id.k1, R.id.k2, R.id.k3, R.id.k4, R.id.k5, R.id.k6, R.id.k7, R.id.k8, R.id.k9};
+        for (int d = 0; d < digits.length; d++) {
+            final char ch = (char) ('0' + d);
+            click(digits[d], v -> digit(ch));
         }
-        View eq = findViewById(R.id.keq);
-        if (eq != null) eq.setOnClickListener(v -> calc());
-        View clr = findViewById(R.id.kclear);
-        if (clr != null) clr.setOnClickListener(v -> { expr.setLength(0); show(); });
+        click(R.id.kdot, v -> dot());
+        click(R.id.kplus, v -> op('+'));
+        click(R.id.kminus, v -> op('-'));
+        click(R.id.kmul, v -> op('×'));
+        click(R.id.kdiv, v -> op('÷'));
+        click(R.id.kpct, v -> { if (endsWithNumber()) { expr.append('%'); justEvaluated = false; show(); } });
+        click(R.id.ksign, v -> toggleSign());
+        click(R.id.kback, v -> { if (expr.length() > 0) expr.setLength(expr.length() - 1); justEvaluated = false; show(); });
+        click(R.id.kclear, v -> { expr.setLength(0); justEvaluated = false; show(); });
+        click(R.id.keq, v -> equals());
+        if (s != null) { expr.append(s.getString("expr", "")); }
+        show();
     }
-    private void show() { if (display != null) display.setText(expr.length()==0 ? "0" : expr.toString()); }
-    private void calc() {
+
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("expr", expr.toString());
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private static boolean isOp(char c) { return c == '+' || c == '-' || c == '×' || c == '÷'; }
+
+    private boolean endsWithNumber() {
+        if (expr.length() == 0) return false;
+        char c = expr.charAt(expr.length() - 1);
+        return Character.isDigit(c) || c == '%';
+    }
+
+    private void digit(char ch) {
+        if (justEvaluated) { expr.setLength(0); justEvaluated = false; }
+        if (expr.length() > 40) return;
+        expr.append(ch);
+        show();
+    }
+
+    private void dot() {
+        if (justEvaluated) { expr.setLength(0); justEvaluated = false; }
+        int k = expr.length() - 1;
+        while (k >= 0 && (Character.isDigit(expr.charAt(k)))) k--;
+        if (k >= 0 && expr.charAt(k) == '.') return;          // il numero ha gia' la virgola
+        if (k == expr.length() - 1) expr.append('0');            // ",5" -> "0,5"
+        expr.append('.');
+        show();
+    }
+
+    private void op(char o) {
+        justEvaluated = false;
+        if (expr.length() == 0) { if (o == '-') { expr.append('-'); show(); } return; }
+        char last = expr.charAt(expr.length() - 1);
+        if (isOp(last) || last == '.') {
+            // "5×" poi "-": meno davanti al prossimo numero; altrimenti sostituisce l'operatore
+            if (o == '-' && (last == '×' || last == '÷')) expr.append('-');
+            else if (expr.length() > 1 || !isOp(last)) expr.setCharAt(expr.length() - 1, o);
+        } else expr.append(o);
+        show();
+    }
+
+    private void toggleSign() {
+        justEvaluated = false;
+        int k = expr.length() - 1;
+        while (k >= 0 && (Character.isDigit(expr.charAt(k)) || expr.charAt(k) == '.' || expr.charAt(k) == '%')) k--;
+        int start = k + 1;
+        if (start >= expr.length()) return;
+        boolean unary = k >= 0 && expr.charAt(k) == '-' && (k == 0 || isOp(expr.charAt(k - 1)));
+        if (unary) expr.deleteCharAt(k);
+        else expr.insert(start, '-');
+        show();
+    }
+
+    private void equals() {
+        if (expr.length() == 0) return;
         try {
-            double r = eval(expr.toString());
+            String r = CalcEval.format(CalcEval.eval(expr.toString()));
+            if (preview != null) preview.setText(pretty(expr.toString()) + " =");
             expr.setLength(0);
-            expr.append(r == Math.floor(r) ? String.valueOf((long)r) : String.valueOf(r));
-            show();
-        } catch (Exception e) { if (display != null) display.setText("Errore"); expr.setLength(0); }
+            expr.append(r.replace(',', '.'));
+            justEvaluated = true;
+            if (display != null) display.setText(r);
+        } catch (ArithmeticException e) {
+            if (preview != null) preview.setText("Impossibile dividere per zero");
+        } catch (Exception e) {
+            if (preview != null) preview.setText("Espressione incompleta");
+        }
     }
-    // valutatore semplice +-*/ con precedenza
-    private double eval(String s) {
-        java.util.List<Double> nums = new java.util.ArrayList<>();
-        java.util.List<Character> ops = new java.util.ArrayList<>();
-        int i = 0; StringBuilder num = new StringBuilder();
-        while (i < s.length()) {
-            char c = s.charAt(i);
-            if (Character.isDigit(c) || c == '.') num.append(c);
-            else { nums.add(Double.parseDouble(num.toString())); num.setLength(0); ops.add(c); }
-            i++;
+
+    private static String pretty(String e) { return e.replace('.', ','); }
+
+    private void show() {
+        if (display != null) display.setText(expr.length() == 0 ? "0" : pretty(expr.toString()));
+        if (preview == null) return;
+        if (expr.length() == 0) { preview.setText(""); return; }
+        try {
+            double v = CalcEval.eval(expr.toString());
+            preview.setText("= " + CalcEval.format(v));
+        } catch (ArithmeticException e) {
+            preview.setText(expr.indexOf("÷0") >= 0 ? "Impossibile dividere per zero" : "");
+        } catch (Exception e) {
+            preview.setText("");
         }
-        nums.add(Double.parseDouble(num.toString()));
-        // prima * e /
-        for (int k = 0; k < ops.size(); ) {
-            char op = ops.get(k);
-            if (op == '*' || op == '/') {
-                double r = op == '*' ? nums.get(k)*nums.get(k+1) : nums.get(k)/nums.get(k+1);
-                nums.set(k, r); nums.remove(k+1); ops.remove(k);
-            } else k++;
-        }
-        double res = nums.get(0);
-        for (int k = 0; k < ops.size(); k++) {
-            res = ops.get(k) == '+' ? res + nums.get(k+1) : res - nums.get(k+1);
-        }
-        return res;
     }
 }
 """
@@ -8811,74 +9593,10 @@ public class QrPositionActivity extends AppCompatActivity {
 }
 """
 
-LAYOUT_FLASHLIGHT = """\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="20dp" android:background="#050A14"
-    android:gravity="center">
-    <Button android:id="@+id/btn_flash_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_gravity="start"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="TORCIA" android:textColor="#FFD600" android:textSize="24sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-    <TextView android:id="@+id/tv_flash_state"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="Spenta" android:textColor="#5A7A99" android:textSize="18sp"
-        android:layout_marginBottom="40dp"/>
-    <Button android:id="@+id/btn_flash_toggle"
-        android:layout_width="200dp" android:layout_height="200dp"
-        android:text="ON / OFF" android:backgroundTint="#FFD600" android:textColor="#050A14"
-        android:textStyle="bold" android:textSize="22sp"/>
-</LinearLayout>"""
-
 def _calc_key(vid, label, bg, fg):
     return ('<Button android:id="@+id/' + vid + '" android:text="' + label + '"'
         + ' android:layout_columnWeight="1" android:layout_width="0dp" android:layout_height="64dp"'
         + ' android:backgroundTint="' + bg + '" android:textColor="' + fg + '"/>\n')
-
-LAYOUT_CALC = ("""\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="16dp" android:background="#050A14">
-    <Button android:id="@+id/btn_calc_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_marginBottom="12dp"/>
-    <TextView android:id="@+id/calc_display"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:text="0" android:textColor="#00FF88" android:textSize="40sp"
-        android:gravity="end" android:fontFamily="monospace" android:background="#0D1421"
-        android:padding="20dp" android:layout_marginBottom="12dp"/>
-    <GridLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:columnCount="4" android:rowCount="5">
-"""
-    + _calc_key("kclear", "C", "#FF1744", "#FFFFFF")
-    + _calc_key("kdiv", "/", "#141E2E", "#00E5FF")
-    + _calc_key("kmul", "*", "#141E2E", "#00E5FF")
-    + _calc_key("kminus", "-", "#141E2E", "#00E5FF")
-    + _calc_key("k7", "7", "#0D1421", "#E8F4FD")
-    + _calc_key("k8", "8", "#0D1421", "#E8F4FD")
-    + _calc_key("k9", "9", "#0D1421", "#E8F4FD")
-    + _calc_key("kplus", "+", "#141E2E", "#00E5FF")
-    + _calc_key("k4", "4", "#0D1421", "#E8F4FD")
-    + _calc_key("k5", "5", "#0D1421", "#E8F4FD")
-    + _calc_key("k6", "6", "#0D1421", "#E8F4FD")
-    + '<Button android:id="@+id/keq" android:text="=" android:layout_columnWeight="1"'
-      ' android:layout_rowSpan="3" android:layout_width="0dp" android:layout_height="match_parent"'
-      ' android:backgroundTint="#00FF88" android:textColor="#050A14" android:textStyle="bold"/>\n'
-    + _calc_key("k1", "1", "#0D1421", "#E8F4FD")
-    + _calc_key("k2", "2", "#0D1421", "#E8F4FD")
-    + _calc_key("k3", "3", "#0D1421", "#E8F4FD")
-    + '<Button android:id="@+id/k0" android:text="0" android:layout_columnWeight="2"'
-      ' android:layout_columnSpan="2" android:layout_width="0dp" android:layout_height="64dp"'
-      ' android:backgroundTint="#0D1421" android:textColor="#E8F4FD"/>\n'
-    + _calc_key("kdot", ".", "#0D1421", "#E8F4FD")
-    + """    </GridLayout>
-</LinearLayout>""")
 
 LAYOUT_NOTEPAD = """\
 <?xml version="1.0" encoding="utf-8"?>
@@ -9605,6 +10323,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 import com.offlinegps.map.gps.GpsTrackingService;
 import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.MedicalCard;
 import com.offlinegps.map.util.ShareUtil;
 import java.util.Locale;
 
@@ -9616,7 +10335,7 @@ import java.util.Locale;
  */
 public class EmergencyActivity extends AppCompatActivity {
     private final Handler h = new Handler(Looper.getMainLooper());
-    private TextView tvLat, tvLon, tvDms, tvUtm, tvPlus, tvAlt, tvAcc, tvTime, tvRead;
+    private TextView tvLat, tvLon, tvDms, tvUtm, tvPlus, tvAlt, tvAcc, tvTime, tvRead, tvMed;
     private boolean visible;
     private String shareText = "";
 
@@ -9648,6 +10367,9 @@ public class EmergencyActivity extends AppCompatActivity {
         tvAcc = findViewById(R.id.em_acc);
         tvTime = findViewById(R.id.em_time);
         tvRead = findViewById(R.id.em_read);
+        tvMed = findViewById(R.id.em_med);
+        // v5.6: scheda medica per chi ti soccorre
+        click(R.id.btn_em_medical, v -> startActivity(new Intent(this, MedicalActivity.class)));
         click(R.id.btn_em_back, v -> finish());
         click(R.id.btn_em_call, v -> call112());
         click(R.id.btn_em_sms, v -> smsContact());
@@ -9662,8 +10384,29 @@ public class EmergencyActivity extends AppCompatActivity {
         if (v != null) v.setOnClickListener(l);
     }
 
-    @Override protected void onResume() { super.onResume(); visible = true; h.removeCallbacks(tick); h.post(tick); }
-    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        GpsTrackingService.acquire(this, "EmergencyActivity");
+        showMedical();
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+        GpsTrackingService.release(this, "EmergencyActivity");
+    }
+
+    private void showMedical() {
+        if (tvMed == null) return;
+        MedicalCard m = MedicalCard.load(this);
+        String line = m.shortLine();
+        tvMed.setText(m.isEmpty() ? "Scheda medica vuota: compila gruppo sanguigno, allergie e chi avvisare."
+            : (line.isEmpty() ? "Scheda medica compilata: mostrala a chi ti soccorre." : line));
+        tvMed.setTextColor(m.isEmpty() ? 0xFF8FB3D0 : 0xFFFFE0E6);
+    }
 
     private void refresh() {
         set(tvTime, android.text.format.DateFormat.format("HH:mm:ss", System.currentTimeMillis()).toString());
@@ -9721,8 +10464,10 @@ public class EmergencyActivity extends AppCompatActivity {
 
     private void smsContact() {
         if (shareText.isEmpty()) { Toast.makeText(this, "GPS non ancora pronto", Toast.LENGTH_SHORT).show(); return; }
+        // v5.6: se nella scheda medica c'e' un contatto, l'SMS e' gia' indirizzato a lui
+        String to = MedicalCard.load(this).c1Phone.replace(" ", "");
         try {
-            Intent i = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:"));
+            Intent i = new Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + Uri.encode(to)));
             i.putExtra("sms_body", shareText);
             startActivity(i);
         } catch (Exception e) {
@@ -10195,68 +10940,259 @@ LAYOUT_BATTERY = """\
 # ============================================================
 MOON_PHASE_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.content.Intent;
+import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.MoonPhases;
+import com.offlinegps.map.util.SkyPaths;
+import com.offlinegps.map.util.SunCalc;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
-import java.util.TimeZone;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
-/** Fase lunare offline: illuminazione, eta' della luna, prossime fasi. */
+/**
+ * Luna (v5.6): com'e' adesso, quando sorge e tramonta, quanta luce ci sara'
+ * stanotte e nelle prossime notti (per camminare, campeggiare o guardare le
+ * stelle) e la data esatta delle prossime fasi (Meeus, errore sotto il minuto).
+ * Prima: mese lunare medio, ore di errore, niente sorgere/tramonto.
+ */
 public class MoonPhaseActivity extends AppCompatActivity {
-    private static final double SYNODIC = 29.530588853;
+    private static final long DAY = 86_400_000L, H18 = 18 * 3_600_000L;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private MoonView disc;
+    private boolean visible;
+    private long lastLists;
+    private double lastLat = Double.NaN;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            refresh();
+            h.postDelayed(this, 60_000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_moon);
-        View back = findViewById(R.id.btn_moon_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        render();
+        disc = findViewById(R.id.moon_disc);
+        click(R.id.btn_moon_back, v -> finish());
+        click(R.id.btn_moon_ar, v -> startActivity(new Intent(this, PeakArActivity.class)
+            .putExtra(PeakArActivity.EXTRA_MODE, PeakArActivity.MODE_SKY)));
+        click(R.id.btn_moon_sun, v -> startActivity(new Intent(this, DaylightToolActivity.class)));
     }
 
-    private void render() {
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        lastLists = 0;
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        h.removeCallbacks(tick);
+    }
+
+    /** Nome della fase: quella esatta se siamo entro 18 ore, altrimenti falce o gibbosa. */
+    static String phaseName(long now, double fraction, boolean waxing) {
+        for (long[] p : MoonPhases.next(now - H18, 2)) {
+            if (Math.abs(p[0] - now) <= H18) return MoonPhases.NAMES[(int) p[1]];
+        }
+        if (fraction < 0.5) return waxing ? "Falce crescente" : "Falce calante";
+        return waxing ? "Gibbosa crescente" : "Gibbosa calante";
+    }
+
+    private void refresh() {
         long now = System.currentTimeMillis();
-        double age = moonAge(now);
-        double illum = (1 - Math.cos(2 * Math.PI * age / SYNODIC)) / 2 * 100;
-        TextView tvPhase = findViewById(R.id.tv_moon_phase);
-        TextView tvIllum = findViewById(R.id.tv_moon_illum);
-        TextView tvNext  = findViewById(R.id.tv_moon_next);
-        TextView tvHint  = findViewById(R.id.tv_moon_hint);
-        if (tvPhase != null) tvPhase.setText(phaseName(age));
-        if (tvIllum != null) tvIllum.setText(String.format(java.util.Locale.US,
-            "Illuminazione: %.0f%%   Eta': %.1f giorni", illum, age));
-        double toFull = (SYNODIC / 2 - age + SYNODIC) % SYNODIC;
-        double toNew  = (SYNODIC - age) % SYNODIC;
-        if (tvNext != null) tvNext.setText(String.format(java.util.Locale.US,
-            "Luna piena tra %.0f giorni\nLuna nuova tra %.0f giorni", toFull, toNew));
-        if (tvHint != null) tvHint.setText(illum >= 60
-            ? "Molta luce lunare stanotte: buona visibilita' per camminare al buio."
-            : "Poca luce lunare stanotte: porta una torcia carica.");
+        double[] ill = SunCalc.moonIllumination(now);
+        boolean waxing = ill[1] < 0.5;
+        double[] w = ToolKit.where(this);
+        disc.setPhase(ill[0], waxing, w != null && w[0] < 0);
+        set(R.id.tv_moon_phase, phaseName(now, ill[0], waxing).toUpperCase(Locale.ITALY));
+        set(R.id.tv_moon_illum, String.format(Locale.ITALY, "Illuminata al %.0f%%  ·  %.1f giorni  ·  %s",
+            ill[0] * 100, MoonPhases.ageDays(now), waxing ? "crescente" : "calante"));
+        if (w == null) {
+            set(R.id.tv_moon_rise, "--");
+            set(R.id.tv_moon_set, "--");
+            set(R.id.tv_moon_alt, "--");
+            set(R.id.tv_moon_tonight, "Serve una posizione anche approssimativa per sorgere, tramonto e luce della notte: "
+                + "esci all'aperto qualche secondo o apri la mappa una volta.");
+        } else {
+            double lat = w[0], lon = w[1];
+            riseSet(now, lat, lon);
+            double[] pos = SunCalc.moonPosition(now, lat, lon);
+            set(R.id.tv_moon_alt, pos[0] < 0 ? "sotto" : String.format(Locale.ITALY, "%.0f° %s", pos[0], GeoFormat.cardinal(pos[1])));
+            tonight(now, lat, lon);
+        }
+        // le liste cambiano lentamente: ogni mezz'ora o se ci si sposta molto
+        boolean moved = w != null && (Double.isNaN(lastLat) || Math.abs(w[0] - lastLat) > 0.5);
+        if (now - lastLists > 30 * 60_000L || moved) {
+            phases(now);
+            if (w != null) { nights(now, w[0], w[1]); lastLat = w[0]; }
+            lastLists = now;
+        }
     }
 
-    // giorni trascorsi dall'ultima luna nuova (riferimento: 6 gen 2000 18:14 UTC)
-    private static double moonAge(long millis) {
-        Calendar ref = Calendar.getInstance(TimeZone.getTimeZone("UTC"));
-        ref.clear();
-        ref.set(2000, Calendar.JANUARY, 6, 18, 14, 0);
-        double days = (millis - ref.getTimeInMillis()) / 86400000.0;
-        double age = days % SYNODIC;
-        if (age < 0) age += SYNODIC;
-        return age;
+    private static long midnight(long t) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        c.set(Calendar.HOUR_OF_DAY, 0); c.set(Calendar.MINUTE, 0); c.set(Calendar.SECOND, 0); c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
     }
 
-    private static String phaseName(double a) {
-        if (a < 1.85)  return "LUNA NUOVA";
-        if (a < 5.54)  return "FALCE CRESCENTE";
-        if (a < 9.23)  return "PRIMO QUARTO";
-        if (a < 12.92) return "GIBBOSA CRESCENTE";
-        if (a < 16.61) return "LUNA PIENA";
-        if (a < 20.30) return "GIBBOSA CALANTE";
-        if (a < 23.99) return "ULTIMO QUARTO";
-        if (a < 27.68) return "FALCE CALANTE";
-        return "LUNA NUOVA";
+    private void riseSet(long now, double lat, double lon) {
+        long d0 = midnight(now);
+        long rise = -1, set = -1;
+        for (long[] x : SkyPaths.horizonCrossings(true, d0, d0 + DAY, lat, lon)) {
+            if (x[1] > 0 && rise < 0) rise = x[0];
+            if (x[1] < 0 && set < 0) set = x[0];
+        }
+        set(R.id.tv_moon_rise, rise < 0 ? "non oggi" : ToolKit.hhmm(rise));
+        set(R.id.tv_moon_set, set < 0 ? "non oggi" : ToolKit.hhmm(set));
+    }
+
+    /** {tramonto, alba} della notte in corso o della prossima; null al polo. */
+    private static long[] night(long ref, double lat, double lon) {
+        long noon = midnight(ref) + 12 * 3_600_000L;
+        SunCalc.Times today = SunCalc.times(noon, lat, lon);
+        if (today.sunrise[0] == Long.MIN_VALUE || today.sunrise[1] == Long.MIN_VALUE) return null;
+        if (ref < today.sunrise[0]) {   // dopo mezzanotte: la notte e' iniziata ieri sera
+            SunCalc.Times y = SunCalc.times(noon - DAY, lat, lon);
+            if (y.sunrise[1] == Long.MIN_VALUE) return null;
+            return new long[]{y.sunrise[1], today.sunrise[0]};
+        }
+        SunCalc.Times t = SunCalc.times(noon + DAY, lat, lon);
+        if (t.sunrise[0] == Long.MIN_VALUE) return null;
+        return new long[]{today.sunrise[1], t.sunrise[0]};
+    }
+
+    /** Giudizio sulla luce della notte: chiara, media, buia. */
+    static String verdict(long minutesUp, long nightMinutes, double fraction) {
+        if (minutesUp == 0 || fraction < 0.08) return "BUIA";
+        double light = fraction * Math.min(1, (double) minutesUp / Math.max(1, nightMinutes));
+        if (light >= 0.45 && fraction >= 0.6) return "CHIARA";
+        return light >= 0.15 ? "MEDIA" : "BUIA";
+    }
+
+    private void tonight(long now, double lat, double lon) {
+        long[] n = night(now, lat, lon);
+        if (n == null) { set(R.id.tv_moon_tonight, "A questa latitudine oggi il Sole non tramonta o non sorge."); return; }
+        long[] m = MoonPhases.nightMoon(n[0], n[1], lat, lon);
+        double frac = SunCalc.moonIllumination((n[0] + n[1]) / 2)[0];
+        long nightMin = (n[1] - n[0]) / 60_000;
+        String v = verdict(m[0], nightMin, frac);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Buio dalle ").append(ToolKit.hhmm(n[0])).append(" alle ").append(ToolKit.hhmm(n[1])).append(".\n");
+        if (m[0] == 0) sb.append("La Luna resta sotto l'orizzonte tutta la notte.");
+        else sb.append(String.format(Locale.ITALY, "Luna in cielo dalle %s alle %s (%s), illuminata al %.0f%%.",
+            ToolKit.hhmm(m[1]), ToolKit.hhmm(Math.min(m[2] + 5 * 60_000L, n[1])), ToolKit.span(m[0] * 60_000L), frac * 100));
+        sb.append('\n');
+        switch (v) {
+            case "CHIARA": sb.append("Notte chiara: sui sentieri aperti e sulla neve si vede anche senza torcia, nel bosco no. Stelle poco visibili."); break;
+            case "MEDIA": sb.append("Luce lunare solo per parte della notte o debole: tieni la torcia a portata di mano."); break;
+            default: sb.append("Notte buia: serve la torcia, ma e' perfetta per le stelle e la Via Lattea.");
+        }
+        set(R.id.tv_moon_tonight, sb.toString());
+        TextView chip = findViewById(R.id.tv_moon_verdict);
+        if (chip != null) {
+            chip.setText("STANOTTE " + v);
+            chip.setTextColor(v.equals("CHIARA") ? 0xFFFFD600 : v.equals("MEDIA") ? 0xFF00E5FF : 0xFFB388FF);
+        }
+    }
+
+    private void phases(long now) {
+        LinearLayout box = findViewById(R.id.moon_phases);
+        if (box == null) return;
+        box.removeAllViews();
+        SimpleDateFormat f = new SimpleDateFormat("EEE d MMM  ·  HH:mm", Locale.ITALY);
+        for (long[] p : MoonPhases.next(now, 4)) {
+            long days = Math.round((p[0] - now) / (double) DAY);
+            box.addView(row(MoonPhases.NAMES[(int) p[1]], f.format(new Date(p[0])),
+                days == 0 ? "oggi" : days == 1 ? "domani" : "tra " + days + " giorni",
+                p[1] == MoonPhases.FULL ? 0xFFFFD600 : p[1] == MoonPhases.NEW ? 0xFFB388FF : 0xFF00E5FF));
+        }
+    }
+
+    private void nights(long now, double lat, double lon) {
+        LinearLayout box = findViewById(R.id.moon_nights);
+        if (box == null) return;
+        box.removeAllViews();
+        SimpleDateFormat f = new SimpleDateFormat("EEE d MMM", Locale.ITALY);
+        long ref = now;
+        for (int i = 0; i < 7; i++) {
+            long[] n = night(ref, lat, lon);
+            if (n == null) break;
+            long[] m = MoonPhases.nightMoon(n[0], n[1], lat, lon);
+            double frac = SunCalc.moonIllumination((n[0] + n[1]) / 2)[0];
+            String v = verdict(m[0], (n[1] - n[0]) / 60_000, frac);
+            String when = m[0] == 0 ? "Luna mai in cielo"
+                : String.format(Locale.ITALY, "Luna %s–%s  ·  %.0f%%", ToolKit.hhmm(m[1]), ToolKit.hhmm(Math.min(m[2] + 5 * 60_000L, n[1])), frac * 100);
+            box.addView(row((i == 0 ? "Stanotte" : f.format(new Date(n[0]))), when, v,
+                v.equals("CHIARA") ? 0xFFFFD600 : v.equals("MEDIA") ? 0xFF00E5FF : 0xFFB388FF));
+            ref = n[1] + 2 * 3_600_000L;   // la notte dopo
+        }
+    }
+
+    private View row(String title, String sub, String right, int color) {
+        float dp = getResources().getDisplayMetrics().density;
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(0, (int) (8 * dp), 0, (int) (8 * dp));
+        View dot = new View(this);
+        android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+        gd.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        gd.setColor(color);
+        dot.setBackground(gd);
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams((int) (10 * dp), (int) (10 * dp));
+        dl.setMarginEnd((int) (12 * dp));
+        r.addView(dot, dl);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(0xFFE8F4FD);
+        t.setTextSize(14.5f);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView s = new TextView(this);
+        s.setText(sub);
+        s.setTextColor(0xFF8FB3D0);
+        s.setTextSize(12.5f);
+        col.addView(t);
+        col.addView(s);
+        r.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView rt = new TextView(this);
+        rt.setText(right);
+        rt.setTextColor(color);
+        rt.setTextSize(12.5f);
+        rt.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        r.addView(rt);
+        return r;
+    }
+
+    private void set(int id, String s) {
+        TextView t = findViewById(id);
+        if (t != null) t.setText(s);
     }
 }
 """
@@ -10483,19 +11419,187 @@ public class HeatIndexActivity extends AppCompatActivity {
 
 FIRST_AID_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import com.offlinegps.map.util.CprMetronome;
+import java.util.Locale;
 
-/** Guida rapida di primo soccorso (riferimento offline, non sostituisce il 112). */
+/**
+ * Primo soccorso (v5.6): schede brevi con i gesti base (ricerca, tocca per
+ * aprire), metronomo per la rianimazione con il conteggio 30:2 o solo
+ * compressioni, scheda medica e defibrillatori vicini. Non chiama nessuno da
+ * sola: il pulsante rosso apre il telefono con il 112 gia' composto.
+ * Prima era un'unica pagina di testo.
+ */
 public class FirstAidActivity extends AppCompatActivity {
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private ToneGenerator tone;
+    private boolean running, withBreaths = true;
+    private long start;
+    private int lastComp = -1;
+    private boolean lastBreaths;
+    private TextView tvCount, tvState, tvTime, tvBtn, chip30, chipOnly;
+    private LinearLayout topics;
+
+    private final Runnable beat = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            long el = SystemClock.uptimeMillis() - start;
+            CprMetronome.State s = CprMetronome.at(el, withBreaths);
+            if (s.breaths && !lastBreaths) {
+                beep(ToneGenerator.TONE_PROP_ACK, 400);
+                show(s, el);
+            } else if (!s.breaths && s.compression != lastComp) {
+                beep(s.compression == 1 ? ToneGenerator.TONE_PROP_BEEP2 : ToneGenerator.TONE_PROP_BEEP, 60);
+                show(s, el);
+            }
+            lastComp = s.compression;
+            lastBreaths = s.breaths;
+            h.postDelayed(this, Math.max(10, s.msToNext));
+        }
+    };
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_firstaid);
-        View back = findViewById(R.id.btn_aid_back);
-        if (back != null) back.setOnClickListener(v -> finish());
+        try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 100); } catch (Exception ignored) {}
+        tvCount = findViewById(R.id.tv_cpr_count);
+        tvState = findViewById(R.id.tv_cpr_state);
+        tvTime = findViewById(R.id.tv_cpr_time);
+        tvBtn = findViewById(R.id.btn_cpr_txt);
+        chip30 = findViewById(R.id.cpr_mode_30);
+        chipOnly = findViewById(R.id.cpr_mode_only);
+        topics = findViewById(R.id.aid_topics);
+        click(R.id.btn_aid_back, v -> finish());
+        click(R.id.btn_aid_call, v -> call112());
+        click(R.id.btn_cpr, v -> { if (running) stopCpr(); else startCpr(); });
+        click(R.id.cpr_mode_30, v -> { withBreaths = true; if (running) startCpr(); renderChips(); });
+        click(R.id.cpr_mode_only, v -> { withBreaths = false; if (running) startCpr(); renderChips(); });
+        click(R.id.btn_aid_medical, v -> startActivity(new Intent(this, MedicalActivity.class)));
+        click(R.id.btn_aid_aed, v -> startActivity(new Intent(this, PoiActivity.class).putExtra(PoiActivity.EXTRA_CAT, PoiActivity.CAT_HELP)));
+        EditText search = findViewById(R.id.et_aid_search);
+        if (search != null) search.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { fillTopics(e.toString()); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        fillTopics("");
+        renderChips();
+        idle();
+    }
+
+    private void fillTopics(String q) {
+        if (topics != null) GuideCards.fill(this, topics, GuideData.FIRST_AID, q, false);
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onDestroy() {
+        super.onDestroy();
+        running = false;
+        h.removeCallbacksAndMessages(null);
+        if (tone != null) tone.release();
+    }
+
+    private void call112() {
+        new AlertDialog.Builder(this).setTitle("Chiamare il 112?")
+            .setMessage("Si apre il telefono con il 112 gia' composto. Metti il vivavoce: l'operatore ti guida mentre aiuti.")
+            .setPositiveButton("CHIAMA 112", (d, w) -> {
+                try { startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:112"))); }
+                catch (Exception e) { Toast.makeText(this, "Componi 112 dal telefono", Toast.LENGTH_LONG).show(); }
+            })
+            .setNegativeButton("Annulla", null).show();
+    }
+
+    // ------------------------------------------------------------ metronomo RCP
+    private void startCpr() {
+        running = true;
+        start = SystemClock.uptimeMillis();
+        lastComp = -1;
+        lastBreaths = false;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        h.removeCallbacks(beat);
+        h.post(beat);
+        h.removeCallbacks(clock);
+        h.post(clock);
+        if (tvBtn != null) tvBtn.setText("FERMA");
+    }
+
+    private void stopCpr() {
+        running = false;
+        h.removeCallbacks(beat);
+        h.removeCallbacks(clock);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        idle();
+    }
+
+    private final Runnable clock = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            long el = SystemClock.uptimeMillis() - start;
+            if (tvTime != null) {
+                int sw = CprMetronome.swaps(el);
+                tvTime.setText(String.format(Locale.ITALY, "%02d:%02d", el / 60_000, (el / 1000) % 60)
+                    + (sw > 0 && (el % CprMetronome.SWAP_MS) < 15_000 ? "  ·  SE POSSIBILE DATE IL CAMBIO" : ""));
+            }
+            h.postDelayed(this, 1000);
+        }
+    };
+
+    private void idle() {
+        if (tvCount != null) { tvCount.setText("0"); tvCount.setTextColor(0xFF5A7A99); }
+        if (tvState != null) tvState.setText("Ritmo 110 al minuto: spingi a ogni suono, 5-6 cm al centro del petto");
+        if (tvTime != null) tvTime.setText("00:00");
+        if (tvBtn != null) tvBtn.setText("AVVIA METRONOMO");
+    }
+
+    private void show(CprMetronome.State s, long el) {
+        if (tvCount == null || tvState == null) return;
+        if (s.breaths) {
+            tvCount.setText("2");
+            tvCount.setTextColor(0xFF00E5FF);
+            tvState.setText("2 VENTILAZIONI (se le sai fare), poi si riparte");
+        } else {
+            tvCount.setText(String.valueOf(s.compression));
+            tvCount.setTextColor(s.compression >= 25 && withBreaths ? 0xFFFFD600 : 0xFFFF3D71);
+            tvState.setText(withBreaths ? "COMPRESSIONI  ·  ciclo " + (s.cycle + 1) : "SOLO COMPRESSIONI, SENZA FERMARTI");
+        }
+    }
+
+    private void renderChips() {
+        chip(chip30, withBreaths);
+        chip(chipOnly, !withBreaths);
+    }
+
+    private static void chip(TextView t, boolean on) {
+        if (t == null) return;
+        t.setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+        t.setTextColor(on ? 0xFF00FF88 : 0xFF8FB3D0);
+    }
+
+    private void beep(int type, int ms) {
+        try { if (tone != null) tone.startTone(type, ms); } catch (Exception ignored) {}
     }
 }
 """
@@ -10635,14 +11739,6 @@ public class SpeedHudActivity extends AppCompatActivity {
 }
 """
 
-LAYOUT_MOON = _scroll(_tool_header("FASE LUNARE", "btn_moon_back", "#E8F4FD")
-    + _big("tv_moon_phase", "Calcolo...", "#E8F4FD")
-    + _big("tv_moon_illum", "Illuminazione: --", "#00E5FF")
-    + _big("tv_moon_next", "--", "#FFD600")
-    + '<TextView android:id="@+id/tv_moon_hint" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:text="" android:textColor="#5A7A99"\n'
-      '    android:textSize="13sp" android:gravity="center" android:layout_marginTop="8dp"/>')
-
 LAYOUT_METAL = _scroll(_tool_header("METAL DETECTOR", "btn_metal_back", "#00E5FF")
     + '<TextView android:id="@+id/tv_metal_nosensor" android:layout_width="match_parent"\n'
       '    android:layout_height="wrap_content" android:visibility="gone"\n'
@@ -10714,12 +11810,6 @@ LAYOUT_HEATINDEX = _scroll(_tool_header("TEMPERATURA PERCEPITA", "btn_heat_back"
     + '<TextView android:id="@+id/tv_heat_note" android:layout_width="match_parent"\n'
       '    android:layout_height="wrap_content" android:text="" android:textColor="#E8F4FD"\n'
       '    android:textSize="14sp" android:lineSpacingMultiplier="1.3" android:layout_marginTop="8dp"/>')
-
-LAYOUT_FIRSTAID = _scroll(_tool_header("PRIMO SOCCORSO", "btn_aid_back", "#FF6B35")
-    + '<TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
-      '    android:text="Guida rapida. In emergenza chiama SEMPRE il 112.\\n\\nEMORRAGIA:\\nPremi forte sulla ferita con un panno pulito\\nNon togliere il panno: aggiungine sopra\\nSolleva l\'arto se possibile\\n\\nIPOTERMIA:\\nPorta al riparo, togli i vestiti bagnati\\nCopri con coperte (anche la testa)\\nBevande calde e zuccherate SE cosciente\\nNON strofinare la pelle\\n\\nCOLPO DI CALORE:\\nSposta all\'ombra, sdraia\\nRaffredda con acqua su collo, ascelle, inguine\\nFai bere a piccoli sorsi SE cosciente\\n\\nDISTORSIONE:\\nRiposo, ghiaccio (o acqua fredda) 20 min\\nFascia stretta ma non troppo\\nArto sollevato, non camminarci sopra\\n\\nUSTIONE:\\nAcqua corrente fresca per 10-20 minuti\\nNON ghiaccio, NON creme, NON bucare le bolle\\nCopri con garza pulita non aderente\\n\\nMORSO DI VIPERA:\\nMantieni la calma, immobilizza l\'arto\\nNON incidere, NON succhiare, NO laccio\\nVai in ospedale il prima possibile\\n\\nPOSIZIONE LATERALE DI SICUREZZA:\\nPer chi e\' incosciente MA respira:\\nsu un fianco, testa indietro, bocca verso il basso\\n\\nRCP (se NON respira):\\n30 compressioni al centro del torace\\n(100-120 al minuto, profonde 5-6 cm)\\n2 ventilazioni, poi ripeti senza fermarti"\n'
-      '    android:textColor="#E8F4FD" android:textSize="15sp" android:lineSpacingMultiplier="1.3"\n'
-      '    android:background="@drawable/bg_card_glass" android:padding="18dp"/>')
 
 LAYOUT_PACE = _scroll(_tool_header("TEMPI DI MARCIA", "btn_pace_back", "#00FF88")
     + '<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
@@ -15590,7 +16680,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.5 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.6 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -19255,7 +20345,10 @@ public final class MeshHub implements MeshNode.Listener {
     public void sendSos(Location l, String text) {
         double la = l != null ? l.getLatitude() : Double.NaN, lo = l != null ? l.getLongitude() : Double.NaN;
         float acc = l != null ? l.getAccuracy() : 0f;
-        io.execute(() -> deliverMine(node.sendSos(la, lo, acc, text)));
+        // v5.6: gruppo sanguigno, allergie e malattie solo se l'utente l'ha scelto nella scheda medica
+        String med = com.offlinegps.map.util.MedicalCard.load(app).sosLine();
+        String full = med.isEmpty() ? text : text + " — " + med;
+        io.execute(() -> deliverMine(node.sendSos(la, lo, acc, full)));
     }
 
     /** Manda un messaggio vocale gia' registrato (file AMR). */
@@ -20387,6 +21480,9 @@ import java.util.Set;
  * defibrillatori. Tocca un luogo per navigare, seguire la bussola o vederlo.
  */
 public class PoiActivity extends AppCompatActivity {
+    /** Categoria da aprire (v5.6): 5 = soccorso (ospedali, farmacie, defibrillatori). */
+    public static final String EXTRA_CAT = "cat";
+    public static final int CAT_HELP = 5;
     private static final String[][] CATS = {
         {"poi_cat_peak", "CIME", PoiIndex.PEAK, "60000"},
         {"poi_cat_hut", "RIFUGI", PoiIndex.HUT, "40000"},
@@ -20420,6 +21516,7 @@ public class PoiActivity extends AppCompatActivity {
             final int k = i;
             if (chips[i] != null) chips[i].setOnClickListener(v -> { cat = k; render(); });
         }
+        cat = Math.max(0, Math.min(CATS.length - 1, getIntent().getIntExtra(EXTRA_CAT, 0)));
         click(R.id.btn_poi_back, v -> finish());
         click(R.id.btn_poi_ar, v -> startActivity(new Intent(this, PeakArActivity.class)));
         if (search != null) search.addTextChangedListener(new TextWatcher() {
@@ -24175,6 +25272,1772 @@ public class ParkingActivity extends AppCompatActivity {
 }
 """
 
+MEDICAL_CARD = r"""package com.offlinegps.map.util;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import java.util.Calendar;
+import java.util.Locale;
+
+/**
+ * Scheda medica d'emergenza (v5.6): quello che un soccorritore deve sapere
+ * subito (gruppo sanguigno, allergie, malattie, farmaci, chi avvisare).
+ * Resta solo sul telefono; finisce nell'SOS della chat offline solo se
+ * l'utente lo sceglie, e in quel caso solo gruppo sanguigno, allergie e
+ * malattie (mai nome, data di nascita, farmaci o contatti).
+ * La formattazione non dipende da Android: testata sul computer.
+ */
+public final class MedicalCard {
+    public static final String[] BLOOD = {"0+", "0-", "A+", "A-", "B+", "B-", "AB+", "AB-"};
+
+    public String name = "", birth = "", blood = "", allergies = "", conditions = "", meds = "", notes = "";
+    public String c1Name = "", c1Phone = "", c2Name = "", c2Phone = "";
+    public boolean inSos;
+
+    public boolean isEmpty() {
+        return (name + birth + blood + allergies + conditions + meds + notes + c1Phone + c2Phone).trim().isEmpty();
+    }
+
+    /** Eta' compiuta dalla data di nascita gg/mm/aaaa (anche con - o .), -1 se non valida. */
+    public static int age(String birth, long nowMs) {
+        if (birth == null) return -1;
+        String[] p = birth.trim().split("[/.\\-\\s]+");
+        if (p.length != 3) return -1;
+        try {
+            int d = Integer.parseInt(p[0]), m = Integer.parseInt(p[1]), y = Integer.parseInt(p[2]);
+            if (y < 100) y += y > 30 ? 1900 : 2000;
+            if (d < 1 || d > 31 || m < 1 || m > 12 || y < 1900) return -1;
+            Calendar c = Calendar.getInstance();
+            c.setTimeInMillis(nowMs);
+            int a = c.get(Calendar.YEAR) - y;
+            int nm = c.get(Calendar.MONTH) + 1, nd = c.get(Calendar.DAY_OF_MONTH);
+            if (nm < m || (nm == m && nd < d)) a--;
+            return a >= 0 && a < 130 ? a : -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** Gruppo sanguigno scritto in modo uniforme ("o rh-" -> "0-"), "" se non riconosciuto. */
+    public static String normBlood(String s) {
+        if (s == null) return "";
+        String t = s.trim().toUpperCase(Locale.ROOT).replace("RH", "").replace(" ", "")
+            .replace("POS", "+").replace("NEG", "-").replace("O", "0");
+        for (String b : BLOOD) if (b.equals(t)) return b;
+        return "";
+    }
+
+    /**
+     * Riga breve per l'SOS (al massimo ~140 caratteri): gruppo, allergie e
+     * malattie. Vuota se l'utente non ha dato il permesso o non c'e' nulla.
+     */
+    public String sosLine() { return inSos ? shortLine() : ""; }
+
+    /** Gruppo, allergie e malattie in una riga (per la schermata Emergenza). */
+    public String shortLine() {
+        StringBuilder sb = new StringBuilder();
+        if (!blood.isEmpty()) sb.append("Sangue ").append(blood);
+        if (!allergies.trim().isEmpty()) sb.append(sb.length() > 0 ? " · " : "").append("Allergie: ").append(oneLine(allergies));
+        if (!conditions.trim().isEmpty()) sb.append(sb.length() > 0 ? " · " : "").append("Salute: ").append(oneLine(conditions));
+        if (sb.length() == 0) return "";
+        String s = sb.toString();
+        return s.length() > 140 ? s.substring(0, 139) + "…" : s;
+    }
+
+    /** Testo completo, leggibile da qualunque lettore QR o da condividere. */
+    public String fullText(long nowMs) {
+        StringBuilder sb = new StringBuilder("SCHEDA MEDICA D'EMERGENZA\n");
+        line(sb, "Nome", name);
+        int a = age(birth, nowMs);
+        line(sb, "Nato/a il", birth.trim().isEmpty() ? "" : birth.trim() + (a >= 0 ? " (" + a + " anni)" : ""));
+        line(sb, "Gruppo sanguigno", blood);
+        line(sb, "ALLERGIE", allergies);
+        line(sb, "Malattie", conditions);
+        line(sb, "Farmaci", meds);
+        line(sb, "Note", notes);
+        if (!c1Phone.trim().isEmpty()) line(sb, "Avvisare", (c1Name.trim() + " " + c1Phone.trim()).trim());
+        if (!c2Phone.trim().isEmpty()) line(sb, "Avvisare", (c2Name.trim() + " " + c2Phone.trim()).trim());
+        return sb.toString().trim();
+    }
+
+    private static void line(StringBuilder sb, String k, String v) {
+        if (v != null && !v.trim().isEmpty()) sb.append(k).append(": ").append(v.trim()).append('\n');
+    }
+
+    private static String oneLine(String s) { return s.trim().replaceAll("\\s*\\n\\s*", ", "); }
+
+    // ------------------------------------------------------------ salvataggio
+    private static final String P = "med_";
+
+    public static MedicalCard load(Context c) {
+        SharedPreferences p = c.getSharedPreferences(com.offlinegps.map.AppConfig.PREFS, Context.MODE_PRIVATE);
+        MedicalCard m = new MedicalCard();
+        m.name = p.getString(P + "name", "");
+        m.birth = p.getString(P + "birth", "");
+        m.blood = p.getString(P + "blood", "");
+        m.allergies = p.getString(P + "allergies", "");
+        m.conditions = p.getString(P + "conditions", "");
+        m.meds = p.getString(P + "meds", "");
+        m.notes = p.getString(P + "notes", "");
+        m.c1Name = p.getString(P + "c1n", "");
+        m.c1Phone = p.getString(P + "c1p", "");
+        m.c2Name = p.getString(P + "c2n", "");
+        m.c2Phone = p.getString(P + "c2p", "");
+        m.inSos = p.getBoolean(P + "sos", false);
+        return m;
+    }
+
+    public void save(Context c) {
+        c.getSharedPreferences(com.offlinegps.map.AppConfig.PREFS, Context.MODE_PRIVATE).edit()
+            .putString(P + "name", name.trim()).putString(P + "birth", birth.trim()).putString(P + "blood", blood)
+            .putString(P + "allergies", allergies.trim()).putString(P + "conditions", conditions.trim())
+            .putString(P + "meds", meds.trim()).putString(P + "notes", notes.trim())
+            .putString(P + "c1n", c1Name.trim()).putString(P + "c1p", c1Phone.trim())
+            .putString(P + "c2n", c2Name.trim()).putString(P + "c2p", c2Phone.trim())
+            .putBoolean(P + "sos", inSos).apply();
+    }
+}
+"""
+
+MEDICAL_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.Bundle;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.MedicalCard;
+import com.offlinegps.map.util.QrMaker;
+import com.offlinegps.map.util.ShareUtil;
+
+/**
+ * Scheda medica d'emergenza (v5.6). Vista grande e leggibile per chi ti
+ * soccorre (gruppo sanguigno, allergie, malattie, farmaci, chi avvisare con
+ * un tocco), codice QR leggibile da qualunque telefono e modifica.
+ * Resta solo su questo telefono: non viene mai inviata da sola.
+ */
+public class MedicalActivity extends AppCompatActivity {
+    public static final String EXTRA_EDIT = "edit";
+    private MedicalCard card;
+    private View viewPanel, editPanel, emptyPanel;
+    private TextView tvMode;
+    private String editBlood = "";
+    private boolean editSos;
+    private TextView[] bloodChips;
+    private TextView sosChip;
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_medical);
+        viewPanel = findViewById(R.id.med_view);
+        editPanel = findViewById(R.id.med_edit);
+        emptyPanel = findViewById(R.id.med_empty);
+        tvMode = findViewById(R.id.btn_med_mode);
+        bloodChips = new TextView[MedicalCard.BLOOD.length];
+        int[] ids = {R.id.med_b0, R.id.med_b1, R.id.med_b2, R.id.med_b3, R.id.med_b4, R.id.med_b5, R.id.med_b6, R.id.med_b7};
+        for (int i = 0; i < ids.length; i++) {
+            bloodChips[i] = findViewById(ids[i]);
+            final String b = MedicalCard.BLOOD[i];
+            if (bloodChips[i] != null) bloodChips[i].setOnClickListener(v -> { editBlood = b.equals(editBlood) ? "" : b; paintChips(); });
+        }
+        sosChip = findViewById(R.id.med_sos_toggle);
+        if (sosChip != null) sosChip.setOnClickListener(v -> { editSos = !editSos; paintChips(); });
+        click(R.id.btn_med_back, v -> finish());
+        click(R.id.btn_med_mode, v -> { if (editPanel.getVisibility() == View.VISIBLE) showView(); else showEdit(); });
+        click(R.id.btn_med_fill, v -> showEdit());
+        click(R.id.btn_med_save, v -> save());
+        click(R.id.btn_med_cancel, v -> showView());
+        click(R.id.btn_med_call1, v -> dial(card.c1Phone));
+        click(R.id.btn_med_call2, v -> dial(card.c2Phone));
+        click(R.id.btn_med_qr, v -> showQr());
+        click(R.id.btn_med_share, v -> ShareUtil.shareText(this, card.fullText(System.currentTimeMillis()), "Invia scheda medica"));
+        click(R.id.btn_med_system, v -> openSystemInfo());
+        card = MedicalCard.load(this);
+        if (getIntent().getBooleanExtra(EXTRA_EDIT, false)) showEdit();
+        else showView();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    // ------------------------------------------------------------ vista
+    private void showView() {
+        card = MedicalCard.load(this);
+        editPanel.setVisibility(View.GONE);
+        boolean empty = card.isEmpty();
+        emptyPanel.setVisibility(empty ? View.VISIBLE : View.GONE);
+        viewPanel.setVisibility(empty ? View.GONE : View.VISIBLE);
+        tvMode.setText("MODIFICA");
+        if (empty) return;
+        int age = MedicalCard.age(card.birth, System.currentTimeMillis());
+        set(R.id.med_name, card.name.isEmpty() ? "Nome non indicato" : card.name);
+        set(R.id.med_birth, card.birth.isEmpty() ? "Data di nascita non indicata" : "Nato/a il " + card.birth);
+        set(R.id.med_blood, card.blood.isEmpty() ? "?" : card.blood);
+        set(R.id.med_age, age >= 0 ? age + " anni" : "--");
+        set(R.id.med_allergies, card.allergies.isEmpty() ? "Nessuna allergia nota" : card.allergies);
+        set(R.id.med_conditions, card.conditions.isEmpty() ? "Nessuna indicata" : card.conditions);
+        set(R.id.med_meds, card.meds.isEmpty() ? "Nessuno indicato" : card.meds);
+        set(R.id.med_notes, card.notes.isEmpty() ? "--" : card.notes);
+        contact(R.id.med_c1, R.id.btn_med_call1, card.c1Name, card.c1Phone);
+        contact(R.id.med_c2, R.id.btn_med_call2, card.c2Name, card.c2Phone);
+        set(R.id.med_sos_state, card.inSos
+            ? "Negli SOS della chat offline parte anche: " + (card.sosLine().isEmpty() ? "(niente da inviare)" : card.sosLine())
+            : "Negli SOS della chat offline non viene inviato nessun dato medico.");
+    }
+
+    private void contact(int textId, int btnId, String name, String phone) {
+        View b = findViewById(btnId);
+        boolean has = !phone.isEmpty();
+        set(textId, has ? (name.isEmpty() ? phone : name + "\n" + phone) : "Nessun contatto");
+        if (b != null) b.setVisibility(has ? View.VISIBLE : View.GONE);
+    }
+
+    private void set(int id, String s) {
+        TextView t = findViewById(id);
+        if (t != null) t.setText(s);
+    }
+
+    // ------------------------------------------------------------ modifica
+    private void showEdit() {
+        card = MedicalCard.load(this);
+        viewPanel.setVisibility(View.GONE);
+        emptyPanel.setVisibility(View.GONE);
+        editPanel.setVisibility(View.VISIBLE);
+        tvMode.setText("VEDI");
+        put(R.id.et_med_name, card.name);
+        put(R.id.et_med_birth, card.birth);
+        put(R.id.et_med_allergies, card.allergies);
+        put(R.id.et_med_conditions, card.conditions);
+        put(R.id.et_med_meds, card.meds);
+        put(R.id.et_med_notes, card.notes);
+        put(R.id.et_med_c1n, card.c1Name);
+        put(R.id.et_med_c1p, card.c1Phone);
+        put(R.id.et_med_c2n, card.c2Name);
+        put(R.id.et_med_c2p, card.c2Phone);
+        editBlood = card.blood;
+        editSos = card.inSos;
+        paintChips();
+    }
+
+    private void paintChips() {
+        for (int i = 0; i < bloodChips.length; i++) {
+            if (bloodChips[i] == null) continue;
+            boolean on = MedicalCard.BLOOD[i].equals(editBlood);
+            bloodChips[i].setBackgroundResource(on ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            bloodChips[i].setTextColor(on ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        if (sosChip != null) {
+            sosChip.setText(editSos ? "SI': GRUPPO, ALLERGIE E MALATTIE NELL'SOS" : "NO: NESSUN DATO MEDICO NELL'SOS");
+            sosChip.setBackgroundResource(editSos ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            sosChip.setTextColor(editSos ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+    }
+
+    private void put(int id, String s) {
+        EditText e = findViewById(id);
+        if (e != null) e.setText(s);
+    }
+
+    private String get(int id) {
+        EditText e = findViewById(id);
+        return e == null ? "" : e.getText().toString().trim();
+    }
+
+    private void save() {
+        MedicalCard m = new MedicalCard();
+        m.name = get(R.id.et_med_name);
+        m.birth = get(R.id.et_med_birth);
+        m.blood = editBlood;
+        m.allergies = get(R.id.et_med_allergies);
+        m.conditions = get(R.id.et_med_conditions);
+        m.meds = get(R.id.et_med_meds);
+        m.notes = get(R.id.et_med_notes);
+        m.c1Name = get(R.id.et_med_c1n);
+        m.c1Phone = get(R.id.et_med_c1p);
+        m.c2Name = get(R.id.et_med_c2n);
+        m.c2Phone = get(R.id.et_med_c2p);
+        m.inSos = editSos;
+        if (!m.birth.isEmpty() && MedicalCard.age(m.birth, System.currentTimeMillis()) < 0) {
+            Toast.makeText(this, "Data di nascita: scrivila come 15/04/1980", Toast.LENGTH_LONG).show();
+            return;
+        }
+        m.save(this);
+        Toast.makeText(this, "Scheda salvata su questo telefono", Toast.LENGTH_SHORT).show();
+        showView();
+    }
+
+    // ------------------------------------------------------------ azioni
+    private void dial(String phone) {
+        if (phone == null || phone.isEmpty()) return;
+        try { startActivity(new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(phone)))); }
+        catch (Exception e) { Toast.makeText(this, "Componi " + phone, Toast.LENGTH_LONG).show(); }
+    }
+
+    private void showQr() {
+        try {
+            boolean[][] m = QrMaker.encode(card.fullText(System.currentTimeMillis()));
+            int scale = 8, w = m.length * scale;
+            int[] px = new int[w * w];
+            for (int y = 0; y < w; y++)
+                for (int x = 0; x < w; x++) px[y * w + x] = m[y / scale][x / scale] ? 0xFF000000 : 0xFFFFFFFF;
+            Bitmap bmp = Bitmap.createBitmap(px, w, w, Bitmap.Config.ARGB_8888);
+            ImageView iv = new ImageView(this);
+            iv.setImageBitmap(bmp);
+            iv.setAdjustViewBounds(true);
+            iv.setBackgroundColor(0xFFFFFFFF);
+            FrameLayout wrap = new FrameLayout(this);
+            int pad = (int) (16 * getResources().getDisplayMetrics().density);
+            wrap.setPadding(pad, pad, pad, pad);
+            wrap.setBackgroundColor(0xFFFFFFFF);
+            wrap.addView(iv);
+            new AlertDialog.Builder(this).setTitle("Inquadra con la fotocamera")
+                .setView(wrap).setPositiveButton("CHIUDI", null).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Testo troppo lungo per il QR: accorcia le note", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    /** "Informazioni di emergenza" di Android: visibili anche a telefono bloccato. */
+    private void openSystemInfo() {
+        try { startActivity(new Intent("android.settings.EDIT_EMERGENCY_INFO")); }
+        catch (Exception e) {
+            Toast.makeText(this, "Apri Impostazioni e cerca \"Informazioni di emergenza\" o \"Sicurezza ed emergenza\"",
+                Toast.LENGTH_LONG).show();
+        }
+    }
+}
+"""
+
+MORSE_CODE = r"""package com.offlinegps.map.util;
+
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Codice Morse internazionale (ITU) (v5.6): traduzione, tempi per luce/suono
+ * (punto 1, linea 3, pausa tra segni 1, tra lettere 3, tra parole 7 unita')
+ * e decodifica di quello che l'utente batte a mano guardando una luce,
+ * con la velocita' ricavata dai tocchi stessi. Senza Android: testata sul computer.
+ */
+public final class MorseCode {
+    private static final String[][] TABLE = {
+        {"A", ".-"}, {"B", "-..."}, {"C", "-.-."}, {"D", "-.."}, {"E", "."}, {"F", "..-."}, {"G", "--."},
+        {"H", "...."}, {"I", ".."}, {"J", ".---"}, {"K", "-.-"}, {"L", ".-.."}, {"M", "--"}, {"N", "-."},
+        {"O", "---"}, {"P", ".--."}, {"Q", "--.-"}, {"R", ".-."}, {"S", "..."}, {"T", "-"}, {"U", "..-"},
+        {"V", "...-"}, {"W", ".--"}, {"X", "-..-"}, {"Y", "-.--"}, {"Z", "--.."},
+        {"0", "-----"}, {"1", ".----"}, {"2", "..---"}, {"3", "...--"}, {"4", "....-"}, {"5", "....."},
+        {"6", "-...."}, {"7", "--..."}, {"8", "---.."}, {"9", "----."},
+        {".", ".-.-.-"}, {",", "--..--"}, {"?", "..--.."}, {"'", ".----."}, {"!", "-.-.--"}, {"/", "-..-."},
+        {"(", "-.--."}, {")", "-.--.-"}, {"&", ".-..."}, {":", "---..."}, {"=", "-...-"}, {"+", ".-.-."},
+        {"-", "-....-"}, {"\"", ".-..-."}, {"@", ".--.-."},
+    };
+    private static final Map<Character, String> ENC = new HashMap<>();
+    private static final Map<String, Character> DEC = new HashMap<>();
+    static {
+        for (String[] e : TABLE) { ENC.put(e[0].charAt(0), e[1]); DEC.put(e[1], e[0].charAt(0)); }
+    }
+
+    private MorseCode() {}
+
+    /** Le coppie {carattere, codice} per la tabella di riferimento. */
+    public static String[][] table() { return TABLE; }
+
+    /** Codice di un carattere ("" se non esiste). Le lettere accentate valgono come quelle semplici. */
+    public static String of(char c) {
+        String s = ENC.get(Character.toUpperCase(c));
+        if (s != null) return s;
+        String plain = Normalizer.normalize(String.valueOf(c), Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+        if (plain.length() == 1) { s = ENC.get(Character.toUpperCase(plain.charAt(0))); if (s != null) return s; }
+        return "";
+    }
+
+    /** "SOS ok" -> "... --- ... / --- -.-": lettere separate da spazio, parole da " / ". */
+    public static String encode(String text) {
+        StringBuilder sb = new StringBuilder();
+        boolean pendingWord = false;
+        for (char c : text.toCharArray()) {
+            if (Character.isWhitespace(c)) { pendingWord = sb.length() > 0; continue; }
+            String code = of(c);
+            if (code.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(pendingWord ? " / " : " ");
+            pendingWord = false;
+            sb.append(code);
+        }
+        return sb.toString();
+    }
+
+    /** Il contrario di encode(); "?" per un gruppo sconosciuto. */
+    public static String decode(String morse) {
+        StringBuilder sb = new StringBuilder();
+        for (String word : morse.trim().split("\\s*/\\s*")) {
+            if (word.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            for (String letter : word.trim().split("\\s+")) {
+                if (letter.isEmpty()) continue;
+                Character ch = DEC.get(letter);
+                sb.append(ch == null ? '?' : ch);
+            }
+        }
+        return sb.toString();
+    }
+
+    /** Velocita' in parole al minuto (parola standard PARIS = 50 unita'). */
+    public static int wpm(int unitMs) { return Math.round(1200f / unitMs); }
+
+    /**
+     * Piano di trasmissione: durate alternate acceso/spento in ms (si parte
+     * acceso, l'ultima pausa e' quella fra parole cosi' si puo' ripetere), e per
+     * ogni elemento acceso la posizione del segno nella stringa di encode().
+     */
+    public static final class Plan {
+        public final String code;
+        public final long[] durations;
+        public final int[] codePos;
+        Plan(String code, long[] d, int[] p) { this.code = code; durations = d; codePos = p; }
+        public long totalMs() { long t = 0; for (long d : durations) t += d; return t; }
+    }
+
+    public static Plan plan(String text, int unitMs) {
+        String code = encode(text);
+        List<Long> d = new ArrayList<>();
+        List<Integer> pos = new ArrayList<>();
+        for (int i = 0; i < code.length(); i++) {
+            char c = code.charAt(i);
+            if (c != '.' && c != '-') continue;
+            d.add((long) unitMs * (c == '.' ? 1 : 3));
+            pos.add(i);
+            // pausa dopo il segno: dipende da cosa viene dopo
+            int gap = 7;
+            if (i + 1 < code.length()) {
+                char n = code.charAt(i + 1);
+                if (n == '.' || n == '-') gap = 1;
+                else gap = code.startsWith(" / ", i + 1) ? 7 : 3;
+            }
+            d.add((long) unitMs * gap);
+            pos.add(-1);
+        }
+        long[] out = new long[d.size()];
+        int[] p = new int[pos.size()];
+        for (int i = 0; i < out.length; i++) { out[i] = d.get(i); p[i] = pos.get(i); }
+        return new Plan(code, out, p);
+    }
+
+    // ------------------------------------------------------------ ricezione a mano
+    /**
+     * Decodifica i tocchi: press[i] = quanto e' stato tenuto premuto, gapBefore[i]
+     * = la pausa prima del tocco (ignorata per il primo). Punti e linee si separano
+     * dove il salto fra durate e' piu' grande (rapporto almeno 1,8); se sono tutti
+     * uguali decide la soglia fissa di 250 ms. L'unita' e' la durata media del punto.
+     * Pause: meno di 2 unita' stessa lettera, da 2 a 5 nuova lettera, oltre 5 nuova parola.
+     */
+    public static Received decodeKeyed(long[] press, long[] gapBefore) {
+        int n = press.length;
+        if (n == 0) return new Received("", "", 0);
+        long[] sorted = Arrays.copyOf(press, n);
+        Arrays.sort(sorted);
+        double threshold = 250;
+        double bestRatio = 1.8;
+        for (int i = 0; i + 1 < n; i++) {
+            double r = (double) Math.max(1, sorted[i + 1]) / Math.max(1, sorted[i]);
+            if (r >= bestRatio) { bestRatio = r; threshold = Math.sqrt((double) Math.max(1, sorted[i]) * sorted[i + 1]); }
+        }
+        double dotSum = 0, dashSum = 0;
+        int dots = 0, dashes = 0;
+        for (long p : press) {
+            if (p < threshold) { dotSum += p; dots++; } else { dashSum += p; dashes++; }
+        }
+        double unit = dots > 0 ? dotSum / dots : (dashes > 0 ? dashSum / dashes / 3 : 120);
+        unit = Math.max(40, unit);
+        StringBuilder code = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) {
+                double g = gapBefore[i] / unit;
+                if (g >= 5) code.append(" / ");
+                else if (g >= 2) code.append(' ');
+            }
+            code.append(press[i] < threshold ? '.' : '-');
+        }
+        String c = code.toString();
+        return new Received(c, decode(c), (int) Math.round(unit));
+    }
+
+    public static final class Received {
+        public final String code, text;
+        public final int unitMs;
+        Received(String code, String text, int unitMs) { this.code = code; this.text = text; this.unitMs = unitMs; }
+    }
+
+    /** "SOS" -> tabella in due colonne per lo schermo. */
+    public static String tableText() {
+        StringBuilder sb = new StringBuilder();
+        int half = 18;   // A..R | S..9
+        for (int i = 0; i < half; i++) {
+            String[] a = TABLE[i], b = TABLE[i + half];
+            sb.append(String.format(Locale.ROOT, "%s  %-7s   %s  %s", a[0], a[1], b[0], b[1]));
+            if (i < half - 1) sb.append('\n');
+        }
+        return sb.toString();
+    }
+}
+"""
+
+TORCH_CONTROL = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CameraManager;
+import android.os.Build;
+import android.os.Handler;
+
+/**
+ * Il LED del flash (v5.6): acceso/spento e, da Android 13 sui telefoni che lo
+ * permettono, l'intensita'. Usato da Torcia e Codice Morse. Ogni errore
+ * (fotocamera occupata da un'altra app) viene ingoiato: la torcia non deve
+ * mai far chiudere l'app.
+ */
+final class TorchControl {
+    private final CameraManager cam;
+    private String id;
+    private int maxLevel = 1, defLevel = 1, level = 1;
+    private boolean on;
+
+    TorchControl(Context c) {
+        cam = (CameraManager) c.getSystemService(Context.CAMERA_SERVICE);
+        try {
+            if (cam != null) for (String i : cam.getCameraIdList()) {
+                CameraCharacteristics ch = cam.getCameraCharacteristics(i);
+                if (!Boolean.TRUE.equals(ch.get(CameraCharacteristics.FLASH_INFO_AVAILABLE))) continue;
+                Integer facing = ch.get(CameraCharacteristics.LENS_FACING);
+                if (id == null || (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK)) {
+                    id = i;
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        Integer mx = ch.get(CameraCharacteristics.FLASH_INFO_STRENGTH_MAXIMUM_LEVEL);
+                        Integer df = ch.get(CameraCharacteristics.FLASH_INFO_STRENGTH_DEFAULT_LEVEL);
+                        maxLevel = mx == null ? 1 : Math.max(1, mx);
+                        defLevel = df == null ? maxLevel : Math.max(1, Math.min(maxLevel, df));
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+        level = defLevel;
+    }
+
+    boolean available() { return id != null; }
+    boolean dimmable() { return id != null && maxLevel > 1; }
+    int maxLevel() { return maxLevel; }
+    int level() { return level; }
+    boolean isOn() { return on; }
+
+    void setLevel(int l) {
+        level = Math.max(1, Math.min(maxLevel, l));
+        if (on) set(true);
+    }
+
+    /** true se il comando e' andato a buon fine. */
+    boolean set(boolean wanted) {
+        if (cam == null || id == null) return false;
+        try {
+            if (wanted && Build.VERSION.SDK_INT >= 33 && maxLevel > 1) cam.turnOnTorchWithStrengthLevel(id, level);
+            else cam.setTorchMode(id, wanted);
+            on = wanted;
+            return true;
+        } catch (Exception e) {
+            on = false;
+            return false;
+        }
+    }
+
+    void registerCallback(CameraManager.TorchCallback cb, Handler h) {
+        try { if (cam != null) cam.registerTorchCallback(cb, h); } catch (Exception ignored) {}
+    }
+
+    void unregisterCallback(CameraManager.TorchCallback cb) {
+        try { if (cam != null) cam.unregisterTorchCallback(cb); } catch (Exception ignored) {}
+    }
+
+    boolean isOurs(String cameraId) { return cameraId != null && cameraId.equals(id); }
+}
+"""
+
+SIGNAL_PLAYER = r"""package com.offlinegps.map.ui;
+
+import android.os.Handler;
+import android.os.SystemClock;
+
+/**
+ * Esegue una sequenza acceso/spento (v5.6): Morse, SOS, stroboscopio,
+ * segnale alpino. Le durate si contano da un orologio fisso, cosi' i ritardi
+ * del sistema non si accumulano lungo un messaggio lungo.
+ */
+final class SignalPlayer {
+    interface Out {
+        /** element = indice nella sequenza (pari = acceso), -1 a fine sequenza. */
+        void set(boolean on, int element, long durationMs);
+        default void done() {}
+    }
+
+    private final Handler h;
+    private final Out out;
+    private long[] dur = new long[0];
+    private boolean loop, playing;
+    private int i;
+    private long due;
+
+    SignalPlayer(Handler h, Out out) { this.h = h; this.out = out; }
+
+    private final Runnable step = new Runnable() {
+        @Override public void run() {
+            if (!playing) return;
+            if (i >= dur.length) {
+                if (loop && dur.length > 0) i = 0;
+                else { playing = false; out.set(false, -1, 0); out.done(); return; }
+            }
+            long d = dur[i];
+            out.set(i % 2 == 0, i, d);
+            i++;
+            due += d;
+            h.postAtTime(this, due);
+        }
+    };
+
+    void play(long[] durations, boolean repeat) {
+        stop();
+        dur = durations == null ? new long[0] : durations;
+        loop = repeat;
+        i = 0;
+        playing = true;
+        due = SystemClock.uptimeMillis();
+        h.post(step);
+    }
+
+    /** Ferma subito e spegne. */
+    void stop() {
+        boolean was = playing;
+        playing = false;
+        h.removeCallbacks(step);
+        if (was) out.set(false, -1, 0);
+    }
+
+    boolean isPlaying() { return playing; }
+}
+"""
+
+MOON_PHASES = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Istanti esatti delle fasi lunari (v5.6) con l'algoritmo di Meeus
+ * ("Astronomical Algorithms", cap. 49): errore inferiore al minuto, contro
+ * le ore di scarto del vecchio calcolo a mese medio. Piu' le notti di Luna:
+ * quanto resta alta la Luna fra il tramonto e l'alba del giorno dopo.
+ * Senza Android: testata sul computer.
+ */
+public final class MoonPhases {
+    public static final int NEW = 0, FIRST = 1, FULL = 2, LAST = 3;
+    public static final String[] NAMES = {"Luna nuova", "Primo quarto", "Luna piena", "Ultimo quarto"};
+    private static final double SYNODIC = 29.530588861;
+    /** Tempo dinamico - tempo universale (circa 69 s in questi anni). */
+    private static final double DELTA_T_DAYS = 69.0 / 86400.0;
+
+    private MoonPhases() {}
+
+    /** Istante (ms UTC) della fase 'type' della lunazione k (k=0: luna nuova del 6 gennaio 2000). */
+    public static long phaseTime(long k, int type) {
+        double kk = k + type * 0.25;
+        double t = kk / 1236.85, t2 = t * t, t3 = t2 * t, t4 = t3 * t;
+        double jde = 2451550.09766 + SYNODIC * kk + 0.00015437 * t2 - 0.000000150 * t3 + 0.00000000073 * t4;
+        double e = 1 - 0.002516 * t - 0.0000074 * t2;
+        double m = rad(2.5534 + 29.10535670 * kk - 0.0000014 * t2 - 0.00000011 * t3);
+        double mp = rad(201.5643 + 385.81693528 * kk + 0.0107582 * t2 + 0.00001238 * t3 - 0.000000058 * t4);
+        double f = rad(160.7108 + 390.67050284 * kk - 0.0016118 * t2 - 0.00000227 * t3 + 0.000000011 * t4);
+        double om = rad(124.7746 - 1.56375588 * kk + 0.0020672 * t2 + 0.00000215 * t3);
+        double c;
+        if (type == NEW || type == FULL) {
+            boolean nw = type == NEW;
+            c = (nw ? -0.40720 : -0.40614) * Math.sin(mp)
+                + (nw ? 0.17241 : 0.17302) * e * Math.sin(m)
+                + (nw ? 0.01608 : 0.01614) * Math.sin(2 * mp)
+                + (nw ? 0.01039 : 0.01043) * Math.sin(2 * f)
+                + (nw ? 0.00739 : 0.00734) * e * Math.sin(mp - m)
+                - (nw ? 0.00514 : 0.00515) * e * Math.sin(mp + m)
+                + (nw ? 0.00208 : 0.00209) * e * e * Math.sin(2 * m)
+                - 0.00111 * Math.sin(mp - 2 * f)
+                - 0.00057 * Math.sin(mp + 2 * f)
+                + 0.00056 * e * Math.sin(2 * mp + m)
+                - 0.00042 * Math.sin(3 * mp)
+                + 0.00042 * e * Math.sin(m + 2 * f)
+                + 0.00038 * e * Math.sin(m - 2 * f)
+                - 0.00024 * e * Math.sin(2 * mp - m)
+                - 0.00017 * Math.sin(om)
+                - 0.00007 * Math.sin(mp + 2 * m)
+                + 0.00004 * Math.sin(2 * mp - 2 * f)
+                + 0.00004 * Math.sin(3 * m)
+                + 0.00003 * Math.sin(mp + m - 2 * f)
+                + 0.00003 * Math.sin(2 * mp + 2 * f)
+                - 0.00003 * Math.sin(mp + m + 2 * f)
+                + 0.00003 * Math.sin(mp - m + 2 * f)
+                - 0.00002 * Math.sin(mp - m - 2 * f)
+                - 0.00002 * Math.sin(3 * mp + m)
+                + 0.00002 * Math.sin(4 * mp);
+        } else {
+            c = -0.62801 * Math.sin(mp)
+                + 0.17172 * e * Math.sin(m)
+                - 0.01183 * e * Math.sin(mp + m)
+                + 0.00862 * Math.sin(2 * mp)
+                + 0.00804 * Math.sin(2 * f)
+                + 0.00454 * e * Math.sin(mp - m)
+                + 0.00204 * e * e * Math.sin(2 * m)
+                - 0.00180 * Math.sin(mp - 2 * f)
+                - 0.00070 * Math.sin(mp + 2 * f)
+                - 0.00040 * Math.sin(3 * mp)
+                - 0.00034 * e * Math.sin(2 * mp - m)
+                + 0.00032 * e * Math.sin(m + 2 * f)
+                + 0.00032 * e * Math.sin(m - 2 * f)
+                - 0.00028 * e * e * Math.sin(mp + 2 * m)
+                + 0.00027 * e * Math.sin(2 * mp + m)
+                - 0.00017 * Math.sin(om)
+                - 0.00004 * Math.sin(mp - m - 2 * f)
+                + 0.00004 * Math.sin(2 * mp + 2 * f)
+                - 0.00004 * Math.sin(mp + m + 2 * f)
+                + 0.00004 * Math.sin(mp - 2 * m)
+                + 0.00003 * Math.sin(mp + m - 2 * f)
+                + 0.00003 * Math.sin(3 * m)
+                + 0.00002 * Math.sin(2 * mp - 2 * f)
+                + 0.00002 * Math.sin(mp - m + 2 * f)
+                - 0.00002 * Math.sin(3 * mp + m);
+            double w = 0.00306 - 0.00038 * e * Math.cos(m) + 0.00026 * Math.cos(mp)
+                - 0.00002 * Math.cos(mp - m) + 0.00002 * Math.cos(mp + m) + 0.00002 * Math.cos(2 * f);
+            c += type == FIRST ? w : -w;
+        }
+        // correzioni planetarie comuni a tutte le fasi (fino a mezzo minuto)
+        double[][] pl = {{299.77, 0.107408, 0.000325}, {251.88, 0.016321, 0.000165}, {251.83, 26.651886, 0.000164},
+            {349.42, 36.412478, 0.000126}, {84.66, 18.206239, 0.000110}, {141.74, 53.303771, 0.000062},
+            {207.14, 2.453732, 0.000060}, {154.84, 7.306860, 0.000056}, {34.52, 27.261239, 0.000047},
+            {207.19, 0.121824, 0.000042}, {291.34, 1.844379, 0.000040}, {161.72, 24.198154, 0.000037},
+            {239.56, 25.513099, 0.000035}, {331.55, 3.592518, 0.000023}};
+        for (int i = 0; i < pl.length; i++) {
+            double arg = pl[i][0] + pl[i][1] * kk - (i == 0 ? 0.009173 * t2 : 0);
+            c += pl[i][2] * Math.sin(rad(arg));
+        }
+        double jdUt = jde + c - DELTA_T_DAYS;
+        return Math.round((jdUt - 2440587.5) * 86400000.0);
+    }
+
+    /** Lunazione (k) che contiene l'istante, partendo un po' prima per sicurezza. */
+    private static long lunationBefore(long ms) {
+        double jd = ms / 86400000.0 + 2440587.5;
+        return (long) Math.floor((jd - 2451550.09766) / SYNODIC) - 1;
+    }
+
+    /** {ms, tipo} delle prossime n fasi dopo 'from', in ordine. */
+    public static List<long[]> next(long from, int n) {
+        List<long[]> out = new ArrayList<>();
+        for (long k = lunationBefore(from); out.size() < n; k++) {
+            for (int type = 0; type < 4 && out.size() < n; type++) {
+                long t = phaseTime(k, type);
+                if (t > from) out.add(new long[]{t, type});
+            }
+        }
+        return out;
+    }
+
+    /** Ultima luna nuova prima (o uguale) di 'ms'. */
+    public static long previousNew(long ms) {
+        long k = lunationBefore(ms) + 2;
+        while (phaseTime(k, NEW) > ms) k--;
+        return phaseTime(k, NEW);
+    }
+
+    /** Eta' della Luna in giorni (dalla luna nuova). */
+    public static double ageDays(long ms) { return (ms - previousNew(ms)) / 86400000.0; }
+
+    /** Prossima fase di un certo tipo dopo 'from'. */
+    public static long nextOf(long from, int type) {
+        for (long[] p : next(from, 8)) if (p[1] == type) return p[0];
+        return -1;
+    }
+
+    /**
+     * La Luna nella notte che inizia al tramonto 'sunset' e finisce all'alba
+     * 'sunrise': minuti in cui e' sopra l'orizzonte, primo e ultimo istante.
+     * {minuti, da ms, a ms} oppure {0, -1, -1} se resta sotto tutta la notte.
+     */
+    public static long[] nightMoon(long sunset, long sunrise, double lat, double lon) {
+        long step = 5 * 60_000L, first = -1, last = -1, minutes = 0;
+        for (long t = sunset; t <= sunrise; t += step) {
+            if (SunCalc.moonPosition(t, lat, lon)[0] > SkyPaths.MOON_H0) {
+                if (first < 0) first = t;
+                last = t;
+                minutes += 5;
+            }
+        }
+        return new long[]{minutes, first, last};
+    }
+
+    private static double rad(double deg) { return Math.toRadians(deg % 360); }
+}
+"""
+
+MOON_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+
+/**
+ * La Luna com'e' adesso (v5.6): parte illuminata con il terminatore a
+ * ellisse, lato giusto per crescente/calante e per l'emisfero, alone e mari.
+ */
+public class MoonView extends View {
+    private final Paint pDark = new Paint(Paint.ANTI_ALIAS_FLAG), pLit = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pGlow = new Paint(Paint.ANTI_ALIAS_FLAG), pMare = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path lit = new Path();
+    private final RectF oval = new RectF();
+    private float fraction = 0.5f;
+    private boolean waxing = true, south;
+    /** Mari principali: {x, y, raggio} in frazioni del raggio (faccia visibile, Nord in alto). */
+    private static final float[][] MARIA = {{-0.35f, -0.35f, 0.26f}, {0.05f, -0.42f, 0.2f}, {0.32f, -0.15f, 0.22f},
+        {0.42f, 0.25f, 0.16f}, {-0.1f, 0.05f, 0.18f}, {-0.45f, 0.2f, 0.2f}, {0.12f, 0.42f, 0.14f}};
+
+    public MoonView(Context c) { this(c, null); }
+    public MoonView(Context c, AttributeSet a) {
+        super(c, a);
+        pDark.setColor(0xFF17213A);
+        pMare.setColor(0x33384A66);
+    }
+
+    /** fraction 0..1 illuminata; waxing = crescente; south = emisfero sud (immagine capovolta). */
+    public void setPhase(double fraction, boolean waxing, boolean south) {
+        this.fraction = (float) Math.max(0, Math.min(1, fraction));
+        this.waxing = waxing;
+        this.south = south;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f, r = Math.min(cx, cy) * 0.78f;
+        if (r < 10) return;
+        float glow = 0.25f + 0.75f * fraction;
+        pGlow.setShader(new RadialGradient(cx, cy, r * 1.32f, new int[]{(int) (glow * 0x55) << 24 | 0xDDE8FF, 0x00DDE8FF},
+            new float[]{0.72f, 1f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r * 1.32f, pGlow);
+        c.drawCircle(cx, cy, r, pDark);
+
+        c.save();
+        // emisfero nord: crescente illuminata a destra; calante a sinistra; a sud il contrario
+        if (!waxing ^ south) c.scale(-1, 1, cx, cy);
+        lit.reset();
+        oval.set(cx - r, cy - r, cx + r, cy + r);
+        lit.arcTo(oval, -90, 180, true);                      // lembo illuminato (destra)
+        float rx = r * Math.abs(1 - 2 * fraction);
+        oval.set(cx - rx, cy - r, cx + rx, cy + r);
+        lit.arcTo(oval, 90, fraction < 0.5f ? -180 : 180, false);   // terminatore
+        lit.close();
+        pLit.setShader(new RadialGradient(cx - r * 0.25f, cy - r * 0.3f, r * 1.4f, 0xFFFFFDF2, 0xFFC9CCD6, Shader.TileMode.CLAMP));
+        c.drawPath(lit, pLit);
+        c.restore();
+
+        // mari sempre nello stesso punto del disco (non si specchiano con la fase)
+        c.save();
+        c.clipPath(litPathScreen(cx, cy, r));
+        if (south) c.rotate(180, cx, cy);
+        for (float[] m : MARIA) c.drawCircle(cx + m[0] * r, cy + m[1] * r, m[2] * r, pMare);
+        c.restore();
+    }
+
+    /** La stessa zona illuminata, ma in coordinate dello schermo (per ritagliare i mari). */
+    private Path litPathScreen(float cx, float cy, float r) {
+        Path p = new Path(lit);
+        if (!waxing ^ south) {
+            Matrix m = new Matrix();
+            m.setScale(-1, 1, cx, cy);
+            p.transform(m);
+        }
+        return p;
+    }
+}
+"""
+
+AREA_CALC = r"""package com.offlinegps.map.util;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.TimeZone;
+
+/**
+ * Area e perimetro di un terreno (v5.6). Area sulla sfera (Chamberlain e
+ * Duquette, la stessa delle mappe web) invece del piano locale, filtro dei
+ * punti GPS imprecisi quando si cammina sul confine, semplificazione dei
+ * punti (Douglas-Peucker), controllo del perimetro che si incrocia ed
+ * esportazione GPX. Punti {lat, lon} in gradi. Senza Android: testata sul computer.
+ */
+public final class AreaCalc {
+    public static final double R = 6371008.8;
+    /** Un campo da calcio regolamentare (105 x 68 m). */
+    public static final double FOOTBALL_M2 = 105.0 * 68.0;
+
+    private AreaCalc() {}
+
+    /** Area in m² del poligono chiuso (l'ultimo punto si collega al primo). */
+    public static double area(List<double[]> p) {
+        int n = p.size();
+        if (n < 3) return 0;
+        double s = 0;
+        for (int i = 0; i < n; i++) {
+            double[] a = p.get(i), b = p.get((i + 1) % n);
+            s += Math.toRadians(b[1] - a[1]) * (2 + Math.sin(Math.toRadians(a[0])) + Math.sin(Math.toRadians(b[0])));
+        }
+        return Math.abs(s * R * R / 2);
+    }
+
+    public static double distance(double[] a, double[] b) {
+        double dLat = Math.toRadians(b[0] - a[0]), dLon = Math.toRadians(b[1] - a[1]);
+        double h = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(a[0])) * Math.cos(Math.toRadians(b[0])) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+
+    /** Perimetro in metri; closed = conta anche il lato che torna al primo punto. */
+    public static double perimeter(List<double[]> p, boolean closed) {
+        double t = 0;
+        for (int i = 0; i + 1 < p.size(); i++) t += distance(p.get(i), p.get(i + 1));
+        if (closed && p.size() >= 3) t += distance(p.get(p.size() - 1), p.get(0));
+        return t;
+    }
+
+    /**
+     * Camminando sul confine: si tiene il nuovo punto solo se il GPS e' preciso
+     * (entro 20 m) e ci si e' spostati di almeno minStep o di meta' dell'errore.
+     */
+    public static boolean accept(double[] last, double lat, double lon, float accuracy, double minStep) {
+        if (accuracy > 20) return false;
+        if (last == null) return true;
+        return distance(last, new double[]{lat, lon}) >= Math.max(minStep, accuracy * 0.5);
+    }
+
+    /** Coordinate locali in metri (x est, y nord) attorno al primo punto. */
+    static double[][] local(List<double[]> p) {
+        double[][] xy = new double[p.size()][2];
+        if (p.isEmpty()) return xy;
+        double lat0 = Math.toRadians(p.get(0)[0]), k = Math.cos(lat0);
+        for (int i = 0; i < p.size(); i++) {
+            xy[i][0] = Math.toRadians(p.get(i)[1] - p.get(0)[1]) * R * k;
+            xy[i][1] = Math.toRadians(p.get(i)[0] - p.get(0)[0]) * R;
+        }
+        return xy;
+    }
+
+    /** Toglie i punti che stanno entro tolM dalla linea fra i vicini (Douglas-Peucker). */
+    public static List<double[]> simplify(List<double[]> p, double tolM) {
+        if (p.size() < 3) return new ArrayList<>(p);
+        double[][] xy = local(p);
+        boolean[] keep = new boolean[p.size()];
+        keep[0] = keep[p.size() - 1] = true;
+        dp(xy, 0, p.size() - 1, tolM, keep);
+        List<double[]> out = new ArrayList<>();
+        for (int i = 0; i < p.size(); i++) if (keep[i]) out.add(p.get(i));
+        return out;
+    }
+
+    private static void dp(double[][] xy, int a, int b, double tol, boolean[] keep) {
+        if (b <= a + 1) return;
+        double best = -1;
+        int idx = -1;
+        for (int i = a + 1; i < b; i++) {
+            double d = segDist(xy[i], xy[a], xy[b]);
+            if (d > best) { best = d; idx = i; }
+        }
+        if (best > tol) {
+            keep[idx] = true;
+            dp(xy, a, idx, tol, keep);
+            dp(xy, idx, b, tol, keep);
+        }
+    }
+
+    private static double segDist(double[] p, double[] a, double[] b) {
+        double dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+        double t = l2 == 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+        double ex = a[0] + t * dx - p[0], ey = a[1] + t * dy - p[1];
+        return Math.sqrt(ex * ex + ey * ey);
+    }
+
+    /** true se due lati non vicini del poligono chiuso si incrociano (area non affidabile). */
+    public static boolean selfIntersects(List<double[]> p) {
+        int n = p.size();
+        if (n < 4) return false;
+        double[][] xy = local(p);
+        for (int i = 0; i < n; i++) {
+            double[] a = xy[i], b = xy[(i + 1) % n];
+            for (int j = i + 2; j < n; j++) {
+                if (i == 0 && j == n - 1) continue;   // lati adiacenti attraverso la chiusura
+                if (cross(a, b, xy[j], xy[(j + 1) % n])) return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean cross(double[] p1, double[] p2, double[] p3, double[] p4) {
+        double d1 = orient(p3, p4, p1), d2 = orient(p3, p4, p2), d3 = orient(p1, p2, p3), d4 = orient(p1, p2, p4);
+        return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0;
+    }
+
+    private static double orient(double[] a, double[] b, double[] c) {
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    }
+
+    /** "850 m²", "1,25 ettari", "3,40 km²". */
+    public static String areaText(double m2) {
+        if (m2 < 10_000) return String.format(Locale.ITALY, "%,.0f m²", m2);
+        if (m2 < 1_000_000) return String.format(Locale.ITALY, "%.2f ettari", m2 / 10_000);
+        return String.format(Locale.ITALY, "%.2f km²", m2 / 1_000_000);
+    }
+
+    public static String lengthText(double m) {
+        return m < 1000 ? String.format(Locale.ITALY, "%.0f m", m) : String.format(Locale.ITALY, "%.2f km", m / 1000);
+    }
+
+    /** GPX con il confine come traccia chiusa (si apre in qualsiasi app di mappe). */
+    public static String toGpx(List<double[]> p, String name, long timeMs) {
+        SimpleDateFormat iso = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
+        iso.setTimeZone(TimeZone.getTimeZone("UTC"));
+        String safe = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            + "<gpx version=\"1.1\" creator=\"OfflineGPS 3D\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n"
+            + "  <metadata><name>" + safe + "</name><time>" + iso.format(new Date(timeMs)) + "</time></metadata>\n"
+            + "  <trk><name>" + safe + "</name><trkseg>\n");
+        for (int i = 0; i <= p.size(); i++) {
+            if (i == p.size() && p.size() < 3) break;
+            double[] q = p.get(i % p.size());
+            sb.append(String.format(Locale.US, "    <trkpt lat=\"%.7f\" lon=\"%.7f\"/>\n", q[0], q[1]));
+        }
+        return sb.append("  </trkseg></trk>\n</gpx>\n").toString();
+    }
+
+    /** "45.1,9.2;45.2,9.3" <-> lista di punti (per salvarli). */
+    public static String serialize(List<double[]> p) {
+        StringBuilder sb = new StringBuilder();
+        for (double[] q : p) {
+            if (sb.length() > 0) sb.append(';');
+            sb.append(String.format(Locale.US, "%.7f,%.7f", q[0], q[1]));
+        }
+        return sb.toString();
+    }
+
+    public static List<double[]> parse(String s) {
+        List<double[]> out = new ArrayList<>();
+        if (s == null || s.isEmpty()) return out;
+        for (String part : s.split(";")) {
+            String[] ll = part.split(",");
+            if (ll.length != 2) continue;
+            try { out.add(new double[]{Double.parseDouble(ll[0]), Double.parseDouble(ll[1])}); }
+            catch (NumberFormatException ignored) {}
+        }
+        return out;
+    }
+}
+"""
+
+AREA_SHAPE_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Forma del terreno misurato (v5.6): poligono riempito, vertici, lato di
+ * chiusura tratteggiato, la tua posizione, Nord in alto e scala in metri.
+ */
+public class AreaShapeView extends View {
+    private final float dp;
+    private final Paint pFill = new Paint(Paint.ANTI_ALIAS_FLAG), pLine = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pClose = new Paint(Paint.ANTI_ALIAS_FLAG), pDot = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG), pGrid = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private List<double[]> pts = new ArrayList<>();
+    private double[] me;
+    private boolean warn;
+
+    public AreaShapeView(Context c) { this(c, null); }
+    public AreaShapeView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pFill.setColor(0x33B388FF);
+        pLine.setColor(0xFFB388FF);
+        pLine.setStyle(Paint.Style.STROKE);
+        pLine.setStrokeWidth(2.5f * dp);
+        pLine.setStrokeJoin(Paint.Join.ROUND);
+        pClose.setColor(0x99B388FF);
+        pClose.setStyle(Paint.Style.STROKE);
+        pClose.setStrokeWidth(1.8f * dp);
+        pClose.setPathEffect(new DashPathEffect(new float[]{8 * dp, 6 * dp}, 0));
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pGrid.setColor(0x1400E5FF);
+        pGrid.setStrokeWidth(1);
+    }
+
+    /** points = vertici {lat, lon}; me = posizione attuale o null; warn = perimetro che si incrocia. */
+    public void set(List<double[]> points, double[] me, boolean warn) {
+        pts = points == null ? new ArrayList<>() : new ArrayList<>(points);
+        this.me = me;
+        this.warn = warn;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        int w = getWidth(), h = getHeight();
+        for (float x = 0; x < w; x += 24 * dp) c.drawLine(x, 0, x, h, pGrid);
+        for (float y = 0; y < h; y += 24 * dp) c.drawLine(0, y, w, y, pGrid);
+        // N in alto a destra
+        pText.setTextSize(13 * dp);
+        pText.setTextAlign(Paint.Align.CENTER);
+        pText.setColor(0xFFFF3D71);
+        c.drawText("N ▲", w - 26 * dp, 22 * dp, pText);
+        if (pts.isEmpty()) {
+            pText.setColor(0xFF8FB3D0);
+            pText.setTextSize(14 * dp);
+            c.drawText("Aggiungi i vertici camminando sul confine", w / 2f, h / 2f, pText);
+            return;
+        }
+        // proiezione locale in metri
+        double lat0 = pts.get(0)[0], lon0 = pts.get(0)[1], k = Math.cos(Math.toRadians(lat0)), mPerDeg = 111_195.0;
+        List<double[]> all = new ArrayList<>(pts);
+        if (me != null) all.add(me);
+        double minX = 1e18, maxX = -1e18, minY = 1e18, maxY = -1e18;
+        for (double[] p : all) {
+            double x = (p[1] - lon0) * mPerDeg * k, y = (p[0] - lat0) * mPerDeg;
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        }
+        double spanM = Math.max(20, Math.max(maxX - minX, maxY - minY));
+        float pad = 34 * dp;
+        double scale = Math.min(w - 2 * pad, h - 2 * pad) / spanM;   // px per metro
+        double cxM = (minX + maxX) / 2, cyM = (minY + maxY) / 2;
+        Path path = new Path();
+        float[] first = null, last = null;
+        for (int i = 0; i < pts.size(); i++) {
+            float[] s = toScreen(pts.get(i), lat0, lon0, k, mPerDeg, cxM, cyM, scale, w, h);
+            if (i == 0) { path.moveTo(s[0], s[1]); first = s; } else path.lineTo(s[0], s[1]);
+            last = s;
+        }
+        if (pts.size() >= 3) {
+            Path fill = new Path(path);
+            fill.close();
+            pFill.setColor(warn ? 0x33FF6B35 : 0x33B388FF);
+            c.drawPath(fill, pFill);
+        }
+        pLine.setColor(warn ? 0xFFFF6B35 : 0xFFB388FF);
+        c.drawPath(path, pLine);
+        if (pts.size() >= 2) c.drawLine(last[0], last[1], first[0], first[1], pClose);
+        for (int i = 0; i < pts.size(); i++) {
+            float[] s = toScreen(pts.get(i), lat0, lon0, k, mPerDeg, cxM, cyM, scale, w, h);
+            pDot.setColor(i == 0 ? 0xFF00FF88 : 0xFFE8F4FD);
+            c.drawCircle(s[0], s[1], (i == 0 ? 5.5f : 3.5f) * dp, pDot);
+        }
+        if (me != null) {
+            float[] s = toScreen(me, lat0, lon0, k, mPerDeg, cxM, cyM, scale, w, h);
+            pDot.setColor(0x4400E5FF);
+            c.drawCircle(s[0], s[1], 13 * dp, pDot);
+            pDot.setColor(0xFF00E5FF);
+            c.drawCircle(s[0], s[1], 6 * dp, pDot);
+        }
+        // barra di scala
+        double target = spanM / 4, step = Math.pow(10, Math.floor(Math.log10(target)));
+        double bar = target / step >= 5 ? 5 * step : target / step >= 2 ? 2 * step : step;
+        float len = (float) (bar * scale), x0 = 14 * dp, y0 = h - 16 * dp;
+        pLine.setColor(0xFFE8F4FD);
+        pLine.setStrokeWidth(2 * dp);
+        c.drawLine(x0, y0, x0 + len, y0, pLine);
+        c.drawLine(x0, y0 - 5 * dp, x0, y0 + 1, pLine);
+        c.drawLine(x0 + len, y0 - 5 * dp, x0 + len, y0 + 1, pLine);
+        pLine.setStrokeWidth(2.5f * dp);
+        pText.setTextAlign(Paint.Align.LEFT);
+        pText.setTextSize(11 * dp);
+        pText.setColor(0xFFE8F4FD);
+        c.drawText(bar >= 1000 ? String.format(Locale.ITALY, "%.0f km", bar / 1000) : String.format(Locale.ITALY, "%.0f m", bar),
+            x0, y0 - 8 * dp, pText);
+    }
+
+    private static float[] toScreen(double[] p, double lat0, double lon0, double k, double mPerDeg,
+                                    double cxM, double cyM, double scale, int w, int h) {
+        double x = (p[1] - lon0) * mPerDeg * k - cxM, y = (p[0] - lat0) * mPerDeg - cyM;
+        return new float[]{(float) (w / 2.0 + x * scale), (float) (h / 2.0 - y * scale)};
+    }
+}
+"""
+
+CPR_METRONOME = r"""package com.offlinegps.map.util;
+
+/**
+ * Ritmo della rianimazione cardiopolmonare (v5.6): 110 compressioni al
+ * minuto (le linee guida dicono 100-120), cicli da 30 compressioni e una
+ * pausa di 5 secondi per 2 ventilazioni (meno di 10 secondi), oppure solo
+ * compressioni continue per chi non sa o non vuole ventilare.
+ * Senza Android: testata sul computer.
+ */
+public final class CprMetronome {
+    public static final int BPM = 110;
+    public static final long PERIOD = 60_000L / BPM;
+    public static final int PER_CYCLE = 30;
+    public static final long BREATHS_MS = 5_000L;
+    /** Ogni 2 minuti conviene dare il cambio a chi comprime: ci si stanca senza accorgersene. */
+    public static final long SWAP_MS = 120_000L;
+
+    private CprMetronome() {}
+
+    public static final class State {
+        /** 1..30, 0 durante le ventilazioni. */
+        public int compression;
+        public boolean breaths;
+        /** Cicli completati. */
+        public int cycle;
+        /** Fra quanto cambia (prossima compressione o fine pausa). */
+        public long msToNext;
+    }
+
+    public static State at(long elapsed, boolean withBreaths) {
+        State s = new State();
+        long e = Math.max(0, elapsed);
+        if (!withBreaths) {
+            long n = e / PERIOD;
+            s.compression = (int) (n % PER_CYCLE) + 1;
+            s.cycle = (int) (n / PER_CYCLE);
+            s.msToNext = PERIOD - e % PERIOD;
+            return s;
+        }
+        long comp = PER_CYCLE * PERIOD, len = comp + BREATHS_MS;
+        s.cycle = (int) (e / len);
+        long in = e % len;
+        if (in < comp) {
+            s.compression = (int) (in / PERIOD) + 1;
+            s.msToNext = PERIOD - in % PERIOD;
+        } else {
+            s.breaths = true;
+            s.compression = 0;
+            s.msToNext = len - in;
+        }
+        return s;
+    }
+
+    /** Numero del cambio di soccorritore suggerito (0 nei primi 2 minuti). */
+    public static int swaps(long elapsed) { return (int) (Math.max(0, elapsed) / SWAP_MS); }
+}
+"""
+
+GUIDE_DATA = r"""package com.offlinegps.map.ui;
+
+/**
+ * Contenuti delle guide offline (v5.6): primo soccorso e sopravvivenza in
+ * schede brevi. Ogni scheda: {titolo, riassunto, passi separati da \n,
+ * colore}. Primo soccorso secondo le indicazioni di base europee (ERC):
+ * ricordano i gesti, non sostituiscono un corso ne' il 112.
+ */
+final class GuideData {
+    private GuideData() {}
+
+    static final int RED = 0xFFFF3D71, ORANGE = 0xFFFF6B35, YELLOW = 0xFFFFD600, CYAN = 0xFF00E5FF,
+        GREEN = 0xFF00FF88, VIOLET = 0xFFB388FF;
+
+    static final Object[][] FIRST_AID = {
+        {"Prima di tutto", "Sicurezza, 112, non spostare", RED,
+            "Guarda se c'e' pericolo per te (traffico, sassi, valanga, corrente): non diventare la seconda vittima.\n"
+            + "Chiama il 112 e metti il vivavoce: l'operatore ti guida passo passo.\n"
+            + "Di' dove sei: usa la schermata EMERGENZA per leggere le coordinate.\n"
+            + "Non spostare chi e' caduto o ha preso un colpo forte, salvo pericolo immediato.\n"
+            + "Coprilo e isolalo dal terreno freddo: in montagna il freddo uccide anche d'estate."},
+        {"Non risponde e non respira", "Rianimazione (RCP) e defibrillatore", RED,
+            "Scuotilo per le spalle e chiamalo ad alta voce. Se non risponde: 112 in vivavoce.\n"
+            + "Testa indietro, solleva il mento e guarda, ascolta e senti il respiro per 10 secondi.\n"
+            + "Se non respira o respira male (boccheggia): inizia subito le compressioni.\n"
+            + "Mani una sull'altra al centro del petto, braccia tese: spingi giu' 5-6 cm, 100-120 volte al minuto.\n"
+            + "Se sei addestrato: 30 compressioni e 2 ventilazioni. Se no: solo compressioni, senza fermarti.\n"
+            + "Fai portare un defibrillatore (DAE): accendilo e segui la voce. Cerca i DAE vicini nei Luoghi.\n"
+            + "Non smettere finche' non arrivano i soccorsi o la persona riprende a respirare normalmente.\n"
+            + "Usa il METRONOMO qui sopra per tenere il ritmo giusto."},
+        {"Non risponde ma respira", "Posizione laterale di sicurezza", ORANGE,
+            "Chiama il 112.\n"
+            + "Mettilo su un fianco: il braccio vicino a te piegato ad angolo, l'altra mano sotto la guancia, il ginocchio lontano piegato, poi gira verso di te.\n"
+            + "Testa leggermente indietro, bocca verso il basso: cosi' non soffoca se vomita.\n"
+            + "Coprilo e controlla il respiro ogni minuto. Se smette di respirare: RCP.\n"
+            + "Se sospetti un trauma alla schiena e respira bene, lascialo com'e' e tieni la testa ferma."},
+        {"Soffocamento", "Corpo estraneo nelle vie aeree", ORANGE,
+            "Se tossisce: incoraggialo a tossire forte, non dargli colpi.\n"
+            + "Se non riesce a tossire, parlare o respirare: 5 colpi decisi fra le scapole, piegato in avanti.\n"
+            + "Poi 5 compressioni addominali (manovra di Heimlich): da dietro, pugno sopra l'ombelico, spingi in dentro e in su.\n"
+            + "Alterna 5 colpi e 5 compressioni finche' l'oggetto esce.\n"
+            + "Lattanti: 5 colpi sulla schiena a pancia in giu' sull'avambraccio e 5 compressioni sul petto con due dita, mai sulla pancia.\n"
+            + "Se perde coscienza: 112 e rianimazione."},
+        {"Emorragia", "Sangue che non si ferma", RED,
+            "Indossa guanti se li hai.\n"
+            + "Premi forte e senza mollare direttamente sulla ferita con garze o un panno pulito, per almeno 10 minuti.\n"
+            + "Se il sangue passa, aggiungi altro panno sopra senza togliere il primo.\n"
+            + "Emorragia grave di braccio o gamba che non si ferma con la pressione: laccio emostatico 5-7 cm sopra la ferita, stretto finche' il sangue si ferma. Annota l'ora e non allentarlo.\n"
+            + "Sdraia la persona e coprila: rischia lo shock. Chiama il 112."},
+        {"Fratture e distorsioni", "Immobilizza, non raddrizzare", YELLOW,
+            "Non cercare di raddrizzare l'osso.\n"
+            + "Immobilizza nella posizione trovata, comprese le articolazioni sopra e sotto (bastoncini, materassino, giornali, fasce).\n"
+            + "Frattura esposta: copri la ferita con garza pulita, non spingere dentro l'osso.\n"
+            + "Distorsione: riposo, freddo avvolto in un panno per 20 minuti, fascia elastica non troppo stretta, arto sollevato.\n"
+            + "Dita fredde, bianche o insensibili dopo la fasciatura: allenta."},
+        {"Colpo alla testa o alla schiena", "Possibile trauma grave", RED,
+            "Non muovere la persona se non e' in pericolo: tienigli la testa ferma con le mani, allineata al corpo.\n"
+            + "Chiama il 112 se: ha perso coscienza anche per poco, vomita, e' confusa, ha mal di testa forte, formicolii o non muove le gambe.\n"
+            + "Dopo un colpo alla testa non lasciarla sola per alcune ore: i sintomi possono arrivare dopo.\n"
+            + "Se deve essere girata (vomito, non respira) fallo in due, come un tronco."},
+        {"Ipotermia", "Brividi, confusione, freddo", CYAN,
+            "Portala al riparo dal vento, isola dal terreno (zaino, materassino).\n"
+            + "Togli i vestiti bagnati e metti strati asciutti, cappello, coperta termica.\n"
+            + "Bevande calde e zuccherate solo se e' ben sveglia e deglutisce bene. Niente alcol.\n"
+            + "Muovila con delicatezza, non massaggiarla, non farla camminare se e' molto fredda.\n"
+            + "Se non trema piu' ed e' confusa o sonnolenta e' grave: 112. Puo' sembrare morta: in dubbio, RCP."},
+        {"Congelamento", "Dita, naso, orecchie bianche e dure", CYAN,
+            "Riparati e togli anelli e scarpe strette.\n"
+            + "Non strofinare e non usare neve o fuoco diretto.\n"
+            + "Riscalda solo se non c'e' rischio che geli di nuovo: acqua tiepida (37-39 gradi) per 20-30 minuti, o contro la pelle di un compagno.\n"
+            + "Non rompere le bolle, copri con garza asciutta fra le dita.\n"
+            + "Non camminare su piedi scongelati se puoi evitarlo. Vai in ospedale."},
+        {"Colpo di calore", "Pelle calda, confusione, malessere", ORANGE,
+            "Spostala all'ombra e sdraiala.\n"
+            + "Raffredda subito: togli vestiti in eccesso, acqua fresca sul corpo, ventila, panni bagnati su collo, ascelle e inguine.\n"
+            + "Fai bere a piccoli sorsi solo se e' sveglia.\n"
+            + "Se e' confusa, sviene o ha le convulsioni: 112 e continua a raffreddare."},
+        {"Ustioni", "Raffredda subito con acqua", ORANGE,
+            "Acqua corrente fresca (non ghiacciata) sulla zona per 20 minuti.\n"
+            + "Togli anelli, orologi e vestiti non attaccati alla pelle.\n"
+            + "Copri con garza pulita non aderente o pellicola da cucina.\n"
+            + "Niente ghiaccio, olio, burro o creme. Non bucare le bolle.\n"
+            + "112 o ospedale se e' estesa, profonda, su viso, mani, genitali, o se e' un bambino."},
+        {"Morso di vipera", "Calma e arto fermo", GREEN,
+            "Calma: il morso raramente e' mortale, ma va sempre in ospedale.\n"
+            + "Togli anelli, braccialetti e scarpe prima che l'arto si gonfi.\n"
+            + "Immobilizza l'arto come per una frattura e muoviti il meno possibile.\n"
+            + "NON incidere, NON succhiare, NO laccio, NO ghiaccio.\n"
+            + "Chiama il 112 e annota l'ora del morso. Il siero si da' solo in ospedale."},
+        {"Allergia grave", "Gonfiore, fatica a respirare", RED,
+            "Segni: gonfiore di labbra, lingua o gola, fatica a respirare, orticaria diffusa, svenimento.\n"
+            + "Chiama il 112.\n"
+            + "Se ha l'autoiniettore di adrenalina: usalo sulla coscia (anche sopra i pantaloni), come da istruzioni.\n"
+            + "Se respira male: seduto. Se e' debole o pallido: sdraiato con le gambe alzate.\n"
+            + "Se non migliora dopo 5 minuti e ha un secondo autoiniettore, si puo' ripetere. Se non respira: RCP."},
+        {"Zecche", "Toglila presto e bene", GREEN,
+            "Toglila il prima possibile con una pinzetta a punte sottili.\n"
+            + "Afferrala vicinissimo alla pelle e tira dritto, piano e senza schiacciarla.\n"
+            + "Niente olio, alcol o calore prima di toglierla.\n"
+            + "Disinfetta e segna la data.\n"
+            + "Nelle settimane dopo: macchia rossa che si allarga, febbre o dolori? Vai dal medico."},
+        {"Mal di montagna", "Sopra i 2500 metri", VIOLET,
+            "Segni: mal di testa con nausea, stanchezza, sonno cattivo dopo una salita rapida.\n"
+            + "Non salire piu' in alto finche' i sintomi non passano: riposa e bevi.\n"
+            + "Se peggiora: scendi di almeno 500-1000 metri.\n"
+            + "Confusione, barcollare o fiato corto anche a riposo: scendi subito e chiama il 112."},
+        {"Colpito da fulmine", "Si puo' toccare subito", VIOLET,
+            "Chi e' stato colpito non e' carico di elettricita': puoi toccarlo subito.\n"
+            + "Se il temporale continua, spostatevi in un posto piu' sicuro.\n"
+            + "Se non respira: RCP immediata. Spesso si salva anche chi sembra morto.\n"
+            + "Con piu' feriti, aiuta prima chi non respira.\n"
+            + "Chiama il 112 anche se sembra stare bene."},
+        {"Infarto e ictus", "Dolore al petto, faccia storta", RED,
+            "Infarto: dolore o peso al petto che puo' andare al braccio, alla mandibola o alla schiena, sudore freddo, nausea. 112 subito, fallo stare seduto e fermo.\n"
+            + "Ictus, pensa a 3 segni: faccia storta quando sorride, un braccio debole, parole confuse.\n"
+            + "Anche uno solo: 112 subito e annota l'ora in cui e' iniziato. Ogni minuto conta.\n"
+            + "Non dare da mangiare o da bere."},
+        {"Calo di zuccheri", "Diabetici: sudore, tremore, confusione", YELLOW,
+            "Se e' sveglio e deglutisce: zucchero subito (bevanda zuccherata, 3-4 zollette, miele).\n"
+            + "Dopo 15 minuti se non migliora ripeti, poi fagli mangiare qualcosa.\n"
+            + "Se non e' sveglio: niente in bocca, posizione laterale di sicurezza e 112."},
+        {"Svenimento e shock", "Pallido, sudato, debole", YELLOW,
+            "Sdraialo e alza le gambe (se non ci sono traumi).\n"
+            + "Allenta i vestiti stretti, coprilo, non dare da bere.\n"
+            + "Se non si riprende in un minuto o e' ferito: 112 e controlla il respiro."},
+    };
+
+    static final Object[][] SURVIVAL = {
+        {"Ti sei perso: STOP", "Fermati, Pensa, Osserva, Pianifica", RED,
+            "Fermati: correre a caso peggiora le cose.\n"
+            + "Pensa: da dove sei arrivato? Quanta luce, acqua e batteria hai?\n"
+            + "Osserva: usa ROTTA DI RITORNO o SEGUI TRACCIA, guarda la mappa offline e la bussola.\n"
+            + "Pianifica: se qualcuno sa dov'eri diretto, spesso conviene restare fermo in un posto visibile.\n"
+            + "Risparmia il telefono: modalita' aereo fra un controllo e l'altro (il GPS funziona lo stesso)."},
+        {"Regola del 3", "Le priorita' giuste", RED,
+            "3 minuti senza aria.\n3 ore senza riparo con freddo o caldo forte.\n3 giorni senza acqua.\n3 settimane senza cibo.\n"
+            + "Prima il riparo e il calore, poi i segnali, poi l'acqua; il cibo per ultimo."},
+        {"Farsi trovare", "Segnali che tutti riconoscono", ORANGE,
+            "Qualsiasi segnale ripetuto 3 volte significa aiuto (3 fischi, 3 lampi, 3 fuochi a triangolo).\n"
+            + "Segnale alpino di soccorso: 6 segnali in un minuto, poi un minuto di pausa. Chi risponde fa 3 segnali al minuto.\n"
+            + "All'elicottero: braccia alzate a Y = si', abbiamo bisogno di aiuto. Un braccio su e uno giu' = no.\n"
+            + "Colori vivaci e la coperta termica dal lato argento si vedono da lontano.\n"
+            + "Usa FISCHIETTO, TORCIA e SEGNALI LUMINOSI di questa app."},
+        {"Riparo", "Fuori dal vento, isolato da terra", CYAN,
+            "Il terreno ruba calore: siediti su zaino, corda, rami, materassino.\n"
+            + "Cerca un riparo dal vento: massi, alberi fitti, una conca (non il fondo di un torrente).\n"
+            + "Non ripararti sotto alberi isolati o creste con il temporale.\n"
+            + "Vestiti asciutti vicino alla pelle; il cotone bagnato raffredda.\n"
+            + "In gruppo state vicini: si scalda meglio."},
+        {"Acqua", "Bevi sicuro", CYAN,
+            "Bolli l'acqua: basta un minuto di bollore deciso (3 minuti sopra i 2000 metri).\n"
+            + "In alternativa: filtro da escursione o pastiglie, rispettando i tempi.\n"
+            + "Evita acqua ferma o a valle di pascoli, stalle e paesi.\n"
+            + "Neve: meglio sciolta che mangiata, raffredda il corpo.\n"
+            + "Urina scura, mal di testa e stanchezza: stai bevendo troppo poco."},
+        {"Temporale in montagna", "Regola 30/30", VIOLET,
+            "Se fra lampo e tuono passano meno di 30 secondi, sei in pericolo: cerca riparo subito.\n"
+            + "Scendi da cime, creste e sentieri esposti. Stai lontano da croci, cavi e funi metalliche delle ferrate.\n"
+            + "Niente alberi isolati, ripari sotto roccia sporgente o ingressi di grotte piccole.\n"
+            + "In gruppo distanziatevi di qualche metro.\n"
+            + "Come ultima risorsa: accovacciati sullo zaino, piedi uniti, testa bassa.\n"
+            + "Riparti 30 minuti dopo l'ultimo tuono. Usa lo strumento TEMPORALE."},
+        {"Notte all'aperto", "Arrivare al mattino", VIOLET,
+            "Decidi presto, con ancora luce, dove passare la notte.\n"
+            + "Mangia qualcosa prima di dormire: il corpo produce calore.\n"
+            + "Indossa tutto, coperta termica attorno al corpo (non solo sopra), testa e piedi coperti.\n"
+            + "Con il fuoco: solo dove e' permesso e sicuro, lontano da erba secca e alberi."},
+        {"Orientarsi senza bussola", "Sole, stelle, mappa", YELLOW,
+            "Il Sole sorge a est e tramonta a ovest; da noi verso mezzogiorno (verso le 13 con l'ora legale) e' a sud.\n"
+            + "Di notte la Stella Polare indica il nord: prolunga di 5 volte il lato del Grande Carro.\n"
+            + "Muschio e rami non sono affidabili.\n"
+            + "Usa NORD DAL SOLE, la bussola degli strumenti e la mappa offline."},
+        {"Animali", "Orso, lupo, cani da guardia, vipera", GREEN,
+            "Orso (Trentino, Abruzzo): fai rumore camminando, non avvicinarti mai. Se lo incontri non correre, parla con calma e allontanati piano.\n"
+            + "Lupo: di solito fugge. Non dargli cibo e tieni il cane al guinzaglio.\n"
+            + "Cani da pastore vicino alle greggi: aggira il gregge largo, non correre, scendi dalla bici, non fissarli.\n"
+            + "Vipera: guarda dove metti mani e piedi su pietraie e muretti, scarpe alte."},
+        {"Neve e valanghe", "Prima di partire", CYAN,
+            "Leggi il bollettino valanghe e rinuncia se non sei sicuro.\n"
+            + "Fuori pista e scialpinismo: ARTVA acceso, pala e sonda, e saperli usare.\n"
+            + "Pendii sopra i 30 gradi sono quelli dove partono le valanghe: misurali con PENDENZA NEVE.\n"
+            + "Se qualcuno e' travolto: guarda dove sparisce, chiama il 112, cerca subito (i primi 15 minuti contano)."},
+        {"Cibo", "Meglio niente che sbagliato", GREEN,
+            "Si resiste settimane senza cibo: non e' la priorita'.\n"
+            + "Non mangiare funghi, bacche o piante che non conosci con certezza.\n"
+            + "Razionare l'acqua e' piu' pericoloso che razionare il cibo."},
+    };
+}
+"""
+
+GUIDE_CARDS = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import java.text.Normalizer;
+import java.util.Locale;
+
+/**
+ * Schede di una guida (v5.6): titolo e riassunto, tocca per aprire i passi
+ * numerati; ricerca che ignora maiuscole e accenti. Prima le guide erano un
+ * unico muro di testo.
+ */
+final class GuideCards {
+    private GuideCards() {}
+
+    static String norm(String s) {
+        return Normalizer.normalize(s == null ? "" : s, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ITALY);
+    }
+
+    /** Riempie box con le schede che contengono la ricerca; ritorna quante sono. */
+    static int fill(Context c, LinearLayout box, Object[][] topics, String query, boolean openFirst) {
+        box.removeAllViews();
+        String q = norm(query).trim();
+        float dp = c.getResources().getDisplayMetrics().density;
+        int shown = 0;
+        for (Object[] t : topics) {
+            String title = (String) t[0], sub = (String) t[1], body = (String) t[3];
+            int color = (Integer) t[2];
+            if (!q.isEmpty() && !norm(title + " " + sub + " " + body).contains(q)) continue;
+            LinearLayout card = new LinearLayout(c);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding((int) (14 * dp), (int) (12 * dp), (int) (14 * dp), (int) (12 * dp));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xCC0D1626);
+            bg.setCornerRadius(16 * dp);
+            bg.setStroke(Math.max(1, (int) dp), (color & 0x00FFFFFF) | 0x55000000);
+            card.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (10 * dp);
+
+            LinearLayout head = new LinearLayout(c);
+            head.setOrientation(LinearLayout.HORIZONTAL);
+            head.setGravity(Gravity.CENTER_VERTICAL);
+            View bar = new View(c);
+            GradientDrawable bd = new GradientDrawable();
+            bd.setColor(color);
+            bd.setCornerRadius(3 * dp);
+            bar.setBackground(bd);
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams((int) (5 * dp), (int) (36 * dp));
+            bl.setMarginEnd((int) (12 * dp));
+            head.addView(bar, bl);
+            LinearLayout col = new LinearLayout(c);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView tt = new TextView(c);
+            tt.setText(title);
+            tt.setTextColor(0xFFFFFFFF);
+            tt.setTextSize(16);
+            tt.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+            TextView ts = new TextView(c);
+            ts.setText(sub);
+            ts.setTextColor(0xFF8FB3D0);
+            ts.setTextSize(12.5f);
+            col.addView(tt);
+            col.addView(ts);
+            head.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView arrow = new TextView(c);
+            arrow.setTextColor(color);
+            arrow.setTextSize(18);
+            head.addView(arrow);
+            card.addView(head);
+
+            TextView steps = new TextView(c);
+            StringBuilder sb = new StringBuilder();
+            String[] lines = body.split("\n");
+            for (int i = 0; i < lines.length; i++) {
+                if (i > 0) sb.append("\n\n");
+                sb.append(lines.length > 1 ? (i + 1) + ".  " : "").append(lines[i]);
+            }
+            steps.setText(sb);
+            steps.setTextColor(0xFFE8F4FD);
+            steps.setTextSize(14.5f);
+            steps.setLineSpacing(0, 1.18f);
+            steps.setPadding(0, (int) (12 * dp), 0, (int) (4 * dp));
+            boolean open = (openFirst && shown == 0) || !q.isEmpty();
+            steps.setVisibility(open ? View.VISIBLE : View.GONE);
+            arrow.setText(open ? "▲" : "▼");
+            card.addView(steps);
+            card.setClickable(true);
+            card.setOnClickListener(v -> {
+                boolean o = steps.getVisibility() != View.VISIBLE;
+                steps.setVisibility(o ? View.VISIBLE : View.GONE);
+                arrow.setText(o ? "▲" : "▼");
+            });
+            box.addView(card, lp);
+            shown++;
+        }
+        if (shown == 0) {
+            TextView none = new TextView(c);
+            none.setText("Nessuna scheda contiene \"" + query.trim() + "\".");
+            none.setTextColor(0xFF8FB3D0);
+            none.setTextSize(14);
+            box.addView(none);
+        }
+        return shown;
+    }
+}
+"""
+
+CALC_EVAL = r"""package com.offlinegps.map.util;
+
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.util.Locale;
+
+/**
+ * Valutatore della calcolatrice (v5.6): precedenze giuste, meno davanti ai
+ * numeri, percentuale come sui telefoni (50+10% = 55, 200×5% = 10) e
+ * risultati senza code di cifre (0,1+0,2 = 0,3). Prima "-5+3" dava errore
+ * e 0,1+0,2 mostrava 0,30000000000000004.
+ * Simboli accettati: + - × ÷ * / % e il punto o la virgola come decimale.
+ */
+public final class CalcEval {
+    private final String s;
+    private int i;
+
+    private CalcEval(String s) { this.s = s; }
+
+    public static double eval(String expr) {
+        String t = expr.replace(" ", "").replace(',', '.').replace('*', '×').replace('/', '÷').replace('−', '-');
+        if (t.isEmpty()) throw new IllegalArgumentException("vuoto");
+        CalcEval p = new CalcEval(t);
+        double v = p.expr();
+        if (p.i != t.length()) throw new IllegalArgumentException("simbolo inatteso");
+        if (Double.isNaN(v) || Double.isInfinite(v)) throw new ArithmeticException("risultato non valido");
+        return v;
+    }
+
+    private double expr() {
+        double v = term()[0];
+        while (i < s.length() && (s.charAt(i) == '+' || s.charAt(i) == '-')) {
+            char op = s.charAt(i++);
+            double[] t = term();
+            double rhs = t[1] > 0 ? v * t[0] : t[0];   // a + b% = a + a*b/100
+            v = op == '+' ? v + rhs : v - rhs;
+        }
+        return v;
+    }
+
+    /** {valore, 1 se il termine e' solo una percentuale}. */
+    private double[] term() {
+        double[] f = factor();
+        double v = f[0];
+        boolean onlyPct = f[1] > 0;
+        while (i < s.length() && (s.charAt(i) == '×' || s.charAt(i) == '÷')) {
+            char op = s.charAt(i++);
+            double r = factor()[0];
+            if (op == '÷' && r == 0) throw new ArithmeticException("divisione per zero");
+            v = op == '×' ? v * r : v / r;
+            onlyPct = false;
+        }
+        return new double[]{v, onlyPct ? 1 : 0};
+    }
+
+    private double[] factor() {
+        if (i < s.length() && (s.charAt(i) == '-' || s.charAt(i) == '+')) {
+            boolean neg = s.charAt(i++) == '-';
+            double[] f = factor();
+            return new double[]{neg ? -f[0] : f[0], f[1]};
+        }
+        int st = i;
+        while (i < s.length() && (Character.isDigit(s.charAt(i)) || s.charAt(i) == '.')) i++;
+        if (st == i) throw new IllegalArgumentException("manca un numero");
+        String num = s.substring(st, i);
+        if (num.indexOf('.') != num.lastIndexOf('.') || num.equals(".")) throw new IllegalArgumentException("numero non valido");
+        double v = Double.parseDouble(num);
+        boolean pct = false;
+        while (i < s.length() && s.charAt(i) == '%') { v /= 100; i++; pct = true; }
+        return new double[]{v, pct ? 1 : 0};
+    }
+
+    /** 12 cifre significative, virgola decimale, niente zeri inutili; notazione scientifica se enorme o minuscolo. */
+    public static String format(double v) {
+        if (v == 0) return "0";
+        double a = Math.abs(v);
+        if (a >= 1e15 || a < 1e-9) {
+            String e = String.format(Locale.ITALY, "%.9e", v);            // 9,999999800e+15
+            return e.replaceAll("0+e", "e").replace(",e", "e").replace("e+0", "e").replace("e+", "e").replace("e-0", "e-");
+        }
+        String plain = new BigDecimal(v).round(new MathContext(12)).stripTrailingZeros().toPlainString();
+        return plain.replace('.', ',');
+    }
+}
+"""
+
+SUNSET_ALARM_RECEIVER = r"""package com.offlinegps.map.ui;
+
+import android.app.AlarmManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.SunCalc;
+import java.util.Calendar;
+
+/**
+ * Avviso prima del tramonto (v5.6): ogni giorno, 30, 60 o 90 minuti prima
+ * che il sole tramonti dove ti trovi, una notifica ricorda di pensare al
+ * rientro e dice a che ora fa buio. Si ri-programma da solo per il giorno
+ * dopo; dopo un riavvio del telefono si riattiva aprendo Sole & tramonto.
+ */
+public class SunsetAlarmReceiver extends BroadcastReceiver {
+    static final String CH = "sunset_v1", PREF_MIN = "sunset_alarm_min", PREF_AT = "sunset_alarm_at";
+    static final int ID = 1601;
+    private static final long DAY = 86_400_000L;
+
+    private static SharedPreferences p(Context c) { return c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE); }
+
+    static int lead(Context c) { return p(c).getInt(PREF_MIN, 0); }
+
+    static long nextAt(Context c) { return lead(c) == 0 ? 0 : p(c).getLong(PREF_AT, 0); }
+
+    /** Sceglie l'anticipo (0 = spento) e programma il prossimo avviso. */
+    static long set(Context c, int minutes) {
+        p(c).edit().putInt(PREF_MIN, minutes).apply();
+        return schedule(c);
+    }
+
+    private static long noon(long ms) {
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(ms);
+        cal.set(Calendar.HOUR_OF_DAY, 12); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0);
+        return cal.getTimeInMillis();
+    }
+
+    /** Programma il prossimo avviso; ritorna l'istante (0 se spento o senza posizione). */
+    static long schedule(Context c) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        PendingIntent pi = PendingIntent.getBroadcast(c, 7, new Intent(c, SunsetAlarmReceiver.class),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        if (am != null) am.cancel(pi);
+        int lead = lead(c);
+        double[] w = ToolKit.where(c);
+        if (lead == 0 || w == null || am == null) { p(c).edit().putLong(PREF_AT, 0).apply(); return 0; }
+        long now = System.currentTimeMillis();
+        for (int d = 0; d < 3; d++) {
+            SunCalc.Times t = SunCalc.times(noon(now + d * DAY), w[0], w[1]);
+            if (t.sunrise[1] == Long.MIN_VALUE) continue;
+            long at = t.sunrise[1] - lead * 60_000L;
+            if (at > now + 30_000) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                p(c).edit().putLong(PREF_AT, at).apply();
+                return at;
+            }
+        }
+        p(c).edit().putLong(PREF_AT, 0).apply();
+        return 0;
+    }
+
+    @Override public void onReceive(Context c, Intent intent) {
+        if (lead(c) == 0) return;
+        double[] w = ToolKit.where(c);
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (w != null && nm != null) {
+            SunCalc.Times t = SunCalc.times(noon(System.currentTimeMillis()), w[0], w[1]);
+            if (t.sunrise[1] != Long.MIN_VALUE) {
+                nm.createNotificationChannel(new NotificationChannel(CH, "Avviso tramonto", NotificationManager.IMPORTANCE_HIGH));
+                long left = Math.max(0, t.sunrise[1] - System.currentTimeMillis());
+                String dark = t.civil[1] == Long.MIN_VALUE ? "" : " Buio pratico alle " + ToolKit.hhmm(t.civil[1]) + ".";
+                PendingIntent open = PendingIntent.getActivity(c, 0, new Intent(c, DaylightToolActivity.class),
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                Notification n = new Notification.Builder(c, CH)
+                    .setSmallIcon(R.drawable.ic_gps)
+                    .setContentTitle("Tramonto alle " + ToolKit.hhmm(t.sunrise[1]) + " (tra " + ToolKit.span(left) + ")")
+                    .setContentText("Pensa al rientro." + dark)
+                    .setStyle(new Notification.BigTextStyle().bigText("Il sole tramonta alle " + ToolKit.hhmm(t.sunrise[1])
+                        + "." + dark + " Se sei in cammino, calcola il tempo per tornare e tieni pronta la frontale."))
+                    .setCategory(Notification.CATEGORY_REMINDER)
+                    .setAutoCancel(true)
+                    .setContentIntent(open)
+                    .build();
+                try { nm.notify(ID, n); } catch (SecurityException ignored) {}
+            }
+        }
+        schedule(c);   // domani
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -25745,6 +28608,402 @@ LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace(
     '    android:text="SEGNALARSI E SOCCORSO"', 1)
 LAYOUT_SURVIVAL = LAYOUT_SURVIVAL.replace('"26 strumenti offline per l\'outdoor"', '"32 strumenti offline per l\'outdoor"')
 
+# ---------------------------------------------------------------- v5.6 mattoni
+def _in(vid, hint, itype="textCapSentences", lines=1, margin="10dp"):
+    multi = lines > 1
+    return ('<EditText android:id="@+id/' + vid + '" android:layout_width="match_parent"\n'
+            '    android:layout_height="wrap_content" android:minHeight="50dp"' +
+            (' android:maxLines="' + str(lines) + '"' if multi else ' android:maxLines="1"') + '\n'
+            '    android:hint="' + hint + '" android:textColor="#E8F4FD"\n'
+            '    android:textColorHint="#5A7A99" android:textSize="15sp" android:background="@drawable/bg_input"\n'
+            '    android:paddingStart="14dp" android:paddingEnd="14dp" android:paddingTop="10dp" android:paddingBottom="10dp"\n'
+            '    android:inputType="' + itype + ('|textMultiLine' if multi else '') + '" android:layout_marginBottom="' + margin + '"/>\n')
+
+def _lbl(text, color="#8FB3D0", top="2dp"):
+    return ('<TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+            '    android:text="' + text + '" android:textColor="' + color + '" android:textSize="11sp"\n'
+            '    android:textStyle="bold" android:letterSpacing="0.14" android:layout_marginTop="' + top + '"\n'
+            '    android:layout_marginBottom="6dp" android:layout_marginStart="2dp"/>\n')
+
+def _gap(h="12dp"):
+    return '<View android:layout_width="match_parent" android:layout_height="' + h + '"/>\n'
+
+def _panel(vid, inner, visible=True):
+    return ('<LinearLayout android:id="@+id/' + vid + '" android:layout_width="match_parent"\n'
+            '    android:layout_height="wrap_content" android:orientation="vertical"' +
+            ('' if visible else ' android:visibility="gone"') + '>\n' + inner + '</LinearLayout>\n')
+
+# ---------------------------------------------------------------- v5.6 SCHEDA MEDICA
+LAYOUT_MEDICAL = _v4_screen(
+    _v4_header("btn_med_back", "SCHEDA MEDICA", "Per chi ti soccorre: resta solo su questo telefono", "#FF3D71",
+               "btn_med_mode", "MODIFICA")
+    + _panel("med_empty",
+             _t_card(_t_text(None, "Nessuna scheda ancora", "#E8F4FD", "17sp", bold=True, top="0dp")
+                     + _t_text(None, "In un incidente chi ti soccorre deve sapere subito gruppo sanguigno, allergie, "
+                                     "malattie, farmaci e chi avvisare. Ci vogliono due minuti.", "#CFE3F5", "13.5sp")
+                     + _gap()
+                     + _t_buttons(_t_btn("btn_med_fill", "ic_v5_medical", "COMPILA LA SCHEDA", "red", filled=True,
+                                         end_margin=False), margin="0dp"), accent="red"),
+             visible=False)
+    + _panel("med_view",
+             _t_card(_lbl("PERSONA", "#FFB3C0", "0dp")
+                     + _t_text("med_name", "--", "#FFFFFF", "24sp", bold=True, top="0dp")
+                     + _t_text("med_birth", "", "#FFE0E6", "14sp", top="2dp"), accent="red", pad="18dp")
+             + _v4_row(_t_stat("med_blood", "?", "GRUPPO SANGUIGNO", "red"),
+                       _t_stat("med_age", "--", "ETA'", "pink", end_margin=False))
+             + _t_card(_lbl("ALLERGIE", "#FF8FA3", "0dp")
+                       + _t_text("med_allergies", "--", "#FFD600", "18sp", bold=True, top="0dp"), accent="red")
+             + _t_card(_lbl("MALATTIE E CONDIZIONI", "#8FB3D0", "0dp")
+                       + _t_text("med_conditions", "--", "#E8F4FD", "15sp", top="0dp")
+                       + _lbl("FARMACI CHE PRENDE", "#8FB3D0", "12dp")
+                       + _t_text("med_meds", "--", "#E8F4FD", "15sp", top="0dp")
+                       + _lbl("NOTE", "#8FB3D0", "12dp")
+                       + _t_text("med_notes", "--", "#E8F4FD", "14sp", top="0dp"), accent="pink")
+             + _t_card(_lbl("CHI AVVISARE", "#D9C7FF", "0dp")
+                       + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                         '    android:orientation="horizontal" android:gravity="center_vertical">\n'
+                         '    <TextView android:id="@+id/med_c1" android:layout_width="0dp" android:layout_weight="1"\n'
+                         '        android:layout_height="wrap_content" android:text="--" android:textColor="#E8F4FD"\n'
+                         '        android:textSize="15sp" android:textStyle="bold"/>\n'
+                         '    <TextView android:id="@+id/btn_med_call1" android:layout_width="96dp" android:layout_height="44dp"\n'
+                         '        android:gravity="center" android:text="CHIAMA" android:textColor="#050A14" android:textSize="12sp"\n'
+                         '        android:textStyle="bold" android:background="@drawable/bg_btn5_violet"\n'
+                         '        android:clickable="true" android:focusable="true"/>\n'
+                         '</LinearLayout>\n'
+                       + _gap("10dp")
+                       + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                         '    android:orientation="horizontal" android:gravity="center_vertical">\n'
+                         '    <TextView android:id="@+id/med_c2" android:layout_width="0dp" android:layout_weight="1"\n'
+                         '        android:layout_height="wrap_content" android:text="--" android:textColor="#E8F4FD"\n'
+                         '        android:textSize="15sp" android:textStyle="bold"/>\n'
+                         '    <TextView android:id="@+id/btn_med_call2" android:layout_width="96dp" android:layout_height="44dp"\n'
+                         '        android:gravity="center" android:text="CHIAMA" android:textColor="#050A14" android:textSize="12sp"\n'
+                         '        android:textStyle="bold" android:background="@drawable/bg_btn5_violet"\n'
+                         '        android:clickable="true" android:focusable="true"/>\n'
+                         '</LinearLayout>\n', accent="violet")
+             + _t_buttons(_t_btn("btn_med_qr", "ic_v5_qr", "MOSTRA QR", "red", filled=True),
+                          _t_btn("btn_med_share", "ic_v5_share", "CONDIVIDI", "pink", end_margin=False))
+             + _t_text("med_sos_state", "", "#8FB3D0", "12.5sp", top="0dp")
+             + _gap())
+    + _panel("med_edit",
+             _lbl("NOME E COGNOME") + _in("et_med_name", "Es. Mario Rossi", "textPersonName|textCapWords")
+             + _lbl("DATA DI NASCITA") + _in("et_med_birth", "gg/mm/aaaa", "date")
+             + _lbl("GRUPPO SANGUIGNO (TOCCA DI NUOVO PER TOGLIERLO)")
+             + _t_chips(("med_b0", "0+"), ("med_b1", "0-"), ("med_b2", "A+"), ("med_b3", "A-"), margin="8dp")
+             + _t_chips(("med_b4", "B+"), ("med_b5", "B-"), ("med_b6", "AB+"), ("med_b7", "AB-"))
+             + _lbl("ALLERGIE (FARMACI, CIBI, PUNTURE)", "#FF8FA3") + _in("et_med_allergies", "Es. penicillina, punture d'ape", lines=3)
+             + _lbl("MALATTIE E CONDIZIONI") + _in("et_med_conditions", "Es. diabete tipo 1, asma, epilessia", lines=3)
+             + _lbl("FARMACI CHE PRENDI") + _in("et_med_meds", "Es. insulina, anticoagulante", lines=3)
+             + _lbl("NOTE PER I SOCCORRITORI") + _in("et_med_notes", "Es. autoiniettore di adrenalina nello zaino", lines=3)
+             + _lbl("CONTATTO 1") + _in("et_med_c1n", "Nome", "textPersonName|textCapWords", margin="6dp")
+             + _in("et_med_c1p", "Telefono", "phone")
+             + _lbl("CONTATTO 2") + _in("et_med_c2n", "Nome", "textPersonName|textCapWords", margin="6dp")
+             + _in("et_med_c2p", "Telefono", "phone")
+             + _lbl("NELL'SOS DELLA CHAT OFFLINE")
+             + '<TextView android:id="@+id/med_sos_toggle" android:layout_width="match_parent" android:layout_height="44dp"\n'
+               '    android:gravity="center" android:text="NO" android:textSize="11sp" android:textStyle="bold"\n'
+               '    android:textColor="#8FB3D0" android:background="@drawable/bg_chip_off" android:clickable="true"\n'
+               '    android:focusable="true" android:layout_marginBottom="6dp"/>\n'
+             + _t_text(None, "L'SOS arriva in chiaro a tutti i telefoni vicini con l'app: se scegli SI' parte solo "
+                             "gruppo sanguigno, allergie e malattie, mai nome, farmaci o contatti.", "#8FB3D0", "12sp", top="0dp")
+             + _gap()
+             + _t_buttons(_t_btn("btn_med_save", "ic_v5_bookmark", "SALVA", "green", filled=True),
+                          _t_btn("btn_med_cancel", "ic_v5_undo", "ANNULLA", "cyan", end_margin=False)),
+             visible=False)
+    + _t_buttons(_t_btn("btn_med_system", "ic_v5_lock", "INFO EMERGENZA DEL TELEFONO", "violet", end_margin=False))
+    + _v4_hint(None, "Per farla vedere anche a telefono bloccato compila pure le Informazioni di emergenza di Android "
+                     "(il pulsante qui sopra). Questa scheda non chiama e non avvisa nessuno da sola: in emergenza chiama il 112.",
+               red=True),
+    "med_column")
+
+# ---------------------------------------------------------------- v5.6 EMERGENZA: scheda medica e numeri all'estero
+_EM_ABROAD = ("112 funziona in tutta l'Unione Europea, in Svizzera, Norvegia, Islanda e Regno Unito (anche 999), "
+              "gratis e anche senza credito.\\n"
+              "In mare in Italia: 1530 Guardia Costiera.\\n"
+              "Svizzera: 144 ambulanza, 1414 Rega (elisoccorso), 117 polizia.\\n"
+              "Austria: 144 ambulanza, 140 soccorso alpino, 133 polizia.\\n"
+              "Francia: 15 SAMU (medico), 17 polizia, 18 vigili del fuoco.\\n"
+              "Germania: 112 ambulanza e vigili del fuoco, 110 polizia.\\n"
+              "Slovenia: 112 ambulanza e soccorso alpino, 113 polizia.\\n"
+              "Croazia: 112, 194 ambulanza, 192 polizia.\\n"
+              "Prima di partire per un altro paese verifica i numeri locali.")
+LAYOUT_EMERGENCY = LAYOUT_EMERGENCY.replace(
+    _t_buttons(_t_btn("btn_em_sms", "ic_v5_sms", "SMS CONTATTO", "pink"),
+               _t_btn("btn_em_share", "ic_v5_share", "ALTRE APP", "pink", end_margin=False)),
+    _t_buttons(_t_btn("btn_em_sms", "ic_v5_sms", "SMS CONTATTO", "pink"),
+               _t_btn("btn_em_share", "ic_v5_share", "ALTRE APP", "pink", end_margin=False))
+    + _t_card(_lbl("SCHEDA MEDICA", "#FF8FA3", "0dp")
+              + _t_text("em_med", "", "#FFE0E6", "14sp", bold=True, top="0dp")
+              + _gap("10dp")
+              + _t_buttons(_t_btn("btn_em_medical", "ic_v5_medical", "APRI SCHEDA MEDICA", "red", end_margin=False,
+                                  height="48dp"), margin="0dp"), accent="red")
+    + _t_card(_lbl("ALL'ESTERO", "#8FB3D0", "0dp")
+              + _t_text(None, _EM_ABROAD.replace("\\n", "\n"), "#CFE3F5", "13sp", top="0dp"), accent="cyan"), 1)
+assert "btn_em_medical" in LAYOUT_EMERGENCY
+
+# ---------------------------------------------------------------- v5.6 TORCIA
+def _seek(vid):
+    return ('<SeekBar android:id="@+id/' + vid + '" android:layout_width="match_parent" android:layout_height="36dp"\n'
+            '    android:progressTint="#FFD600" android:thumbTint="#FFD600" android:progressBackgroundTint="#335A7A99"/>\n')
+
+LAYOUT_FLASHLIGHT = _v4_screen(
+    _v4_header("btn_flash_back", "TORCIA", "Luce, stroboscopio, SOS e segnale alpino", "#FFD600", "tv_flash_state", "SPENTA")
+    + '<LinearLayout android:id="@+id/btn_flash_toggle" android:layout_width="210dp" android:layout_height="210dp"\n'
+      '    android:layout_gravity="center_horizontal" android:layout_marginTop="6dp" android:layout_marginBottom="10dp"\n'
+      '    android:orientation="vertical" android:gravity="center" android:background="@drawable/bg_disc_cyan"\n'
+      '    android:clickable="true" android:focusable="true" android:elevation="8dp">\n'
+      '    <ImageView android:id="@+id/fl_power_icon" android:layout_width="86dp" android:layout_height="86dp"\n'
+      '        android:src="@drawable/ic_v5_power" android:tint="#5A7A99" android:contentDescription="Accendi o spegni"/>\n'
+      '    <TextView android:id="@+id/fl_power_label" android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+      '        android:text="TOCCA PER ACCENDERE" android:textColor="#E8F4FD" android:textSize="11sp" android:textStyle="bold"\n'
+      '        android:letterSpacing="0.14" android:layout_marginTop="8dp"/>\n'
+      '</LinearLayout>\n'
+    + _t_chips(("fl_mode_on", "LUCE"), ("fl_mode_strobe", "STROBO"), ("fl_mode_sos", "SOS"), ("fl_mode_alpine", "ALPINO"))
+    + _t_card(_lbl("INTENSITA'", "#FFE68A", "0dp") + _seek("fl_level")
+              + _t_text("fl_level_txt", "", "#CFE3F5", "12.5sp", top="2dp"), accent="yellow")
+    + _t_card(_lbl("VELOCITA' STROBOSCOPIO", "#FFE68A", "0dp") + _seek("fl_strobe")
+              + _t_text("fl_strobe_txt", "", "#CFE3F5", "12.5sp", top="2dp"), accent="yellow")
+    + _lbl("SPEGNIMENTO AUTOMATICO")
+    + _t_chips(("fl_off_0", "MAI"), ("fl_off_5", "5 MIN"), ("fl_off_15", "15 MIN"), ("fl_off_30", "30 MIN"), margin="6dp")
+    + _t_text("fl_off_txt", "", "#8FB3D0", "12.5sp", top="0dp")
+    + _gap()
+    + _t_buttons(_t_btn("btn_fl_screen", "ic_v5_flare", "LUCE BIANCA", "cyan"),
+                 _t_btn("btn_fl_red", "ic_v5_eye", "LUCE ROSSA", "red", end_margin=False))
+    + _v4_hint(None, "SOS: tre lampi brevi, tre lunghi, tre brevi, ripetuti. Segnale alpino di soccorso: 6 lampi in un "
+                     "minuto, poi un minuto di pausa; chi ti ha visto risponde con 3 lampi al minuto. Il flash scalda "
+                     "e consuma molto: abbassa l'intensita' e usa lo spegnimento automatico. La luce rossa non abbaglia "
+                     "e non rovina la vista al buio."),
+    "fl_column")
+
+# ---------------------------------------------------------------- v5.6 CODICE MORSE
+_MORSE = _v4_screen(
+    _v4_header("btn_morse_back", "CODICE MORSE", "Trasmetti con luce e suono, ricevi a mano", "#FFD600",
+               "tv_morse_wpm", "12 PAROLE/MIN")
+    + _in("et_morse", "Scrivi il messaggio...", "textCapCharacters|textNoSuggestions", lines=2)
+    + _t_chips(("mq_sos", "SOS"), ("mq_ok", "OK"), ("mq_help", "AIUTO"), ("mq_here", "SONO QUI"))
+    + _t_card(_lbl("CODICE", "#FFE68A", "0dp")
+              + _t_text("tv_morse_code", "", "#FFFFFF", "21sp", bold=True, mono=True, top="0dp"), accent="yellow")
+    + _lbl("TRASMETTI CON")
+    + _t_chips(("mo_flash", "FLASH"), ("mo_screen", "SCHERMO"), ("mo_sound", "SUONO"), ("mo_vibe", "VIBRA"), margin="8dp")
+    + _t_chips(("ms_slow", "LENTO"), ("ms_norm", "NORMALE"), ("ms_fast", "VELOCE"))
+    + _t_buttons(_t_btn("btn_morse_send", "ic_v5_flare", "TRASMETTI", "green", filled=True, text_id="btn_morse_send_txt"),
+                 _t_btn("btn_morse_loop", "ic_v5_undo", "RIPETI", "yellow", end_margin=False))
+    + _v4_section("RICEVI A MANO")
+    + _t_card(_t_text("tv_morse_rx", "--", "#00FF88", "26sp", bold=True, top="0dp")
+              + _t_text("tv_morse_rx_code", "", "#CFE3F5", "15sp", mono=True, top="2dp")
+              + _gap("10dp")
+              + '<LinearLayout android:id="@+id/btn_morse_key" android:layout_width="match_parent" android:layout_height="120dp"\n'
+                '    android:orientation="vertical" android:gravity="center" android:background="@drawable/bg_btn5_line_yellow"\n'
+                '    android:clickable="true" android:focusable="true">\n'
+                '    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="TASTO"\n'
+                '        android:textColor="#FFD600" android:textSize="22sp" android:textStyle="bold" android:letterSpacing="0.2"\n'
+                '        android:fontFamily="sans-serif-condensed"/>\n'
+                '    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+                '        android:text="Tieni premuto finche\' vedi la luce" android:textColor="#CFE3F5" android:textSize="12sp"/>\n'
+                '</LinearLayout>\n'
+              + _t_text("tv_morse_rx_hint", "", "#8FB3D0", "12sp", top="8dp")
+              + _gap("10dp")
+              + _t_buttons(_t_btn("btn_morse_rx_clear", "ic_v5_undo", "CANCELLA", "yellow", height="46dp"),
+                           _t_btn("btn_morse_rx_copy", "ic_v5_copy", "RISPONDI", "cyan", end_margin=False, height="46dp"),
+                           margin="0dp"), accent="yellow")
+    + _v4_section("ALFABETO")
+    + _t_card(_t_text("tv_morse_table", "", "#E8F4FD", "14sp", mono=True, top="0dp"), accent="cyan")
+    + _v4_hint(None, "Punto = 1, linea = 3, pausa fra lettere = 3, fra parole = 7. SOS si trasmette tutto attaccato: "
+                     "... --- ... In montagna e in mare e' riconosciuto da tutti; di notte il flash si vede da chilometri."),
+    "morse_column")
+# schermo che lampeggia: sopra tutto, tocca per fermare
+LAYOUT_MORSE = (_MORSE[:_MORSE.rindex('</FrameLayout>')]
+    + '<View android:id="@+id/morse_screen" android:layout_width="match_parent" android:layout_height="match_parent"\n'
+      '    android:background="#FF000000" android:visibility="gone" android:clickable="true" android:focusable="true"/>\n'
+    + '</FrameLayout>')
+
+# ---------------------------------------------------------------- v5.6 LUNA
+LAYOUT_MOON = _v4_screen(
+    _v4_header("btn_moon_back", "LUNA", "Fasi esatte, sorge e tramonta, luce della notte", "#E8F4FD",
+               "tv_moon_verdict", "STANOTTE")
+    + _t_view("MoonView", "moon_disc", "230dp", margin="4dp")
+    + _t_big("tv_moon_phase", "--", "#FFF6D8", "30sp", center=True)
+    + _t_text("tv_moon_illum", "", "#CFE3F5", "13.5sp", center=True, top="6dp")
+    + _gap("14dp")
+    + _v4_row(_t_stat("tv_moon_rise", "--", "SORGE OGGI", "yellow"),
+              _t_stat("tv_moon_set", "--", "TRAMONTA", "orange"),
+              _t_stat("tv_moon_alt", "--", "ADESSO", "violet", end_margin=False))
+    + _t_card(_lbl("STANOTTE", "#D9C7FF", "0dp")
+              + _t_text("tv_moon_tonight", "", "#E8F4FD", "14sp", top="0dp"), accent="violet")
+    + _v4_section("PROSSIME FASI")
+    + _t_card('<LinearLayout android:id="@+id/moon_phases" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="cyan", pad="12dp")
+    + _v4_section("LE PROSSIME NOTTI")
+    + _t_card('<LinearLayout android:id="@+id/moon_nights" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="violet", pad="12dp")
+    + _t_buttons(_t_btn("btn_moon_ar", "ic_v5_eye", "VEDI IN AR", "violet", filled=True),
+                 _t_btn("btn_moon_sun", "ic_v5_sunset", "SOLE", "orange", end_margin=False))
+    + _v4_hint(None, "CHIARA: Luna grande e alta per gran parte della notte, sui prati e sulla neve si cammina quasi senza "
+                     "torcia. BUIA: Luna assente o sottile, serve la torcia ma il cielo stellato e' al massimo. "
+                     "Orari calcolati sul posto, senza internet."),
+    "moon_column")
+
+# ---------------------------------------------------------------- v5.6 AREA E PERIMETRO
+LAYOUT_AREA = _v4_screen(
+    _v4_header("btn_area_back", "AREA TERRENO", "Cammina sul confine o segna gli angoli", "#B388FF", "tv_area_state", "MANUALE")
+    + _t_card(_t_view("AreaShapeView", "area_shape", "280dp", margin="0dp"), accent="violet", pad="6dp")
+    + _v4_row(_t_stat("tv_area", "--", "AREA", "violet"),
+              _t_stat("tv_area_perim", "--", "PERIMETRO", "cyan"),
+              _t_stat("tv_area_count", "0", "PUNTI", "green", end_margin=False), margin="10dp")
+    + _t_card(_t_text("tv_area_close", "", "#E8F4FD", "14sp", bold=True, top="0dp")
+              + _t_text("tv_area_hint", "", "#CFE3F5", "13sp", top="6dp")
+              + _t_text("tv_area_acc", "GPS --", "#8FB3D0", "12.5sp", bold=True, top="6dp"), accent="violet")
+    + _t_buttons(_t_btn("btn_area_add", "ic_v4_flag", "AGGIUNGI", "violet", filled=True),
+                 _t_btn("btn_area_undo", "ic_v5_undo", "ANNULLA", "cyan", end_margin=False))
+    + _t_buttons(_t_btn("btn_area_auto", "ic_v5_walk", "CAMMINA SUL CONFINE", "green", end_margin=False,
+                        text_id="btn_area_auto_txt"))
+    + _t_buttons(_t_btn("btn_area_gpx", "ic_v5_share", "CONDIVIDI GPX", "cyan"),
+                 _t_btn("btn_area_clear", "ic_v5_stop", "CANCELLA", "red", end_margin=False))
+    + _v4_hint(None, "Il GPS del telefono sbaglia di 3-10 metri: su un campo piccolo l'errore sull'area puo' arrivare al "
+                     "10-20%. Per misure ufficiali (compravendite, catasto) serve un tecnico. Camminando, i punti con "
+                     "precisione peggiore di 20 m vengono scartati da soli."),
+    "area_column")
+
+# ---------------------------------------------------------------- v5.6 CHECKLIST
+LAYOUT_CHECKLIST = _v4_screen(
+    _v4_header("btn_check_back", "CHECKLIST", "Prima di partire: non scordare nulla", "#00FF88")
+    + _t_chips(("ck_l0", "ESCURSIONE"), ("ck_l1", "NOTTE FUORI"), ("ck_l2", "NEVE"), margin="8dp")
+    + _t_chips(("ck_l3", "FERRATA"), ("ck_l4", "EMERGENZA"), ("ck_l5", "AUTO"))
+    + _t_card(_t_text("tv_check_progress", "", "#E8F4FD", "16sp", bold=True, top="0dp")
+              + _t_progress("check_bar"), accent="green")
+    + _t_card('<LinearLayout android:id="@+id/checklist_box" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="cyan", pad="10dp")
+    + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="12dp">\n'
+      '    <EditText android:id="@+id/et_check_new" android:layout_width="0dp" android:layout_weight="1"\n'
+      '        android:layout_height="50dp" android:hint="Aggiungi una voce..." android:textColor="#E8F4FD"\n'
+      '        android:textColorHint="#5A7A99" android:textSize="15sp" android:background="@drawable/bg_input"\n'
+      '        android:paddingStart="14dp" android:paddingEnd="14dp" android:inputType="textCapSentences"\n'
+      '        android:maxLines="1" android:layout_marginEnd="10dp"/>\n'
+      '    <TextView android:id="@+id/btn_check_add" android:layout_width="88dp" android:layout_height="50dp"\n'
+      '        android:gravity="center" android:text="AGGIUNGI" android:textColor="#050A14" android:textSize="12sp"\n'
+      '        android:textStyle="bold" android:background="@drawable/bg_btn5_green" android:clickable="true"\n'
+      '        android:focusable="true"/>\n'
+      '</LinearLayout>\n'
+    + _t_buttons(_t_btn("btn_check_reset", "ic_v5_undo", "TOGLI LE SPUNTE", "green"),
+                 _t_btn("btn_check_restore", "ic_v5_checklist", "LISTA ORIGINALE", "cyan", end_margin=False))
+    + _v4_hint(None, "Tieni premuta una voce per toglierla. Ogni lista ricorda le spunte e le voci aggiunte da te."),
+    "check_column")
+
+# ---------------------------------------------------------------- v5.6 PRIMO SOCCORSO
+def _search(vid, hint):
+    return ('<EditText android:id="@+id/' + vid + '" android:layout_width="match_parent" android:layout_height="50dp"\n'
+            '    android:hint="' + hint + '" android:textColor="#E8F4FD" android:textColorHint="#5A7A99"\n'
+            '    android:textSize="15sp" android:background="@drawable/bg_input" android:paddingStart="16dp"\n'
+            '    android:paddingEnd="16dp" android:inputType="text" android:maxLines="1" android:layout_marginBottom="12dp"/>\n')
+
+LAYOUT_FIRSTAID = _v4_screen(
+    _v4_header("btn_aid_back", "PRIMO SOCCORSO", "Gesti base offline: non sostituisce il 112", "#FF3D71")
+    + _t_buttons(_t_btn("btn_aid_call", "ic_v5_phone", "CHIAMA 112", "red", filled=True, end_margin=False, height="64dp"))
+    + _t_card(_lbl("METRONOMO PER LA RIANIMAZIONE", "#FF8FA3", "0dp")
+              + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                '    android:orientation="horizontal" android:gravity="center_vertical">\n'
+                '    <TextView android:id="@+id/tv_cpr_count" android:layout_width="118dp" android:layout_height="96dp"\n'
+                '        android:gravity="center" android:text="0" android:textColor="#5A7A99" android:textSize="64sp"\n'
+                '        android:textStyle="bold" android:fontFamily="sans-serif-condensed" android:includeFontPadding="false"/>\n'
+                '    <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"\n'
+                '        android:orientation="vertical">\n'
+                '        <TextView android:id="@+id/tv_cpr_state" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                '            android:text="" android:textColor="#E8F4FD" android:textSize="14sp" android:textStyle="bold"/>\n'
+                '        <TextView android:id="@+id/tv_cpr_time" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+                '            android:text="00:00" android:textColor="#FFD600" android:textSize="13sp" android:textStyle="bold"\n'
+                '            android:layout_marginTop="6dp"/>\n'
+                '    </LinearLayout>\n'
+                '</LinearLayout>\n'
+              + _t_chips(("cpr_mode_30", "30 : 2"), ("cpr_mode_only", "SOLO COMPRESSIONI"), margin="10dp")
+              + _t_buttons(_t_btn("btn_cpr", "ic_v5_bell", "AVVIA METRONOMO", "red", end_margin=False, text_id="btn_cpr_txt"),
+                           margin="0dp"), accent="red")
+    + _t_buttons(_t_btn("btn_aid_medical", "ic_v5_medical", "SCHEDA MEDICA", "pink"),
+                 _t_btn("btn_aid_aed", "ic_v5_bolt", "DEFIBRILLATORI", "yellow", end_margin=False))
+    + _search("et_aid_search", "Cerca: emorragia, vipera, ustione...")
+    + '<LinearLayout android:id="@+id/aid_topics" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _v4_hint(None, "Queste schede ricordano i gesti di base e non sostituiscono un corso di primo soccorso (BLS-D, "
+                     "poche ore) ne' i soccorritori. In emergenza chiama sempre il 112 e segui l'operatore.", red=True),
+    "aid_column")
+
+LAYOUT_SURVGUIDE = _v4_screen(
+    _v4_header("btn_guide_back", "GUIDA SOPRAVVIVENZA", "Cosa fare quando le cose vanno male", "#FF6B35")
+    + _search("et_guide_search", "Cerca: perso, acqua, temporale, orso...")
+    + '<LinearLayout android:id="@+id/guide_topics" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _v4_hint(None, "In difficolta' la prima cosa e' farsi trovare: chiama il 112 finche' hai batteria, poi usa i segnali. "
+                     "Il GPS di questa app funziona anche senza rete e in modalita' aereo."),
+    "guide_column")
+
+# ---------------------------------------------------------------- v5.6 SOLE: avviso prima del tramonto
+_DAY_ANCHOR = ('<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+               '    android:orientation="horizontal" android:gravity="center_vertical" android:layout_marginBottom="10dp">\n'
+               '    <ImageView android:id="@+id/btn_day_prev"')
+assert LAYOUT_DAYLIGHT.count(_DAY_ANCHOR) == 1
+LAYOUT_DAYLIGHT = LAYOUT_DAYLIGHT.replace(_DAY_ANCHOR,
+    _t_card(_lbl("AVVISAMI PRIMA DEL TRAMONTO", "#FFE68A", "0dp")
+            + _t_chips(("day_al_0", "NO"), ("day_al_30", "30 MIN"), ("day_al_60", "1 ORA"), ("day_al_90", "90 MIN"), margin="6dp")
+            + _t_text("tv_day_alarm", "", "#CFE3F5", "12.5sp", top="0dp"), accent="orange", pad="14dp")
+    + _DAY_ANCHOR, 1)
+
+# ---------------------------------------------------------------- v5.6 CALCOLATRICE
+def _key(vid, text, accent="cyan", filled=False, weight="1", end=True, size="24sp"):
+    fg = "#050A14" if filled else ("#E8F4FD" if accent == "cyan" else "#" + V4_ACCENTS[accent])
+    return ('    <TextView android:id="@+id/' + vid + '" android:layout_width="0dp" android:layout_height="68dp"\n'
+            '        android:layout_weight="' + weight + '" android:gravity="center" android:text="' + text + '"\n'
+            '        android:textColor="' + fg + '" android:textSize="' + size + '" android:fontFamily="sans-serif-condensed"\n'
+            '        android:background="@drawable/bg_btn5_' + ("" if filled else "line_") + accent + '"\n'
+            '        android:clickable="true" android:focusable="true"' + ('\n        android:layout_marginEnd="10dp"' if end else '') + '/>\n')
+
+def _krow(*keys):
+    return ('<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+            '    android:orientation="horizontal" android:layout_marginBottom="10dp">\n' + "".join(keys) + '</LinearLayout>\n')
+
+LAYOUT_CALC = _v4_screen(
+    _v4_header("btn_calc_back", "CALCOLATRICE", "Funziona offline, anche con le percentuali", "#00E5FF")
+    + _t_card('<TextView android:id="@+id/calc_expr" android:layout_width="match_parent" android:layout_height="22dp"\n'
+              '    android:gravity="end" android:text="" android:textColor="#8FB3D0" android:textSize="15sp"\n'
+              '    android:maxLines="1" android:ellipsize="start"/>\n'
+              '<TextView android:id="@+id/calc_display" android:layout_width="match_parent" android:layout_height="64dp"\n'
+              '    android:gravity="end|center_vertical" android:text="0" android:textColor="#00FF88" android:textSize="44sp"\n'
+              '    android:fontFamily="sans-serif-condensed" android:maxLines="1" android:autoSizeTextType="uniform"\n'
+              '    android:autoSizeMinTextSize="18sp" android:autoSizeMaxTextSize="44sp"/>\n', accent="green", pad="16dp")
+    + _krow(_key("kclear", "C", "red"), _key("kback", "⌫", "red"), _key("kpct", "%", "yellow"), _key("kdiv", "÷", "yellow", end=False))
+    + _krow(_key("k7", "7"), _key("k8", "8"), _key("k9", "9"), _key("kmul", "×", "yellow", end=False))
+    + _krow(_key("k4", "4"), _key("k5", "5"), _key("k6", "6"), _key("kminus", "−", "yellow", end=False))
+    + _krow(_key("k1", "1"), _key("k2", "2"), _key("k3", "3"), _key("kplus", "+", "yellow", end=False))
+    + _krow(_key("ksign", "±"), _key("k0", "0"), _key("kdot", ","), _key("keq", "=", "green", filled=True, end=False)),
+    "calc_column")
+
+# ---------------------------------------------------------------- v5.6 MENU SOPRAVVIVENZA
+def _swap(src, old, new):
+    assert src.count(old) == 1, old[:80]
+    return src.replace(old, new)
+
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_row(_v4_tile("card_safety", "ic_v5_bell", "Uomo a terra", "Allarme se cadi o resti fermo, poi SOS", "red", "118dp",
+                     end_margin=False)),
+    _v4_row(_v4_tile("card_safety", "ic_v5_bell", "Uomo a terra", "Allarme se cadi, poi SOS", "red", "118dp"),
+            _v4_tile("card_medical", "ic_v5_medical", "Scheda medica", "Sangue, allergie, contatti", "pink", "118dp",
+                     end_margin=False)))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_firstaid", "ic_v5_medical", "Primo soccorso", "Guida rapida offline", "red", "118dp", end_margin=False),
+    _v4_tile("card_firstaid", "ic_v5_medical", "Primo soccorso", "Schede e metronomo RCP", "red", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_morse", "ic_v5_morse", "Codice Morse", "Messaggi col flash", "yellow", "118dp"),
+    _v4_tile("card_morse", "ic_v5_morse", "Codice Morse", "Trasmetti e ricevi", "yellow", "118dp"))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_flashlight", "ic_v5_flashlight", "Torcia", "Flash come lampada", "yellow", "118dp", end_margin=False),
+    _v4_tile("card_flashlight", "ic_v5_flashlight", "Torcia", "Strobo, SOS, intensita'", "yellow", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_moon", "ic_v5_moon", "Fase lunare", "Luce stanotte", "violet", "118dp", end_margin=False),
+    _v4_tile("card_moon", "ic_v5_moon", "Luna", "Fasi e notti chiare", "violet", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_checklist", "ic_v5_checklist", "Checklist zaino", "Non scordare nulla", "green", "118dp", end_margin=False),
+    _v4_tile("card_checklist", "ic_v5_checklist", "Checklist", "6 liste e voci tue", "green", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, '"32 strumenti offline per l\'outdoor"', '"33 strumenti offline per l\'outdoor"')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -25895,6 +29154,21 @@ def build_java_file_map():
         f"{PKG_UI}/ParkingStore.java":           PARKING_STORE,
         f"{PKG_UI}/ParkingAlarmReceiver.java":   PARKING_ALARM_RECEIVER,
         f"{PKG_UI}/ParkingActivity.java":        PARKING_ACTIVITY,
+        # v5.6
+        f"{PKG_UTIL}/MedicalCard.java":          MEDICAL_CARD,
+        f"{PKG_UI}/MedicalActivity.java":        MEDICAL_ACTIVITY,
+        f"{PKG_UTIL}/MorseCode.java":            MORSE_CODE,
+        f"{PKG_UI}/TorchControl.java":           TORCH_CONTROL,
+        f"{PKG_UI}/SignalPlayer.java":           SIGNAL_PLAYER,
+        f"{PKG_UTIL}/MoonPhases.java":           MOON_PHASES,
+        f"{PKG_UI}/MoonView.java":               MOON_VIEW,
+        f"{PKG_UTIL}/AreaCalc.java":             AREA_CALC,
+        f"{PKG_UI}/AreaShapeView.java":          AREA_SHAPE_VIEW,
+        f"{PKG_UTIL}/CprMetronome.java":         CPR_METRONOME,
+        f"{PKG_UI}/GuideData.java":              GUIDE_DATA,
+        f"{PKG_UI}/GuideCards.java":             GUIDE_CARDS,
+        f"{PKG_UTIL}/CalcEval.java":             CALC_EVAL,
+        f"{PKG_UI}/SunsetAlarmReceiver.java":    SUNSET_ALARM_RECEIVER,
     }
 
 def build_layout_map():
@@ -25967,6 +29241,7 @@ def build_layout_map():
         "activity_safety_alarm.xml":   LAYOUT_SAFETY_ALARM,
         "activity_satellites.xml":     LAYOUT_SATELLITES,
         "activity_parking.xml":        LAYOUT_PARKING,
+        "activity_medical.xml":        LAYOUT_MEDICAL,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -26047,7 +29322,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.5")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.6")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -26190,7 +29465,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.5.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.6.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -26204,6 +29479,13 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.6 - SOCCORSO, SEGNALI, LUNA E STRUMENTI RIFATTI:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Scheda medica per i soccorritori, con QR e contatti; numeri di emergenza esteri")
+    print(f"  {C.OK}[NEW]{C.RESET}  Primo soccorso a schede con metronomo per la rianimazione")
+    print(f"  {C.OK}[NEW]{C.RESET}  Torcia (intensita', strobo, SOS, segnale alpino) e Morse che trasmette e riceve")
+    print(f"  {C.OK}[NEW]{C.RESET}  Luna con fasi esatte e luce delle prossime notti; avviso prima del tramonto")
+    print(f"  {C.OK}[FIX]{C.RESET}  Area terreno, checklist, calcolatrice e note sul posto rifatte e corrette")
 
     print(f"\n{C.BOLD}NOVITA v5.5 - WALKIE-TALKIE, SATELLITI, AUTO, PAESI:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Walkie-talkie: messaggi vocali sulla chat offline, anche cifrati")
@@ -26294,7 +29576,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.5.apk")
+    info("1. Installa OfflineGPS-3D-v5.6.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -26306,7 +29588,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.5 - Navigatore 3D, walkie-talkie, sicurezza, realta' aumentata")
+    print("  OfflineGPS 3D v5.6 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -26323,7 +29605,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.5 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.6 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

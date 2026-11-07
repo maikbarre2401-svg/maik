@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.7 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.8 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
                       + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
@@ -238,7 +238,7 @@ NOVITA' v5.6 — SOCCORSO, SEGNALI, LUNA E STRUMENTI RIFATTI:
    CALCOLATRICE corretta (negativi, percentuali, niente 0,30000000000000004);
    NOTE SUL POSTO tengono acceso il GPS e navigano verso la nota.
 
-NOVITA' v5.7 (questa versione) — PUNTI, BATTERIA, TEMPI E STRUMENTI DI CAMPO:
+NOVITA' v5.7 — PUNTI, BATTERIA, TEMPI E STRUMENTI DI CAMPO:
  * PUNTI SALVATI rifatti: ricerca, ordine per distanza/data/nome, distanza e
    direzione aggiornate camminando; per ogni punto naviga (auto, bici,
    piedi), bussola, mappa, condividi, copia, modifica, elimina CON conferma
@@ -257,6 +257,21 @@ NOVITA' v5.7 (questa versione) — PUNTI, BATTERIA, TEMPI E STRUMENTI DI CAMPO:
  * CONVERTITORE con 8 categorie (anche pressione gomme e consumi),
    TEMPERATURA PERCEPITA con cursori, tempo di congelamento della pelle e
    livelli di rischio da caldo, VALUTE con 12 valute e cambi modificabili.
+
+NOVITA' v5.8 (questa versione) — BUSSOLA E ULTIMI STRUMENTI RIFATTI:
+ * BUSSOLA a schermo intero: nord vero (declinazione del posto calcolata
+   offline dal modello magnetico terrestre) o magnetico, gradi e millesimi,
+   rotta di ritorno; BLOCCA LA DIREZIONE per seguire una rotta nella nebbia
+   o nel bosco, anche scrivendo i gradi letti sulla carta, con indicazione
+   "gira a destra/sinistra" e vibrazione se esci di rotta; controllo delle
+   interferenze (campo misurato contro quello atteso) e della calibrazione.
+   In verticale mira dove punta la fotocamera.
+ * METAL DETECTOR: indicatore a lancetta, suono a ritmo come un contatore,
+   tre sensibilita', taratura e campo atteso nel posto.
+ * BLOCCO NOTE con piu' note, titolo dalla prima riga, ricerca, salvataggio
+   mentre scrivi, condividi ed elimina con conferma (la vecchia nota resta).
+ * LUCE ROSSA (visione notturna): rosso, rosso scuro o ambra, luminosita'
+   regolabile e orologio appena visibile.
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -302,8 +317,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 55
-        versionName "5.7.0"
+        versionCode 56
+        versionName "5.8.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -630,6 +645,7 @@ MANIFEST = """\
         <activity android:name=".ui.MedicalActivity" android:exported="false" android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"/>
         <receiver android:name=".ui.SunsetAlarmReceiver" android:exported="false"/>
+        <activity android:name=".ui.CompassActivity" android:exported="false" android:screenOrientation="portrait"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -6218,6 +6234,7 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
 
         // strumenti outdoor avanzati (schede dedicate)
         bindTool(R.id.open_area, AreaToolActivity.class);
+        bindTool(R.id.open_compass, CompassActivity.class);   // v5.8
         bindTool(R.id.open_recorder, TrackRecorderActivity.class);
         bindTool(R.id.open_unitconv, UnitConvActivity.class);
         bindTool(R.id.open_timer, MultiTimerActivity.class);
@@ -6575,6 +6592,8 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_safety, SafetyActivity.class);
         // v5.6
         wire(R.id.card_medical, MedicalActivity.class);
+        // v5.8
+        wire(R.id.card_compass, CompassActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -9889,34 +9908,193 @@ public class CalcActivity extends AppCompatActivity {
 
 NOTEPAD_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.app.AlertDialog;
+import android.content.SharedPreferences;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
-import com.offlinegps.map.R;
 import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.NoteStore;
+import com.offlinegps.map.util.ShareUtil;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
+/**
+ * Blocco note (v5.8): piu' note con il titolo dalla prima riga, ricerca,
+ * salvataggio automatico mentre scrivi, condividi ed elimina con conferma.
+ * La vecchia nota unica diventa la prima nota. Prima c'era una sola nota.
+ */
 public class NotepadActivity extends AppCompatActivity {
-    private EditText et;
+    private static final String KEY = "notes2";
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private List<NoteStore.Note> notes;
+    private View listPanel, editPanel;
+    private LinearLayout list;
+    private EditText editor, search;
+    private TextView tvCount, tvEmpty, tvMeta;
+    private long editing = -1;
+    private boolean loading;
+
+    private final Runnable autosave = this::saveCurrent;
+
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_notepad);
-        et = findViewById(R.id.et_notepad);
-        View back = findViewById(R.id.btn_notepad_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        if (et != null) {
-            et.setText(getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).getString("notepad", ""));
-            et.addTextChangedListener(new TextWatcher() {
-                public void afterTextChanged(Editable e) {
-                    getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit()
-                        .putString("notepad", e.toString()).apply();
-                }
-                public void beforeTextChanged(CharSequence c,int a,int b,int d){}
-                public void onTextChanged(CharSequence c,int a,int b,int d){}
-            });
+        listPanel = findViewById(R.id.note_list_panel);
+        editPanel = findViewById(R.id.note_edit_panel);
+        list = findViewById(R.id.note_list);
+        editor = findViewById(R.id.et_notepad);
+        search = findViewById(R.id.et_note_search);
+        tvCount = findViewById(R.id.tv_note_count);
+        tvEmpty = findViewById(R.id.tv_note_empty);
+        tvMeta = findViewById(R.id.tv_note_meta);
+        SharedPreferences p = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        notes = NoteStore.parse(p.getString(KEY, ""));
+        if (!p.contains(KEY)) {
+            notes = NoteStore.migrate(notes, p.getString("notepad", ""), System.currentTimeMillis());
+            store();
+        }
+        click(R.id.btn_notepad_back, v -> { if (editing >= 0) closeEditor(); else finish(); });
+        click(R.id.btn_note_new, v -> open(System.currentTimeMillis(), ""));
+        click(R.id.btn_note_done, v -> closeEditor());
+        click(R.id.btn_note_share, v -> {
+            saveCurrent();
+            String t = editor.getText().toString().trim();
+            if (!t.isEmpty()) ShareUtil.shareText(this, t, "Condividi la nota");
+        });
+        click(R.id.btn_note_del, v -> new AlertDialog.Builder(this).setTitle("Eliminare questa nota?")
+            .setPositiveButton("ELIMINA", (d, w) -> { notes = NoteStore.delete(notes, editing); store(); editing = -1; showList(); })
+            .setNegativeButton("Annulla", null).show());
+        if (editor != null) editor.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { if (!loading) { h.removeCallbacks(autosave); h.postDelayed(autosave, 600); } }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        if (search != null) search.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { renderList(); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        showList();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        saveCurrent();
+    }
+
+    @Override public void onBackPressed() {
+        if (editing >= 0) { closeEditor(); return; }
+        super.onBackPressed();
+    }
+
+    private void store() {
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putString(KEY, NoteStore.serialize(notes)).apply();
+    }
+
+    private void saveCurrent() {
+        h.removeCallbacks(autosave);
+        if (editing < 0 || editor == null) return;
+        notes = NoteStore.upsert(notes, editing, editor.getText().toString(), System.currentTimeMillis());
+        store();
+        meta();
+    }
+
+    private void open(long id, String text) {
+        editing = id;
+        loading = true;
+        editor.setText(text);
+        editor.setSelection(text.length());
+        loading = false;
+        listPanel.setVisibility(View.GONE);
+        editPanel.setVisibility(View.VISIBLE);
+        editor.requestFocus();
+        meta();
+    }
+
+    private void meta() {
+        if (tvMeta == null) return;
+        for (NoteStore.Note n : notes) if (n.id == editing) {
+            tvMeta.setText("Salvata " + new SimpleDateFormat("d MMM yyyy 'alle' HH:mm", Locale.ITALY).format(new Date(n.updated)));
+            return;
+        }
+        tvMeta.setText("Nuova nota: si salva mentre scrivi");
+    }
+
+    private void closeEditor() {
+        saveCurrent();
+        editing = -1;
+        showList();
+    }
+
+    private void showList() {
+        editPanel.setVisibility(View.GONE);
+        listPanel.setVisibility(View.VISIBLE);
+        renderList();
+    }
+
+    private void renderList() {
+        if (tvCount != null) tvCount.setText(notes.size() + (notes.size() == 1 ? " NOTA" : " NOTE"));
+        List<NoteStore.Note> shown = NoteStore.search(notes, search == null ? "" : search.getText().toString());
+        if (tvEmpty != null) {
+            tvEmpty.setVisibility(shown.isEmpty() ? View.VISIBLE : View.GONE);
+            tvEmpty.setText(notes.isEmpty() ? "Nessuna nota. Premi NUOVA NOTA: si salva mentre scrivi." : "Nessuna nota contiene questo testo.");
+        }
+        if (list == null) return;
+        list.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        SimpleDateFormat f = new SimpleDateFormat("d MMM, HH:mm", Locale.ITALY);
+        for (NoteStore.Note n : shown) {
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding((int) (14 * dp), (int) (12 * dp), (int) (14 * dp), (int) (12 * dp));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xCC0D1626);
+            bg.setCornerRadius(16 * dp);
+            bg.setStroke(Math.max(1, (int) dp), 0x55B388FF);
+            card.setBackground(bg);
+            TextView t = new TextView(this);
+            t.setText(n.title());
+            t.setTextColor(0xFFFFFFFF);
+            t.setTextSize(16);
+            t.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+            card.addView(t);
+            if (!n.preview().isEmpty()) {
+                TextView pv = new TextView(this);
+                pv.setText(n.preview());
+                pv.setTextColor(0xFFCFE3F5);
+                pv.setTextSize(13);
+                pv.setMaxLines(2);
+                card.addView(pv);
+            }
+            TextView d = new TextView(this);
+            d.setText(f.format(new Date(n.updated)));
+            d.setTextColor(0xFF5A7A99);
+            d.setTextSize(12);
+            card.addView(d);
+            card.setClickable(true);
+            card.setOnClickListener(v -> open(n.id, n.text));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (10 * dp);
+            list.addView(card, lp);
         }
     }
 }
@@ -10206,25 +10384,6 @@ def _calc_key(vid, label, bg, fg):
     return ('<Button android:id="@+id/' + vid + '" android:text="' + label + '"'
         + ' android:layout_columnWeight="1" android:layout_width="0dp" android:layout_height="64dp"'
         + ' android:backgroundTint="' + bg + '" android:textColor="' + fg + '"/>\n')
-
-LAYOUT_NOTEPAD = """\
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:orientation="vertical" android:padding="16dp" android:background="#050A14">
-    <Button android:id="@+id/btn_notepad_back"
-        android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="&lt; Indietro" android:backgroundTint="#141E2E" android:textColor="#00E5FF"
-        android:textSize="13sp" android:layout_marginBottom="12dp"/>
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:text="BLOCCO NOTE" android:textColor="#00FF88" android:textSize="20sp"
-        android:textStyle="bold" android:fontFamily="monospace" android:layout_marginBottom="12dp"/>
-    <EditText android:id="@+id/et_notepad"
-        android:layout_width="match_parent" android:layout_height="match_parent"
-        android:gravity="top" android:hint="Scrivi qui i tuoi appunti..."
-        android:textColor="#E8F4FD" android:textColorHint="#5A7A99" android:textSize="16sp"
-        android:background="#0D1421" android:padding="16dp"/>
-</LinearLayout>"""
 
 # ============================================================
 #  CHAT OFFLINE via Bluetooth — un telefono OSPITA, l'altro ENTRA.
@@ -11775,6 +11934,7 @@ public class MoonPhaseActivity extends AppCompatActivity {
 
 METAL_DETECTOR_ACTIVITY = r"""package com.offlinegps.map.ui;
 
+import android.hardware.GeomagneticField;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -11782,113 +11942,202 @@ import android.hardware.SensorManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
+import java.util.Locale;
 
 /**
- * Metal detector: usa il magnetometro. Il metallo vicino al telefono
- * altera il campo magnetico (misurato in microtesla). Taratura con un
- * tasto, beep quando la variazione supera la soglia.
+ * Metal detector (v5.8): indicatore a lancetta, suono a ritmo come un
+ * contatore (piu' veloce piu' sei vicino), tre sensibilita', taratura e il
+ * campo terrestre atteso nel posto per capire se il telefono e' gia'
+ * disturbato. Prima: barra e un beep sopra una soglia fissa.
  */
 public class MetalDetectorActivity extends AppCompatActivity implements SensorEventListener {
+    private static final float[] SCALE = {60f, 30f, 12f};   // microtesla a fondo scala per sensibilita'
     private SensorManager sm;
     private Sensor mag;
-    private TextView tvVal, tvHint, tvNoSensor;
-    private ProgressBar bar;
-    private float baseline = -1;
-    private float smooth = 0;
     private ToneGenerator tone;
-    private long lastBeep = 0;
+    private NeonGaugeView gauge;
+    private TextView tvVal, tvBase, tvDelta, tvHint, tvState, tvSoundTxt;
+    private TextView[] sensChips;
+    private float smooth = Float.NaN, baseline = Float.NaN, expected = Float.NaN;
+    private int sens = 1;
+    private boolean sound = true, visible;
+    private long lastBeep;
+    private final Handler h = new Handler(Looper.getMainLooper());
+
+    private final Runnable beeper = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            float d = delta();
+            float v = Float.isNaN(d) ? 0 : Math.min(1f, d / SCALE[sens]);
+            long now = SystemClock.uptimeMillis();
+            // ritmo da 1 beep ogni 0,9 s a 12 al secondo
+            long every = v < 0.12f ? Long.MAX_VALUE : (long) (900 - 820 * v);
+            if (sound && tone != null && now - lastBeep >= every) {
+                lastBeep = now;
+                try { tone.startTone(v > 0.8f ? ToneGenerator.TONE_PROP_BEEP2 : ToneGenerator.TONE_PROP_BEEP, 40); } catch (Exception ignored) {}
+            }
+            h.postDelayed(this, 30);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_metal);
+        gauge = findViewById(R.id.metal_gauge);
         tvVal = findViewById(R.id.tv_metal_val);
+        tvBase = findViewById(R.id.tv_metal_base);
+        tvDelta = findViewById(R.id.tv_metal_delta);
         tvHint = findViewById(R.id.tv_metal_hint);
-        tvNoSensor = findViewById(R.id.tv_metal_nosensor);
-        bar = findViewById(R.id.pb_metal);
-        View back = findViewById(R.id.btn_metal_back);
-        if (back != null) back.setOnClickListener(v -> finish());
-        View cal = findViewById(R.id.btn_metal_cal);
-        if (cal != null) cal.setOnClickListener(v -> { baseline = smooth; });
+        tvState = findViewById(R.id.tv_metal_state);
+        tvSoundTxt = findViewById(R.id.btn_metal_sound_txt);
+        sensChips = new TextView[]{findViewById(R.id.metal_s_low), findViewById(R.id.metal_s_mid), findViewById(R.id.metal_s_high)};
+        for (int i = 0; i < 3; i++) {
+            final int k = i;
+            if (sensChips[i] != null) sensChips[i].setOnClickListener(v -> { sens = k; render(); });
+        }
+        click(R.id.btn_metal_back, v -> finish());
+        click(R.id.btn_metal_cal, v -> { baseline = smooth; render(); });
+        click(R.id.btn_metal_sound, v -> { sound = !sound; render(); });
         sm = (SensorManager) getSystemService(SENSOR_SERVICE);
         if (sm != null) mag = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
-        if (mag == null && tvNoSensor != null) tvNoSensor.setVisibility(View.VISIBLE);
-        try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 90); } catch (Exception ignored) {}
+        View none = findViewById(R.id.tv_metal_nosensor);
+        if (none != null) none.setVisibility(mag == null ? View.VISIBLE : View.GONE);
+        try { tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 80); } catch (Exception ignored) {}
+        double[] w = ToolKit.where(this);
+        if (w != null) expected = new GeomagneticField((float) w[0], (float) w[1], 0f, System.currentTimeMillis()).getFieldStrength() / 1000f;
+        render();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (sm != null && mag != null)
-            sm.registerListener(this, mag, SensorManager.SENSOR_DELAY_UI);
+        visible = true;
+        if (sm != null && mag != null) sm.registerListener(this, mag, SensorManager.SENSOR_DELAY_GAME);
+        h.removeCallbacks(beeper);
+        h.post(beeper);
     }
+
     @Override protected void onPause() {
         super.onPause();
+        visible = false;
         if (sm != null) sm.unregisterListener(this);
+        h.removeCallbacks(beeper);
     }
+
     @Override protected void onDestroy() {
         super.onDestroy();
         if (tone != null) tone.release();
     }
 
     @Override public void onSensorChanged(SensorEvent e) {
-        float m = (float) Math.sqrt(e.values[0]*e.values[0]
-            + e.values[1]*e.values[1] + e.values[2]*e.values[2]);
-        smooth = smooth == 0 ? m : smooth * 0.7f + m * 0.3f;
-        if (baseline < 0) baseline = smooth;
-        float delta = Math.abs(smooth - baseline);
-        if (bar != null) bar.setProgress((int) Math.min(100, delta * 2));
-        if (tvVal != null) tvVal.setText(String.format(java.util.Locale.US,
-            "%.0f uT   (variazione %.0f)", smooth, delta));
-        if (tvHint != null) {
-            if (delta < 8) tvHint.setText("Nessun metallo rilevato");
-            else if (delta < 25) tvHint.setText("Segnale debole: qualcosa nelle vicinanze");
-            else {
-                tvHint.setText("SEGNALE FORTE: metallo vicino!");
-                long now = System.currentTimeMillis();
-                if (now - lastBeep > 400) {
-                    lastBeep = now;
-                    try { if (tone != null) tone.startTone(ToneGenerator.TONE_PROP_BEEP, 150); }
-                    catch (Exception ignored) {}
-                }
-            }
+        float m = (float) Math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]);
+        smooth = Float.isNaN(smooth) ? m : smooth * 0.75f + m * 0.25f;
+        if (Float.isNaN(baseline)) baseline = smooth;
+        render();
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) {}
+
+    private float delta() { return Float.isNaN(smooth) || Float.isNaN(baseline) ? Float.NaN : Math.abs(smooth - baseline); }
+
+    private void render() {
+        for (int i = 0; i < sensChips.length; i++) {
+            if (sensChips[i] == null) continue;
+            sensChips[i].setBackgroundResource(i == sens ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            sensChips[i].setTextColor(i == sens ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        if (tvSoundTxt != null) tvSoundTxt.setText(sound ? "SUONO SI'" : "SUONO NO");
+        float d = delta();
+        float v = Float.isNaN(d) ? 0 : Math.min(1f, d / SCALE[sens]);
+        if (gauge != null) {
+            gauge.setValue(v);
+            gauge.setLabel(Float.isNaN(d) ? "--" : String.format(Locale.ITALY, "%.0f µT", d));
+            gauge.setCaption("VARIAZIONE");
+        }
+        set(tvVal, Float.isNaN(smooth) ? "--" : String.format(Locale.ITALY, "%.0f µT", smooth));
+        set(tvBase, Float.isNaN(baseline) ? "--" : String.format(Locale.ITALY, "%.0f µT", baseline));
+        set(tvDelta, Float.isNaN(d) ? "--" : String.format(Locale.ITALY, "%+.0f µT", smooth - baseline));
+        String hint;
+        int color;
+        if (mag == null) { hint = "Sensore magnetico assente"; color = 0xFFFF3D71; }
+        else if (Float.isNaN(d)) { hint = "Muovi il telefono..."; color = 0xFF8FB3D0; }
+        else if (v < 0.15f) { hint = "Nessun metallo"; color = 0xFF8FB3D0; }
+        else if (v < 0.45f) { hint = "Segnale debole: c'e' qualcosa vicino"; color = 0xFFFFD600; }
+        else if (v < 0.8f) { hint = "Segnale forte: metallo molto vicino"; color = 0xFFFF6B35; }
+        else { hint = "METALLO QUI!"; color = 0xFFFF3D71; }
+        if (tvHint != null) { tvHint.setText(hint); tvHint.setTextColor(color); }
+        if (tvState != null) {
+            boolean odd = !Float.isNaN(expected) && !Float.isNaN(baseline) && Math.abs(baseline / expected - 1) > 0.35f;
+            tvState.setText(odd ? "TARA LONTANO DAI METALLI" : Float.isNaN(expected) ? "PRONTO" : String.format(Locale.ITALY, "ATTESO %.0f µT", expected));
+            tvState.setTextColor(odd ? 0xFFFFD600 : 0xFF8FB3D0);
         }
     }
-    @Override public void onAccuracyChanged(Sensor sensor, int a) {}
+
+    private static void set(TextView t, String s) { if (t != null) t.setText(s); }
 }
 """
 
 NIGHT_VISION_ACTIVITY = r"""package com.offlinegps.map.ui;
 
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.SeekBar;
+import android.widget.TextView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.offlinegps.map.R;
 
 /**
- * Visione notturna: schermo rosso a bassa luminosita'. La luce rossa non
- * distrugge l'adattamento dell'occhio al buio (usata da astronomi e militari).
- * Tocca lo schermo per nascondere/mostrare i controlli.
+ * Luce rossa (v5.8): schermo rosso, rosso scuro o ambra a luminosita'
+ * regolabile, con un orologio appena visibile. La luce rossa non rovina
+ * l'adattamento dell'occhio al buio. Tocca per nascondere i comandi.
  */
 public class NightVisionActivity extends AppCompatActivity {
-    private View controls;
+    private static final int[] COLORS = {0xFFB00000, 0xFF500000, 0xFF9A4A00};
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private View root, controls;
+    private TextView clock;
+    private TextView[] chips;
+    private int mode;
+    private boolean visible;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            if (clock != null) clock.setText(ToolKit.hhmm(System.currentTimeMillis()));
+            h.postDelayed(this, 20_000);
+        }
+    };
 
     @Override protected void onCreate(@Nullable Bundle s) {
         super.onCreate(s);
         setContentView(R.layout.activity_nightvision);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        root = findViewById(R.id.nv_root);
         controls = findViewById(R.id.nv_controls);
-        View root = findViewById(R.id.nv_root);
+        clock = findViewById(R.id.tv_nv_clock);
+        chips = new TextView[]{findViewById(R.id.nv_red), findViewById(R.id.nv_dark), findViewById(R.id.nv_amber)};
+        for (int i = 0; i < chips.length; i++) {
+            final int k = i;
+            if (chips[i] != null) chips[i].setOnClickListener(v -> { mode = k; paint(); });
+        }
         if (root != null) root.setOnClickListener(v -> {
-            if (controls != null) controls.setVisibility(
-                controls.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            if (controls != null) controls.setVisibility(controls.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
         });
         View back = findViewById(R.id.btn_nv_back);
         if (back != null) back.setOnClickListener(v -> finish());
@@ -11897,12 +12146,23 @@ public class NightVisionActivity extends AppCompatActivity {
             sb.setProgress(15);
             setBrightness(0.15f);
             sb.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-                public void onProgressChanged(SeekBar seek, int p, boolean u) {
-                    setBrightness(Math.max(0.02f, p / 100f));
-                }
+                public void onProgressChanged(SeekBar seek, int p, boolean u) { setBrightness(Math.max(0.01f, p / 100f)); }
                 public void onStartTrackingTouch(SeekBar seek) {}
                 public void onStopTrackingTouch(SeekBar seek) {}
             });
+        }
+        paint();
+    }
+
+    @Override protected void onResume() { super.onResume(); visible = true; h.post(tick); }
+    @Override protected void onPause() { super.onPause(); visible = false; h.removeCallbacks(tick); }
+
+    private void paint() {
+        if (root != null) root.setBackgroundColor(COLORS[mode]);
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            chips[i].setBackgroundResource(i == mode ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            chips[i].setTextColor(i == mode ? 0xFFFF8080 : 0xFFC08080);
         }
     }
 
@@ -12490,53 +12750,6 @@ public class SpeedHudActivity extends AppCompatActivity {
     }
 }
 """
-
-LAYOUT_METAL = _scroll(_tool_header("METAL DETECTOR", "btn_metal_back", "#00E5FF")
-    + '<TextView android:id="@+id/tv_metal_nosensor" android:layout_width="match_parent"\n'
-      '    android:layout_height="wrap_content" android:visibility="gone"\n'
-      '    android:text="Questo telefono non ha il magnetometro: il metal detector non e\' disponibile."\n'
-      '    android:textColor="#FF8888" android:textSize="15sp" android:background="#2A1010"\n'
-      '    android:padding="18dp" android:layout_marginBottom="16dp"/>\n'
-    + _big("tv_metal_val", "-- uT", "#00FF88")
-    + '<ProgressBar android:id="@+id/pb_metal" style="?android:attr/progressBarStyleHorizontal"\n'
-      '    android:layout_width="match_parent" android:layout_height="24dp" android:max="100"\n'
-      '    android:progressTint="#00E5FF" android:layout_marginBottom="12dp"/>\n'
-    + _big("tv_metal_hint", "Muovi il telefono vicino al metallo", "#E8F4FD")
-    + _btn("btn_metal_cal", "TARA QUI (azzera il fondo)", "#00E5FF")
-    + '<TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
-      '    android:text="Tara il sensore lontano da metalli, poi avvicina il telefono al terreno o alla parete. Il campo magnetico terrestre e\' ~50 uT: metallo vicino lo altera."\n'
-      '    android:textColor="#5A7A99" android:textSize="12sp" android:layout_marginTop="12dp"/>')
-
-LAYOUT_NIGHTVISION = """\
-<?xml version="1.0" encoding="utf-8"?>
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/nv_root"
-    android:layout_width="match_parent" android:layout_height="match_parent"
-    android:background="#7A0000" android:clickable="true" android:focusable="true">
-    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-        android:layout_gravity="center" android:text="VISIONE NOTTURNA"
-        android:textColor="#33000000" android:textSize="26sp" android:textStyle="bold"
-        android:fontFamily="monospace"/>
-    <LinearLayout android:id="@+id/nv_controls"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_gravity="bottom" android:orientation="vertical"
-        android:background="#66000000" android:padding="16dp">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="Luminosita (bassa = occhio adattato al buio)" android:textColor="#FF8888"
-            android:textSize="13sp" android:layout_marginBottom="8dp"/>
-        <SeekBar android:id="@+id/sb_nv_brightness"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:max="100" android:progressTint="#FF4444" android:thumbTint="#FF4444"
-            android:layout_marginBottom="12dp"/>
-        <Button android:id="@+id/btn_nv_back"
-            android:layout_width="wrap_content" android:layout_height="wrap_content"
-            android:text="&lt; Esci" android:backgroundTint="#2A0000" android:textColor="#FF8888"
-            android:textSize="13sp"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:text="Tocca lo schermo per nascondere i controlli. La luce rossa preserva la visione notturna."
-            android:textColor="#AA5555" android:textSize="11sp" android:layout_marginTop="8dp"/>
-    </LinearLayout>
-</FrameLayout>"""
 
 LAYOUT_SPEEDHUD = """\
 <?xml version="1.0" encoding="utf-8"?>
@@ -17304,7 +17517,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.7 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.8 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -28119,6 +28332,580 @@ public final class WaypointTools {
 }
 """
 
+COMPASS_MATH = r"""package com.offlinegps.map.util;
+
+/**
+ * Calcoli della bussola (v5.8): angoli normalizzati, differenza con segno,
+ * direzione di ritorno, nord vero dalla declinazione, filtro che non salta
+ * passando da 359 a 0 gradi, millesimi NATO (6400 per giro), consigli di
+ * rotta e controllo delle interferenze magnetiche confrontando il campo
+ * misurato con quello atteso dal modello terrestre.
+ * Senza Android: testata sul computer.
+ */
+public final class CompassMath {
+    private CompassMath() {}
+
+    public static double norm(double a) {
+        double r = a % 360;
+        return r < 0 ? r + 360 : r;
+    }
+
+    /** Quanto girare da 'from' per arrivare a 'to': da -180 a +180, positivo = a destra. */
+    public static double diff(double from, double to) {
+        double d = norm(to - from);
+        return d > 180 ? d - 360 : d;
+    }
+
+    /** Direzione di ritorno (rotta inversa). */
+    public static double back(double b) { return norm(b + 180); }
+
+    /** Nord vero = magnetico + declinazione (positiva a est). */
+    public static double trueFromMagnetic(double magnetic, double declination) { return norm(magnetic + declination); }
+
+    /** Filtro esponenziale sugli angoli (alpha 0..1 = quanto pesa il nuovo valore). */
+    public static double smooth(double prev, double next, double alpha) {
+        if (Double.isNaN(prev)) return norm(next);
+        return norm(prev + diff(prev, next) * alpha);
+    }
+
+    /** Millesimi NATO: 6400 per giro. */
+    public static int mils(double deg) { return (int) Math.round(norm(deg) * 6400 / 360) % 6400; }
+
+    /** 0 = in rotta (entro la tolleranza), altrimenti gradi da girare con il segno. */
+    public static String guidance(double heading, double target, double tol) {
+        double d = diff(heading, target);
+        if (Math.abs(d) <= tol) return "Sei in rotta";
+        if (Math.abs(d) >= 160) return "Stai andando al contrario: girati";
+        return String.format(java.util.Locale.ITALY, "Gira a %s di %.0f°", d > 0 ? "destra" : "sinistra", Math.abs(d));
+    }
+
+    /**
+     * Interferenze: 0 nessuna (campo entro il 15% dell'atteso), 1 sospetta
+     * (entro il 35%), 2 forte. Senza valore atteso si usa l'intervallo
+     * terrestre normale 25-65 microtesla.
+     */
+    public static int interference(double measuredUT, double expectedUT) {
+        if (Double.isNaN(measuredUT) || measuredUT <= 0) return 2;
+        if (Double.isNaN(expectedUT) || expectedUT <= 0) {
+            if (measuredUT >= 25 && measuredUT <= 65) return 0;
+            return measuredUT >= 15 && measuredUT <= 80 ? 1 : 2;
+        }
+        double r = Math.abs(measuredUT / expectedUT - 1);
+        return r <= 0.15 ? 0 : r <= 0.35 ? 1 : 2;
+    }
+}
+"""
+
+NOTE_STORE = r"""package com.offlinegps.map.util;
+
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+/**
+ * Blocco note con piu' note (v5.8): il titolo e' la prima riga, ricerca senza
+ * accenti, ordine per ultima modifica, e la vecchia nota unica viene
+ * recuperata come prima nota. Salvato in JSON. Senza Android: testato sul
+ * computer (org.json c'e' anche li').
+ */
+public final class NoteStore {
+    public static final class Note {
+        public long id, created, updated;
+        public String text = "";
+
+        public String title() {
+            String t = text.trim();
+            int nl = t.indexOf('\n');
+            String first = (nl < 0 ? t : t.substring(0, nl)).trim();
+            if (first.isEmpty()) return "Nota vuota";
+            return first.length() > 60 ? first.substring(0, 59) + "…" : first;
+        }
+
+        public String preview() {
+            String t = text.trim();
+            int nl = t.indexOf('\n');
+            if (nl < 0) return "";
+            String rest = t.substring(nl + 1).trim().replaceAll("\\s+", " ");
+            return rest.length() > 120 ? rest.substring(0, 119) + "…" : rest;
+        }
+    }
+
+    private NoteStore() {}
+
+    public static List<Note> parse(String json) {
+        List<Note> out = new ArrayList<>();
+        if (json == null || json.isEmpty()) return out;
+        try {
+            JSONArray a = new JSONArray(json);
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                Note n = new Note();
+                n.id = o.optLong("id");
+                n.text = o.optString("text", "");
+                n.created = o.optLong("created");
+                n.updated = o.optLong("updated", n.created);
+                out.add(n);
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    public static String serialize(List<Note> notes) {
+        JSONArray a = new JSONArray();
+        try {
+            for (Note n : notes)
+                a.put(new JSONObject().put("id", n.id).put("text", n.text).put("created", n.created).put("updated", n.updated));
+        } catch (Exception ignored) {}
+        return a.toString();
+    }
+
+    /** La vecchia nota unica (v5.7 e prima) diventa la prima nota, una volta sola. */
+    public static List<Note> migrate(List<Note> notes, String oldText, long now) {
+        if (!notes.isEmpty() || oldText == null || oldText.trim().isEmpty()) return notes;
+        Note n = new Note();
+        n.id = now;
+        n.created = n.updated = now;
+        n.text = oldText;
+        List<Note> out = new ArrayList<>(notes);
+        out.add(n);
+        return out;
+    }
+
+    /** Aggiunge o aggiorna; una nota senza testo viene tolta. */
+    public static List<Note> upsert(List<Note> notes, long id, String text, long now) {
+        List<Note> out = new ArrayList<>();
+        boolean found = false;
+        for (Note n : notes) {
+            if (n.id == id) {
+                found = true;
+                if (text.trim().isEmpty()) continue;
+                if (!n.text.equals(text)) { n.text = text; n.updated = now; }
+            }
+            out.add(n);
+        }
+        if (!found && !text.trim().isEmpty()) {
+            Note n = new Note();
+            n.id = id;
+            n.created = n.updated = now;
+            n.text = text;
+            out.add(n);
+        }
+        return out;
+    }
+
+    public static List<Note> delete(List<Note> notes, long id) {
+        List<Note> out = new ArrayList<>();
+        for (Note n : notes) if (n.id != id) out.add(n);
+        return out;
+    }
+
+    static String norm(String s) {
+        return Normalizer.normalize(s == null ? "" : s, Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ITALY);
+    }
+
+    /** Filtrate per testo e ordinate dalla piu' recente. */
+    public static List<Note> search(List<Note> notes, String q) {
+        String k = norm(q).trim();
+        List<Note> out = new ArrayList<>();
+        for (Note n : notes) if (k.isEmpty() || norm(n.text).contains(k)) out.add(n);
+        out.sort((a, b) -> Long.compare(b.updated, a.updated));
+        return out;
+    }
+}
+"""
+
+COMPASS_ROSE_VIEW = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.graphics.*;
+import android.util.AttributeSet;
+import android.view.View;
+
+/**
+ * Rosa della bussola (v5.8): gira con il telefono, la tacca in alto e' dove
+ * punti. Nord rosso, gradi ogni 30, punti cardinali sempre dritti, rotta
+ * bloccata in verde (con la freccia di ritorno) e lo spicchio di errore
+ * fra dove punti e dove dovresti andare.
+ */
+public class CompassRoseView extends View {
+    private final float dp;
+    private final Paint pDial = new Paint(Paint.ANTI_ALIAS_FLAG), pTick = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG), pMark = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pArc = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float heading;
+    private float target = Float.NaN;
+    private boolean disturbed;
+
+    public CompassRoseView(Context c) { this(c, null); }
+    public CompassRoseView(Context c, AttributeSet a) {
+        super(c, a);
+        dp = getResources().getDisplayMetrics().density;
+        pTick.setStrokeCap(Paint.Cap.ROUND);
+        pText.setTextAlign(Paint.Align.CENTER);
+        pText.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        pArc.setStyle(Paint.Style.FILL);
+    }
+
+    /** heading = dove punta il telefono; target = rotta bloccata (NaN = nessuna). */
+    public void set(float heading, float target, boolean disturbed) {
+        this.heading = heading;
+        this.target = target;
+        this.disturbed = disturbed;
+        invalidate();
+    }
+
+    @Override protected void onDraw(Canvas c) {
+        super.onDraw(c);
+        float cx = getWidth() / 2f, cy = getHeight() / 2f, r = Math.min(cx, cy) - 14 * dp;
+        if (r < 40) return;
+        pDial.setShader(new RadialGradient(cx, cy, r, 0xFF13234A, 0xFF070D1A, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, r, pDial);
+        pDial.setShader(null);
+        pDial.setStyle(Paint.Style.STROKE);
+        pDial.setStrokeWidth(2 * dp);
+        pDial.setColor(disturbed ? 0xAAFF6B35 : 0x8800E5FF);
+        c.drawCircle(cx, cy, r, pDial);
+        pDial.setStyle(Paint.Style.FILL);
+
+        // spicchio fra dove punti (in alto) e la rotta
+        if (!Float.isNaN(target)) {
+            float d = (float) com.offlinegps.map.util.CompassMath.diff(heading, target);
+            pArc.setColor(Math.abs(d) <= 5 ? 0x4400FF88 : 0x44FFD600);
+            RectF o = new RectF(cx - r * 0.86f, cy - r * 0.86f, cx + r * 0.86f, cy + r * 0.86f);
+            c.drawArc(o, -90, d, true, pArc);
+        }
+
+        c.save();
+        c.rotate(-heading, cx, cy);
+        for (int a = 0; a < 360; a += 5) {
+            boolean major = a % 30 == 0, mid = a % 10 == 0;
+            float len = (major ? 16 : mid ? 10 : 6) * dp;
+            pTick.setStrokeWidth((major ? 2.6f : 1.4f) * dp);
+            pTick.setColor(a == 0 ? 0xFFFF3D71 : major ? 0xFFE8F4FD : 0x995A7A99);
+            double rad = Math.toRadians(a);
+            float sx = (float) Math.sin(rad), sy = (float) -Math.cos(rad);
+            c.drawLine(cx + sx * r, cy + sy * r, cx + sx * (r - len), cy + sy * (r - len), pTick);
+        }
+        String[] card = {"N", "E", "S", "O"};
+        for (int i = 0; i < 4; i++) {
+            double rad = Math.toRadians(i * 90);
+            float tx = cx + (float) Math.sin(rad) * (r - 36 * dp), ty = cy - (float) Math.cos(rad) * (r - 36 * dp);
+            pText.setTextSize((i == 0 ? 30 : 24) * dp);
+            pText.setColor(i == 0 ? 0xFFFF3D71 : 0xFFE8F4FD);
+            c.save();
+            c.rotate(heading, tx, ty);
+            c.drawText(card[i], tx, ty + 10 * dp, pText);
+            c.restore();
+        }
+        pText.setTextSize(12 * dp);
+        pText.setColor(0xFF8FB3D0);
+        for (int a = 30; a < 360; a += 30) {
+            if (a % 90 == 0) continue;
+            double rad = Math.toRadians(a);
+            float tx = cx + (float) Math.sin(rad) * (r - 32 * dp), ty = cy - (float) Math.cos(rad) * (r - 32 * dp);
+            c.save();
+            c.rotate(heading, tx, ty);
+            c.drawText(String.valueOf(a), tx, ty + 4 * dp, pText);
+            c.restore();
+        }
+        // ago: rosso a nord, chiaro a sud
+        Path n = new Path();
+        n.moveTo(cx, cy - r * 0.62f); n.lineTo(cx - 9 * dp, cy); n.lineTo(cx + 9 * dp, cy); n.close();
+        pMark.setColor(0xFFFF3D71);
+        c.drawPath(n, pMark);
+        Path s = new Path();
+        s.moveTo(cx, cy + r * 0.62f); s.lineTo(cx - 9 * dp, cy); s.lineTo(cx + 9 * dp, cy); s.close();
+        pMark.setColor(0xFF8FB3D0);
+        c.drawPath(s, pMark);
+        // rotta bloccata e ritorno
+        if (!Float.isNaN(target)) {
+            marker(c, cx, cy, r, target, 0xFF00FF88, true);
+            marker(c, cx, cy, r, target + 180, 0x9900E5FF, false);
+        }
+        c.restore();
+        pMark.setColor(0xFFE8F4FD);
+        c.drawCircle(cx, cy, 6 * dp, pMark);
+        // tacca fissa in alto: dove punti
+        Path lub = new Path();
+        lub.moveTo(cx, cy - r + 2 * dp); lub.lineTo(cx - 12 * dp, cy - r - 12 * dp); lub.lineTo(cx + 12 * dp, cy - r - 12 * dp); lub.close();
+        pMark.setColor(0xFFFFD600);
+        c.drawPath(lub, pMark);
+    }
+
+    private void marker(Canvas c, float cx, float cy, float r, float deg, int color, boolean big) {
+        double rad = Math.toRadians(deg);
+        float x = cx + (float) Math.sin(rad) * (r - 6 * dp), y = cy - (float) Math.cos(rad) * (r - 6 * dp);
+        pMark.setColor(color);
+        c.drawCircle(x, y, (big ? 9 : 6) * dp, pMark);
+    }
+}
+"""
+
+COMPASS_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.text.InputType;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.CompassMath;
+import com.offlinegps.map.util.GeoFormat;
+import java.util.Locale;
+
+/**
+ * Bussola (v5.8): nord vero (con la declinazione del posto, calcolata offline
+ * dal modello magnetico terrestre) o magnetico, gradi e millesimi, BLOCCA LA
+ * DIREZIONE per seguire una rotta nella nebbia o nel bosco (con la rotta di
+ * ritorno e la vibrazione se esci di rotta), e il controllo delle
+ * interferenze: il campo misurato confrontato con quello atteso nel posto.
+ * Funziona anche col telefono in verticale per mirare.
+ */
+public class CompassActivity extends AppCompatActivity implements SensorEventListener {
+    private SensorManager sm;
+    private Sensor rotSensor, magSensor, accSensor;
+    private final float[] rot = new float[9], remap = new float[9], ori = new float[3], grav = new float[3], geo = new float[3];
+    private boolean hasGrav, hasGeo;
+    private double heading = Double.NaN, declination = Double.NaN, expectedUT = Double.NaN, fieldUT = Double.NaN;
+    private int accuracy = SensorManager.SENSOR_STATUS_ACCURACY_HIGH;
+    private boolean trueNorth = true, vibrate = true, visible;
+    private float target = Float.NaN;
+    private long offSince, lastBuzz;
+    private CompassRoseView rose;
+    private TextView tvHeading, tvSub, tvLock, tvField, tvNorth, tvVibe;
+    private final Handler h = new Handler(Looper.getMainLooper());
+
+    private final Runnable ui = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            render();
+            h.postDelayed(this, 100);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_compass);
+        rose = findViewById(R.id.cmp_rose);
+        tvHeading = findViewById(R.id.tv_cmp_heading);
+        tvSub = findViewById(R.id.tv_cmp_sub);
+        tvLock = findViewById(R.id.tv_cmp_lock);
+        tvField = findViewById(R.id.tv_cmp_field);
+        tvNorth = findViewById(R.id.tv_cmp_north);
+        tvVibe = findViewById(R.id.cmp_vibe);
+        SharedPreferences p = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        trueNorth = p.getBoolean("cmp_true", true);
+        target = p.getFloat("cmp_target", Float.NaN);
+        vibrate = p.getBoolean("cmp_vibe", true);
+        click(R.id.btn_cmp_back, v -> finish());
+        click(R.id.tv_cmp_north, v -> { trueNorth = !trueNorth; save(); });
+        click(R.id.btn_cmp_lock, v -> {
+            if (!Float.isNaN(target)) { target = Float.NaN; save(); return; }
+            if (Double.isNaN(heading)) { Toast.makeText(this, "Bussola non ancora pronta", Toast.LENGTH_SHORT).show(); return; }
+            target = (float) Math.round(shown(heading));
+            save();
+            Toast.makeText(this, String.format(Locale.ITALY, "Rotta bloccata a %.0f°: punta un riferimento lontano e cammina verso quello", target),
+                Toast.LENGTH_LONG).show();
+        });
+        click(R.id.btn_cmp_set, v -> askBearing());
+        click(R.id.cmp_vibe, v -> { vibrate = !vibrate; save(); });
+        click(R.id.btn_cmp_sun, v -> startActivity(new Intent(this, SunCompassActivity.class)));
+        click(R.id.btn_cmp_goto, v -> startActivity(new Intent(this, GotoCoordsActivity.class)));
+        sm = (SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sm != null) {
+            rotSensor = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+            magSensor = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+            accSensor = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        }
+        if (magSensor == null && tvField != null) tvField.setText("Questo telefono non ha il sensore magnetico: la bussola non puo' funzionare. Usa NORD DAL SOLE.");
+        updateDeclination();
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    private void save() {
+        getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE).edit().putBoolean("cmp_true", trueNorth)
+            .putFloat("cmp_target", target).putBoolean("cmp_vibe", vibrate).apply();
+        if (Float.isNaN(target)) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        render();
+    }
+
+    private void askBearing() {
+        EditText et = new EditText(this);
+        et.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        et.setHint("0 - 359");
+        FrameLayout wrap = new FrameLayout(this);
+        int pad = (int) (20 * getResources().getDisplayMetrics().density);
+        wrap.setPadding(pad, 0, pad, 0);
+        wrap.addView(et);
+        new AlertDialog.Builder(this).setTitle("Rotta da seguire (gradi, " + (trueNorth ? "nord vero" : "nord magnetico") + ")")
+            .setView(wrap)
+            .setPositiveButton("BLOCCA", (d, w) -> {
+                try {
+                    target = (float) CompassMath.norm(Double.parseDouble(et.getText().toString().trim().replace(",", ".")));
+                    save();
+                } catch (Exception e) { Toast.makeText(this, "Valore non valido", Toast.LENGTH_SHORT).show(); }
+            })
+            .setNegativeButton("Annulla", null).show();
+    }
+
+    private void updateDeclination() {
+        double[] w = ToolKit.where(this);
+        if (w == null) return;
+        GeomagneticField f = new GeomagneticField((float) w[0], (float) w[1], 0f, System.currentTimeMillis());
+        declination = f.getDeclination();
+        expectedUT = f.getFieldStrength() / 1000.0;   // nanotesla -> microtesla
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        if (sm != null) {
+            if (rotSensor != null) sm.registerListener(this, rotSensor, SensorManager.SENSOR_DELAY_GAME);
+            else if (accSensor != null) sm.registerListener(this, accSensor, SensorManager.SENSOR_DELAY_GAME);
+            if (magSensor != null) sm.registerListener(this, magSensor, SensorManager.SENSOR_DELAY_GAME);
+        }
+        if (!Float.isNaN(target)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        h.removeCallbacks(ui);
+        h.post(ui);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        if (sm != null) sm.unregisterListener(this);
+        h.removeCallbacks(ui);
+    }
+
+    @Override public void onSensorChanged(SensorEvent e) {
+        switch (e.sensor.getType()) {
+            case Sensor.TYPE_ROTATION_VECTOR:
+                SensorManager.getRotationMatrixFromVector(rot, e.values);
+                onRotation();
+                break;
+            case Sensor.TYPE_ACCELEROMETER:
+                System.arraycopy(e.values, 0, grav, 0, 3);
+                hasGrav = true;
+                if (hasGeo && SensorManager.getRotationMatrix(rot, null, grav, geo)) onRotation();
+                break;
+            case Sensor.TYPE_MAGNETIC_FIELD:
+                System.arraycopy(e.values, 0, geo, 0, 3);
+                hasGeo = true;
+                double f = Math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]);
+                fieldUT = Double.isNaN(fieldUT) ? f : fieldUT * 0.9 + f * 0.1;
+                break;
+            default:
+        }
+    }
+
+    /** Telefono piatto: punta il bordo in alto. In verticale: punta la fotocamera (per mirare). */
+    private void onRotation() {
+        SensorManager.getOrientation(rot, ori);
+        if (Math.abs(Math.toDegrees(ori[1])) > 55) {
+            // schermata sempre in verticale: si guarda lungo la fotocamera
+            SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_X, SensorManager.AXIS_Z, remap);
+            SensorManager.getOrientation(remap, ori);
+        }
+        double az = Math.toDegrees(ori[0]);
+        heading = CompassMath.smooth(heading, az, 0.15);
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) {
+        if (s.getType() == Sensor.TYPE_MAGNETIC_FIELD) accuracy = a;
+    }
+
+    /** Direzione mostrata (vera o magnetica). */
+    private double shown(double magnetic) {
+        return trueNorth && !Double.isNaN(declination) ? CompassMath.trueFromMagnetic(magnetic, declination) : CompassMath.norm(magnetic);
+    }
+
+    private void render() {
+        boolean noDecl = Double.isNaN(declination);
+        if (tvNorth != null) tvNorth.setText(trueNorth ? (noDecl ? "NORD MAGN. (NO GPS)" : "NORD VERO") : "NORD MAGNETICO");
+        int level = CompassMath.interference(fieldUT, expectedUT);
+        boolean bad = level == 2 || accuracy <= SensorManager.SENSOR_STATUS_ACCURACY_LOW;
+        if (Double.isNaN(heading)) {
+            if (tvHeading != null) tvHeading.setText("--");
+            return;
+        }
+        double hd = shown(heading);
+        if (rose != null) rose.set((float) hd, target, bad);
+        if (tvHeading != null) tvHeading.setText(String.format(Locale.ITALY, "%.0f°  %s", hd, GeoFormat.cardinal(hd)));
+        if (tvSub != null) tvSub.setText(String.format(Locale.ITALY, "%d millesimi  ·  ritorno %.0f°%s", CompassMath.mils(hd), CompassMath.back(hd),
+            noDecl ? "" : String.format(Locale.ITALY, "  ·  declinazione %+.1f°", declination)));
+        TextView lockBtn = findViewById(R.id.btn_cmp_lock_txt);
+        if (lockBtn != null) lockBtn.setText(Float.isNaN(target) ? "BLOCCA QUESTA DIREZIONE" : "SBLOCCA LA ROTTA");
+        if (tvVibe != null) {
+            tvVibe.setText(vibrate ? "VIBRA FUORI ROTTA: SI'" : "VIBRA FUORI ROTTA: NO");
+            tvVibe.setBackgroundResource(vibrate ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            tvVibe.setTextColor(vibrate ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        if (tvLock != null) {
+            if (Float.isNaN(target)) {
+                tvLock.setText("Nessuna rotta. Punta il telefono dove devi andare e premi BLOCCA, oppure scrivi i gradi letti sulla carta.");
+                tvLock.setTextColor(0xFFCFE3F5);
+            } else {
+                double d = CompassMath.diff(hd, target);
+                tvLock.setText(String.format(Locale.ITALY, "Rotta %.0f°  ·  ritorno %.0f°\n%s", target, CompassMath.back(target),
+                    CompassMath.guidance(hd, target, 5)));
+                tvLock.setTextColor(Math.abs(d) <= 5 ? 0xFF00FF88 : Math.abs(d) <= 20 ? 0xFFFFD600 : 0xFFFF6B35);
+                buzz(Math.abs(d));
+            }
+        }
+        if (tvField != null && !Double.isNaN(fieldUT)) {
+            String verdict = level == 0 ? "nessuna interferenza" : level == 1 ? "possibile interferenza: allontanati da metalli, auto, magneti"
+                : "INTERFERENZA FORTE: la bussola sbaglia. Allontanati da metalli e cavi, togli la cover con calamita";
+            String acc = accuracy <= SensorManager.SENSOR_STATUS_ACCURACY_LOW
+                ? "\nSensore da calibrare: muovi il telefono disegnando un 8 nell'aria per qualche secondo." : "";
+            tvField.setText(String.format(Locale.ITALY, "Campo magnetico %.0f µT%s: %s.%s", fieldUT,
+                Double.isNaN(expectedUT) ? "" : String.format(Locale.ITALY, " (qui dovrebbe essere %.0f)", expectedUT), verdict, acc));
+            tvField.setTextColor(level == 0 && acc.isEmpty() ? 0xFF8FB3D0 : level == 1 ? 0xFFFFD600 : 0xFFFF6B35);
+        }
+    }
+
+    /** Vibra se resti fuori rotta di oltre 15 gradi per piu' di 2 secondi (ogni 3 secondi). */
+    private void buzz(double off) {
+        long now = SystemClock.uptimeMillis();
+        if (!vibrate || off <= 15) { offSince = 0; return; }
+        if (offSince == 0) offSince = now;
+        if (now - offSince < 2000 || now - lastBuzz < 3000) return;
+        lastBuzz = now;
+        Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+        try {
+            if (v != null && Build.VERSION.SDK_INT >= 26) v.vibrate(VibrationEffect.createOneShot(off > 60 ? 400 : 150, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception ignored) {}
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -30287,6 +31074,125 @@ LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
     _v4_tile("card_currency", "ic_v5_euro", "Valute", "Cambi offline", "yellow", "118dp", end_margin=False),
     _v4_tile("card_currency", "ic_v5_euro", "Valute", "12 valute, cambi tuoi", "yellow", "118dp", end_margin=False))
 
+# ================================================================ v5.8
+# ---------------------------------------------------------------- BUSSOLA
+LAYOUT_COMPASS = _v4_screen(
+    _v4_header("btn_cmp_back", "BUSSOLA", "Nord vero, rotta da seguire, interferenze", "#00E5FF", "tv_cmp_north", "NORD VERO")
+    + _t_view("CompassRoseView", "cmp_rose", "330dp", margin="6dp")
+    + _t_big("tv_cmp_heading", "--", "#FFFFFF", "44sp", center=True)
+    + _t_text("tv_cmp_sub", "", "#8FB3D0", "13sp", center=True, top="4dp")
+    + _gap()
+    + _t_card(_lbl("ROTTA DA SEGUIRE", "#80FFB8", "0dp")
+              + _t_text("tv_cmp_lock", "", "#CFE3F5", "15sp", bold=True, top="0dp")
+              + _gap("10dp")
+              + _t_buttons(_t_btn("btn_cmp_lock", "ic_v5_lock", "BLOCCA QUESTA DIREZIONE", "green", filled=True, end_margin=False,
+                                  text_id="btn_cmp_lock_txt"), margin="10dp")
+              + _t_buttons(_t_btn("btn_cmp_set", "ic_v5_calc", "SCRIVI I GRADI", "cyan", height="46dp", end_margin=False), margin="10dp")
+              + '<TextView android:id="@+id/cmp_vibe" android:layout_width="match_parent" android:layout_height="40dp"\n'
+                '    android:gravity="center" android:text="VIBRA FUORI ROTTA" android:textSize="11sp" android:textStyle="bold"\n'
+                '    android:textColor="#8FB3D0" android:background="@drawable/bg_chip_off" android:clickable="true" android:focusable="true"/>\n',
+              accent="green")
+    + _t_card(_lbl("AFFIDABILITA'", "#8FB3D0", "0dp")
+              + _t_text("tv_cmp_field", "Muovi il telefono: sto leggendo il sensore magnetico...", "#8FB3D0", "13sp", top="0dp"), accent="cyan")
+    + _t_buttons(_t_btn("btn_cmp_sun", "ic_v5_sun", "NORD DAL SOLE", "yellow"),
+                 _t_btn("btn_cmp_goto", "ic_v5_near_me", "VAI A COORDINATE", "cyan", end_margin=False))
+    + _v4_hint(None, "Per seguire una rotta: blocca la direzione, scegli un riferimento lontano su quella linea (albero, masso), "
+                     "raggiungilo e ripeti. Tieni il telefono piatto e lontano da metalli, auto e cover con calamita. "
+                     "In verticale la bussola guarda dove punta la fotocamera. Le carte topografiche usano il nord vero; "
+                     "in Italia la declinazione e' di pochi gradi verso est."),
+    "cmp_column")
+
+# ---------------------------------------------------------------- METAL DETECTOR
+LAYOUT_METAL = _v4_screen(
+    _v4_header("btn_metal_back", "METAL DETECTOR", "Ferro e acciaio vicino al telefono", "#00E5FF", "tv_metal_state", "--")
+    + '<com.offlinegps.map.ui.NeonGaugeView android:id="@+id/metal_gauge" android:layout_width="match_parent"\n'
+      '    android:layout_height="250dp" android:layout_marginBottom="10dp"/>\n'
+    + _t_text("tv_metal_hint", "", "#E8F4FD", "17sp", bold=True, center=True, top="0dp")
+    + _gap()
+    + _v4_row(_t_stat("tv_metal_val", "--", "CAMPO", "cyan"),
+              _t_stat("tv_metal_base", "--", "TARATURA", "violet"),
+              _t_stat("tv_metal_delta", "--", "VARIAZIONE", "yellow", end_margin=False), margin="10dp")
+    + _lbl("SENSIBILITA'")
+    + _t_chips(("metal_s_low", "BASSA"), ("metal_s_mid", "MEDIA"), ("metal_s_high", "ALTA"), margin="10dp")
+    + _t_buttons(_t_btn("btn_metal_cal", "ic_v5_undo", "TARA QUI", "cyan", filled=True),
+                 _t_btn("btn_metal_sound", "ic_v5_megaphone", "SUONO SI'", "yellow", end_margin=False, text_id="btn_metal_sound_txt"))
+    + _v4_hint("tv_metal_nosensor", "Questo telefono non ha il sensore magnetico.", red=True, extra=' android:visibility="gone"')
+    + _v4_hint(None, "Il sensore e' in alto nel telefono: passalo piano a pochi centimetri. Trova ferro e acciaio (chiodi, tubi, "
+                     "cavi in tensione, armature nei muri); oro, argento, rame e alluminio non si sentono. Premi TARA QUI lontano "
+                     "dai metalli: il segnale e' la differenza da quel valore."),
+    "metal_column")
+
+# ---------------------------------------------------------------- BLOCCO NOTE
+LAYOUT_NOTEPAD = _v4_screen(
+    _v4_header("btn_notepad_back", "BLOCCO NOTE", "Note salvate da sole sul telefono", "#B388FF", "tv_note_count", "0 NOTE")
+    + _panel("note_list_panel",
+             _t_buttons(_t_btn("btn_note_new", "ic_v5_notepad", "NUOVA NOTA", "violet", filled=True, end_margin=False))
+             + _search("et_note_search", "Cerca nelle note...")
+             + _v4_hint("tv_note_empty", "Nessuna nota. Premi NUOVA NOTA: si salva mentre scrivi.")
+             + '<LinearLayout android:id="@+id/note_list" android:layout_width="match_parent"\n'
+               '    android:layout_height="wrap_content" android:orientation="vertical"/>\n')
+    + _panel("note_edit_panel",
+             _t_text("tv_note_meta", "", "#8FB3D0", "12sp", top="0dp")
+             + '<EditText android:id="@+id/et_notepad" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+               '    android:minHeight="360dp" android:gravity="top" android:hint="La prima riga diventa il titolo..."\n'
+               '    android:textColor="#E8F4FD" android:textColorHint="#5A7A99" android:textSize="16sp"\n'
+               '    android:lineSpacingMultiplier="1.25" android:background="@drawable/bg_input" android:padding="16dp"\n'
+               '    android:inputType="textMultiLine|textCapSentences" android:layout_marginTop="6dp" android:layout_marginBottom="12dp"/>\n'
+             + _t_buttons(_t_btn("btn_note_done", "ic_v5_checklist", "FATTO", "violet", filled=True),
+                          _t_btn("btn_note_share", "ic_v5_share", "CONDIVIDI", "cyan"),
+                          _t_btn("btn_note_del", "ic_v5_stop", "ELIMINA", "red", end_margin=False)),
+             visible=False),
+    "notes_column")
+
+# ---------------------------------------------------------------- VISIONE NOTTURNA
+LAYOUT_NIGHTVISION = (_XML_HEAD +
+    '<FrameLayout ' + _NS + ' android:id="@+id/nv_root"\n'
+    '    android:layout_width="match_parent" android:layout_height="match_parent"\n'
+    '    android:background="#FFB00000" android:clickable="true" android:focusable="true">\n'
+    '    <TextView android:id="@+id/tv_nv_clock" android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="center" android:text="--:--" android:textColor="#55000000" android:textSize="64sp"\n'
+    '        android:fontFamily="sans-serif-thin"/>\n'
+    '    <LinearLayout android:id="@+id/nv_controls" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:layout_gravity="bottom" android:orientation="vertical" android:layout_margin="16dp" android:padding="14dp"\n'
+    '        android:background="@drawable/bg_mirror_panel">\n'
+    '        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="LUCE ROSSA"\n'
+    '            android:textColor="#FF5A5A" android:textSize="15sp" android:textStyle="bold" android:letterSpacing="0.1"/>\n'
+    '        <TextView android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '            android:text="Non rovina la vista al buio: per leggere la carta, cercare nello zaino, guardare le stelle. Tocca lo schermo per nascondere i comandi."\n'
+    '            android:textColor="#C08080" android:textSize="11.5sp" android:layout_marginTop="4dp" android:layout_marginBottom="10dp"/>\n'
+    + _t_chips(("nv_red", "ROSSO"), ("nv_dark", "ROSSO SCURO"), ("nv_amber", "AMBRA"), margin="10dp") +
+    '        <SeekBar android:id="@+id/sb_nv_brightness" android:layout_width="match_parent" android:layout_height="36dp"\n'
+    '            android:progressTint="#FF3D3D" android:thumbTint="#FF3D3D" android:progressBackgroundTint="#44FF3D3D"\n'
+    '            android:layout_marginBottom="10dp"/>\n'
+    '        <TextView android:id="@+id/btn_nv_back" android:layout_width="match_parent" android:layout_height="44dp"\n'
+    '            android:gravity="center" android:text="CHIUDI" android:textColor="#FF8080" android:textStyle="bold"\n'
+    '            android:background="@drawable/bg_pill_back" android:clickable="true" android:focusable="true"/>\n'
+    '    </LinearLayout>\n'
+    '</FrameLayout>')
+
+# ---------------------------------------------------------------- MENU
+LAYOUT_TOOLS = _swap(LAYOUT_TOOLS,
+    _v4_tile("open_metal", "ic_v4_radar", "Metal detector", "Magnetometro", "cyan", "118dp"),
+    _v4_tile("open_metal", "ic_v4_radar", "Metal detector", "Ferro e acciaio", "cyan", "118dp"))
+LAYOUT_TOOLS = _swap(LAYOUT_TOOLS, _v4_section("ALTRI STRUMENTI"),
+    _v4_section("ALTRI STRUMENTI")
+    + _v4_row(_v4_tile("open_compass", "ic_v5_compass", "Bussola", "Nord vero, rotta, interferenze", "cyan", "118dp", end_margin=False)))
+_ROW2 = _v4_row(_v4_tile("card_suncompass", "ic_v5_compass", "Nord dal sole", "Anche con la Luna", "yellow", "118dp"),
+               _v4_tile("card_proximity", "ic_v5_bell", "Allarme distanza", "Se ti allontani", "pink", "118dp", end_margin=False))
+_ROW3 = _v4_row(_v4_tile("card_geonotes", "ic_v5_note_pin", "Note sul posto", "Appunti sui luoghi", "violet", "118dp"),
+               _v4_tile("card_qr", "ic_v5_qr", "QR posizione", "Fatti trovare", "cyan", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, _ROW2 + _ROW3,
+    _v4_row(_v4_tile("card_compass", "ic_v5_compass", "Bussola", "Nord vero e rotta", "cyan", "118dp"),
+            _v4_tile("card_suncompass", "ic_v5_sun", "Nord dal sole", "Anche con la Luna", "yellow", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_proximity", "ic_v5_bell", "Allarme distanza", "Se ti allontani", "pink", "118dp"),
+              _v4_tile("card_geonotes", "ic_v5_note_pin", "Note sul posto", "Appunti sui luoghi", "violet", "118dp", end_margin=False))
+    + _v4_row(_v4_tile("card_qr", "ic_v5_qr", "QR posizione", "Fatti trovare: chi inquadra vede dove sei", "cyan", "118dp",
+                       end_margin=False)))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
+    _v4_tile("card_notepad", "ic_v5_notepad", "Blocco note", "Salvato da solo", "violet", "118dp", end_margin=False),
+    _v4_tile("card_notepad", "ic_v5_notepad", "Blocco note", "Piu' note, ricerca", "violet", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, '"33 strumenti offline per l\'outdoor"', '"34 strumenti offline per l\'outdoor"')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -30458,6 +31364,11 @@ def build_java_file_map():
         f"{PKG_UTIL}/HikeTime.java":             HIKE_TIME,
         f"{PKG_UTIL}/BatteryEstimator.java":     BATTERY_ESTIMATOR,
         f"{PKG_UTIL}/WaypointTools.java":        WAYPOINT_TOOLS,
+        # v5.8
+        f"{PKG_UTIL}/CompassMath.java":          COMPASS_MATH,
+        f"{PKG_UTIL}/NoteStore.java":            NOTE_STORE,
+        f"{PKG_UI}/CompassRoseView.java":        COMPASS_ROSE_VIEW,
+        f"{PKG_UI}/CompassActivity.java":        COMPASS_ACTIVITY,
     }
 
 def build_layout_map():
@@ -30531,6 +31442,7 @@ def build_layout_map():
         "activity_satellites.xml":     LAYOUT_SATELLITES,
         "activity_parking.xml":        LAYOUT_PARKING,
         "activity_medical.xml":        LAYOUT_MEDICAL,
+        "activity_compass.xml":        LAYOUT_COMPASS,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -30611,7 +31523,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.7")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.8")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -30754,7 +31666,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.7.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.8.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -30768,6 +31680,11 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.8 - BUSSOLA E ULTIMI STRUMENTI RIFATTI:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Bussola: nord vero, rotta bloccata con vibrazione, interferenze e calibrazione")
+    print(f"  {C.OK}[NEW]{C.RESET}  Metal detector con lancetta e suono a ritmo")
+    print(f"  {C.OK}[NEW]{C.RESET}  Blocco note con piu' note e ricerca; luce rossa con tre tonalita'")
 
     print(f"\n{C.BOLD}NOVITA v5.7 - PUNTI, BATTERIA, TEMPI E STRUMENTI DI CAMPO:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Punti salvati: ricerca, distanza dal vivo, naviga/bussola/modifica, GPX dentro e fuori")
@@ -30872,7 +31789,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.7.apk")
+    info("1. Installa OfflineGPS-3D-v5.8.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -30884,7 +31801,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.7 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
+    print("  OfflineGPS 3D v5.8 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -30901,7 +31818,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.7 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.8 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.8 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v5.9 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
                       + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
@@ -258,7 +258,7 @@ NOVITA' v5.7 — PUNTI, BATTERIA, TEMPI E STRUMENTI DI CAMPO:
    TEMPERATURA PERCEPITA con cursori, tempo di congelamento della pelle e
    livelli di rischio da caldo, VALUTE con 12 valute e cambi modificabili.
 
-NOVITA' v5.8 (questa versione) — BUSSOLA E ULTIMI STRUMENTI RIFATTI:
+NOVITA' v5.8 — BUSSOLA E ULTIMI STRUMENTI RIFATTI:
  * BUSSOLA a schermo intero: nord vero (declinazione del posto calcolata
    offline dal modello magnetico terrestre) o magnetico, gradi e millesimi,
    rotta di ritorno; BLOCCA LA DIREZIONE per seguire una rotta nella nebbia
@@ -272,6 +272,21 @@ NOVITA' v5.8 (questa versione) — BUSSOLA E ULTIMI STRUMENTI RIFATTI:
    mentre scrivi, condividi ed elimina con conferma (la vecchia nota resta).
  * LUCE ROSSA (visione notturna): rosso, rosso scuro o ambra, luminosita'
    regolabile e orologio appena visibile.
+
+NOVITA' v5.9 (questa versione) — RILEVAMENTI E PRONTO A PARTIRE:
+ * RILEVAMENTI con la bussola, come un topografo:
+   - PROIETTA: il punto a una distanza e direzione da te ("il fumo e' a 2 km
+     a 75 gradi") con coordinate da salvare, navigare o condividere;
+   - INCROCIA: punti un oggetto lontano (incendio, persona, tenda) da due
+     posti diversi e l'app trova dov'e', con angolo di incrocio ed errore;
+   - DOVE SONO?: miri 2 o 3 cime note (dall'indice offline della zona) e
+     l'app calcola la tua posizione anche senza GPS, ai minimi quadrati,
+     con lo scarto fra le direzioni e il confronto col GPS.
+ * PRONTO A PARTIRE?: semaforo prima dell'escursione con luce al rientro,
+   batteria al rientro (dal consumo misurato), barometro, mappe offline,
+   scheda medica, zaino e "da solo"; PIANO DA MANDARE A CASA (dove, chi,
+   rientro, cosa fare se non hai notizie) e AVVISO DI RIENTRO sul telefono
+   con il tasto Emergenza (non avvisa nessuno da solo).
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -317,8 +332,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 56
-        versionName "5.8.0"
+        versionCode 57
+        versionName "5.9.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -646,6 +661,11 @@ MANIFEST = """\
             android:windowSoftInputMode="adjustResize"/>
         <receiver android:name=".ui.SunsetAlarmReceiver" android:exported="false"/>
         <activity android:name=".ui.CompassActivity" android:exported="false" android:screenOrientation="portrait"/>
+        <activity android:name=".ui.BearingsActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".ui.PreTripActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <receiver android:name=".ui.ReturnAlarmReceiver" android:exported="false"/>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -6235,6 +6255,7 @@ public class ToolsActivity extends AppCompatActivity implements SensorEventListe
         // strumenti outdoor avanzati (schede dedicate)
         bindTool(R.id.open_area, AreaToolActivity.class);
         bindTool(R.id.open_compass, CompassActivity.class);   // v5.8
+        bindTool(R.id.open_bearings, BearingsActivity.class); // v5.9
         bindTool(R.id.open_recorder, TrackRecorderActivity.class);
         bindTool(R.id.open_unitconv, UnitConvActivity.class);
         bindTool(R.id.open_timer, MultiTimerActivity.class);
@@ -6594,6 +6615,9 @@ public class SurvivalActivity extends AppCompatActivity {
         wire(R.id.card_medical, MedicalActivity.class);
         // v5.8
         wire(R.id.card_compass, CompassActivity.class);
+        // v5.9
+        wire(R.id.card_pretrip, PreTripActivity.class);
+        wire(R.id.card_bearings, BearingsActivity.class);
     }
     private void wire(int id, Class<?> target) {
         View v = findViewById(id);
@@ -17517,7 +17541,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.8 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v5.9 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -28906,6 +28930,1026 @@ public class CompassActivity extends AppCompatActivity implements SensorEventLis
 }
 """
 
+GEODESY = r"""package com.offlinegps.map.util;
+
+import java.util.List;
+
+/**
+ * Rilevamenti con la bussola (v5.9), sulla sfera terrestre:
+ *  - PROIEZIONE: il punto a una certa distanza e direzione da qui;
+ *  - INTERSEZIONE: dove si incrociano due direzioni prese da due posti
+ *    diversi (localizzare un fumo, un ferito, un rifugio visto da lontano);
+ *  - INTERSEZIONE INVERSA: dove sono io, dalle direzioni verso 2 o piu'
+ *    punti noti (cime), con i minimi quadrati e l'errore stimato.
+ * Formule di navigazione ortodromica (Veness). Senza Android: testata sul computer.
+ */
+public final class Geodesy {
+    public static final double R = 6371008.8;
+
+    private Geodesy() {}
+
+    /** Punto a 'distM' metri nella direzione 'bearing' (gradi da nord). */
+    public static double[] destination(double lat, double lon, double bearing, double distM) {
+        double d = distM / R, b = Math.toRadians(bearing), p1 = Math.toRadians(lat), l1 = Math.toRadians(lon);
+        double p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+        double l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+        return new double[]{Math.toDegrees(p2), (Math.toDegrees(l2) + 540) % 360 - 180};
+    }
+
+    /**
+     * Incrocio della direzione b1 da (la1, lo1) con la direzione b2 da (la2, lo2).
+     * null se le direzioni sono (quasi) parallele, si incrocerebbero alle spalle
+     * o oltre 500 km.
+     */
+    public static double[] intersection(double la1, double lo1, double b1, double la2, double lo2, double b2) {
+        double p1 = Math.toRadians(la1), l1 = Math.toRadians(lo1), p2 = Math.toRadians(la2), l2 = Math.toRadians(lo2);
+        double t13 = Math.toRadians(b1), t23 = Math.toRadians(b2);
+        double dp = p2 - p1, dl = l2 - l1;
+        double d12 = 2 * Math.asin(Math.sqrt(Math.sin(dp / 2) * Math.sin(dp / 2)
+            + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2)));
+        if (Math.abs(d12) < 1e-12) return null;
+        double cosTa = (Math.sin(p2) - Math.sin(p1) * Math.cos(d12)) / (Math.sin(d12) * Math.cos(p1));
+        double cosTb = (Math.sin(p1) - Math.sin(p2) * Math.cos(d12)) / (Math.sin(d12) * Math.cos(p2));
+        double ta = Math.acos(Math.min(Math.max(cosTa, -1), 1)), tb = Math.acos(Math.min(Math.max(cosTb, -1), 1));
+        double t12 = Math.sin(l2 - l1) > 0 ? ta : 2 * Math.PI - ta;
+        double t21 = Math.sin(l2 - l1) > 0 ? 2 * Math.PI - tb : tb;
+        double a1 = t13 - t12, a2 = t21 - t23;
+        if (Math.sin(a1) == 0 && Math.sin(a2) == 0) return null;
+        if (Math.sin(a1) * Math.sin(a2) < 0) return null;            // si incrocerebbero alle spalle
+        double a3 = Math.acos(-Math.cos(a1) * Math.cos(a2) + Math.sin(a1) * Math.sin(a2) * Math.cos(d12));
+        double d13 = Math.atan2(Math.sin(d12) * Math.sin(a1) * Math.sin(a2), Math.cos(a2) + Math.cos(a1) * Math.cos(a3));
+        // dietro, o oltre 500 km: con una bussola a mano non ha senso (direzioni quasi parallele)
+        if (d13 <= 0 || Double.isNaN(d13) || d13 * R > 500_000) return null;
+        return destination(la1, lo1, b1, d13 * R);
+    }
+
+    /** Angolo fra due direzioni, da 0 (parallele) a 90 (perpendicolari): sotto i 30 l'incrocio e' impreciso. */
+    public static double cutAngle(double b1, double b2) {
+        double d = Math.abs(CompassMath.diff(b1, b2));
+        return d > 90 ? 180 - d : d;
+    }
+
+    /**
+     * Errore indicativo dell'incrocio (metri) con 'errDeg' gradi di errore su
+     * ogni direzione, a distanza d1 e d2 dall'oggetto.
+     */
+    public static double errorM(double d1, double d2, double cutDeg, double errDeg) {
+        double s = Math.sin(Math.toRadians(Math.max(5, cutDeg)));
+        return Math.max(d1, d2) * Math.tan(Math.toRadians(errDeg)) / s;
+    }
+
+    /** Risultato dell'intersezione inversa: {lat, lon, errore medio in metri}. */
+    public static double[] resection(List<double[]> known, double[] bearingsTo) {
+        int n = Math.min(known.size(), bearingsTo.length);
+        if (n < 2) return null;
+        double lat0 = 0, lon0 = 0;
+        for (int i = 0; i < n; i++) { lat0 += known.get(i)[0]; lon0 += known.get(i)[1]; }
+        lat0 /= n; lon0 /= n;
+        double k = Math.cos(Math.toRadians(lat0)), m = Math.toRadians(1) * R;
+        // retta i: passa dal punto noto A_i con direzione = rilevamento (io -> A_i);
+        // normale n_i; si minimizza la somma di (n_i . (P - A_i))^2
+        double sxx = 0, sxy = 0, syy = 0, bx = 0, by = 0;
+        double[][] a = new double[n][2], nrm = new double[n][2];
+        for (int i = 0; i < n; i++) {
+            a[i][0] = (known.get(i)[1] - lon0) * m * k;
+            a[i][1] = (known.get(i)[0] - lat0) * m;
+            double t = Math.toRadians(bearingsTo[i]);
+            nrm[i][0] = Math.cos(t);       // normale alla direzione (sin t, cos t)
+            nrm[i][1] = -Math.sin(t);
+            double c = nrm[i][0] * a[i][0] + nrm[i][1] * a[i][1];
+            sxx += nrm[i][0] * nrm[i][0]; sxy += nrm[i][0] * nrm[i][1]; syy += nrm[i][1] * nrm[i][1];
+            bx += nrm[i][0] * c; by += nrm[i][1] * c;
+        }
+        double det = sxx * syy - sxy * sxy;
+        if (Math.abs(det) < 1e-9) return null;                        // direzioni parallele
+        double px = (bx * syy - by * sxy) / det, py = (sxx * by - sxy * bx) / det;
+        // i punti noti devono stare DAVANTI a me nelle direzioni misurate
+        double rss = 0;
+        for (int i = 0; i < n; i++) {
+            double t = Math.toRadians(bearingsTo[i]);
+            double ahead = (a[i][0] - px) * Math.sin(t) + (a[i][1] - py) * Math.cos(t);
+            if (ahead <= 0) return null;
+            double r = nrm[i][0] * (px - a[i][0]) + nrm[i][1] * (py - a[i][1]);
+            rss += r * r;
+        }
+        double lat = lat0 + py / m, lon = lon0 + px / (m * k);
+        return new double[]{lat, lon, n > 2 ? Math.sqrt(rss / (n - 2 + 1)) : Double.NaN};
+    }
+}
+"""
+
+PRE_TRIP = r"""package com.offlinegps.map.util;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * "Pronto a partire?" (v5.9): mette insieme quello che l'app sa gia' (ore di
+ * luce, batteria misurata, tendenza del barometro, mappe offline, scheda
+ * medica, checklist) e dice cosa sistemare prima di uscire, con un semaforo.
+ * Piu' il testo del piano da lasciare a qualcuno a casa, come consigliano il
+ * Soccorso Alpino e il CAI. Senza Android: testata sul computer.
+ */
+public final class PreTrip {
+    public static final int OK = 0, WARN = 1, BAD = 2, UNKNOWN = 3;
+    /** Consumo prudente se non e' ancora stato misurato (GPS acceso, schermo a tratti). */
+    public static final double DEFAULT_DRAIN = 8.0;
+
+    public static final class Check {
+        public final String title, detail;
+        public final int level;
+        Check(String title, int level, String detail) { this.title = title; this.level = level; this.detail = detail; }
+    }
+
+    public static final class Input {
+        public long now, returnAt;
+        public long sunset = Long.MIN_VALUE, dusk = Long.MIN_VALUE;
+        public int batteryPct = -1;
+        public double drainPerHour = Double.NaN;
+        public boolean charging;
+        public double pressure3h = Double.NaN;
+        public boolean mapPresent, routingPresent, medicalFilled, contactSet, planShared;
+        public int checklistDone, checklistTotal, people = 1;
+    }
+
+    private PreTrip() {}
+
+    static String hhmm(long ms) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(ms);
+        return String.format(Locale.ITALY, "%02d:%02d", c.get(java.util.Calendar.HOUR_OF_DAY), c.get(java.util.Calendar.MINUTE));
+    }
+
+    public static List<Check> evaluate(Input in) {
+        List<Check> out = new ArrayList<>();
+        // luce
+        if (in.sunset == Long.MIN_VALUE) out.add(new Check("Luce", UNKNOWN, "Serve una posizione per calcolare il tramonto."));
+        else if (in.returnAt <= in.sunset - 30 * 60_000L)
+            out.add(new Check("Luce", OK, "Rientro alle " + hhmm(in.returnAt) + ", tramonto alle " + hhmm(in.sunset) + "."));
+        else if (in.dusk != Long.MIN_VALUE && in.returnAt <= in.dusk)
+            out.add(new Check("Luce", WARN, "Rientri al crepuscolo (tramonto " + hhmm(in.sunset) + "): frontale nello zaino."));
+        else out.add(new Check("Luce", BAD, "Rientri col buio: anticipa la partenza o accorcia. Buio dalle "
+            + hhmm(in.dusk == Long.MIN_VALUE ? in.sunset : in.dusk) + "."));
+        // batteria
+        double hours = Math.max(0, (in.returnAt - in.now) / 3_600_000.0);
+        if (in.batteryPct < 0) out.add(new Check("Batteria", UNKNOWN, "Livello sconosciuto."));
+        else if (in.charging) out.add(new Check("Batteria", OK, "In carica (" + in.batteryPct + "%): staccala piena prima di partire."));
+        else {
+            boolean measured = !Double.isNaN(in.drainPerHour);
+            double drain = measured ? in.drainPerHour : DEFAULT_DRAIN;
+            double atReturn = in.batteryPct - drain * hours;
+            String how = measured ? String.format(Locale.ITALY, "consumo misurato %.1f%%/h", drain)
+                : "stima prudente, consumo non ancora misurato";
+            String d = String.format(Locale.ITALY, "%d%% ora, circa %.0f%% al rientro (%s).", in.batteryPct, Math.max(0, atReturn), how);
+            int lv = atReturn <= 10 ? BAD : atReturn < 25 ? WARN : OK;
+            out.add(new Check("Batteria", lv, lv == OK ? d : d + " Porta un powerbank e usa la modalita' aereo."));
+        }
+        // meteo
+        if (Double.isNaN(in.pressure3h))
+            out.add(new Check("Meteo", UNKNOWN, "Barometro senza dati: in Altimetro & meteo attiva la registrazione della pressione."));
+        else if (in.pressure3h <= -3)
+            out.add(new Check("Meteo", BAD, String.format(Locale.ITALY, "Pressione in forte calo (%.1f hPa in 3 ore): probabile peggioramento o temporale.", in.pressure3h)));
+        else if (in.pressure3h <= -Zambretti.TREND_HPA)
+            out.add(new Check("Meteo", WARN, String.format(Locale.ITALY, "Pressione in calo (%.1f hPa in 3 ore): tempo in peggioramento.", in.pressure3h)));
+        else out.add(new Check("Meteo", OK, String.format(Locale.ITALY, "Pressione stabile o in salita (%+.1f hPa in 3 ore).", in.pressure3h)));
+        // mappe
+        if (in.mapPresent && in.routingPresent) out.add(new Check("Mappe offline", OK, "Mappa e navigatore della zona sul telefono."));
+        else if (in.mapPresent || in.routingPresent)
+            out.add(new Check("Mappe offline", WARN, in.mapPresent ? "Manca il file del navigatore della zona (Download -> Routing)."
+                : "Manca la mappa della zona (Download)."));
+        else out.add(new Check("Mappe offline", BAD, "Nessuna mappa offline: scaricala ORA, con la rete."));
+        // soccorso
+        if (in.medicalFilled && in.contactSet) out.add(new Check("Scheda medica", OK, "Compilata, con un contatto da avvisare."));
+        else out.add(new Check("Scheda medica", WARN, in.medicalFilled ? "Aggiungi un contatto da avvisare." : "Compila gruppo sanguigno, allergie e un contatto."));
+        // zaino
+        if (in.checklistTotal <= 0) out.add(new Check("Zaino", UNKNOWN, "Usa la Checklist per non dimenticare nulla."));
+        else {
+            double r = (double) in.checklistDone / in.checklistTotal;
+            out.add(new Check("Zaino", r >= 0.9 ? OK : WARN, in.checklistDone + " voci su " + in.checklistTotal + " pronte nella checklist."));
+        }
+        // chi sa dove vai
+        out.add(in.planShared ? new Check("Piano lasciato a casa", OK, "Qualcuno sa dove vai e quando torni.")
+            : new Check("Piano lasciato a casa", WARN, "Manda il piano a una persona di fiducia: e' la prima cosa che chiede il soccorso."));
+        if (in.people <= 1) out.add(new Check("Da solo", WARN, "Escursione in solitaria: attiva UOMO A TERRA e manda il piano."));
+        return out;
+    }
+
+    /** Il peggiore fra i livelli noti (UNKNOWN non peggiora il semaforo). */
+    public static int overall(List<Check> checks) {
+        int w = OK;
+        for (Check c : checks) if (c.level != UNKNOWN) w = Math.max(w, c.level);
+        return w;
+    }
+
+    /** Il messaggio da mandare a casa. */
+    public static String planText(String who, String where, int people, long start, long returnAt, int graceMin,
+                                  double lat, double lon, String phone) {
+        StringBuilder sb = new StringBuilder("PIANO DI ESCURSIONE\n");
+        if (!who.trim().isEmpty()) sb.append("Chi: ").append(who.trim()).append(people > 1 ? " (" + people + " persone)" : " (da solo/a)").append('\n');
+        else sb.append(people > 1 ? "Siamo in " + people + "\n" : "Vado da solo/a\n");
+        if (!where.trim().isEmpty()) sb.append("Dove: ").append(where.trim()).append('\n');
+        sb.append("Partenza: ").append(hhmm(start));
+        if (!Double.isNaN(lat)) sb.append(String.format(Locale.US, " da %.5f, %.5f", lat, lon));
+        sb.append("\nRientro previsto: ").append(hhmm(returnAt)).append('\n');
+        sb.append("Se non hai mie notizie entro le ").append(hhmm(returnAt + graceMin * 60_000L))
+            .append(", prova a chiamarmi");
+        if (!phone.trim().isEmpty()) sb.append(" (").append(phone.trim()).append(")");
+        sb.append(" e se non rispondo chiama il 112 dicendo questo messaggio.\n");
+        sb.append("Ho l'app OfflineGPS con le mappe offline: in emergenza posso mandare la posizione anche senza internet a chi e' vicino.");
+        return sb.toString();
+    }
+}
+"""
+
+HEADING_PROVIDER = r"""package com.offlinegps.map.ui;
+
+import android.content.Context;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import com.offlinegps.map.util.CompassMath;
+
+/**
+ * Direzione del telefono (v5.9) per i rilevamenti: vettore di rotazione (o
+ * accelerometro + magnetometro), filtrata, riferita al nord vero quando si
+ * conosce la posizione (declinazione dal modello magnetico, offline).
+ * In verticale guarda lungo la fotocamera, per mirare.
+ */
+final class HeadingProvider implements SensorEventListener {
+    private final SensorManager sm;
+    private final Sensor rotS, accS, magS;
+    private final float[] rot = new float[9], remap = new float[9], ori = new float[3], g = new float[3], m = new float[3];
+    private boolean hasG, hasM;
+    private double magnetic = Double.NaN, declination = Double.NaN;
+
+    HeadingProvider(Context c) {
+        sm = (SensorManager) c.getSystemService(Context.SENSOR_SERVICE);
+        rotS = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        accS = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        magS = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
+    }
+
+    boolean available() { return rotS != null || (accS != null && magS != null); }
+
+    void start() {
+        if (sm == null) return;
+        if (rotS != null) sm.registerListener(this, rotS, SensorManager.SENSOR_DELAY_GAME);
+        else if (accS != null && magS != null) {
+            sm.registerListener(this, accS, SensorManager.SENSOR_DELAY_GAME);
+            sm.registerListener(this, magS, SensorManager.SENSOR_DELAY_GAME);
+        }
+    }
+
+    void stop() { if (sm != null) sm.unregisterListener(this); }
+
+    void setLocation(double lat, double lon) {
+        declination = new GeomagneticField((float) lat, (float) lon, 0f, System.currentTimeMillis()).getDeclination();
+    }
+
+    boolean isTrueNorth() { return !Double.isNaN(declination); }
+
+    /** Gradi dal nord vero (o magnetico se manca la posizione); NaN se non pronta. */
+    double heading() {
+        if (Double.isNaN(magnetic)) return Double.NaN;
+        return Double.isNaN(declination) ? CompassMath.norm(magnetic) : CompassMath.trueFromMagnetic(magnetic, declination);
+    }
+
+    /** Per i test e le prove: imposta la direzione magnetica. */
+    void setMagneticForTest(double deg) { magnetic = deg; }
+
+    @Override public void onSensorChanged(SensorEvent e) {
+        int t = e.sensor.getType();
+        if (t == Sensor.TYPE_ROTATION_VECTOR) SensorManager.getRotationMatrixFromVector(rot, e.values);
+        else {
+            if (t == Sensor.TYPE_ACCELEROMETER) { System.arraycopy(e.values, 0, g, 0, 3); hasG = true; }
+            else { System.arraycopy(e.values, 0, m, 0, 3); hasM = true; }
+            if (!hasG || !hasM || !SensorManager.getRotationMatrix(rot, null, g, m)) return;
+        }
+        SensorManager.getOrientation(rot, ori);
+        if (Math.abs(Math.toDegrees(ori[1])) > 55) {
+            SensorManager.remapCoordinateSystem(rot, SensorManager.AXIS_X, SensorManager.AXIS_Z, remap);
+            SensorManager.getOrientation(remap, ori);
+        }
+        magnetic = CompassMath.smooth(magnetic, Math.toDegrees(ori[0]), 0.15);
+    }
+
+    @Override public void onAccuracyChanged(Sensor s, int a) {}
+}
+"""
+
+BEARINGS_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.graphics.Typeface;
+import android.location.Location;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.data.GpsDatabase;
+import com.offlinegps.map.data.WaypointEntity;
+import com.offlinegps.map.gps.GpsTrackingService;
+import com.offlinegps.map.routing.PoiIndex;
+import com.offlinegps.map.routing.RoutingEngine;
+import com.offlinegps.map.util.GeoFormat;
+import com.offlinegps.map.util.Geodesy;
+import com.offlinegps.map.util.ShareUtil;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.Executors;
+
+/**
+ * Rilevamenti (v5.9), tre strumenti da topografo:
+ *  PROIETTA  - il punto a una certa distanza nella direzione in cui punti
+ *              ("il fumo e' a circa 2 km a 75 gradi");
+ *  INCROCIA  - punta un oggetto lontano da due posti diversi: l'app trova
+ *              dov'e' (incendio, persona, rifugio) con l'errore stimato;
+ *  DOVE SONO - punta 2 o 3 cime note: l'app calcola la tua posizione,
+ *              anche senza GPS (intersezione inversa ai minimi quadrati).
+ * Il risultato si salva come punto, si naviga, si vede sulla mappa o si
+ * condivide. Non sostituisce il 112: per un incendio o un ferito chiama.
+ */
+public class BearingsActivity extends AppCompatActivity {
+    private static final int PROJ = 0, TRI = 1, RES = 2;
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private HeadingProvider hp;
+    private int mode = PROJ;
+    private boolean visible;
+    private TextView tvHeading, tvResult, tvTri, triBtnTxt, tvResTaken, tvResStatus;
+    private EditText etDir, etDist, etResSearch;
+    private View[] panels;
+    private TextView[] modeChips;
+    private View resultCard;
+    private LinearLayout resList;
+    private double[] result;
+    private String resultName = "Punto rilevato";
+    // incrocio: {lat, lon, direzione, precisione GPS}
+    private final List<double[]> tri = new ArrayList<>();
+    // dove sono: punti noti e direzioni
+    private final List<double[]> resPts = new ArrayList<>();
+    private final List<String> resNames = new ArrayList<>();
+    private final List<Double> resBrg = new ArrayList<>();
+    private PoiIndex index;
+
+    private final Runnable tick = new Runnable() {
+        @Override public void run() {
+            if (!visible) return;
+            double hd = hp.heading();
+            if (tvHeading != null) tvHeading.setText(Double.isNaN(hd) ? "--" : String.format(Locale.ITALY, "%.0f° %s", hd, GeoFormat.cardinal(hd)));
+            h.postDelayed(this, 200);
+        }
+    };
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_bearings);
+        hp = new HeadingProvider(this);
+        double[] w = ToolKit.where(this);
+        if (w != null) hp.setLocation(w[0], w[1]);
+        tvHeading = findViewById(R.id.tv_brg_heading);
+        tvResult = findViewById(R.id.tv_brg_result);
+        tvTri = findViewById(R.id.tv_tri_steps);
+        triBtnTxt = findViewById(R.id.btn_tri_take_txt);
+        tvResTaken = findViewById(R.id.tv_res_taken);
+        tvResStatus = findViewById(R.id.tv_res_status);
+        etDir = findViewById(R.id.et_brg_dir);
+        etDist = findViewById(R.id.et_brg_dist);
+        etResSearch = findViewById(R.id.et_res_search);
+        resultCard = findViewById(R.id.brg_result_card);
+        resList = findViewById(R.id.res_list);
+        panels = new View[]{findViewById(R.id.brg_panel_proj), findViewById(R.id.brg_panel_tri), findViewById(R.id.brg_panel_res)};
+        modeChips = new TextView[]{findViewById(R.id.brg_mode_proj), findViewById(R.id.brg_mode_tri), findViewById(R.id.brg_mode_res)};
+        for (int i = 0; i < 3; i++) {
+            final int k = i;
+            if (modeChips[i] != null) modeChips[i].setOnClickListener(v -> setMode(k));
+        }
+        click(R.id.btn_brg_back, v -> finish());
+        click(R.id.btn_brg_use, v -> {
+            double hd = hp.heading();
+            if (Double.isNaN(hd)) { Toast.makeText(this, "Bussola non pronta", Toast.LENGTH_SHORT).show(); return; }
+            etDir.setText(String.format(Locale.US, "%.0f", hd));
+        });
+        click(R.id.btn_tri_take, v -> takeTri());
+        click(R.id.btn_tri_reset, v -> { tri.clear(); result = null; renderTri(); showResult(null); });
+        click(R.id.btn_res_reset, v -> { resPts.clear(); resNames.clear(); resBrg.clear(); result = null; renderRes(); showResult(null); });
+        click(R.id.btn_brg_save, v -> save());
+        click(R.id.btn_brg_nav, v -> { if (result != null) ToolKit.navigate(this, result[0], result[1], resultName, RoutingEngine.PROFILE_FOOT); });
+        click(R.id.btn_brg_map, v -> { if (result != null) ToolKit.showOnMap(this, result[0], result[1], resultName); });
+        click(R.id.btn_brg_share, v -> {
+            if (result == null) return;
+            ShareUtil.shareText(this, resultName + "\n" + GeoFormat.decimal(result[0], result[1])
+                + String.format(Locale.US, "\nhttps://maps.google.com/?q=%.6f,%.6f", result[0], result[1]), "Condividi il punto");
+        });
+        TextWatcher projW = new TextWatcher() {
+            public void afterTextChanged(Editable e) { if (mode == PROJ) project(); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        };
+        if (etDir != null) etDir.addTextChangedListener(projW);
+        if (etDist != null) etDist.addTextChangedListener(projW);
+        if (etResSearch != null) etResSearch.addTextChangedListener(new TextWatcher() {
+            public void afterTextChanged(Editable e) { renderCandidates(); }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        });
+        PoiStore.get(this, w == null ? Double.NaN : w[0], w == null ? 0 : w[1], new PoiStore.Callback() {
+            @Override public void onProgress(String msg) { if (tvResStatus != null) tvResStatus.setText(msg); }
+            @Override public void onReady(PoiIndex idx, String error) {
+                if (isFinishing()) return;
+                index = idx;
+                if (tvResStatus != null) tvResStatus.setText(error == null ? "" : error);
+                renderCandidates();
+            }
+        });
+        setMode(PROJ);
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        visible = true;
+        hp.start();
+        GpsTrackingService.acquire(this, "BearingsActivity");
+        h.removeCallbacks(tick);
+        h.post(tick);
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        visible = false;
+        hp.stop();
+        GpsTrackingService.release(this, "BearingsActivity");
+        h.removeCallbacks(tick);
+    }
+
+    private void setMode(int m) {
+        mode = m;
+        for (int i = 0; i < 3; i++) {
+            if (panels[i] != null) panels[i].setVisibility(i == m ? View.VISIBLE : View.GONE);
+            if (modeChips[i] == null) continue;
+            modeChips[i].setBackgroundResource(i == m ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            modeChips[i].setTextColor(i == m ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        result = null;
+        showResult(null);
+        if (m == PROJ) project();
+        else if (m == TRI) { renderTri(); computeTri(); }
+        else { renderRes(); renderCandidates(); computeRes(); }
+    }
+
+    private static double num(EditText e) {
+        try { return Double.parseDouble(e.getText().toString().trim().replace(",", ".")); } catch (Exception x) { return Double.NaN; }
+    }
+
+    // ------------------------------------------------------------ proietta
+    private void project() {
+        double dir = num(etDir), dist = num(etDist);
+        Location me = GpsTrackingService.getLastLocation();
+        if (Double.isNaN(dir) || Double.isNaN(dist) || dist <= 0) { showResult(null); return; }
+        if (me == null) { showText("Serve la tua posizione GPS: e' il punto da cui parte la direzione."); return; }
+        result = Geodesy.destination(me.getLatitude(), me.getLongitude(), dir, dist);
+        resultName = String.format(Locale.ITALY, "Punto a %s verso %.0f°", GeoFormat.formatDistance(dist), dir);
+        showResult(String.format(Locale.ITALY, "A %s verso %.0f° %s da dove sei.\nErrore indicativo: ±%.0f m (3 gradi di bussola) piu' l'incertezza sulla distanza.",
+            GeoFormat.formatDistance(dist), dir, GeoFormat.cardinal(dir), dist * Math.tan(Math.toRadians(3))));
+    }
+
+    // ------------------------------------------------------------ incrocia
+    private void takeTri() {
+        Location me = GpsTrackingService.getLastLocation();
+        double hd = hp.heading();
+        if (me == null) { Toast.makeText(this, "Serve il GPS: aspetta qualche secondo all'aperto", Toast.LENGTH_LONG).show(); return; }
+        if (Double.isNaN(hd)) { Toast.makeText(this, "Bussola non pronta", Toast.LENGTH_SHORT).show(); return; }
+        if (tri.size() >= 2) tri.clear();
+        if (tri.size() == 1) {
+            double moved = GeoFormat.distance(tri.get(0)[0], tri.get(0)[1], me.getLatitude(), me.getLongitude());
+            if (moved < 80) {
+                Toast.makeText(this, String.format(Locale.ITALY, "Ti sei spostato solo di %.0f m: per un incrocio preciso spostati di lato di almeno 200 m", moved),
+                    Toast.LENGTH_LONG).show();
+                return;
+            }
+        }
+        tri.add(new double[]{me.getLatitude(), me.getLongitude(), hd, me.getAccuracy()});
+        renderTri();
+        computeTri();
+    }
+
+    private void renderTri() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < tri.size(); i++)
+            sb.append(String.format(Locale.ITALY, "Rilevamento %d: %.0f° %s (GPS ±%.0f m)\n", i + 1, tri.get(i)[2], GeoFormat.cardinal(tri.get(i)[2]), tri.get(i)[3]));
+        if (tri.isEmpty()) sb.append("1. Punta l'oggetto lontano (fumo, persona, tenda) e premi il pulsante.");
+        else if (tri.size() == 1) sb.append("2. Spostati di lato di qualche centinaio di metri, punta di nuovo lo stesso oggetto e premi.");
+        if (tvTri != null) tvTri.setText(sb.toString().trim());
+        if (triBtnTxt != null) triBtnTxt.setText(tri.size() >= 2 ? "NUOVO INCROCIO: RILEVAMENTO 1" : "PRENDI IL RILEVAMENTO " + (tri.size() + 1));
+    }
+
+    private void computeTri() {
+        if (tri.size() < 2) { showResult(null); return; }
+        double[] a = tri.get(0), b = tri.get(1);
+        double[] p = Geodesy.intersection(a[0], a[1], a[2], b[0], b[1], b[2]);
+        if (p == null) { showText("Le due direzioni non si incrociano davanti a te (quasi parallele o sbagliate): riprova spostandoti di piu' di lato."); return; }
+        result = p;
+        resultName = "Oggetto localizzato";
+        double d1 = GeoFormat.distance(a[0], a[1], p[0], p[1]), d2 = GeoFormat.distance(b[0], b[1], p[0], p[1]);
+        double cut = Geodesy.cutAngle(a[2], b[2]), err = Geodesy.errorM(d1, d2, cut, 3);
+        showResult(String.format(Locale.ITALY, "A %s da te (verso %.0f°).\nAngolo di incrocio %.0f°: %s\nErrore indicativo ±%.0f m.",
+            GeoFormat.formatDistance(d2), b[2], cut,
+            cut >= 45 ? "buono." : cut >= 25 ? "accettabile." : "troppo stretto, spostati di piu' di lato e riprova.", err));
+    }
+
+    // ------------------------------------------------------------ dove sono
+    private void renderCandidates() {
+        if (resList == null) return;
+        resList.removeAllViews();
+        View card = findViewById(R.id.res_card);
+        if (card != null) card.setVisibility(index == null ? View.GONE : View.VISIBLE);
+        if (index == null) return;
+        double[] w = ToolKit.where(this);
+        String q = etResSearch == null ? "" : etResSearch.getText().toString();
+        List<Object[]> found;
+        HashSet<String> types = new HashSet<>(Arrays.asList(PoiIndex.PEAK));
+        if (w != null) found = index.near(w[0], w[1], q.trim().isEmpty() ? 40_000 : 150_000, types, q, 25);
+        else {
+            found = new ArrayList<>();
+            for (PoiIndex.Poi p : index.ofTypes(types))
+                if (q.trim().isEmpty() || p.name.toLowerCase(Locale.ITALY).contains(q.trim().toLowerCase(Locale.ITALY))) found.add(new Object[]{p, Double.NaN});
+            if (found.size() > 25) found = found.subList(0, 25);
+        }
+        float dp = getResources().getDisplayMetrics().density;
+        for (Object[] f : found) {
+            PoiIndex.Poi p = (PoiIndex.Poi) f[0];
+            if (p.name == null || p.name.isEmpty()) continue;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, (int) (6 * dp), 0, (int) (6 * dp));
+            TextView t = new TextView(this);
+            double d = (Double) f[1];
+            t.setText(p.name + (Double.isNaN(p.ele) ? "" : String.format(Locale.ITALY, "  %.0f m", p.ele))
+                + (Double.isNaN(d) || w == null ? "" : String.format(Locale.ITALY, "\ncirca %s verso %s", GeoFormat.formatDistance(d),
+                    GeoFormat.cardinal(GeoFormat.bearing(w[0], w[1], p.lat, p.lon)))));
+            t.setTextColor(0xFFE8F4FD);
+            t.setTextSize(14);
+            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView aim = new TextView(this);
+            aim.setText("MIRA");
+            aim.setGravity(Gravity.CENTER);
+            aim.setTextColor(0xFF050A14);
+            aim.setTypeface(Typeface.DEFAULT_BOLD);
+            aim.setBackgroundResource(R.drawable.bg_btn5_yellow);
+            aim.setOnClickListener(v -> aimAt(p));
+            row.addView(aim, new LinearLayout.LayoutParams((int) (84 * dp), (int) (40 * dp)));
+            resList.addView(row);
+        }
+    }
+
+    private void aimAt(PoiIndex.Poi p) {
+        double hd = hp.heading();
+        if (Double.isNaN(hd)) { Toast.makeText(this, "Bussola non pronta", Toast.LENGTH_SHORT).show(); return; }
+        int i = resNames.indexOf(p.name);
+        if (i >= 0) { resBrg.set(i, hd); }
+        else { resPts.add(new double[]{p.lat, p.lon}); resNames.add(p.name); resBrg.add(hd); }
+        renderRes();
+        computeRes();
+    }
+
+    /** Anche per mostrare dati di prova: un punto noto e la direzione verso di lui. */
+    void addKnown(String name, double lat, double lon, double bearing) {
+        resPts.add(new double[]{lat, lon});
+        resNames.add(name);
+        resBrg.add(bearing);
+        renderRes();
+        computeRes();
+    }
+
+    private void renderRes() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < resNames.size(); i++)
+            sb.append(String.format(Locale.ITALY, "%s: %.0f°\n", resNames.get(i), resBrg.get(i)));
+        sb.append(resNames.isEmpty() ? "Punta una cima che riconosci (mettila al centro dello schermo tenendo il telefono in verticale) e premi MIRA. Servono almeno 2 cime, meglio 3 lontane fra loro di direzione."
+            : resNames.size() == 1 ? "Ora mira una seconda cima, possibilmente a 60-120 gradi dalla prima."
+            : resNames.size() == 2 ? "Una terza cima migliora la precisione e dice quanto ci si puo' fidare."
+            : "Se una direzione sembra sbagliata, rimira quella cima: la posizione si aggiorna.");
+        if (!hp.isTrueNorth()) sb.append("\nSenza nessuna posizione nota la bussola usa il nord magnetico: errore di qualche grado.");
+        if (tvResTaken != null) tvResTaken.setText(sb.toString().trim());
+    }
+
+    private void computeRes() {
+        if (resPts.size() < 2) { showResult(null); return; }
+        double[] b = new double[resBrg.size()];
+        for (int i = 0; i < b.length; i++) b[i] = resBrg.get(i);
+        double[] r = Geodesy.resection(resPts, b);
+        if (r == null) { showText("Le direzioni non tornano (cime quasi allineate o scambiate): ricontrolla le cime e rimira."); return; }
+        result = new double[]{r[0], r[1]};
+        resultName = "La mia posizione (rilevata)";
+        Location gps = GpsTrackingService.getLastLocation();
+        StringBuilder sb = new StringBuilder(String.format(Locale.ITALY, "Sei qui secondo %d cime.", resPts.size()));
+        if (!Double.isNaN(r[2])) sb.append(String.format(Locale.ITALY, "\nScarto fra le direzioni: %.0f m (%s).", r[2],
+            r[2] < 100 ? "ottimo" : r[2] < 300 ? "buono" : "alto: rimira con piu' cura"));
+        else sb.append("\nCon 2 cime non si puo' stimare l'errore: aggiungine una terza.");
+        if (gps != null && System.currentTimeMillis() - gps.getTime() < 120_000)
+            sb.append(String.format(Locale.ITALY, "\nIl GPS dice: %s da qui.", GeoFormat.formatDistance(GeoFormat.distance(r[0], r[1], gps.getLatitude(), gps.getLongitude()))));
+        showResult(sb.toString());
+    }
+
+    // ------------------------------------------------------------ risultato
+    private void showText(String msg) {
+        result = null;
+        if (resultCard != null) resultCard.setVisibility(View.VISIBLE);
+        if (tvResult != null) { tvResult.setText(msg); tvResult.setTextColor(0xFFFF6B35); }
+        View act = findViewById(R.id.brg_actions);
+        if (act != null) act.setVisibility(View.GONE);
+    }
+
+    private void showResult(@Nullable String info) {
+        boolean has = result != null && info != null;
+        if (resultCard != null) resultCard.setVisibility(has ? View.VISIBLE : View.GONE);
+        View act = findViewById(R.id.brg_actions);
+        if (act != null) act.setVisibility(has ? View.VISIBLE : View.GONE);
+        if (!has) return;
+        GeoFormat.Utm u = GeoFormat.utm(result[0], result[1]);
+        tvResult.setText(GeoFormat.decimal(result[0], result[1]) + (u == null ? "" : "\nUTM " + u) + "\n\n" + info);
+        tvResult.setTextColor(0xFFE8F4FD);
+    }
+
+    private void save() {
+        if (result == null) return;
+        final double[] r = result.clone();
+        final String n = resultName;
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                WaypointEntity w = WaypointEntity.create(n, r[0], r[1], 0, 0, "#FF6B35");
+                w.description = "Da rilevamento con la bussola";
+                GpsDatabase.getInstance(getApplicationContext()).waypointDao().insert(w);
+            } catch (Exception ignored) {}
+        });
+        Toast.makeText(this, "Salvato nei Punti salvati", Toast.LENGTH_SHORT).show();
+    }
+
+    /** Per i render: direzione finta della bussola. */
+    void fakeHeading(double magnetic) { hp.setMagneticForTest(magnetic); }
+}
+"""
+
+RETURN_ALARM_RECEIVER = r"""package com.offlinegps.map.ui;
+
+import android.app.AlarmManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+
+/**
+ * Avviso di rientro (v5.9): se all'ora prevista (+30 minuti) non hai premuto
+ * SONO RIENTRATO, il telefono ti chiede se va tutto bene, con il tasto per
+ * la schermata Emergenza, e lo richiede ancora due volte ogni 30 minuti.
+ * NON avvisa nessuno da solo: per questo serve il piano mandato a casa.
+ */
+public class ReturnAlarmReceiver extends BroadcastReceiver {
+    static final String CH = "return_v1", PREF_ON = "pt_alarm", PREF_N = "pt_alarm_n";
+    static final int ID = 1701;
+    private static final long GRACE = 30 * 60_000L;
+
+    private static SharedPreferences p(Context c) { return c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE); }
+
+    private static PendingIntent pi(Context c) {
+        return PendingIntent.getBroadcast(c, 9, new Intent(c, ReturnAlarmReceiver.class),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+    }
+
+    /** Avviso alle 'returnAt' + 30 minuti. */
+    static void schedule(Context c, long returnAt) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        am.cancel(pi(c));
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, Math.max(System.currentTimeMillis() + 60_000L, returnAt + GRACE), pi(c));
+        p(c).edit().putBoolean(PREF_ON, true).putInt(PREF_N, 0).apply();
+    }
+
+    static void cancel(Context c) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am != null) am.cancel(pi(c));
+        p(c).edit().putBoolean(PREF_ON, false).putInt(PREF_N, 0).apply();
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm != null) nm.cancel(ID);
+    }
+
+    static boolean active(Context c) { return p(c).getBoolean(PREF_ON, false); }
+
+    @Override public void onReceive(Context c, Intent intent) {
+        if (!active(c)) return;
+        int n = p(c).getInt(PREF_N, 0) + 1;
+        p(c).edit().putInt(PREF_N, n).apply();
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (nm != null) {
+            nm.createNotificationChannel(new NotificationChannel(CH, "Avviso di rientro", NotificationManager.IMPORTANCE_HIGH));
+            long ret = p(c).getLong("pt_return", 0);
+            PendingIntent open = PendingIntent.getActivity(c, 1, new Intent(c, PreTripActivity.class),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            PendingIntent em = PendingIntent.getActivity(c, 2, new Intent(c, EmergencyActivity.class),
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            Notification no = new Notification.Builder(c, CH)
+                .setSmallIcon(R.drawable.ic_gps)
+                .setContentTitle("Sei rientrato?")
+                .setContentText((ret > 0 ? "Il rientro era previsto alle " + ToolKit.hhmm(ret) + ". " : "") + "Tocca se stai bene.")
+                .setStyle(new Notification.BigTextStyle().bigText((ret > 0 ? "Il rientro era previsto alle " + ToolKit.hhmm(ret) + ". " : "")
+                    + "Se stai bene apri e premi SONO RIENTRATO. Se sei in difficolta' apri EMERGENZA: posizione per i soccorsi e chiamata al 112."))
+                .setCategory(Notification.CATEGORY_REMINDER)
+                .setContentIntent(open)
+                .addAction(new Notification.Action.Builder(null, "EMERGENZA", em).build())
+                .setAutoCancel(true)
+                .build();
+            try { nm.notify(ID, no); } catch (SecurityException ignored) {}
+        }
+        if (n < 3) {
+            AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + GRACE, pi(c));
+        }
+    }
+}
+"""
+
+PRE_TRIP_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.TimePickerDialog;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.SharedPreferences;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.BatteryManager;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.widget.Toast;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.R;
+import com.offlinegps.map.gps.PressureLogReceiver;
+import com.offlinegps.map.util.BatteryEstimator;
+import com.offlinegps.map.util.MedicalCard;
+import com.offlinegps.map.util.PreTrip;
+import com.offlinegps.map.util.PressureLog;
+import com.offlinegps.map.util.ShareUtil;
+import com.offlinegps.map.util.SunCalc;
+import java.io.File;
+import java.util.Calendar;
+import java.util.List;
+import org.json.JSONArray;
+
+/**
+ * Pronto a partire? (v5.9): semaforo prima dell'escursione con quello che
+ * l'app sa gia' (luce, batteria misurata, barometro, mappe offline, scheda
+ * medica, checklist), il PIANO da mandare a una persona di fiducia (dove,
+ * chi, rientro previsto, cosa fare se non hai notizie) e l'AVVISO DI RIENTRO.
+ * Il telefono non avvisa nessuno da solo: per questo serve il piano.
+ */
+public class PreTripActivity extends AppCompatActivity {
+    private SharedPreferences prefs;
+    private EditText etWhere, etWho;
+    private TextView tvReturn, tvVerdict, tvVerdictSub, tvLight, tvAlarmTxt;
+    private TextView[] peopleChips;
+    private LinearLayout checks;
+    private int people;
+    private long returnAt;
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_pretrip);
+        prefs = getSharedPreferences(AppConfig.PREFS, MODE_PRIVATE);
+        etWhere = findViewById(R.id.et_pt_where);
+        etWho = findViewById(R.id.et_pt_who);
+        tvReturn = findViewById(R.id.tv_pt_return);
+        tvVerdict = findViewById(R.id.tv_pt_verdict);
+        tvVerdictSub = findViewById(R.id.tv_pt_verdict_sub);
+        tvLight = findViewById(R.id.tv_pt_light);
+        tvAlarmTxt = findViewById(R.id.btn_pt_alarm_txt);
+        checks = findViewById(R.id.pt_checks);
+        peopleChips = new TextView[]{findViewById(R.id.pt_p1), findViewById(R.id.pt_p2), findViewById(R.id.pt_p3)};
+        for (int i = 0; i < 3; i++) {
+            final int k = i + 1;
+            if (peopleChips[i] != null) peopleChips[i].setOnClickListener(v -> { people = k; prefs.edit().putInt("pt_people", k).apply(); render(); });
+        }
+        etWhere.setText(prefs.getString("pt_where", ""));
+        etWho.setText(prefs.getString("pt_who", ""));
+        people = prefs.getInt("pt_people", 1);
+        returnAt = prefs.getLong("pt_return", 0);
+        if (returnAt < System.currentTimeMillis()) returnAt = defaultReturn();
+        TextWatcher w = new TextWatcher() {
+            public void afterTextChanged(Editable e) {
+                prefs.edit().putString("pt_where", etWhere.getText().toString()).putString("pt_who", etWho.getText().toString()).apply();
+            }
+            public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+            public void onTextChanged(CharSequence c, int a, int b, int d) {}
+        };
+        etWhere.addTextChangedListener(w);
+        etWho.addTextChangedListener(w);
+        click(R.id.btn_pt_back, v -> finish());
+        click(R.id.tv_pt_return, v -> pickReturn());
+        click(R.id.btn_pt_share, v -> sharePlan());
+        click(R.id.btn_pt_alarm, v -> {
+            if (ReturnAlarmReceiver.active(this)) ReturnAlarmReceiver.cancel(this);
+            else {
+                ReturnAlarmReceiver.schedule(this, returnAt);
+                Toast.makeText(this, "Alle " + ToolKit.hhmm(returnAt + 30 * 60_000L) + " ti chiedo se sei rientrato", Toast.LENGTH_LONG).show();
+            }
+            render();
+        });
+        click(R.id.btn_pt_home, v -> {
+            ReturnAlarmReceiver.cancel(this);
+            prefs.edit().remove("pt_shared_at").apply();
+            Toast.makeText(this, "Bentornato! Avviso di rientro spento.", Toast.LENGTH_SHORT).show();
+            render();
+        });
+        click(R.id.btn_pt_check, v -> startActivity(new Intent(this, ChecklistActivity.class)));
+        click(R.id.btn_pt_med, v -> startActivity(new Intent(this, MedicalActivity.class)));
+        click(R.id.btn_pt_safety, v -> startActivity(new Intent(this, SafetyActivity.class)));
+    }
+
+    private void click(int id, View.OnClickListener l) {
+        View v = findViewById(id);
+        if (v != null) v.setOnClickListener(l);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        render();
+    }
+
+    private static long defaultReturn() {
+        Calendar c = Calendar.getInstance();
+        long now = c.getTimeInMillis();
+        c.set(Calendar.HOUR_OF_DAY, 17); c.set(Calendar.MINUTE, 0); c.set(Calendar.SECOND, 0);
+        return c.getTimeInMillis() > now + 3_600_000L ? c.getTimeInMillis() : now + 3 * 3_600_000L;
+    }
+
+    private void pickReturn() {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(returnAt);
+        new TimePickerDialog(this, (tp, hh, mm) -> {
+            Calendar n = Calendar.getInstance();
+            n.set(Calendar.HOUR_OF_DAY, hh); n.set(Calendar.MINUTE, mm); n.set(Calendar.SECOND, 0);
+            if (n.getTimeInMillis() < System.currentTimeMillis()) n.add(Calendar.DAY_OF_MONTH, 1);
+            returnAt = n.getTimeInMillis();
+            prefs.edit().putLong("pt_return", returnAt).apply();
+            if (ReturnAlarmReceiver.active(this)) ReturnAlarmReceiver.schedule(this, returnAt);
+            render();
+        }, c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE), true).show();
+    }
+
+    private PreTrip.Input input() {
+        PreTrip.Input in = new PreTrip.Input();
+        long now = System.currentTimeMillis();
+        in.now = now;
+        in.returnAt = returnAt;
+        in.people = people;
+        double[] w = ToolKit.where(this);
+        if (w != null) {
+            Calendar c = Calendar.getInstance();
+            c.setTimeInMillis(returnAt);
+            c.set(Calendar.HOUR_OF_DAY, 12);
+            SunCalc.Times t = SunCalc.times(c.getTimeInMillis(), w[0], w[1]);
+            in.sunset = t.sunrise[1];
+            in.dusk = t.civil[1];
+        }
+        Intent b = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b != null) {
+            int lv = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1), sc = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+            int st = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+            in.batteryPct = lv >= 0 && sc > 0 ? Math.round(lv * 100f / sc) : -1;
+            in.charging = st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL;
+            BatteryEstimator.record(this, b);
+        }
+        in.drainPerHour = BatteryEstimator.drainPerHour(BatteryEstimator.load(this), now);
+        try { in.pressure3h = PressureLog.load(PressureLogReceiver.logFile(this)).change(now, 3); } catch (Exception e) { in.pressure3h = Double.NaN; }
+        File base = getExternalFilesDir(null);
+        in.mapPresent = has(new File(base, "maps"), ".map");
+        in.routingPresent = has(new File(base, "routing"), ".pbf");
+        MedicalCard m = MedicalCard.load(this);
+        in.medicalFilled = !m.blood.isEmpty() || !m.allergies.isEmpty() || !m.conditions.isEmpty();
+        in.contactSet = !m.c1Phone.isEmpty();
+        try {
+            int list = prefs.getInt("chk2_list", 0);
+            String raw = prefs.getString("chk2_" + list, null);
+            if (raw != null) {
+                JSONArray a = new JSONArray(raw);
+                in.checklistTotal = a.length();
+                for (int i = 0; i < a.length(); i++) if (a.getJSONObject(i).optBoolean("d")) in.checklistDone++;
+            }
+        } catch (Exception ignored) {}
+        in.planShared = now - prefs.getLong("pt_shared_at", 0) < 12 * 3_600_000L;
+        return in;
+    }
+
+    private static boolean has(File dir, String ext) {
+        File[] f = dir.exists() ? dir.listFiles((d, n) -> n.endsWith(ext)) : null;
+        return f != null && f.length > 0;
+    }
+
+    private void render() {
+        for (int i = 0; i < 3; i++) {
+            if (peopleChips[i] == null) continue;
+            peopleChips[i].setBackgroundResource(i + 1 == people ? R.drawable.bg_chip_on : R.drawable.bg_chip_off);
+            peopleChips[i].setTextColor(i + 1 == people ? 0xFF00FF88 : 0xFF8FB3D0);
+        }
+        if (tvReturn != null) tvReturn.setText("RIENTRO PREVISTO ALLE " + ToolKit.hhmm(returnAt) + "  (TOCCA PER CAMBIARE)");
+        boolean alarm = ReturnAlarmReceiver.active(this);
+        if (tvAlarmTxt != null) tvAlarmTxt.setText(alarm ? "AVVISO DI RIENTRO: ATTIVO" : "AVVISO DI RIENTRO");
+        List<PreTrip.Check> list = PreTrip.evaluate(input());
+        int all = PreTrip.overall(list);
+        int col = all == PreTrip.OK ? 0xFF00FF88 : all == PreTrip.WARN ? 0xFFFFD600 : 0xFFFF3D71;
+        int warn = 0, bad = 0;
+        for (PreTrip.Check c : list) { if (c.level == PreTrip.WARN) warn++; if (c.level == PreTrip.BAD) bad++; }
+        if (tvVerdict != null) {
+            tvVerdict.setText(all == PreTrip.OK ? "PRONTO" : all == PreTrip.WARN ? "QUASI PRONTO" : "NON ANCORA");
+            tvVerdict.setTextColor(col);
+        }
+        if (tvVerdictSub != null) tvVerdictSub.setText(all == PreTrip.OK ? "Tutto a posto: buona escursione!"
+            : (bad > 0 ? bad + (bad == 1 ? " cosa da risolvere" : " cose da risolvere") : "") + (bad > 0 && warn > 0 ? " e " : "")
+            + (warn > 0 ? warn + (warn == 1 ? " da controllare" : " da controllare") : "") + " prima di partire.");
+        if (tvLight != null) { tvLight.setText(all == PreTrip.OK ? "VERDE" : all == PreTrip.WARN ? "GIALLO" : "ROSSO"); tvLight.setTextColor(col); }
+        if (checks == null) return;
+        checks.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        for (PreTrip.Check c : list) {
+            int cc = c.level == PreTrip.OK ? 0xFF00FF88 : c.level == PreTrip.WARN ? 0xFFFFD600 : c.level == PreTrip.BAD ? 0xFFFF3D71 : 0xFF5A7A99;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.TOP);
+            row.setPadding(0, (int) (9 * dp), 0, (int) (9 * dp));
+            View dot = new View(this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(cc);
+            dot.setBackground(g);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams((int) (12 * dp), (int) (12 * dp));
+            dl.setMarginEnd((int) (12 * dp));
+            dl.topMargin = (int) (5 * dp);
+            row.addView(dot, dl);
+            LinearLayout col2 = new LinearLayout(this);
+            col2.setOrientation(LinearLayout.VERTICAL);
+            TextView t = new TextView(this);
+            t.setText(c.title);
+            t.setTextColor(0xFFFFFFFF);
+            t.setTextSize(15);
+            t.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+            TextView d = new TextView(this);
+            d.setText(c.detail);
+            d.setTextColor(0xFFCFE3F5);
+            d.setTextSize(13);
+            col2.addView(t);
+            col2.addView(d);
+            row.addView(col2, new LinearLayout.LayoutParams(0, -2, 1));
+            checks.addView(row);
+        }
+    }
+
+    private void sharePlan() {
+        double[] w = ToolKit.where(this);
+        String text = PreTrip.planText(etWho.getText().toString(), etWhere.getText().toString(), people, System.currentTimeMillis(),
+            returnAt, 60, w == null ? Double.NaN : w[0], w == null ? 0 : w[1], "");
+        prefs.edit().putLong("pt_shared_at", System.currentTimeMillis()).putLong("pt_return", returnAt).apply();
+        ShareUtil.shareText(this, text, "Manda il piano a una persona di fiducia");
+        if (!ReturnAlarmReceiver.active(this)) {
+            ReturnAlarmReceiver.schedule(this, returnAt);
+            Toast.makeText(this, "Avviso di rientro attivato per le " + ToolKit.hhmm(returnAt + 30 * 60_000L), Toast.LENGTH_LONG).show();
+        }
+        render();
+    }
+}
+"""
+
 # ------------------------------------------------------------------
 #  GRAFICA v5.0 — icone, pulsanti tondi in vetro, scheda manovra,
 #  navigatore 3D e mappa 3D.
@@ -31193,6 +32237,96 @@ LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL,
     _v4_tile("card_notepad", "ic_v5_notepad", "Blocco note", "Piu' note, ricerca", "violet", "118dp", end_margin=False))
 LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, '"33 strumenti offline per l\'outdoor"', '"34 strumenti offline per l\'outdoor"')
 
+# ================================================================ v5.9
+# ---------------------------------------------------------------- RILEVAMENTI
+LAYOUT_BEARINGS = _v4_screen(
+    _v4_header("btn_brg_back", "RILEVAMENTI", "Trova un punto lontano o dove sei, con la bussola", "#FF6B35", "tv_brg_heading", "--")
+    + _t_chips(("brg_mode_proj", "PROIETTA"), ("brg_mode_tri", "INCROCIA"), ("brg_mode_res", "DOVE SONO?"))
+    + _panel("brg_panel_proj",
+        _t_text(None, "Il punto a una certa distanza nella direzione in cui punti: «il fumo e' a circa 2 km a 75 gradi».",
+                "#CFE3F5", "13.5sp", top="0dp")
+        + _gap("10dp")
+        + '<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+          '    android:orientation="horizontal" android:layout_marginBottom="12dp">\n'
+        + _num("et_brg_dir", "gradi", "DIREZIONE") + _num("et_brg_dist", "metri", "DISTANZA", end=False)
+        + '</LinearLayout>\n'
+        + _t_buttons(_t_btn("btn_brg_use", "ic_v5_compass", "USA LA BUSSOLA", "cyan", end_margin=False))
+    )
+    + _panel("brg_panel_tri",
+        _t_card(_lbl("INCROCIO DI DUE DIREZIONI", "#FFB38A", "0dp")
+                + _t_text("tv_tri_steps", "", "#E8F4FD", "14sp", top="0dp"), accent="orange")
+        + _t_buttons(_t_btn("btn_tri_take", "ic_v5_compass", "PRENDI IL RILEVAMENTO 1", "orange", filled=True, end_margin=False,
+                            text_id="btn_tri_take_txt"))
+        + _t_buttons(_t_btn("btn_tri_reset", "ic_v5_undo", "DA CAPO", "cyan", end_margin=False, height="46dp")),
+        visible=False)
+    + _panel("brg_panel_res",
+        _t_card(_lbl("DOVE SONO? MIRA LE CIME CHE RICONOSCI", "#FFE68A", "0dp")
+                + _t_text("tv_res_taken", "", "#E8F4FD", "14sp", top="0dp"), accent="yellow")
+        + _t_buttons(_t_btn("btn_res_reset", "ic_v5_undo", "DA CAPO", "yellow", end_margin=False, height="46dp"))
+        + _search("et_res_search", "Cerca una cima...")
+        + _t_text("tv_res_status", "", "#8FB3D0", "12.5sp", top="0dp")
+        + _t_card('<LinearLayout android:id="@+id/res_list" android:layout_width="match_parent"\n'
+                  '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="cyan", pad="12dp",
+                  vid="res_card"),
+        visible=False)
+    + '<LinearLayout android:id="@+id/brg_result_card" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:orientation="vertical" android:visibility="gone">\n'
+    + _t_card(_lbl("RISULTATO", "#80FFB8", "0dp")
+              + _t_text("tv_brg_result", "", "#E8F4FD", "15sp", bold=True, top="0dp"), accent="green")
+    + '</LinearLayout>\n'
+    + '<LinearLayout android:id="@+id/brg_actions" android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+      '    android:orientation="vertical" android:visibility="gone">\n'
+    + _t_buttons(_t_btn("btn_brg_save", "ic_v5_bookmark", "SALVA PUNTO", "green", filled=True),
+                 _t_btn("btn_brg_nav", "ic_v5_walk", "NAVIGA", "cyan", end_margin=False))
+    + _t_buttons(_t_btn("btn_brg_map", "ic_v5_layers", "MAPPA", "cyan"),
+                 _t_btn("btn_brg_share", "ic_v5_share", "CONDIVIDI", "violet", end_margin=False))
+    + '</LinearLayout>\n'
+    + _v4_hint(None, "Telefono in verticale: la bussola guarda dove punta la fotocamera, cosi' si mira meglio. Lontano da metalli "
+                     "e auto. Un grado di errore sposta il punto di circa 17 m per ogni km. Per un incendio o un ferito chiama "
+                     "subito il 112 (per gli incendi boschivi anche il 1515) e poi comunica le coordinate.", red=True),
+    "brg_column")
+
+# ---------------------------------------------------------------- PRONTO A PARTIRE?
+LAYOUT_PRETRIP = _v4_screen(
+    _v4_header("btn_pt_back", "PRONTO A PARTIRE?", "Controllo prima dell'escursione", "#00FF88", "tv_pt_light", "--")
+    + _t_card(_t_big("tv_pt_verdict", "--", "#00FF88", "40sp")
+              + _t_text("tv_pt_verdict_sub", "", "#CFE3F5", "14sp", top="6dp"), accent="green", pad="18dp")
+    + _lbl("DOVE VAI")
+    + _in("et_pt_where", "Es. Rifugio Lagazuoi dal passo Falzarego, sentiero 402")
+    + _lbl("CHI VIENE")
+    + _in("et_pt_who", "Es. Marco e Giulia", "textPersonName|textCapWords")
+    + _t_chips(("pt_p1", "DA SOLO"), ("pt_p2", "IN DUE"), ("pt_p3", "IN TRE O PIU'"), margin="10dp")
+    + '<TextView android:id="@+id/tv_pt_return" android:layout_width="match_parent" android:layout_height="46dp"\n'
+      '    android:gravity="center" android:text="RIENTRO PREVISTO" android:textColor="#00E5FF" android:textSize="12sp"\n'
+      '    android:textStyle="bold" android:background="@drawable/bg_chip_off" android:clickable="true"\n'
+      '    android:focusable="true" android:layout_marginBottom="12dp"/>\n'
+    + _t_card('<LinearLayout android:id="@+id/pt_checks" android:layout_width="match_parent"\n'
+              '    android:layout_height="wrap_content" android:orientation="vertical"/>\n', accent="cyan", pad="14dp")
+    + _t_buttons(_t_btn("btn_pt_share", "ic_v5_share", "MANDA IL PIANO A CASA", "green", filled=True, end_margin=False, height="60dp"))
+    + _t_buttons(_t_btn("btn_pt_alarm", "ic_v5_bell", "AVVISO DI RIENTRO", "yellow", end_margin=False, text_id="btn_pt_alarm_txt"))
+    + _t_buttons(_t_btn("btn_pt_home", "ic_v4_flag", "SONO RIENTRATO", "cyan", end_margin=False))
+    + _t_buttons(_t_btn("btn_pt_check", "ic_v5_checklist", "ZAINO", "green"),
+                 _t_btn("btn_pt_med", "ic_v5_medical", "SCHEDA", "pink"),
+                 _t_btn("btn_pt_safety", "ic_v5_bell", "UOMO A TERRA", "red", end_margin=False))
+    + _v4_hint(None, "Il piano va a chi resta a casa: se non hai notizie entro l'ora indicata sa dove cercarti e chiama il 112. "
+                     "L'avviso di rientro suona sul TUO telefono, mezz'ora dopo il rientro previsto: non avvisa nessuno da solo. "
+                     "Il semaforo usa quello che l'app sa: non vede il meteo dei prossimi giorni, guarda anche il bollettino.",
+               red=True),
+    "pt_column")
+
+# ---------------------------------------------------------------- MENU
+LAYOUT_TOOLS = _swap(LAYOUT_TOOLS,
+    _v4_row(_v4_tile("open_compass", "ic_v5_compass", "Bussola", "Nord vero, rotta, interferenze", "cyan", "118dp", end_margin=False)),
+    _v4_row(_v4_tile("open_compass", "ic_v5_compass", "Bussola", "Nord vero, rotta, interferenze", "cyan", "118dp"),
+            _v4_tile("open_bearings", "ic_v5_near_me", "Rilevamenti", "Trova un punto o dove sei", "orange", "118dp", end_margin=False)))
+_SLOPE_ROW = _v4_row(_v4_tile("card_ar", "ic_v5_eye", "Che montagna e'?", "Realta' aumentata", "orange", "118dp"),
+                     _v4_tile("card_slope", "ic_v5_slope", "Pendenza neve", "Pendii da valanga", "pink", "118dp", end_margin=False))
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, _SLOPE_ROW,
+    _v4_row(_v4_tile("card_pretrip", "ic_v5_checklist", "Pronto a partire?", "Semaforo e piano per casa", "green", "118dp"),
+            _v4_tile("card_bearings", "ic_v5_near_me", "Rilevamenti", "Trova un punto o dove sei", "orange", "118dp", end_margin=False))
+    + _SLOPE_ROW)
+LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, '"34 strumenti offline per l\'outdoor"', '"36 strumenti offline per l\'outdoor"')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -31369,6 +32503,13 @@ def build_java_file_map():
         f"{PKG_UTIL}/NoteStore.java":            NOTE_STORE,
         f"{PKG_UI}/CompassRoseView.java":        COMPASS_ROSE_VIEW,
         f"{PKG_UI}/CompassActivity.java":        COMPASS_ACTIVITY,
+        # v5.9
+        f"{PKG_UTIL}/Geodesy.java":              GEODESY,
+        f"{PKG_UTIL}/PreTrip.java":              PRE_TRIP,
+        f"{PKG_UI}/HeadingProvider.java":        HEADING_PROVIDER,
+        f"{PKG_UI}/BearingsActivity.java":       BEARINGS_ACTIVITY,
+        f"{PKG_UI}/ReturnAlarmReceiver.java":    RETURN_ALARM_RECEIVER,
+        f"{PKG_UI}/PreTripActivity.java":        PRE_TRIP_ACTIVITY,
     }
 
 def build_layout_map():
@@ -31443,6 +32584,8 @@ def build_layout_map():
         "activity_parking.xml":        LAYOUT_PARKING,
         "activity_medical.xml":        LAYOUT_MEDICAL,
         "activity_compass.xml":        LAYOUT_COMPASS,
+        "activity_bearings.xml":       LAYOUT_BEARINGS,
+        "activity_pretrip.xml":        LAYOUT_PRETRIP,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -31523,7 +32666,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.8")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.9")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -31666,7 +32809,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.8.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v5.9.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -31680,6 +32823,10 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v5.9 - RILEVAMENTI E PRONTO A PARTIRE:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Rilevamenti: proietta un punto, incrocia due direzioni, trova dove sei dalle cime")
+    print(f"  {C.OK}[NEW]{C.RESET}  Pronto a partire?: semaforo, piano da mandare a casa, avviso di rientro")
 
     print(f"\n{C.BOLD}NOVITA v5.8 - BUSSOLA E ULTIMI STRUMENTI RIFATTI:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Bussola: nord vero, rotta bloccata con vibrazione, interferenze e calibrazione")
@@ -31789,7 +32936,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.8.apk")
+    info("1. Installa OfflineGPS-3D-v5.9.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -31801,7 +32948,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.8 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
+    print("  OfflineGPS 3D v5.9 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -31818,7 +32965,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.8 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.9 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:

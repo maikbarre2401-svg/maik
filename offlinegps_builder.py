@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OfflineGPS 3D v5.9 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
+OfflineGPS 3D v6.0 — Builder COMPLETO: NAVIGATORE 3D + MAPPA 3D VERA (OpenGL)
                       + STRUMENTI OUTDOOR + CHAT MESH CIFRATA + RADAR DEL GRUPPO
                       + LUOGHI OFFLINE + "CHE MONTAGNA E'?" + SEGUI TRACCIA GPX
                       + AUTOVELOX + SOLE E LUNA IN AR + PENDENZA + TEMPORALE
@@ -273,7 +273,7 @@ NOVITA' v5.8 — BUSSOLA E ULTIMI STRUMENTI RIFATTI:
  * LUCE ROSSA (visione notturna): rosso, rosso scuro o ambra, luminosita'
    regolabile e orologio appena visibile.
 
-NOVITA' v5.9 (questa versione) — RILEVAMENTI E PRONTO A PARTIRE:
+NOVITA' v5.9 — RILEVAMENTI E PRONTO A PARTIRE:
  * RILEVAMENTI con la bussola, come un topografo:
    - PROIETTA: il punto a una distanza e direzione da te ("il fumo e' a 2 km
      a 75 gradi") con coordinate da salvare, navigare o condividere;
@@ -287,6 +287,21 @@ NOVITA' v5.9 (questa versione) — RILEVAMENTI E PRONTO A PARTIRE:
    scheda medica, zaino e "da solo"; PIANO DA MANDARE A CASA (dove, chi,
    rientro, cosa fare se non hai notizie) e AVVISO DI RIENTRO sul telefono
    con il tasto Emergenza (non avvisa nessuno da solo).
+
+NOVITA' v6.0 (questa versione) — TUTTO A PORTATA DI MANO:
+ * CERCA UNO STRUMENTO: gli oltre 50 strumenti in un elenco unico che si
+   cerca per nome o per problema, anche a parole tue ("vipera", "freddo",
+   "buio", "perso", "acqua"), senza internet.
+ * HOME con la scheda OGGI QUI: quanta luce resta e l'ora del tramonto,
+   batteria con l'autonomia misurata, barometro in calo o in salita; e i
+   tasti rapidi Pronto a partire?, Bussola e Trova l'auto.
+ * SCORCIATOIE DELL'ICONA: tieni premuta l'icona dell'app per aprire subito
+   Emergenza, Bussola, Trova l'auto o Pronto a partire?.
+ * DOPO UN RIAVVIO del telefono si rimettono da soli l'avviso del tramonto,
+   l'avviso di rientro, la scadenza del parcheggio e la registrazione della
+   pressione (Uomo a terra invece va riattivato a mano).
+ * RILEVAMENTI, DOVE SONO?: oltre alle cime puoi mirare anche i tuoi punti
+   salvati (rifugio, croce, antenna che conosci).
 """
 import os, sys, shutil, subprocess, platform, urllib.request, time
 from pathlib import Path
@@ -332,8 +347,8 @@ android {
         applicationId "com.offlinegps.map"
         minSdk 26
         targetSdk 34
-        versionCode 57
-        versionName "5.9.0"
+        versionCode 58
+        versionName "6.0.0"
         multiDexEnabled true
         ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64' }
     }
@@ -524,6 +539,7 @@ MANIFEST = """\
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION"/>
     <!-- Chat offline via Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
@@ -571,6 +587,7 @@ MANIFEST = """\
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts"/>
         </activity>
         <activity android:name=".ui.MainActivity" android:exported="false" android:screenOrientation="portrait"/>
         <activity android:name=".ui.MapActivity" android:exported="false"
@@ -666,6 +683,16 @@ MANIFEST = """\
         <activity android:name=".ui.PreTripActivity" android:exported="false" android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize"/>
         <receiver android:name=".ui.ReturnAlarmReceiver" android:exported="false"/>
+        <activity android:name=".ui.ToolSearchActivity" android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"/>
+        <activity android:name=".ui.ShortcutActivity" android:exported="true" android:noHistory="true"
+            android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar"/>
+        <receiver android:name=".ui.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+            </intent-filter>
+        </receiver>
         <service android:name=".chat.MeshService" android:exported="false"
             android:foregroundServiceType="connectedDevice"/>
         <service android:name=".gps.GpsTrackingService" android:exported="false"
@@ -3560,13 +3587,23 @@ import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-/** HOME v4.0: aurora animata, radar 3D della Sentinella Cielo, chip di stato e riquadri. */
+/**
+ * HOME: aurora animata, radar 3D della Sentinella Cielo, chip di stato e riquadri.
+ * v6.0: ricerca fra tutti gli strumenti, riquadro OGGI (luce che resta,
+ * batteria con autonomia misurata, tendenza del barometro) e accessi rapidi
+ * a Pronto a partire, Bussola e Trova l'auto.
+ */
 public class MainActivity extends AppCompatActivity implements SkyState.Listener {
     private final Handler clock = new Handler(Looper.getMainLooper());
     private final Runnable clockTick = new Runnable() {
-        @Override public void run() { updateClock(); clock.postDelayed(this, 20_000); }
+        @Override public void run() {
+            updateClock();
+            if (++ticks % 3 == 0) try { updateToday(); } catch (Exception ignored) {}   // ogni minuto
+            clock.postDelayed(this, 20_000);
+        }
     };
     private SkyRadarView radar;
+    private int ticks;
 
     @Override protected void onCreate(Bundle s) {
         super.onCreate(s);
@@ -3583,6 +3620,14 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
         go(R.id.btn_sky_watch, () -> open(SkyWatchActivity.class));
         go(R.id.btn_home_acoustic, () -> open(AcousticDetectorActivity.class));
         go(R.id.btn_home_check, () -> open(SightingCheckActivity.class));
+        // v6.0
+        go(R.id.home_search,       () -> open(ToolSearchActivity.class));
+        go(R.id.btn_home_pretrip,  () -> open(PreTripActivity.class));
+        go(R.id.btn_home_compass,  () -> open(CompassActivity.class));
+        go(R.id.btn_home_parking,  () -> open(ParkingActivity.class));
+        go(R.id.today_light,       () -> open(DaylightToolActivity.class));
+        go(R.id.today_batt,        () -> open(BatterySaverActivity.class));
+        go(R.id.today_meteo,       () -> open(AltimeterActivity.class));
         // i chip di stato portano dove si risolve il problema
         go(R.id.chip_gps,     () -> { if (!hasGpsPerm()) requestGps(); else open(MapActivity.class); });
         go(R.id.chip_map,     () -> open(DownloadActivity.class));
@@ -3606,6 +3651,7 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
     @Override protected void onResume() {
         super.onResume();
         updateStatus();
+        try { updateToday(); } catch (Exception ignored) {}
         SkyState.get().addListener(this);
         onSkyChanged();
         clock.post(clockTick);
@@ -3631,6 +3677,57 @@ public class MainActivity extends AppCompatActivity implements SkyState.Listener
                 : n + (n == 1 ? " drone rilevato nelle vicinanze" : " droni rilevati nelle vicinanze"));
             tv.setTextColor(n == 0 ? 0xFF8FB3D0 : 0xFFFF5C7A);
         }
+    }
+
+    /** v6.0: riquadro OGGI. */
+    private void updateToday() {
+        long now = System.currentTimeMillis();
+        double[] w = ToolKit.where(this);
+        String light = "--", lightSub = "LUCE";
+        if (w != null) {
+            com.offlinegps.map.util.SunCalc.Times t = com.offlinegps.map.util.SunCalc.times(now, w[0], w[1]);
+            long rise = t.sunrise[0], set = t.sunrise[1];
+            if (rise != Long.MIN_VALUE && set != Long.MIN_VALUE) {
+                if (now < rise) { light = ToolKit.hhmm(rise); lightSub = "ANCORA BUIO\nALBA DI OGGI"; }
+                else if (now < set) { light = ToolKit.span(set - now).replace(" min", "'"); lightSub = "DI LUCE\nTRAMONTO " + ToolKit.hhmm(set); }
+                else {
+                    com.offlinegps.map.util.SunCalc.Times tm = com.offlinegps.map.util.SunCalc.times(now + 86_400_000L, w[0], w[1]);
+                    light = tm.sunrise[0] == Long.MIN_VALUE ? "--" : ToolKit.hhmm(tm.sunrise[0]);
+                    lightSub = "BUIO\nALBA DI DOMANI";
+                }
+            }
+        }
+        setStat(R.id.tv_today_light, R.id.tv_today_light_lbl, light, lightSub);
+        String batt = "--", battSub = "BATTERIA";
+        Intent b = registerReceiver(null, new android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b != null) {
+            int lv = b.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1), sc = b.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, 100);
+            int pct = lv >= 0 && sc > 0 ? Math.round(lv * 100f / sc) : -1;
+            com.offlinegps.map.util.BatteryEstimator.record(this, b);
+            double drain = com.offlinegps.map.util.BatteryEstimator.drainPerHour(com.offlinegps.map.util.BatteryEstimator.load(this), now);
+            double left = com.offlinegps.map.util.BatteryEstimator.hoursLeft(pct, drain);
+            if (pct >= 0) batt = pct + "%";
+            if (!Double.isNaN(left)) battSub = String.format(Locale.ITALY, "BATTERIA\nCIRCA %.0f ORE", left);
+        }
+        setStat(R.id.tv_today_batt, R.id.tv_today_batt_lbl, batt, battSub);
+        String meteo = "--", meteoSub = "BAROMETRO";
+        try {
+            double ch = com.offlinegps.map.util.PressureLog.load(com.offlinegps.map.gps.PressureLogReceiver.logFile(this)).change(now, 3);
+            if (!Double.isNaN(ch)) {
+                int tr = com.offlinegps.map.util.Zambretti.trend(ch);
+                meteo = tr < 0 ? "IN CALO" : tr > 0 ? "IN SALITA" : "STABILE";
+                meteoSub = String.format(Locale.ITALY, "PRESSIONE\n%+.1f HPA IN 3 H", ch);
+            }
+        } catch (Exception ignored) {}
+        setStat(R.id.tv_today_meteo, R.id.tv_today_meteo_lbl, meteo, meteoSub);
+        TextView v = findViewById(R.id.tv_today_meteo);
+        if (v != null) v.setTextColor(meteo.equals("IN CALO") ? 0xFFFF6B35 : meteo.equals("--") ? 0xFF8FB3D0 : 0xFF00FF88);
+    }
+
+    private void setStat(int valId, int lblId, String val, String lbl) {
+        TextView a = findViewById(valId), b = findViewById(lblId);
+        if (a != null) a.setText(val);
+        if (b != null) b.setText(lbl);
     }
 
     private void updateClock() {
@@ -17541,7 +17638,7 @@ LAYOUT_MAIN = (_XML_HEAD +
     '                android:layout_height="wrap_content" android:text="--:--" android:textColor="#00E5FF"\n'
     '                android:textSize="22sp" android:textStyle="bold" android:fontFamily="monospace"/>\n'
     '            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
-    '                android:text="v5.9 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
+    '                android:text="v6.0 · OFFLINE" android:textColor="#5A7A99" android:textSize="10sp"\n'
     '                android:letterSpacing="0.12"/>\n'
     '        </LinearLayout>\n'
     '    </LinearLayout>\n'
@@ -25898,6 +25995,11 @@ final class ParkingStore {
         schedule(c, 0);
     }
 
+    /** Dopo un riavvio del telefono (v6.0): rimette gli avvisi della scadenza. */
+    static void reschedule(Context c) {
+        if (has(c) && until(c) > System.currentTimeMillis()) schedule(c, until(c));
+    }
+
     private static void schedule(Context c, long until) {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
@@ -29305,6 +29407,8 @@ public class BearingsActivity extends AppCompatActivity {
     private final List<String> resNames = new ArrayList<>();
     private final List<Double> resBrg = new ArrayList<>();
     private PoiIndex index;
+    /** v6.0: anche i Punti salvati come punti noti per "dove sono". */
+    private final List<WaypointEntity> saved = new ArrayList<>();
 
     private final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -29375,6 +29479,12 @@ public class BearingsActivity extends AppCompatActivity {
                 if (tvResStatus != null) tvResStatus.setText(error == null ? "" : error);
                 renderCandidates();
             }
+        });
+        Executors.newSingleThreadExecutor().execute(() -> {
+            try {
+                List<WaypointEntity> l = GpsDatabase.getInstance(getApplicationContext()).waypointDao().getAllSync();
+                runOnUiThread(() -> { saved.clear(); if (l != null) saved.addAll(l); renderCandidates(); });
+            } catch (Exception ignored) {}
         });
         setMode(PROJ);
     }
@@ -29481,10 +29591,20 @@ public class BearingsActivity extends AppCompatActivity {
         if (resList == null) return;
         resList.removeAllViews();
         View card = findViewById(R.id.res_card);
-        if (card != null) card.setVisibility(index == null ? View.GONE : View.VISIBLE);
-        if (index == null) return;
+        if (card != null) card.setVisibility(index == null && saved.isEmpty() ? View.GONE : View.VISIBLE);
         double[] w = ToolKit.where(this);
         String q = etResSearch == null ? "" : etResSearch.getText().toString();
+        float dp0 = getResources().getDisplayMetrics().density;
+        // i tuoi punti salvati entro 50 km (se la posizione e' nota)
+        for (WaypointEntity e : saved) {
+            if (!q.trim().isEmpty() && !e.name.toLowerCase(Locale.ITALY).contains(q.trim().toLowerCase(Locale.ITALY))) continue;
+            double d = w == null ? Double.NaN : GeoFormat.distance(w[0], w[1], e.latitude, e.longitude);
+            if (!Double.isNaN(d) && (d > 50_000 || d < 150)) continue;
+            resList.addView(candidateRow("★ " + e.name, Double.isNaN(d) || w == null ? "punto salvato"
+                : String.format(Locale.ITALY, "punto salvato, circa %s verso %s", GeoFormat.formatDistance(d),
+                    GeoFormat.cardinal(GeoFormat.bearing(w[0], w[1], e.latitude, e.longitude))), e.name, e.latitude, e.longitude, dp0));
+        }
+        if (index == null) return;
         List<Object[]> found;
         HashSet<String> types = new HashSet<>(Arrays.asList(PoiIndex.PEAK));
         if (w != null) found = index.near(w[0], w[1], q.trim().isEmpty() ? 40_000 : 150_000, types, q, 25);
@@ -29498,36 +29618,40 @@ public class BearingsActivity extends AppCompatActivity {
         for (Object[] f : found) {
             PoiIndex.Poi p = (PoiIndex.Poi) f[0];
             if (p.name == null || p.name.isEmpty()) continue;
-            LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(0, (int) (6 * dp), 0, (int) (6 * dp));
-            TextView t = new TextView(this);
             double d = (Double) f[1];
-            t.setText(p.name + (Double.isNaN(p.ele) ? "" : String.format(Locale.ITALY, "  %.0f m", p.ele))
-                + (Double.isNaN(d) || w == null ? "" : String.format(Locale.ITALY, "\ncirca %s verso %s", GeoFormat.formatDistance(d),
-                    GeoFormat.cardinal(GeoFormat.bearing(w[0], w[1], p.lat, p.lon)))));
-            t.setTextColor(0xFFE8F4FD);
-            t.setTextSize(14);
-            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
-            TextView aim = new TextView(this);
-            aim.setText("MIRA");
-            aim.setGravity(Gravity.CENTER);
-            aim.setTextColor(0xFF050A14);
-            aim.setTypeface(Typeface.DEFAULT_BOLD);
-            aim.setBackgroundResource(R.drawable.bg_btn5_yellow);
-            aim.setOnClickListener(v -> aimAt(p));
-            row.addView(aim, new LinearLayout.LayoutParams((int) (84 * dp), (int) (40 * dp)));
-            resList.addView(row);
+            resList.addView(candidateRow(p.name + (Double.isNaN(p.ele) ? "" : String.format(Locale.ITALY, "  %.0f m", p.ele)),
+                Double.isNaN(d) || w == null ? "" : String.format(Locale.ITALY, "circa %s verso %s", GeoFormat.formatDistance(d),
+                    GeoFormat.cardinal(GeoFormat.bearing(w[0], w[1], p.lat, p.lon))), p.name, p.lat, p.lon, dp));
         }
     }
 
-    private void aimAt(PoiIndex.Poi p) {
+    private View candidateRow(String title, String sub, String name, double lat, double lon, float dp) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, (int) (6 * dp), 0, (int) (6 * dp));
+        TextView t = new TextView(this);
+        t.setText(sub.isEmpty() ? title : title + "\n" + sub);
+        t.setTextColor(0xFFE8F4FD);
+        t.setTextSize(14);
+        row.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView aim = new TextView(this);
+        aim.setText("MIRA");
+        aim.setGravity(Gravity.CENTER);
+        aim.setTextColor(0xFF050A14);
+        aim.setTypeface(Typeface.DEFAULT_BOLD);
+        aim.setBackgroundResource(R.drawable.bg_btn5_yellow);
+        aim.setOnClickListener(v -> aimAt(name, lat, lon));
+        row.addView(aim, new LinearLayout.LayoutParams((int) (84 * dp), (int) (40 * dp)));
+        return row;
+    }
+
+    private void aimAt(String name, double lat, double lon) {
         double hd = hp.heading();
         if (Double.isNaN(hd)) { Toast.makeText(this, "Bussola non pronta", Toast.LENGTH_SHORT).show(); return; }
-        int i = resNames.indexOf(p.name);
+        int i = resNames.indexOf(name);
         if (i >= 0) { resBrg.set(i, hd); }
-        else { resPts.add(new double[]{p.lat, p.lon}); resNames.add(p.name); resBrg.add(hd); }
+        else { resPts.add(new double[]{lat, lon}); resNames.add(name); resBrg.add(hd); }
         renderRes();
         computeRes();
     }
@@ -29545,7 +29669,7 @@ public class BearingsActivity extends AppCompatActivity {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < resNames.size(); i++)
             sb.append(String.format(Locale.ITALY, "%s: %.0f°\n", resNames.get(i), resBrg.get(i)));
-        sb.append(resNames.isEmpty() ? "Punta una cima che riconosci (mettila al centro dello schermo tenendo il telefono in verticale) e premi MIRA. Servono almeno 2 cime, meglio 3 lontane fra loro di direzione."
+        sb.append(resNames.isEmpty() ? "Punta una cima (o un tuo punto salvato, ★) che riconosci (mettila al centro dello schermo tenendo il telefono in verticale) e premi MIRA. Servono almeno 2 cime, meglio 3 lontane fra loro di direzione."
             : resNames.size() == 1 ? "Ora mira una seconda cima, possibilmente a 60-120 gradi dalla prima."
             : resNames.size() == 2 ? "Una terza cima migliora la precisione e dice quanto ci si puo' fidare."
             : "Se una direzione sembra sbagliata, rimira quella cima: la posizione si aggiorna.");
@@ -29946,6 +30070,365 @@ public class PreTripActivity extends AppCompatActivity {
             Toast.makeText(this, "Avviso di rientro attivato per le " + ToolKit.hhmm(returnAt + 30 * 60_000L), Toast.LENGTH_LONG).show();
         }
         render();
+    }
+}
+"""
+
+TOOL_CATALOG = r"""package com.offlinegps.map.util;
+
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
+/**
+ * Elenco di tutti gli strumenti dell'app con parole chiave (v6.0), per la
+ * ricerca: "vipera", "parcheggio", "valanga", "cambio" trovano lo strumento
+ * giusto anche se il nome e' diverso. Ignora maiuscole e accenti; tutte le
+ * parole cercate devono comparire. Senza Android: testato sul computer.
+ */
+public final class ToolCatalog {
+    public static final class Tool {
+        public final String key, title, desc, keywords;
+        public final int color;
+        Tool(String key, String title, String desc, String keywords, int color) {
+            this.key = key; this.title = title; this.desc = desc; this.keywords = keywords; this.color = color;
+        }
+    }
+
+    private static final int RED = 0xFFFF3D71, ORANGE = 0xFFFF6B35, YELLOW = 0xFFFFD600, GREEN = 0xFF00FF88,
+        CYAN = 0xFF00E5FF, VIOLET = 0xFFB388FF;
+
+    public static final Tool[] ALL = {
+        new Tool("emergency", "Emergenza SOS 112", "Posizione per i soccorsi, chiamata, SMS", "sos soccorso aiuto incidente ferito chiamata coordinate perso smarrito", RED),
+        new Tool("medical", "Scheda medica", "Gruppo sanguigno, allergie, chi avvisare", "sangue allergie farmaci malattie contatto ice qr", RED),
+        new Tool("firstaid", "Primo soccorso", "Schede e metronomo per la rianimazione", "rcp rianimazione massaggio cardiaco defibrillatore emorragia ferita vipera morso ustione ipotermia freddo congelamento colpo di calore caldo soffocamento zecca infarto ictus puntura vespa ape", RED),
+        new Tool("safety", "Uomo a terra", "Allarme se cadi o resti fermo, poi SOS", "caduta allarme solitario solo immobile", RED),
+        new Tool("pretrip", "Pronto a partire?", "Semaforo, piano per casa, avviso di rientro", "piano rientro controllo partenza escursione sicurezza", GREEN),
+        new Tool("whistle", "Fischietto SOS", "Fischio forte e segnale alpino", "suono segnale aiuto", YELLOW),
+        new Tool("mirror", "Segnali luminosi", "Schermo e flash: fisso, lampeggio, SOS", "luce segnale elicottero schermo", CYAN),
+        new Tool("flashlight", "Torcia", "Intensita', strobo, SOS, segnale alpino", "luce flash led buio lampada", YELLOW),
+        new Tool("morse", "Codice Morse", "Trasmetti con luce e suono, ricevi a mano", "segnali luce punto linea", YELLOW),
+        new Tool("nightvision", "Luce rossa", "Vedere al buio senza abbagliarsi", "notte visione notturna stelle", RED),
+        new Tool("coords", "Coordinate", "Decimali, UTM, MGRS, Plus Code", "posizione latitudine longitudine utm mgrs", CYAN),
+        new Tool("qr", "QR posizione", "Chi inquadra vede dove sei", "codice condividi posizione", CYAN),
+        new Tool("gotocoords", "Vai a coordinate", "Freccia verso qualsiasi posizione", "destinazione coordinate freccia", CYAN),
+        new Tool("backtrack", "Rotta di ritorno", "Torna al punto di partenza", "tornare indietro partenza ritorno perso smarrito", GREEN),
+        new Tool("compass", "Bussola", "Nord vero, rotta da seguire, interferenze", "nord direzione rotta gradi orientamento declinazione", CYAN),
+        new Tool("bearings", "Rilevamenti", "Proietta un punto, incrocia, trova dove sei", "triangolazione incrocio proiezione dove sono cime incendio fumo", ORANGE),
+        new Tool("suncompass", "Nord dal sole", "Orientarsi col sole e la luna", "orientamento sole ombra senza bussola", YELLOW),
+        new Tool("proximity", "Allarme distanza", "Suona se ti allontani o arrivi", "recinto bambini cane ancora", RED),
+        new Tool("geonotes", "Note sul posto", "Appunti legati a un luogo", "appunti luogo", VIOLET),
+        new Tool("waypoints", "Punti salvati", "I tuoi luoghi, GPX, navigazione", "waypoint preferiti gpx salvare luogo", GREEN),
+        new Tool("follow", "Segui traccia GPX", "Guida lungo un sentiero scaricato", "sentiero percorso traccia gpx", GREEN),
+        new Tool("recorder", "Registra traccia", "Km, dislivello, GPX", "registrare percorso gpx dislivello chilometri", GREEN),
+        new Tool("poi", "Luoghi vicini", "Cime, rifugi, acqua, ospedali", "cime rifugi acqua fontana sorgente ospedale farmacia defibrillatore paesi laghi campeggio", YELLOW),
+        new Tool("ar", "Che montagna e'?", "Nomi delle cime sulla fotocamera", "realta aumentata cime nomi montagne fotocamera stelle sole luna", ORANGE),
+        new Tool("slope", "Pendenza neve", "Inclinometro per i pendii da valanga", "valanga valanghe inclinometro pendio scialpinismo", RED),
+        new Tool("daylight", "Sole & tramonto", "Luce che resta, alba, avviso tramonto", "alba tramonto luce buio sole crepuscolo", ORANGE),
+        new Tool("moon", "Luna", "Fasi esatte e notti chiare", "fasi luna piena notte", VIOLET),
+        new Tool("altimeter", "Altimetro & meteo", "Barometro, quota, previsione", "pressione barometro quota altitudine previsioni meteo tempo", GREEN),
+        new Tool("storm", "Temporale", "Distanza dei fulmini, regola 30/30", "fulmini tuono lampo temporale", VIOLET),
+        new Tool("fire", "Fuoco & bivacco", "Fuoco sicuro e notte fuori", "fuoco bivacco tenda notte freddo scaldarsi legna", ORANGE),
+        new Tool("satellites", "Satelliti GPS", "Cielo dei satelliti e precisione", "gps precisione satelliti galileo segnale", CYAN),
+        new Tool("parking", "Trova l'auto", "Dove hai parcheggiato e scadenza", "parcheggio macchina auto ticket", GREEN),
+        new Tool("trip", "Viaggio", "Contachilometri, velocita' e media", "contachilometri velocita distanza statistiche", ORANGE),
+        new Tool("speedhud", "Tachimetro HUD", "Velocita' riflessa sul parabrezza", "velocita auto parabrezza", RED),
+        new Tool("pace", "Tempi di marcia", "Salita, discesa, ora per girarsi", "durata escursione dislivello quanto ci metto ore", GREEN),
+        new Tool("area", "Area terreno", "Cammina sul confine: ettari e perimetro", "ettari perimetro campo terreno superficie", VIOLET),
+        new Tool("heat", "Temperatura percepita", "Vento, afa, congelamento", "vento freddo caldo umidita congelamento wind chill afa", ORANGE),
+        new Tool("metal", "Metal detector", "Ferro e acciaio col magnetometro", "metallo magnetometro ferro chiodi", CYAN),
+        new Tool("battery", "Batteria", "Autonomia dal consumo reale", "autonomia risparmio energia ricarica scarica telefono freddo", GREEN),
+        new Tool("hydration", "Idratazione", "Quanta acqua hai bevuto", "acqua bere sete caldo disidratazione", CYAN),
+        new Tool("checklist", "Checklist", "Zaino e attrezzatura, 6 liste", "zaino attrezzatura lista preparare", GREEN),
+        new Tool("guide", "Guida sopravvivenza", "Perso, riparo, acqua, animali", "sopravvivenza perso smarrito riparo freddo notte acqua orso lupo vipera animali", RED),
+        new Tool("notepad", "Blocco note", "Piu' note con ricerca", "note appunti scrivere", VIOLET),
+        new Tool("calc", "Calcolatrice", "Con percentuali", "calcoli conti percentuale", CYAN),
+        new Tool("unitconv", "Convertitore", "8 categorie, gomme, consumi", "unita misure miglia piedi libbre psi bar galloni", VIOLET),
+        new Tool("currency", "Valute", "12 valute, cambi tuoi", "cambio soldi euro dollaro franco", YELLOW),
+        new Tool("timer", "Timer", "Conto alla rovescia con suono", "cronometro sveglia tempo", CYAN),
+        new Tool("chat", "Chat offline", "Messaggi e vocali via Bluetooth", "bluetooth messaggi gruppo walkie talkie vocale senza rete", GREEN),
+        new Tool("team", "Radar del gruppo", "Dove sono i compagni", "compagni gruppo amici radar", VIOLET),
+        new Tool("map", "Mappa 3D", "Mappa offline con edifici 3D", "mappa cartina 3d", CYAN),
+        new Tool("download", "Download mappe", "Scarica mappe e navigatore", "scaricare mappe regione routing", CYAN),
+        new Tool("skywatch", "Sentinella cielo", "Droni vicini: Remote ID e ascolto", "droni drone cielo remote id", VIOLET),
+    };
+
+    private ToolCatalog() {}
+
+    static String norm(String s) {
+        return Normalizer.normalize(s == null ? "" : s, Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+            .toLowerCase(Locale.ITALY).replace('\'', ' ');
+    }
+
+    /** Punteggio di un'unica parola: 0 = non trovata. */
+    static int score(Tool t, String w) {
+        String title = norm(t.title), kw = " " + norm(t.keywords) + " ", desc = norm(t.desc);
+        if (title.startsWith(w)) return 100;
+        for (String part : title.split("[^a-z0-9]+")) if (part.startsWith(w)) return 80;
+        if (title.contains(w)) return 60;
+        if (kw.contains(" " + w + " ")) return 50;
+        if (kw.contains(" " + w)) return 35;
+        if (kw.contains(w) && w.length() >= 4) return 20;
+        if (desc.contains(w)) return 15;
+        return 0;
+    }
+
+    /** Strumenti che contengono tutte le parole, dal piu' pertinente; ricerca vuota = tutti. */
+    public static List<Tool> search(String query) {
+        String[] words = norm(query).trim().split("\\s+");
+        List<Tool> out = new ArrayList<>();
+        List<Integer> sc = new ArrayList<>();
+        for (Tool t : ALL) {
+            int total = 0;
+            boolean all = true;
+            for (String w : words) {
+                if (w.isEmpty()) continue;
+                int s = score(t, w);
+                if (s == 0) { all = false; break; }
+                total += s;
+            }
+            if (!all) continue;
+            int i = 0;
+            while (i < out.size() && sc.get(i) >= total) i++;
+            out.add(i, t);
+            sc.add(i, total);
+        }
+        return out;
+    }
+
+    public static Tool byKey(String key) {
+        for (Tool t : ALL) if (t.key.equals(key)) return t;
+        return null;
+    }
+}
+"""
+
+TOOL_SEARCH_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.content.Intent;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
+import com.offlinegps.map.R;
+import com.offlinegps.map.util.ToolCatalog;
+import java.util.List;
+
+/**
+ * Tutti gli strumenti (v6.0): ricerca per nome o per quello che ti serve
+ * ("vipera", "parcheggio", "valanga", "cambio"), tocca per aprire.
+ */
+public class ToolSearchActivity extends AppCompatActivity {
+    private EditText search;
+    private LinearLayout list;
+    private TextView tvCount;
+
+    /** Chiave del catalogo -> schermata. */
+    static Class<?> target(String key) {
+        switch (key) {
+            case "emergency": return EmergencyActivity.class;
+            case "medical": return MedicalActivity.class;
+            case "firstaid": return FirstAidActivity.class;
+            case "safety": return SafetyActivity.class;
+            case "pretrip": return PreTripActivity.class;
+            case "whistle": return WhistleActivity.class;
+            case "mirror": return SignalMirrorActivity.class;
+            case "flashlight": return FlashlightActivity.class;
+            case "morse": return MorseActivity.class;
+            case "nightvision": return NightVisionActivity.class;
+            case "coords": return CoordsToolActivity.class;
+            case "qr": return QrPositionActivity.class;
+            case "gotocoords": return GotoCoordsActivity.class;
+            case "backtrack": return BacktrackActivity.class;
+            case "compass": return CompassActivity.class;
+            case "bearings": return BearingsActivity.class;
+            case "suncompass": return SunCompassActivity.class;
+            case "proximity": return ProximityToolActivity.class;
+            case "geonotes": return GeoNotesActivity.class;
+            case "waypoints": return WaypointsActivity.class;
+            case "follow": return FollowTrackActivity.class;
+            case "recorder": return TrackRecorderActivity.class;
+            case "poi": return PoiActivity.class;
+            case "ar": return PeakArActivity.class;
+            case "slope": return SlopeToolActivity.class;
+            case "daylight": return DaylightToolActivity.class;
+            case "moon": return MoonPhaseActivity.class;
+            case "altimeter": return AltimeterActivity.class;
+            case "storm": return StormActivity.class;
+            case "fire": return FireCampActivity.class;
+            case "satellites": return SatellitesActivity.class;
+            case "parking": return ParkingActivity.class;
+            case "trip": return StatsActivity.class;
+            case "speedhud": return SpeedHudActivity.class;
+            case "pace": return PaceCalcActivity.class;
+            case "area": return AreaToolActivity.class;
+            case "heat": return HeatIndexActivity.class;
+            case "metal": return MetalDetectorActivity.class;
+            case "battery": return BatterySaverActivity.class;
+            case "hydration": return HydrationActivity.class;
+            case "checklist": return ChecklistActivity.class;
+            case "guide": return SurvGuideActivity.class;
+            case "notepad": return NotepadActivity.class;
+            case "calc": return CalcActivity.class;
+            case "unitconv": return UnitConvActivity.class;
+            case "currency": return CurrencyActivity.class;
+            case "timer": return MultiTimerActivity.class;
+            case "chat": return ChatActivity.class;
+            case "team": return TeamActivity.class;
+            case "map": return Map3DActivity.class;
+            case "download": return DownloadActivity.class;
+            case "skywatch": return SkyWatchActivity.class;
+            default: return null;
+        }
+    }
+
+    @Override protected void onCreate(@Nullable Bundle s) {
+        super.onCreate(s);
+        setContentView(R.layout.activity_toolsearch);
+        search = findViewById(R.id.et_ts_search);
+        list = findViewById(R.id.ts_list);
+        tvCount = findViewById(R.id.tv_ts_count);
+        View back = findViewById(R.id.btn_ts_back);
+        if (back != null) back.setOnClickListener(v -> finish());
+        if (search != null) {
+            search.addTextChangedListener(new TextWatcher() {
+                public void afterTextChanged(Editable e) { render(); }
+                public void beforeTextChanged(CharSequence c, int a, int b, int d) {}
+                public void onTextChanged(CharSequence c, int a, int b, int d) {}
+            });
+            String q = getIntent().getStringExtra("q");
+            if (q != null) search.setText(q);
+        }
+        render();
+    }
+
+    private void render() {
+        String q = search == null ? "" : search.getText().toString();
+        List<ToolCatalog.Tool> r = ToolCatalog.search(q);
+        if (tvCount != null) tvCount.setText(r.size() + (r.size() == 1 ? " STRUMENTO" : " STRUMENTI"));
+        if (list == null) return;
+        list.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        if (r.isEmpty()) {
+            TextView none = new TextView(this);
+            none.setText("Nessuno strumento per \"" + q.trim() + "\". Prova con un'altra parola (es. acqua, luce, nord).");
+            none.setTextColor(0xFF8FB3D0);
+            none.setTextSize(14);
+            list.addView(none);
+            return;
+        }
+        for (ToolCatalog.Tool t : r) {
+            Class<?> cls = target(t.key);
+            if (cls == null) continue;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding((int) (12 * dp), (int) (11 * dp), (int) (14 * dp), (int) (11 * dp));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xCC0D1626);
+            bg.setCornerRadius(14 * dp);
+            bg.setStroke(Math.max(1, (int) dp), (t.color & 0x00FFFFFF) | 0x55000000);
+            row.setBackground(bg);
+            View bar = new View(this);
+            GradientDrawable bd = new GradientDrawable();
+            bd.setColor(t.color);
+            bd.setCornerRadius(3 * dp);
+            bar.setBackground(bd);
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams((int) (5 * dp), (int) (34 * dp));
+            bl.setMarginEnd((int) (12 * dp));
+            row.addView(bar, bl);
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView tt = new TextView(this);
+            tt.setText(t.title);
+            tt.setTextColor(0xFFFFFFFF);
+            tt.setTextSize(15.5f);
+            tt.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+            TextView td = new TextView(this);
+            td.setText(t.desc);
+            td.setTextColor(0xFF8FB3D0);
+            td.setTextSize(12.5f);
+            col.addView(tt);
+            col.addView(td);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView go = new TextView(this);
+            go.setText("›");
+            go.setTextColor(t.color);
+            go.setTextSize(24);
+            row.addView(go);
+            row.setClickable(true);
+            row.setOnClickListener(v -> startActivity(new Intent(this, cls)));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = (int) (8 * dp);
+            list.addView(row, lp);
+        }
+    }
+}
+"""
+
+SHORTCUT_ACTIVITY = r"""package com.offlinegps.map.ui;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.os.Bundle;
+
+/**
+ * Scorciatoie dell'icona dell'app (v6.0): tieni premuta l'icona per aprire
+ * subito Emergenza, Bussola, Trova l'auto o Pronto a partire. Apre solo le
+ * schermate di questo elenco: qualunque altra richiesta porta alla home.
+ */
+public class ShortcutActivity extends Activity {
+    @Override protected void onCreate(Bundle s) {
+        super.onCreate(s);
+        String tool = getIntent() == null ? null : getIntent().getStringExtra("tool");
+        Class<?> target;
+        if ("sos".equals(tool)) target = EmergencyActivity.class;
+        else if ("compass".equals(tool)) target = CompassActivity.class;
+        else if ("parking".equals(tool)) target = ParkingActivity.class;
+        else if ("pretrip".equals(tool)) target = PreTripActivity.class;
+        else target = MainActivity.class;
+        startActivity(new Intent(this, target).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP));
+        finish();
+    }
+}
+"""
+
+BOOT_RECEIVER = r"""package com.offlinegps.map.ui;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import com.offlinegps.map.AppConfig;
+import com.offlinegps.map.gps.PressureLogReceiver;
+
+/**
+ * Dopo il riavvio del telefono (v6.0) Android cancella tutti gli avvisi
+ * programmati: qui si rimettono avviso del tramonto, avviso di rientro,
+ * scadenza del parcheggio e registrazione della pressione.
+ * (Uomo a terra non riparte da solo: va riattivato a mano.)
+ */
+public class BootReceiver extends BroadcastReceiver {
+    @Override public void onReceive(Context c, Intent intent) {
+        String a = intent == null ? null : intent.getAction();
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(a) && !"android.intent.action.MY_PACKAGE_REPLACED".equals(a)) return;
+        SharedPreferences p = c.getSharedPreferences(AppConfig.PREFS, Context.MODE_PRIVATE);
+        try { if (SunsetAlarmReceiver.lead(c) > 0) SunsetAlarmReceiver.schedule(c); } catch (Exception ignored) {}
+        try {
+            long ret = p.getLong("pt_return", 0);
+            if (ReturnAlarmReceiver.active(c) && ret > System.currentTimeMillis() - 6 * 3_600_000L) ReturnAlarmReceiver.schedule(c, ret);
+        } catch (Exception ignored) {}
+        try { ParkingStore.reschedule(c); } catch (Exception ignored) {}
+        try { if (p.getBoolean(PressureLogReceiver.PREF, false)) PressureLogReceiver.schedule(c, true); } catch (Exception ignored) {}
     }
 }
 """
@@ -32327,6 +32810,124 @@ LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, _SLOPE_ROW,
     + _SLOPE_ROW)
 LAYOUT_SURVIVAL = _swap(LAYOUT_SURVIVAL, '"34 strumenti offline per l\'outdoor"', '"36 strumenti offline per l\'outdoor"')
 
+# ================================================================ v6.0
+# ---------------------------------------------------------------- TUTTI GLI STRUMENTI (ricerca)
+LAYOUT_TOOLSEARCH = _v4_screen(
+    _v4_header("btn_ts_back", "TUTTI GLI STRUMENTI", "Scrivi cosa ti serve, anche a parole tue", "#FFD600", "tv_ts_count", "--")
+    + _search("et_ts_search", "Es. vipera, acqua, freddo, auto, dove sono...")
+    + '<LinearLayout android:id="@+id/ts_list" android:layout_width="match_parent"\n'
+      '    android:layout_height="wrap_content" android:orientation="vertical"/>\n'
+    + _v4_hint(None, "Cerca per nome o per problema: «morso», «buio», «batteria», «freddo», «perso». "
+                     "Tutto funziona senza internet. In pericolo chiama subito il 112."),
+    "ts_column")
+
+
+# ---------------------------------------------------------------- HOME: ricerca, OGGI, tasti rapidi
+def _today(vid, val_id, lbl_id, accent, label, end_margin=True):
+    hexcol = V4_ACCENTS[accent]
+    return ('        <LinearLayout android:id="@+id/' + vid + '" android:layout_width="0dp"\n'
+            '            android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical"\n'
+            '            android:padding="10dp" android:background="@drawable/bg_tile_' + accent + '"\n'
+            '            android:clickable="true" android:focusable="true"' +
+            ('\n            android:layout_marginEnd="8dp"' if end_margin else '') + '>\n'
+            '            <TextView android:id="@+id/' + val_id + '" android:layout_width="match_parent"\n'
+            '                android:layout_height="28dp" android:text="--" android:textColor="#' + hexcol + '"\n'
+            '                android:textSize="20sp" android:textStyle="bold" android:fontFamily="sans-serif-condensed"\n'
+            '                android:maxLines="1" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="11sp"\n'
+            '                android:autoSizeMaxTextSize="20sp" android:gravity="center_vertical"/>\n'
+            '            <TextView android:id="@+id/' + lbl_id + '" android:layout_width="match_parent"\n'
+            '                android:layout_height="28dp" android:text="' + label + '" android:textColor="#8FB3D0"\n'
+            '                android:textSize="9.5sp" android:textStyle="bold" android:letterSpacing="0.02"\n'
+            '                android:maxLines="2" android:autoSizeTextType="uniform" android:autoSizeMinTextSize="7sp"\n'
+            '                android:autoSizeMaxTextSize="9.5sp" android:layout_marginTop="2dp"/>\n'
+            '        </LinearLayout>\n')
+
+
+_HOME_SEARCH = (
+    '    <LinearLayout android:id="@+id/home_search" android:layout_width="match_parent"\n'
+    '        android:layout_height="52dp" android:layout_marginTop="16dp" android:orientation="horizontal"\n'
+    '        android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="16dp"\n'
+    '        android:background="@drawable/bg_input" android:clickable="true" android:focusable="true">\n'
+    '        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_v5_search"\n'
+    '            android:tint="#00E5FF" android:contentDescription="Cerca"/>\n'
+    '        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"\n'
+    '            android:layout_marginStart="12dp" android:text="Cerca uno strumento: bussola, vipera, auto..."\n'
+    '            android:textColor="#5A7A99" android:textSize="14.5sp" android:maxLines="1" android:ellipsize="end"/>\n'
+    '    </LinearLayout>\n'
+    '    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"\n'
+    '        android:text="OGGI QUI" android:textColor="#00E5FF" android:textSize="11sp" android:letterSpacing="0.18"\n'
+    '        android:textStyle="bold" android:layout_marginTop="16dp" android:layout_marginBottom="8dp"\n'
+    '        android:layout_marginStart="4dp"/>\n'
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal">\n'
+    + _today("today_light", "tv_today_light", "tv_today_light_lbl", "yellow", "LUCE")
+    + _today("today_batt", "tv_today_batt", "tv_today_batt_lbl", "green", "BATTERIA")
+    + _today("today_meteo", "tv_today_meteo", "tv_today_meteo_lbl", "cyan", "BAROMETRO", end_margin=False) +
+    '    </LinearLayout>\n')
+
+_HOME_QUICK = (
+    '    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"\n'
+    '        android:orientation="horizontal" android:layout_marginTop="12dp">\n'
+    + _v4_tile("btn_home_pretrip", "ic_v5_checklist", "PRONTO?", "Semaforo", "green", "112dp")
+    + _v4_tile("btn_home_compass", "ic_v5_compass", "BUSSOLA", "Nord vero", "cyan", "112dp")
+    + _v4_tile("btn_home_parking", "ic_v5_car", "AUTO", "Dov'e'?", "orange", "112dp", end_margin=False) +
+    '    </LinearLayout>\n')
+
+_SKY_ANCHOR = '    <FrameLayout android:id="@+id/btn_sky_watch"\n'
+LAYOUT_MAIN = _swap(LAYOUT_MAIN, _SKY_ANCHOR, _HOME_SEARCH + _SKY_ANCHOR)
+_STATUS_ANCHOR = '    <TextView android:id="@+id/tv_status"'
+LAYOUT_MAIN = _swap(LAYOUT_MAIN, _STATUS_ANCHOR, _HOME_QUICK + _STATUS_ANCHOR)
+LAYOUT_MAIN = _swap(LAYOUT_MAIN, 'android:text="PUNTI SALVATI"', 'android:text="PUNTI"')
+LAYOUT_MAIN = _swap(LAYOUT_MAIN, '"30+ strumenti outdoor"', '"Oltre 50, con ricerca"')
+
+
+# ---------------------------------------------------------------- SCORCIATOIE DELL'ICONA
+import re as _re60
+
+
+def _sc_icon(src, color):
+    """Icona di scorciatoia: disco colorato con il simbolo bianco al centro."""
+    xml = V5_DRAWABLES.get(src) or V4_DRAWABLES[src]
+    paths = _re60.findall(r'android:pathData="([^"]+)"', xml)
+    glyph = "".join('        <path android:fillColor="#FF050A14" android:pathData="' + p + '"/>\n' for p in paths)
+    return (_XML_HEAD +
+        '<vector ' + _NS + '\n'
+        '    android:width="48dp" android:height="48dp"\n'
+        '    android:viewportWidth="48" android:viewportHeight="48">\n'
+        '    <path android:fillColor="' + color + '" android:pathData="M24,24m-23,0a23,23 0,1 1,46 0a23,23 0,1 1,-46 0"/>\n'
+        '    <group android:translateX="12" android:translateY="12">\n' + glyph +
+        '    </group>\n'
+        '</vector>')
+
+
+_SHORTCUTS = [
+    # (id, icona, colore, etichetta breve, etichetta lunga)
+    ("sos",     "ic_v4_sos",       "#FFFF3D71", "Emergenza",  "Emergenza: 112 e posizione"),
+    ("compass", "ic_v5_compass",   "#FF00E5FF", "Bussola",    "Bussola con nord vero"),
+    ("parking", "ic_v5_car",       "#FFFF6B35", "Trova l'auto", "Trova l'auto parcheggiata"),
+    ("pretrip", "ic_v5_checklist", "#FF00FF88", "Pronto?",    "Pronto a partire?"),
+]
+for _k, _ic, _col, _s, _l in _SHORTCUTS:
+    V5_DRAWABLES["ic_sc_" + _k] = _sc_icon(_ic, _col)
+
+
+def _xml_str(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace("'", "\\'")
+
+
+STRINGS_XML = STRINGS_XML.replace("</resources>", "".join(
+    '<string name="sc_' + k + '">' + _xml_str(s) + '</string><string name="sc_' + k + '_long">' + _xml_str(l) + '</string>'
+    for k, _i, _c, s, l in _SHORTCUTS) + "</resources>")
+
+V5_XML["shortcuts"] = (_XML_HEAD + '<shortcuts ' + _NS + '>\n' + "".join(
+    '    <shortcut android:shortcutId="' + k + '" android:enabled="true" android:icon="@drawable/ic_sc_' + k + '"\n'
+    '        android:shortcutShortLabel="@string/sc_' + k + '" android:shortcutLongLabel="@string/sc_' + k + '_long">\n'
+    '        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.offlinegps.map"\n'
+    '            android:targetClass="com.offlinegps.map.ui.ShortcutActivity">\n'
+    '            <extra android:name="tool" android:value="' + k + '"/>\n'
+    '        </intent>\n'
+    '    </shortcut>\n' for k, _i, _c, _s, _l in _SHORTCUTS) + '</shortcuts>\n')
+
 # <<< V5 NAVIGATORE 3D
 
 # ============================================================
@@ -32510,6 +33111,11 @@ def build_java_file_map():
         f"{PKG_UI}/BearingsActivity.java":       BEARINGS_ACTIVITY,
         f"{PKG_UI}/ReturnAlarmReceiver.java":    RETURN_ALARM_RECEIVER,
         f"{PKG_UI}/PreTripActivity.java":        PRE_TRIP_ACTIVITY,
+        # v6.0
+        f"{PKG_UTIL}/ToolCatalog.java":          TOOL_CATALOG,
+        f"{PKG_UI}/ToolSearchActivity.java":     TOOL_SEARCH_ACTIVITY,
+        f"{PKG_UI}/ShortcutActivity.java":       SHORTCUT_ACTIVITY,
+        f"{PKG_UI}/BootReceiver.java":           BOOT_RECEIVER,
     }
 
 def build_layout_map():
@@ -32586,6 +33192,7 @@ def build_layout_map():
         "activity_compass.xml":        LAYOUT_COMPASS,
         "activity_bearings.xml":       LAYOUT_BEARINGS,
         "activity_pretrip.xml":        LAYOUT_PRETRIP,
+        "activity_toolsearch.xml":     LAYOUT_TOOLSEARCH,
     }
 
 IS_WINDOWS = platform.system() == "Windows"
@@ -32666,7 +33273,7 @@ def write_file(path, content):
     path.write_text(content, encoding="utf-8")
 
 def create_project(java_path):
-    title("STEP 1 - Creazione progetto OfflineGPS 3D v5.9")
+    title("STEP 1 - Creazione progetto OfflineGPS 3D v6.0")
     if PROJECT_DIR.exists():
         answer = input(f"\n  Directory {PROJECT_DIR.name} esiste. Sovrascrivere? (y/N): ").strip().lower()
         if answer == "y": shutil.rmtree(PROJECT_DIR); ok("Directory rimossa")
@@ -32809,7 +33416,7 @@ def build_apk(java_path):
 
 def summarise(apk, solo_progetto=False):
     title("STEP 3 - Output")
-    dest = DESKTOP / "OfflineGPS-3D-v5.9.apk"
+    dest = DESKTOP / "OfflineGPS-3D-v6.0.apk"
     if apk and apk.exists():
         shutil.copy2(apk, dest)
         print(f"\n{C.BOLD}{'='*60}")
@@ -32823,6 +33430,13 @@ def summarise(apk, solo_progetto=False):
     else:
         warn("Compila in Android Studio se il builder da riga di comando fallisce")
         info(str(PROJECT_DIR))
+
+    print(f"\n{C.BOLD}NOVITA v6.0 - TUTTO A PORTATA DI MANO:{C.RESET}")
+    print(f"  {C.OK}[NEW]{C.RESET}  Cerca uno strumento: oltre 50, cerchi anche per problema (vipera, freddo, perso)")
+    print(f"  {C.OK}[NEW]{C.RESET}  Home con OGGI QUI: luce che resta, batteria misurata, barometro; tasti rapidi")
+    print(f"  {C.OK}[NEW]{C.RESET}  Scorciatoie sull'icona: Emergenza, Bussola, Trova l'auto, Pronto a partire?")
+    print(f"  {C.OK}[FIX]{C.RESET}  Dopo un riavvio tornano gli avvisi di tramonto, rientro, parcheggio e la pressione")
+    print(f"  {C.OK}[NEW]{C.RESET}  Dove sono?: si possono mirare anche i propri punti salvati")
 
     print(f"\n{C.BOLD}NOVITA v5.9 - RILEVAMENTI E PRONTO A PARTIRE:{C.RESET}")
     print(f"  {C.OK}[NEW]{C.RESET}  Rilevamenti: proietta un punto, incrocia due direzioni, trova dove sei dalle cime")
@@ -32936,7 +33550,7 @@ def summarise(apk, solo_progetto=False):
     info("(puo' richiedere diversi minuti): e' normale, succede una sola volta.")
 
     print(f"\n{C.BOLD}SETUP:{C.RESET}")
-    info("1. Installa OfflineGPS-3D-v5.9.apk")
+    info("1. Installa OfflineGPS-3D-v6.0.apk")
     info("2. Concedi permesso GPS")
     info("3. Download -> tab MAPPE -> scarica CENTRO (es. per Roma/Lazio)")
     info("4. Download -> tab ROUTING -> scarica LAZIO (routing) per la stessa zona")
@@ -32948,7 +33562,7 @@ def main():
     if IS_WINDOWS: os.system("color")
     solo_progetto = any(a in ("--solo-progetto", "--no-build") for a in sys.argv[1:])
     print(f"\n{C.BOLD}{C.CYAN}{'='*60}")
-    print("  OfflineGPS 3D v5.9 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
+    print("  OfflineGPS 3D v6.0 - Navigatore 3D, soccorso, walkie-talkie, realta' aumentata")
     print(f"{'='*60}{C.RESET}\n")
 
     title("Prerequisiti")
@@ -32965,7 +33579,7 @@ def main():
         create_project(java)
         apk = None if solo_progetto else build_apk(java)
         summarise(apk, solo_progetto)
-        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v5.9 - Completato!{C.RESET}\n")
+        print(f"{C.OK}{C.BOLD}OfflineGPS 3D v6.0 - Completato!{C.RESET}\n")
     except KeyboardInterrupt:
         print(f"\n{C.WARN}Interrotto.{C.RESET}"); sys.exit(0)
     except Exception as e:
